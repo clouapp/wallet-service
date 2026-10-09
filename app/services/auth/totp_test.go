@@ -15,7 +15,7 @@ const totpPeriod = 30
 
 func newTOTPSecret(t *testing.T) string {
 	t.Helper()
-	secret, _, err := authsvc.NewService().GenerateTOTP("user@example.com")
+	secret, _, err := authsvc.NewService(nil).GenerateTOTP("user@example.com")
 	require.NoError(t, err)
 	return secret
 }
@@ -31,7 +31,7 @@ func TestMatch_TOTP_ReturnsTheStepOfTheCode(t *testing.T) {
 	secret := newTOTPSecret(t)
 	now := time.Unix(1_700_000_010, 0)
 
-	step, ok := authsvc.NewService().MatchTOTP(secret, codeAt(t, secret, now), now)
+	step, ok := authsvc.NewService(nil).MatchTOTP(secret, codeAt(t, secret, now), now)
 
 	require.True(t, ok)
 	assert.Equal(t, now.Unix()/totpPeriod, step)
@@ -43,11 +43,11 @@ func TestMatch_TOTP_AcceptsTheAdjacentStepsAndReportsWhichOne(t *testing.T) {
 	previous := now.Add(-totpPeriod * time.Second)
 	next := now.Add(totpPeriod * time.Second)
 
-	step, ok := authsvc.NewService().MatchTOTP(secret, codeAt(t, secret, previous), now)
+	step, ok := authsvc.NewService(nil).MatchTOTP(secret, codeAt(t, secret, previous), now)
 	require.True(t, ok)
 	assert.Equal(t, previous.Unix()/totpPeriod, step)
 
-	step, ok = authsvc.NewService().MatchTOTP(secret, codeAt(t, secret, next), now)
+	step, ok = authsvc.NewService(nil).MatchTOTP(secret, codeAt(t, secret, next), now)
 	require.True(t, ok)
 	assert.Equal(t, next.Unix()/totpPeriod, step)
 }
@@ -57,7 +57,7 @@ func TestMatch_TOTP_RefusesCodesOutsideTheSkew(t *testing.T) {
 	now := time.Unix(1_700_000_010, 0)
 	stale := now.Add(-3 * totpPeriod * time.Second)
 
-	_, ok := authsvc.NewService().MatchTOTP(secret, codeAt(t, secret, stale), now)
+	_, ok := authsvc.NewService(nil).MatchTOTP(secret, codeAt(t, secret, stale), now)
 
 	assert.False(t, ok)
 }
@@ -66,7 +66,7 @@ func TestMatch_TOTP_RefusesEmptyInputAndTheSealedSecret(t *testing.T) {
 	secret := newTOTPSecret(t)
 	now := time.Unix(1_700_000_010, 0)
 	code := codeAt(t, secret, now)
-	svc := authsvc.NewService()
+	svc := authsvc.NewService(nil)
 
 	_, ok := svc.MatchTOTP("", code, now)
 	assert.False(t, ok)

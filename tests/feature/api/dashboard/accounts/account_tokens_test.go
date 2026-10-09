@@ -14,9 +14,10 @@ import (
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/http/middleware"
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	activitylog "github.com/macrowallets/waas/app/services/activity"
+	"github.com/macrowallets/waas/app/services/apitoken"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
@@ -213,7 +214,7 @@ func (s *accountTokensSuite) TestCreate_Stores_OnlyTheSecretHash() {
 		Metadata map[string]json.RawMessage `json:"metadata"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
-	claims := &middleware.APITokenClaims{}
+	claims := &apitoken.Claims{}
 	_, _, err := jwt.NewParser().ParseUnverified(parsed.Token, claims)
 	s.Require().NoError(err)
 	if claims.Secret == "" {
@@ -253,7 +254,7 @@ func (s *accountTokensSuite) TestCreate_And_RevokeWriteActivityWithoutTheSecret(
 		} `json:"metadata"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
-	claims := &middleware.APITokenClaims{}
+	claims := &apitoken.Claims{}
 	_, _, err := jwt.NewParser().ParseUnverified(parsed.Token, claims)
 	s.Require().NoError(err)
 	if claims.Secret == "" {
@@ -383,7 +384,7 @@ func (s *accountTokensSuite) loginUser(role string, accountID uuid.UUID) struct 
 } {
 	userID := uuid.New()
 	email := role + "-" + userID.String()[:8] + "@example.com"
-	hash, err := authsvc.NewService().HashPassword(accountTokenPassword)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(accountTokenPassword)
 	s.Require().NoError(err)
 	_, err = facades.Orm().Query().Exec(
 		`INSERT INTO users (id, email, password_hash, status, created_at, updated_at)

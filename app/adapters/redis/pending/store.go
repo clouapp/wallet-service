@@ -19,7 +19,7 @@ const DefaultRedisKeyPrefix = "vault:deposit_pending:"
 
 // RedisStore persists pending deposit entries. The service keeps the Store port.
 type RedisStore struct {
-	rdb    *redis.Client
+	rdb    redis.UniversalClient
 	prefix string
 }
 
@@ -28,7 +28,7 @@ var _ depositpending.Store = (*RedisStore)(nil)
 // RedisStoreDeps is the client and key prefix NewRedisStore stores.
 // Redis must be set; an empty KeyPrefix is rejected.
 type RedisStoreDeps struct {
-	Redis     *redis.Client
+	Redis     redis.UniversalClient
 	KeyPrefix string
 }
 

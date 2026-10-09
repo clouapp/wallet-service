@@ -21,6 +21,7 @@ type (
 	appMissingSvc    struct{}
 	mustMissingSvc   struct{}
 	wrongTypeService struct{}
+	typedNilService  struct{}
 )
 
 func bind[T any](t *testing.T, value any) {
@@ -73,6 +74,38 @@ func TestMake_A_BindingThatAnswersNilIsNotAResolution(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "*container.wrongTypeService")
+}
+
+func TestMake_A_TypedNilBindingIsNotAResolution(t *testing.T) {
+	var nilService *typedNilService
+	bind[*typedNilService](t, nilService)
+
+	got, err := Make[*typedNilService]()
+
+	require.Error(t, err)
+	assert.Nil(t, got)
+	assert.Contains(t, err.Error(), "*container.typedNilService")
+}
+
+func TestIs_Nil_SeesThroughATypedNil(t *testing.T) {
+	var (
+		pointer *boundService
+		slice   []string
+		mapping map[string]int
+		fn      func()
+		iface   error
+	)
+	for name, value := range map[string]any{
+		"untyped nil": nil, "nil pointer": pointer, "nil slice": slice,
+		"nil map": mapping, "nil func": fn, "nil interface": iface,
+	} {
+		assert.True(t, IsNil(value), name)
+	}
+	for name, value := range map[string]any{
+		"pointer": &boundService{}, "struct": boundService{}, "int": 0, "empty slice": []string{},
+	} {
+		assert.False(t, IsNil(value), name)
+	}
 }
 
 func TestMake_With_NoApplicationIsAnErrorNotAPanic(t *testing.T) {

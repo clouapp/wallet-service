@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	contractsauth "github.com/goravel/framework/contracts/auth"
 	foundationcontract "github.com/goravel/framework/contracts/foundation"
 	"github.com/goravel/framework/contracts/http"
 	contractslog "github.com/goravel/framework/contracts/log"
@@ -14,7 +15,7 @@ import (
 	"github.com/goravel/framework/foundation"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/macrowallets/waas/app/http/requests"
+	authrequests "github.com/macrowallets/waas/app/http/requests/dashboard/auth"
 	"github.com/macrowallets/waas/app/http/resources"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
@@ -45,18 +46,8 @@ func TestLogin_Denies_WhenTheMembershipReadFails(t *testing.T) {
 	}
 	memberships := &failingMemberships{}
 	refreshes := &flagRefreshStore{}
-	ctrl := NewAuthController(AuthControllerDeps{
-		Users: usersvc.NewService(usersvc.Deps{Store: loginUsers{user: user}}),
-		Accounts: accountsvc.NewService(accountsvc.Deps{
-			Memberships: memberships,
-		}),
-		RefreshTokens:  sessions.NewRefreshTokens(refreshes),
-		PasswordResets: &sessions.PasswordResets{},
-		Passwords:      &authsvc.Service{},
-		TwoFactor:      &authsvc.TwoFactorLogin{},
-		Revoker:        &authsvc.SessionRevoker{},
-		CredentialMail: &credentialmail.Service{},
-	})
+	ctrl := NewAuthController(newTestSignIn(t, usersvc.NewService(usersvc.Deps{Store: loginUsers{user: user}}),
+		accountsvc.NewService(accountsvc.Deps{Memberships: memberships}), refreshes))
 	response := &recordingResponse{}
 	ctx := &recordingContext{
 		base:     context.Background(),
@@ -87,6 +78,36 @@ func TestLogin_Denies_WhenTheMembershipReadFails(t *testing.T) {
 	if envelope.Error.Code != responses.CodeUnavailable || envelope.Error.Message != "failed to load accounts" {
 		t.Fatalf("failed membership read envelope = %+v", envelope.Error)
 	}
+}
+
+// newTestSignIn builds the sign-in flows a login runs: users and accounts as
+// given, a session issuer that stores refresh tokens in refreshes, and the
+// parts a password login of a user without 2FA never reaches.
+func newTestSignIn(t *testing.T, users *usersvc.Service, accounts *accountsvc.Service, refreshes sessions.RefreshStore) *authsvc.SignIn {
+	t.Helper()
+	passwords := authsvc.NewService(testHasher())
+	issuer, err := authsvc.NewSessionIssuer(authsvc.IssuerDeps{
+		Passwords: passwords,
+		Refresh:   sessions.NewRefreshTokens(refreshes),
+		Revoker:   &authsvc.SessionRevoker{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	signIn, err := authsvc.NewSignIn(authsvc.SignInDeps{
+		Users:     users,
+		Accounts:  accounts,
+		Welcome:   &credentialmail.Service{},
+		Passwords: passwords,
+		TwoFactor: &authsvc.TwoFactorLogin{},
+		Sessions:  issuer,
+		Refresh:   &sessions.RefreshTokens{},
+		Revoker:   &authsvc.SessionRevoker{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return signIn
 }
 
 type failingMemberships struct {
@@ -145,7 +166,7 @@ type recordingRequest struct {
 }
 
 func (r *recordingRequest) ValidateRequest(req http.FormRequest) (contractsvalidation.Errors, error) {
-	body, ok := req.(*requests.LoginRequest)
+	body, ok := req.(*authrequests.LoginRequest)
 	if !ok {
 		return nil, errors.New("unexpected form request")
 	}
@@ -158,6 +179,13 @@ type recordingResponse struct {
 	http.ContextResponse
 	status int
 	body   any
+	raw    []byte
+}
+
+func (r *recordingResponse) Data(code int, _ string, data []byte) http.AbortableResponse {
+	r.status = code
+	r.raw = data
+	return recordingAbort{}
 }
 
 func (r *recordingResponse) Json(code int, obj any) http.AbortableResponse {
@@ -175,6 +203,14 @@ type quietApp struct{ foundationcontract.Application }
 
 func (quietApp) MakeLog() contractslog.Log { return quietLog{} }
 
+// MakeAuth is the request's guard the handler passes to the sign-in flows.
+// These tests never reach a session, so nothing on it is called.
+func (quietApp) MakeAuth(...http.Context) contractsauth.Auth { return quietAuth{} }
+
+type quietAuth struct{ contractsauth.Auth }
+
 type quietLog struct{ contractslog.Log }
 
 func (quietLog) Errorf(string, ...any) {}
+
+func (l quietLog) WithContext(context.Context) contractslog.Log { return l }

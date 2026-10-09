@@ -92,17 +92,6 @@ func bitcoinNetworkOf(cfg BitcoinConfig) bitcoinNetwork {
 	}
 }
 
-// BitcoinFamilyParams are the address and key parameters of the network a
-// Bitcoin-family chain record (btc, tbtc, ltc, tltc) transacts on. The result is a
-// copy; nil for any other chain.
-func BitcoinFamilyParams(chainID string, testnet bool) *chaincfg.Params {
-	if !models.IsBitcoinFamilyChainID(chainID) {
-		return nil
-	}
-	params := *bitcoinNetworkOf(BitcoinConfig{ChainIDStr: chainID, IsTestnet: testnet}).params
-	return &params
-}
-
 func isEsploraURL(rpcURL string) bool {
 	for _, host := range esploraHosts {
 		if strings.Contains(rpcURL, host) {

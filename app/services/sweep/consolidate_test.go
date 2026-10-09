@@ -13,6 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/memcache"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -56,6 +57,7 @@ func TestConsolidate_All_BitcoinNoChildren(t *testing.T) {
 	registry.RegisterChain(mockChain)
 	svc := &service{
 		registry:    registry,
+		cache:       memcache.New(),
 		walletRepo:  &fakeWalletRepo{wallet: wallet},
 		addressRepo: &fakeAddressRepo{children: []models.Address{baseAddr}},
 		chainRepo:   &fakeChainRepo{chain: chainEntity},
@@ -118,6 +120,7 @@ func TestConsolidateAll_NoEligibleChildren_Noop(t *testing.T) {
 	txRepo := &fakeTxRepo{}
 	svc := &service{
 		registry:    registry,
+		cache:       memcache.New(),
 		walletRepo:  &fakeWalletRepo{wallet: wallet},
 		addressRepo: &fakeAddressRepo{children: []models.Address{baseAddr}},
 		chainRepo:   &fakeChainRepo{chain: chainEntity},
@@ -156,7 +159,7 @@ func TestConsolidateAll_NoEligibleChildren_Noop(t *testing.T) {
 // ErrInvalidPassphrase from mpcpkg.DecryptShare; after the failed call, the
 // Redis quota key for the caller must be absent (count 0).
 func TestConsolidate_All_QuotaNotBurnedOnInvalidPassphrase(t *testing.T) {
-	store := newRedisStore()
+	cache := memcache.New()
 
 	walletID := uuid.New()
 	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
@@ -199,7 +202,7 @@ func TestConsolidate_All_QuotaNotBurnedOnInvalidPassphrase(t *testing.T) {
 
 	svc := &service{
 		registry:    registry,
-		rdb:         store,
+		cache:       cache,
 		walletRepo:  &fakeWalletRepo{wallet: wallet},
 		addressRepo: &fakeAddressRepo{children: []models.Address{baseAddr, childA}},
 		chainRepo:   &fakeChainRepo{chain: chainEntity},
@@ -214,7 +217,7 @@ func TestConsolidate_All_QuotaNotBurnedOnInvalidPassphrase(t *testing.T) {
 		t.Fatalf("expected \"invalid passphrase\", got %q", err.Error())
 	}
 
-	if count, ok := store.Int(quotaKey); ok && count != 0 {
-		t.Fatalf("expected quota counter to remain 0 after invalid passphrase, got %d", count)
+	if cache.Has(quotaKey) {
+		t.Fatalf("expected quota counter to stay absent after invalid passphrase")
 	}
 }

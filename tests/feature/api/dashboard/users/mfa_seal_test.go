@@ -46,7 +46,10 @@ func (s *MfaSealTestSuite) TestEnrolled_Secret_IsSealedAndVerifyStillWorks() {
 		s.Fail("setup response contains the sealed totp secret")
 	}
 
-	confirm := s.authedPost(session.AccessToken, "/v1/users/me/totp/verify", `{"code":"`+s.currentCode(setupBody.Secret)+`"}`)
+	// Replay the exact code that confirmed enrollment: asking for "the current
+	// code" again would mint a fresh one if the 30 s window rolled over in between.
+	confirmedCode := s.currentCode(setupBody.Secret)
+	confirm := s.authedPost(session.AccessToken, "/v1/users/me/totp/verify", `{"code":"`+confirmedCode+`"}`)
 	confirm.AssertOk()
 	s.refuseSecret(confirm, setupBody.Secret, stored)
 	s.Equal(int64(10), s.rows(`
@@ -58,7 +61,7 @@ func (s *MfaSealTestSuite) TestEnrolled_Secret_IsSealedAndVerifyStillWorks() {
 
 	_, challenge := s.loginAs(user.Email)
 	s.Require().NotEmpty(challenge.ChallengeToken)
-	replayed, _ := s.verifyTwoFactor(challenge.ChallengeToken, s.currentCode(setupBody.Secret), "")
+	replayed, _ := s.verifyTwoFactor(challenge.ChallengeToken, confirmedCode, "")
 	s.AssertError(replayed, 401, "unauthorized", "invalid 2FA code")
 	s.refuseSecret(replayed, setupBody.Secret, stored)
 

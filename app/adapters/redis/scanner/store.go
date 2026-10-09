@@ -13,13 +13,13 @@ import (
 // Store runs the deposit scanner's Redis commands: GET, SET, SISMEMBER, SCARD,
 // SMISMEMBER, and a DEL+SADD transaction. The service keeps the keys. Values are not logged.
 type Store struct {
-	client *redis.Client
+	client redis.UniversalClient
 }
 
 var _ deposit.RedisStore = (*Store)(nil)
 
 // New wraps client. A nil client returns a nil store so the service keeps its nil-client path.
-func New(client *redis.Client) deposit.RedisStore {
+func New(client redis.UniversalClient) deposit.RedisStore {
 	if client == nil {
 		return nil
 	}

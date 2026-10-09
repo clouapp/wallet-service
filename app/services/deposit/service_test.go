@@ -3,7 +3,6 @@ package deposit
 import (
 	"context"
 	"math/big"
-	"os"
 	"testing"
 
 	"github.com/goravel/framework/facades"
@@ -14,22 +13,13 @@ import (
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
-func TestMain(m *testing.M) {
-	// Boot Goravel once for all tests in this package
-	testutil.BootTest()
-	os.Exit(m.Run())
-}
-
 func newWebhookSvc() *webhook.Service {
 	return webhook.NewService(webhook.Deps{
-		Configs: repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{
-			Cipher: facades.Crypt(),
-		}),
-		Events: repositories.NewWebhookEventRepository(nil),
+		Configs: repositories.NewWebhookConfigRepository(nil, facades.Crypt()),
+		Events:  repositories.NewWebhookEventRepository(nil),
 	})
 }
 

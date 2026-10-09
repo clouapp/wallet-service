@@ -30,6 +30,13 @@ const (
 	CreateStatusTooManyRequests
 )
 
+// Refusal sentences for statuses whose cause carries detail that must stay in
+// the log.
+const (
+	invalidIdempotencyKeyMessage = "idempotency_key must be a UUID"
+	unknownAssetMessage          = "unknown asset"
+)
+
 // CreateRefusal is a client refusal. Message is the legacy {"error": Message}
 // text. The cause is not returned to the client.
 type CreateRefusal struct {
@@ -161,7 +168,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 	}
 	withdrawalID, err := WithdrawalIDFromIdempotencyKey(in.IdempotencyKey)
 	if err != nil {
-		return nil, &CreateRefusal{Status: CreateStatusBadRequest, Message: err.Error()}
+		return nil, &CreateRefusal{Status: CreateStatusBadRequest, Message: invalidIdempotencyKeyMessage}
 	}
 	idempotencyKey := in.IdempotencyKey
 	if idempotencyKey == "" {
@@ -204,17 +211,21 @@ func (s *Service) verifyDashboardTOTP(ctx context.Context, userID uuid.UUID, cod
 
 func (s *Service) verifyPassphraseBeforePersist(ctx context.Context, wallet *models.Wallet, passphrase string) error {
 	defer mpcshare.DiscardPassphrase(&passphrase)
-	if s.locker != nil {
-		if err := s.checkRateLimit(ctx, wallet.ID.String()); err != nil {
-			return &CreateRefusal{Status: CreateStatusTooManyRequests, Message: err.Error()}
+	if s.cache == nil {
+		slog.Error("withdraw: passphrase attempt limiter needs a cache driver, which is not configured")
+		return &CreateRefusal{Status: CreateStatusInternal, Message: "internal error"}
+	}
+	if err := s.checkRateLimit(wallet.ID.String()); err != nil {
+		if errors.Is(err, ErrTooManyAttempts) {
+			return &CreateRefusal{Status: CreateStatusTooManyRequests, Message: tooManyAttemptsMessage, cause: err}
 		}
+		slog.Error("withdraw: passphrase attempt limiter", "wallet_id", wallet.ID, "error", err)
+		return &CreateRefusal{Status: CreateStatusInternal, Message: "internal error"}
 	}
 	shareA, err := wallet.DecryptShareA(passphrase)
 	if err != nil {
 		if errors.Is(err, mpcpkg.ErrInvalidPassphrase) {
-			if s.locker != nil {
-				s.recordFailedAttempt(ctx, wallet.ID.String())
-			}
+			s.recordFailedAttempt(wallet.ID.String())
 			return &CreateRefusal{Status: CreateStatusUnauthorized, Message: ErrInvalidPassphrase.Error()}
 		}
 		return &CreateRefusal{Status: CreateStatusInternal, Message: "internal error"}
@@ -250,6 +261,11 @@ func (s *Service) resolveCreateAmount(ctx context.Context, in CreateInput) (*Res
 		s.registry.TokensForChain(in.Wallet.Chain),
 	)
 	if resolveErr != nil {
+		if errors.Is(resolveErr, ErrUnknownAsset) {
+			// The resolver error names what the caller typed and the chain.
+			slog.Warn("withdraw: unknown asset", "wallet_id", in.Wallet.ID, "error", resolveErr)
+			return nil, nil, &CreateRefusal{Status: CreateStatusUnprocessable, Message: unknownAssetMessage, cause: resolveErr}
+		}
 		return nil, nil, &CreateRefusal{Status: CreateStatusUnprocessable, Message: resolveErr.Error()}
 	}
 	if resolved == nil || resolved.BaseUnits == nil {
@@ -341,7 +357,7 @@ func WithdrawalIDFromIdempotencyKey(idempotencyKey string) (uuid.UUID, error) {
 	}
 	id, err := uuid.Parse(idempotencyKey)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("idempotency_key must be a UUID")
+		return uuid.Nil, errors.New(invalidIdempotencyKeyMessage)
 	}
 	return id, nil
 }

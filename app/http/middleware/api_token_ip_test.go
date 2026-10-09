@@ -61,6 +61,28 @@ func (s *apiTokenIPSuite) TestBare_Address_AllowsOnlyThatAddress() {
 	s.get(token).AssertOk()
 }
 
+// The test client connects from 192.0.2.1, which is not a trusted proxy, so a
+// client-written X-Forwarded-For must not change the address ip_cidr sees.
+func (s *apiTokenIPSuite) TestForged_ForwardedFor_DoesNotWidenTheAllowlist() {
+	token := s.mint("198.51.100.0/24")
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		WithHeader("X-Forwarded-For", "198.51.100.7").
+		Get("/api/v1/chains")
+	s.Require().NoError(err)
+	resp.AssertForbidden()
+}
+
+func (s *apiTokenIPSuite) TestForged_ForwardedFor_DoesNotNarrowIt() {
+	token := s.mint("192.0.2.0/24")
+	resp, err := s.Http(s.T()).
+		WithHeader("Authorization", "Bearer "+token).
+		WithHeader("X-Forwarded-For", "6.6.6.6").
+		Get("/api/v1/chains")
+	s.Require().NoError(err)
+	resp.AssertOk()
+}
+
 func (s *apiTokenIPSuite) mint(ipCidr string) string {
 	s.T().Helper()
 	record := &models.AccessToken{

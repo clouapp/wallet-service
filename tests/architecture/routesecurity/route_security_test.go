@@ -11,7 +11,6 @@ import (
 
 	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/bootstrap"
 	"github.com/macrowallets/waas/tests/architecture"
 	"github.com/macrowallets/waas/tests/feature/support/testenv"
@@ -29,11 +28,15 @@ const (
 	guardAPIToken          guard = "api-token"          // middleware.APITokenAuth (external, /api/v1)
 )
 
-// Repeated guard chains. Cors and CacheControl are not guards. The ingest
+// Repeated guard chains. Cors and CacheControl are not guards. The money
+// movement routes (withdrawals, consolidate) end with FeatureEnabled, the
+// withdrawals-enabled / sweep-enabled pause, after the permission. The ingest
 // route's guard is ProviderSignature, which checks the provider signature
-// before the body is parsed.
+// before the body is parsed. It is installed once in the global chain
+// (app/http/middleware/global_chain.go), so the route files register none.
 const (
 	chainSession                = "SessionAuth"
+	chainPlatform               = "SessionAuth > PlatformAdmin"
 	chainAccount                = "SessionAuth > AccountContext > TOTPEnrollment"
 	chainAccountWrite           = chainAccount + " > Can(account.write)"
 	chainAccountLifecycle       = chainAccount + " > Can(account.lifecycle)"
@@ -50,7 +53,7 @@ const (
 	chainHeader                 = "SessionAuth > AccountHeader > TOTPEnrollment"
 	chainCreateWallet           = chainHeader + " > RequireFundAction"
 	chainWallet                 = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext"
-	chainMoveFunds              = chainWallet + " > RequireFundAction"
+	chainMoveFunds              = chainWallet + " > RequireFundAction > FeatureEnabled"
 	chainGenerateAddress        = chainWallet + " > Can(addresses.create)"
 	chainWalletAddUser          = chainWallet + " > WalletAddUser"
 	chainWalletRemoveUser       = chainWallet + " > WalletRemoveUser"
@@ -60,6 +63,7 @@ const (
 	chainWalletWebhooksTOTP     = chainWalletManageWebhooks + " > RequireEnabledTOTP"
 	chainWalletArchive          = chainWallet + " > WalletArchive"
 	chainWalletFreeze           = chainWallet + " > WalletFreeze"
+	chainWalletUpdate           = chainWallet + " > WalletUpdate"
 	chainWalletCancelWithdrawal = chainWallet + " > WalletCancelWithdrawal"
 	chainUnspent                = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext > UTXOOnly"
 	chainAPI                    = "APITokenAuth"
@@ -68,12 +72,11 @@ const (
 	chainWalletsCreate          = "APITokenAuth > APIScope(wallets.create)"
 	chainWalletRead             = "APITokenAuth > APIWalletContext > APIScope(wallets.read)"
 	chainAddresses              = "APITokenAuth > APIWalletContext > APIScope(addresses.create)"
-	chainSweep                  = "APITokenAuth > APIWalletContext > APIScope(sweep.execute)"
-	chainWithdrawals            = "APITokenAuth > APIWalletContext > APIScope(withdrawals.create)"
+	chainSweep                  = "APITokenAuth > APIWalletContext > APIScope(sweep.execute) > FeatureEnabled"
+	chainWithdrawals            = "APITokenAuth > APIWalletContext > APIScope(withdrawals.create) > FeatureEnabled"
 	chainTransactions           = "APITokenAuth > APIScope(transactions.read)"
 	chainWebhooksRead           = "APITokenAuth > APIScope(webhooks.read)"
 	chainWebhooksWrite          = "APITokenAuth > APIScope(webhooks.write)"
-	chainProviderSignature      = "ProviderSignature"
 )
 
 // routeSecurity is one row of the closed table: who may call the route, and
@@ -91,7 +94,7 @@ func public() routeSecurity {
 	return routeSecurity{auth: guardPublic}
 }
 func provider() routeSecurity {
-	return routeSecurity{auth: guardProviderSignature, chain: chainProviderSignature}
+	return routeSecurity{auth: guardProviderSignature}
 }
 
 // routeTable is the closed list of every route the router serves, keyed by
@@ -167,33 +170,33 @@ var routeTable = map[string]routeSecurity{
 	"GET|HEAD /v1/currencies":                                          session(chainSession),
 	"GET|HEAD /v1/currencies/{code}":                                   session(chainSession),
 	"GET|HEAD /v1/me/preferences":                                      session(chainSession),
-	"PATCH /v1/platform/chains/{chainId}":                              session(chainSession),
-	"PATCH /v1/platform/chains/{chainId}/rpc":                          session(chainSession),
-	"GET|HEAD /v1/platform/accounts":                                   session(chainSession),
-	"GET|HEAD /v1/platform/accounts/{accountId}/users":                 session(chainSession),
-	"POST /v1/platform/accounts/{accountId}/owners":                    session(chainSession),
-	"POST /v1/platform/accounts/{accountId}/archive":                   session(chainSession),
-	"POST /v1/platform/accounts/{accountId}/freeze":                    session(chainSession),
-	"POST /v1/platform/accounts/{accountId}/unfreeze":                  session(chainSession),
-	"GET|HEAD /v1/platform/accounts/{accountId}/settings/{group}":      session(chainSession),
-	"PUT /v1/platform/accounts/{accountId}/settings/{group}":           session(chainSession),
-	"GET|HEAD /v1/platform/settings":                                   session(chainSession),
-	"POST /v1/platform/settings/mail/test":                             session(chainSession),
-	"GET|HEAD /v1/platform/settings/{group}":                           session(chainSession),
-	"PUT /v1/platform/settings/{group}":                                session(chainSession),
-	"POST /v1/platform/settings/sections/{section}/cache":              session(chainSession),
-	"POST /v1/platform/settings/sections/{section}/reset":              session(chainSession),
-	"GET|HEAD /v1/platform/activity":                                   session(chainSession),
-	"GET|HEAD /v1/platform/features":                                   session(chainSession),
-	"GET|HEAD /v1/platform/features/{scope}/{id}":                      session(chainSession),
-	"PUT /v1/platform/features/{scope}/{id}":                           session(chainSession),
-	"PUT /v1/platform/features/{scope}/{id}/{feature}":                 session(chainSession),
-	"GET|HEAD /v1/platform/users":                                      session(chainSession),
-	"PATCH /v1/platform/features/{key}":                                session(chainSession),
-	"DELETE /v1/platform/users/{id}/mfa":                               session(chainSession),
-	"POST /v1/platform/users/{id}/reactivate":                          session(chainSession),
-	"POST /v1/platform/users/{id}/sessions/revoke":                     session(chainSession),
-	"POST /v1/platform/users/{id}/suspend":                             session(chainSession),
+	"PATCH /v1/platform/chains/{chainId}":                              session(chainPlatform),
+	"PATCH /v1/platform/chains/{chainId}/rpc":                          session(chainPlatform),
+	"GET|HEAD /v1/platform/accounts":                                   session(chainPlatform),
+	"GET|HEAD /v1/platform/accounts/{accountId}/users":                 session(chainPlatform),
+	"POST /v1/platform/accounts/{accountId}/owners":                    session(chainPlatform),
+	"POST /v1/platform/accounts/{accountId}/archive":                   session(chainPlatform),
+	"POST /v1/platform/accounts/{accountId}/freeze":                    session(chainPlatform),
+	"POST /v1/platform/accounts/{accountId}/unfreeze":                  session(chainPlatform),
+	"GET|HEAD /v1/platform/accounts/{accountId}/settings/{group}":      session(chainPlatform),
+	"PUT /v1/platform/accounts/{accountId}/settings/{group}":           session(chainPlatform),
+	"GET|HEAD /v1/platform/settings":                                   session(chainPlatform),
+	"POST /v1/platform/settings/mail/test":                             session(chainPlatform),
+	"GET|HEAD /v1/platform/settings/{group}":                           session(chainPlatform),
+	"PUT /v1/platform/settings/{group}":                                session(chainPlatform),
+	"POST /v1/platform/settings/sections/{section}/cache":              session(chainPlatform),
+	"POST /v1/platform/settings/sections/{section}/reset":              session(chainPlatform),
+	"GET|HEAD /v1/platform/activity":                                   session(chainPlatform),
+	"GET|HEAD /v1/platform/features":                                   session(chainPlatform),
+	"GET|HEAD /v1/platform/features/{scope}/{id}":                      session(chainPlatform),
+	"PUT /v1/platform/features/{scope}/{id}":                           session(chainPlatform),
+	"PUT /v1/platform/features/{scope}/{id}/{feature}":                 session(chainPlatform),
+	"GET|HEAD /v1/platform/users":                                      session(chainPlatform),
+	"PATCH /v1/platform/features/{key}":                                session(chainPlatform),
+	"DELETE /v1/platform/users/{id}/mfa":                               session(chainPlatform),
+	"POST /v1/platform/users/{id}/reactivate":                          session(chainPlatform),
+	"POST /v1/platform/users/{id}/sessions/revoke":                     session(chainPlatform),
+	"POST /v1/platform/users/{id}/suspend":                             session(chainPlatform),
 	"PUT /v1/me/preferences":                                           session(chainSession),
 	"GET|HEAD /v1/users/me":                                            session(chainSession),
 	"PATCH /v1/users/me":                                               session(chainSession),
@@ -218,7 +221,7 @@ var routeTable = map[string]routeSecurity{
 	"POST /v1/wallets/{walletId}/gas-check":                            session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/gas-status":                       session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/settings":                         session(chainWallet),
-	"PATCH /v1/wallets/{walletId}/settings":                            session(chainWallet),
+	"PATCH /v1/wallets/{walletId}/settings":                            session(chainWalletUpdate),
 	"GET|HEAD /v1/wallets/{walletId}/transactions":                     session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/transactions/{txId}":              session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/unspents":                         session(chainUnspent),
@@ -247,7 +250,6 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	bootstrap.Boot()
-	_ = container.Get()
 	os.Exit(m.Run())
 }
 

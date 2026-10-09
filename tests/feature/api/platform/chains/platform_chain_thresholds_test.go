@@ -114,7 +114,7 @@ func (s *PlatformChainThresholdTestSuite) TestA_Platform_AdminUpdatesOneThreshol
 	s.Equal(1, seenActivity)
 }
 
-func (s *PlatformChainThresholdTestSuite) TestA_Non_AdminIsForbiddenAndAnUnknownChainIsNotFoundFirst() {
+func (s *PlatformChainThresholdTestSuite) TestA_Non_AdminIsForbiddenWhetherOrNotTheChainExists() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	before := s.loadChain(models.ChainETH)
@@ -126,9 +126,10 @@ func (s *PlatformChainThresholdTestSuite) TestA_Non_AdminIsForbiddenAndAnUnknown
 	s.True(before.DustThresholdUSD.Decimal.Equal(after.DustThresholdUSD.Decimal))
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'chains.updated'`))
 
+	// An unknown chain is not a 404 for a member: the group guard answers first.
 	missing := s.patchRaw(session.AccessToken, "/v1/platform/chains/no-such-chain", `{"dust_threshold_usd":"-1"}`)
-	missing.AssertNotFound()
-	s.AssertError(missing, 404, responses.CodeNotFound, "chain not found")
+	missing.AssertForbidden()
+	s.AssertError(missing, 403, responses.CodeForbidden, "you do not have permission to update chains")
 
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)

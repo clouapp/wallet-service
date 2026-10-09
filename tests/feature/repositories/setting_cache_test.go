@@ -12,7 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
 
 func TestSettings_Read_StoresAJSONMapForTenMinutes(t *testing.T) {
@@ -90,7 +90,7 @@ func TestSettings_Read_StoresAJSONMapForTenMinutes(t *testing.T) {
 
 func settingsCacheTTL(t *testing.T, logicalKey string) time.Duration {
 	t.Helper()
-	client := testutil.TestRedis(t)
+	client := testenv.TestRedis(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 

@@ -6,9 +6,9 @@ import (
 	"github.com/goravel/framework/contracts/validation"
 )
 
-// DBExists reports whether a row is already stored. A missing option or a
-// failed read passes, so a blank value is left to required and a database
-// error is not turned into a false rejection.
+// DBExists reports whether a row is already stored. A rule without its table
+// and column fails every value. A failed read passes, so a blank value is left
+// to required and a database error is not turned into a false rejection.
 type DBExists struct {
 	rows RowCount
 }
@@ -28,7 +28,7 @@ func (r *DBExists) Signature() string {
 func (r *DBExists) Passes(ctx context.Context, _ validation.Data, val any, options ...any) bool {
 	table, column, ok := ruleColumn(options)
 	if !ok {
-		return true
+		return false
 	}
 	value, ok := ruleString(val)
 	if !ok {

@@ -19,7 +19,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/mr-tron/base58"
 
-	bitcoinchain "github.com/macrowallets/waas/app/adapters/chain/bitcoin"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/addressing"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
@@ -201,7 +200,7 @@ func TestExport_LitecoinKeysAreLitecoinWIFsOfEveryAddress(t *testing.T) {
 		document := walletDocument(t, contents, fixture.wallet.ID)
 		requireAllAddressesExported(t, document, fixture)
 		requireSharesInArchive(t, contents, fixture)
-		params := bitcoinchain.BitcoinFamilyParams(models.ChainLTC, fixture.network.Testnet)
+		params := addressing.BitcoinFamilyParams(models.ChainLTC, fixture.network.Testnet)
 		for _, key := range document.Addresses {
 			if key.Litecoin == nil || key.Bitcoin != nil || key.Network != fixture.network.Name {
 				t.Fatalf("%s: want only a litecoin key on %s, got %+v", key.Address, fixture.network.Name, key)
@@ -235,7 +234,7 @@ func TestExport_LitecoinRowOfTheOtherNetworkGetsThatNetworksWIF(t *testing.T) {
 	_, contents := exportAndOpen(t, newFakeStore(ltc), fixedPassphrase(testWalletPassphrase))
 	key := walletDocument(t, contents, ltc.wallet.ID).Addresses[0]
 	wif, err := btcutil.DecodeWIF(key.Litecoin.WIF)
-	if err != nil || !wif.IsForNet(bitcoinchain.BitcoinFamilyParams(models.ChainLTC, false)) || key.Testnet || key.Network != models.NetworkLitecoinMainnet || len(key.Notes) == 0 {
+	if err != nil || !wif.IsForNet(addressing.BitcoinFamilyParams(models.ChainLTC, false)) || key.Testnet || key.Network != models.NetworkLitecoinMainnet || len(key.Notes) == 0 {
 		t.Fatalf("a retired ltc1 row must get a mainnet litecoin WIF and a note: %+v %+v", key.Network, key.Notes)
 	}
 }

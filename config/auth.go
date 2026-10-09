@@ -1,10 +1,11 @@
 package config
 
-import (
-	"github.com/goravel/framework/facades"
+import "github.com/macrowallets/waas/app/facades"
 
-	"github.com/macrowallets/waas/pkg/authmodel"
-)
+// registerHashing configures the hash facade the password service uses.
+func registerHashing() {
+	facades.Config().Add("hashing", hashingDocument())
+}
 
 func registerAuth() {
 	facades.Config().Add("auth", map[string]any{
@@ -24,7 +25,6 @@ func registerAuth() {
 		"providers": map[string]any{
 			"users": map[string]any{
 				"driver": "orm",
-				"model":  authmodel.User{},
 			},
 		},
 	})

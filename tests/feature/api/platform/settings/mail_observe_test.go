@@ -5,80 +5,63 @@ import (
 
 	contractsmail "github.com/goravel/framework/contracts/mail"
 
+	"github.com/macrowallets/waas/app/container"
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/mails"
 	appmail "github.com/macrowallets/waas/app/providers/mail"
-	"github.com/macrowallets/waas/app/providers/mailer"
+	"github.com/macrowallets/waas/app/services/settings"
 )
 
-// sendWelcomeObserved publishes the process mail document through the mailer
-// the provider builds, then dials a transport that accepts the message.
-// observe runs after the document is published and before the dial, which is
-// mailer.Hooks.Observe.
+// sendWelcomeObserved sends a welcome mail through the settings mailer, with
+// the bound settings service and the process config, over a transport that
+// accepts the message. observe runs where the dial would: after the send's
+// document is published on the process config and before it is restored.
 func sendWelcomeObserved(observe func()) error {
-	config := mailer.NewConfig(mailer.Hooks{
-		Baseline: appfacades.MailBaseline,
-		Write:    appfacades.WriteMailConfig,
-		Restore:  appfacades.RestoreMailDocument,
-		Observe:  observe,
-		SMTP:     observedSMTP,
-		From:     observedFrom,
+	return sendWelcomeObservedWith(container.MustMake[*settings.Service](), observe)
+}
+
+// sendWelcomeObservedWith is sendWelcomeObserved with another settings reader.
+func sendWelcomeObservedWith(reader appmail.Settings, observe func()) error {
+	mailer := appmail.NewMailer(appmail.MailerDeps{
+		Transport: observingMail{observe: observe},
+		Config:    appfacades.Config(),
+		Settings:  reader,
 	})
-	facade := appmail.NewFacade(appmail.FacadeDeps{
-		Mailer: appmail.NewMailer(appmail.MailerDeps{
-			Config: config,
-			Gate:   appfacades.GateMailSend,
-		}),
-		Inner: quietMail{},
-	})
-	return facade.To([]string{"nobody@example.test"}).Send(&mails.WelcomeMail{To: "nobody@example.test"})
+	return mailer.To([]string{"nobody@example.test"}).Send(&mails.WelcomeMail{To: "nobody@example.test"})
 }
 
-func observedSMTP(ctx context.Context) (mailer.Dial, bool, error) {
-	dial, installed, err := appfacades.ReadMailDial(ctx)
-	if !installed || err != nil {
-		return mailer.Dial{}, installed, err
+// failedSMTPRead is the settings service with a mail_smtp read that fails.
+type failedSMTPRead struct{ appmail.Settings }
+
+func (failedSMTPRead) EffectiveMailSMTP(context.Context) (settings.MailSMTP, error) {
+	return settings.MailSMTP{}, errMailReadFailed
+}
+
+// failedDeliveryRead is the settings service with a mail_delivery read that
+// fails after returning a header.
+type failedDeliveryRead struct{ appmail.Settings }
+
+func (failedDeliveryRead) EffectiveMailDelivery(context.Context) (settings.MailDelivery, error) {
+	return settings.MailDelivery{Address: "replaced@example.test", Name: "Replaced", UseAddress: true, UseName: true}, errMailReadFailed
+}
+
+// observingMail is the transport. Send runs observe and accepts the message.
+type observingMail struct{ observe func() }
+
+func (m observingMail) Attach([]string) contractsmail.Mail { return m }
+func (m observingMail) Bcc([]string) contractsmail.Mail    { return m }
+func (m observingMail) Cc([]string) contractsmail.Mail     { return m }
+func (m observingMail) Content(contractsmail.Content) contractsmail.Mail {
+	return m
+}
+func (m observingMail) From(contractsmail.Address) contractsmail.Mail { return m }
+func (m observingMail) Headers(map[string]string) contractsmail.Mail  { return m }
+func (m observingMail) Queue(...contractsmail.Mailable) error         { return nil }
+func (m observingMail) Send(...contractsmail.Mailable) error {
+	if m.observe != nil {
+		m.observe()
 	}
-	return mailer.Dial{
-		Host:          dial.Host,
-		Port:          dial.Port,
-		Encryption:    dial.Encryption,
-		Username:      dial.Username,
-		Password:      dial.Password,
-		UseHost:       dial.UseHost,
-		UsePort:       dial.UsePort,
-		UseEncryption: dial.UseEncryption,
-		UseUsername:   dial.UseUsername,
-		UsePassword:   dial.UsePassword,
-	}, true, nil
+	return nil
 }
-
-func observedFrom(ctx context.Context) (mailer.From, bool, error) {
-	from, installed, err := appfacades.ReadMailFrom(ctx)
-	if !installed || err != nil {
-		return mailer.From{}, installed, err
-	}
-	return mailer.From{
-		Address:    from.Address,
-		Name:       from.Name,
-		UseAddress: from.UseAddress,
-		UseName:    from.UseName,
-	}, true, nil
-}
-
-// quietMail is the inner transport. Send accepts the message. The published
-// document is already visible to Observe before Send runs.
-type quietMail struct{}
-
-func (quietMail) Attach([]string) contractsmail.Mail { return quietMail{} }
-func (quietMail) Bcc([]string) contractsmail.Mail    { return quietMail{} }
-func (quietMail) Cc([]string) contractsmail.Mail     { return quietMail{} }
-func (quietMail) Content(contractsmail.Content) contractsmail.Mail {
-	return quietMail{}
-}
-func (quietMail) From(contractsmail.Address) contractsmail.Mail { return quietMail{} }
-func (quietMail) Headers(map[string]string) contractsmail.Mail  { return quietMail{} }
-func (quietMail) Queue(...contractsmail.Mailable) error         { return nil }
-func (quietMail) Send(...contractsmail.Mailable) error          { return nil }
-func (quietMail) Subject(string) contractsmail.Mail             { return quietMail{} }
-func (quietMail) To([]string) contractsmail.Mail                { return quietMail{} }
+func (m observingMail) Subject(string) contractsmail.Mail { return m }
+func (m observingMail) To([]string) contractsmail.Mail    { return m }

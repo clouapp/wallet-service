@@ -58,7 +58,7 @@ func packageCalls(file *SourceFile, importPath, defaultName string) map[string]i
 		if !ok {
 			return true
 		}
-		selector, ok := call.Fun.(*ast.SelectorExpr)
+		selector, ok := uninstantiated(call.Fun).(*ast.SelectorExpr)
 		if !ok {
 			return true
 		}
@@ -68,6 +68,19 @@ func packageCalls(file *SourceFile, importPath, defaultName string) map[string]i
 		return true
 	})
 	return calls
+}
+
+// uninstantiated strips the type arguments of a generic call, so
+// container.MustMake[*T]() counts as a call of container.MustMake.
+func uninstantiated(fun ast.Expr) ast.Expr {
+	switch typed := fun.(type) {
+	case *ast.IndexExpr:
+		return typed.X
+	case *ast.IndexListExpr:
+		return typed.X
+	default:
+		return fun
+	}
 }
 
 // chainedCalls counts calls of the form <x>.<outer>().<method>(...) per method,

@@ -22,27 +22,47 @@ today and has a fix tracked elsewhere. Do not read either as permission.
   Deploy (SAM `template.yaml`, EventBridge, the Lambda modes) is out of scope for any
   reorganization: `main.go` only has to keep compiling. — guarded by `go build ./...`.
 - Goravel is assembled in `bootstrap/app.go` (`foundation.Setup()…Create()`): migrations,
-  providers, seeders, jobs, commands, events, rules and config. Config is code in
+  providers, seeders (`WithSeeders(seeders.All)`, from `database/seeders`), jobs, commands,
+  rules, config, the global middleware chain, routing and the Gate callback. There is no
+  `WithEvents` (the app has no events or listeners). The lists live in the skeleton's helper
+  files (`bootstrap/migrations.go`, `providers.go`, `commands.go`, `jobs.go`, `rules.go`),
+  which `artisan make:migration|provider|command|job|rule` append to. Config is code in
   `config/*.go`, read from env through `config/env.go`. — UNGUARDED; known exception:
   `app/models/chain_rpc_url.go` resolves `${ENV}` placeholders in RPC URLs with
   `os.LookupEnv`.
-- Services are built once in `app/providers/vault_container.go` and reached through
-  `app/container` (the "god struct", being replaced by typed bindings — see
-  `.ai/guidelines/controllers-and-services.md`). — UNGUARDED.
+- Boot refuses an empty `JWT_SECRET`, an `APP_KEY` that is not 32 bytes
+  (`config.ValidateSecrets`, called from `bootstrap.checkBootConfig`) and an unparsable
+  `TRUSTED_PROXIES`, except that `artisan key:generate` and `artisan jwt:secret`, which
+  create the first two, skip the secret check. A `JWT_SECRET` under 32 characters only
+  warns. — guarded by `config/boot_check_test.go`.
+- The cache has no `cache.prefix` (`config/cache.go` does not set it), so the framework
+  builds every key as `"" + ":" + key`: every cache key starts with `:` (locks, counters,
+  rate limits, settings,). Leave it: setting a prefix renames every key and
+  resets the locks and counters in flight.
+- Each service provider binds its own services under their type
+  (`app.Singleton((*T)(nil), …)`), and each singleton is built once, on first
+  resolution, by resolving its dependencies the same way. Everything else gets its
+  dependencies through its constructor: `container.Make`/`MustMake` (the typed
+  `facades.App().Make`) appear only in the composition root — `bootstrap/`,
+  `routes/`, `app/providers/` and `main.go`. There is no container struct (see
+  `.ai/guidelines/controllers-and-services.md`). — guarded by
+  `TestComposition_Root_ResolvesEveryTypedBindingToOneInstance`
+  (`bootstrap/composition_root_test.go`) and
+  `TestNo_Service_LocatorOutsideTheCompositionRoot` (`tests/architecture`). `app/container`
+  holds only the typed `Make[T]`/`MustMake[T]` helpers.
 
 ### 2. Layers point down
 
 `routes → http (controllers, middleware, requests) → services → repositories → models`,
 with adapters to external systems beside the repositories and `app/models` importing
-nothing of the module. — guarded by `tests/architecture` (`TestImportDirection`,
-`TestLayerCoversEveryZoneOfTheRepository` and the checks beside them). With
+nothing of the module. — guarded by `tests/architecture` (`TestImports_Import_Direction`,
+`TestLayer_Covers_EveryZoneOfTheRepository` and the checks beside them). With
 `ARCH_MODE` unset the checks stay in report mode: they log findings against
-`tests/architecture/testdata/baseline/` and do not fail. `make test` sets
-`ARCH_MODE=ratchet`, so a violation absent from that baseline fails and a known
-one does not. `ARCH_MODE=enforce` fails on every violation and is not the
-default. A check moves to enforce when the migration phase that owns it empties
-its baseline. The checks read source and the route table; they do not need a
-database.
+`tests/architecture/testdata/baseline/` and do not fail. `make test-unit` (and so
+`make test`) sets `ARCH_MODE=ratchet`, so a violation absent from that baseline fails
+and a known one does not. `ARCH_MODE=enforce` fails on every violation and is not the
+default. A check moves to enforce when its baseline is empty. The checks read source
+and the route table; they do not need a database.
 Known violations include `app/models → app/services/mpc` and `config → app/models`.
 
 ### 3. Two surfaces, never mixed
@@ -57,16 +77,16 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 - Every route outside the public, guest (`/v1/auth/*` session creation) and
   inbound-webhook rows is behind exactly one auth middleware: `middleware.SessionAuth()`
   on `/v1`, `middleware.APITokenAuth()` on `/api/v1`. — guarded by
-  `tests/architecture/routesecurity` (`TestEveryRouteIsInTheRouteTable`: closed table of
+  `tests/architecture/routesecurity` (`TestEvery_Route_IsInTheRouteTable`: closed table of
   every served route and its guard, both directions;
-  `TestGuardChainMatchesRegistration`: the ordered guard chain on that row,
+  `TestGuard_Chain_MatchesRegistration`: the ordered guard chain on that row,
   checked against the middleware the route files register, failing on any
   unlisted route or a chain that does not match; and
-  `TestAuthenticatedRoutesRefuseAnAnonymousCaller`). The baseline is empty, so
+  `TestAuthenticated_Routes_RefuseAnAnonymousCaller`). The baseline is empty, so
   ratchet fails on any mismatch. A new route needs a row in `routeTable`.
 - External integrators (Markets) consume `/api/v1`; the front consumes `/v1`. A change of
   status, error shape or success shape on either is a contract change, decided first and
-  recorded in `.ai/guidelines/http-error-contract.md`. — guarded by `TestHTTPContract`
+  recorded in `.ai/guidelines/http-error-contract.md`. — guarded by `TestContract_HTTP_Contract`
   (`tests/contract`): a fixed scenario over both surfaces (success and error paths, no
   chain call, no fund movement) whose method, path, status, content type and raw body
   (uuids, timestamps and tokens normalized) must match `tests/contract/testdata/http_contract.txt`
@@ -74,40 +94,56 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 
 ### 4. Authentication
 
-- **Session (dashboard):** Goravel JWT guard (`config/auth.go`, `config/jwt.go`), refresh
-  token rotation in `refresh_tokens`, optional TOTP second factor. — partly guarded by
-  `app/http/controllers/auth_controller_test.go`.
-  **KNOWN VIOLATION** (fixes in progress on their own branches, alignment plan §0.4):
-  S1 — the pre-2FA `partial_token` is a full session JWT; S2 — login TOTP is checked
-  against the still-encrypted secret; S4 — password change/reset and TOTP disable do not
-  revoke sessions; S5 — `users.status` is not enforced.
-- **API token (external):** a JWT minted by `middleware.MintAPIToken` (`sub: api_token`,
+- **Session (dashboard and platform):** Goravel JWT guard (`config/auth.go`, `config/jwt.go`),
+  refresh token rotation in `refresh_tokens`, optional TOTP second factor. A login with TOTP
+  on answers a `challenge_token` (not a session JWT; it is spent on use and void after a
+  revocation); the TOTP secret is stored sealed (`enc:v1:`) and opened before the check; a
+  user must be `active` and not suspended for `SessionAuth` to admit the token. — guarded by
+  `tests/feature/api/dashboard/auth` (`TestTwo_Factor_LoginSuite`, `TestAccess_Status_Suite`,
+  `TestSession_Revocation_Suite`) and `tests/feature/api/dashboard/users` (`TestMfa_Seal_Suite`).
+- **Ending a session:** logout, password change or reset, TOTP disable and a platform revoke all go
+  through `auth.SessionRevoker.RevokeAll`: it moves `users.sessions_revoked_at` to the start of the
+  next second and deletes the refresh tokens. `SessionAuth` refuses a token issued before the
+  watermark (401 `session revoked`) and a new sign-in waits until the watermark has passed.
+  **Logout therefore ends every session of the user**, on every device, immediately (the access
+  tokens of the other devices stop working at once instead of living up to 15 minutes), and writes
+  `user.sessions_revoked` to the activity log. — guarded by `TestSession_Revocation_Suite`
+  and `app/services/auth/session_revocation_test.go`.
+- **Rate limits:** `middleware.Throttle` on `/v1/auth/{login,register,2fa/verify,refresh,recover,
+  recover/confirm,invites/accept}`, on the whole `/api/v1` group and on `gas-check`; over the limit is
+  429 `too_many_requests` with `Retry-After`. Keys use `middleware.ClientIP`, which trusts
+  `X-Forwarded-For` only from `TRUSTED_PROXIES`; the limits are `THROTTLE_*` (attempts per minute,
+  `0` turns one off) and the counters live in the Cache (Redis); a cache failure lets the request
+  through. Limiters and defaults: `.ai/guidelines/http-error-contract.md`. — guarded by
+  `app/http/middleware/throttle_test.go` and the contract steps 69 and 70.
+- **API token (external):** a JWT minted by `apitoken.Service.Mint` (claims and signing in
+  `apitoken.Sign`; test fixtures sign through `middleware.MintAPIToken`) (`sub: api_token`,
   `jti` = `access_tokens` row, `account_id` claim). The row must exist and be active. When
   the token carries `require_signature`, an `X-Signature` HMAC over the body is mandatory
-  and checked before the body is read. — guarded by `TestAPITokenAuthHMACSuite`
-  (`app/http/middleware/api_token_auth_test.go`) and `criticalEndpointsSuite`
-  (`app/http/controllers/critical_api_endpoints_test.go`).
+  and checked before the body is read. — guarded by `TestAPI_Token_AuthHMACSuite`
+  (`app/http/middleware/api_token_auth_test.go`) and `TestCritical_Endpoints_Suite`
+  (`tests/feature/api/external/critical/critical_api_endpoints_test.go`).
   `permissions` is a JSON array of the token catalog. `APIScope` enforces it on
   the routes that catalog names; a blank store keeps the previous access.
   `ip_cidr` is enforced against `ClientIP`; a blank allowlist keeps the previous
   access. `spending_limit` is a per-token daily USD cap enforced in
   `withdraw.Service`; a blank cap leaves withdrawal behavior unchanged. A newly
   minted token stores `sha256` of the random secret. — guarded by
-  `TestAPITokenIP`, `app/http/middleware/api_scope_test.go`, and
+  `TestAPI_Token_IP`, `app/http/middleware/api_scope_test.go`, and
   `app/policies/api_token_permissions_test.go`.
   API tokens are account-owned. Suspending a member leaves the tokens that
   member minted. The list shows `created_by`. An owner or admin with
   `tokens.write` revokes one token. Removing the member deletes the tokens
   that member minted for that account. — guarded by
-  `TestSuspend_KeepsMintedTokensAndBlocksMembership` and
-  `TestRemove_RevokesTokensCreatedByTheMember`
-  (`app/http/controllers/account_members_test.go`).
+  `TestSuspend_Keeps_MintedTokensAndBlocksMembership` and
+  `TestRemove_Revokes_TokensCreatedByTheMember`
+  (`tests/feature/api/dashboard/accounts/account_members_test.go`).
 
 ### 5. Scope: actor → account → wallet
 
 - An API token acts only inside its own account. A wallet of another account answers
   **404** on the external API (the id is never confirmed). — guarded by
-  `TestAPIWalletContextSuite` (`app/http/middleware/api_wallet_context_test.go`).
+  `TestAPI_Wallet_ContextSuite` (`app/http/middleware/api_wallet_context_test.go`).
 - On the dashboard the account comes from `X-Account-Id` (`AccountHeader`) or
   `{accountId}` (`AccountContext`) and must match a membership of the user; the wallet
   (`WalletContext`) must be reachable through the account membership or a `wallet_users`
@@ -115,12 +151,14 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 - The account or wallet id comes from the path, the header or the token — never from the
   body. — UNGUARDED.
 - An account is `test` or `prod` (`accounts.environment`); a test account touches only
-  testnet chains and a prod account only mainnet chains. Today the check is spread over
-  handlers (`ctx.Value("account_environment")`). — UNGUARDED.
-- **KNOWN VIOLATION** S3/S5/S6: mutating wallet handlers (withdraw, consolidate, generate
-  address, create wallet…) check membership only, not a permission; suspended
-  memberships and frozen/archived accounts are not refused. The permission of each
-  handler is a product decision (`.ai/guidelines/authorization.md`).
+  testnet chains and a prod account only mainnet chains (`requestctx.AccountEnvironment`
+  and the chains service). — UNGUARDED.
+- A frozen or archived account refuses every mutation with 403 `account_frozen`
+  (`middleware` account status check, `policies.AccountAllowsRequest`); reads stay allowed.
+  — guarded by the `*_gate_test.go` suites in `tests/feature/api/dashboard/accounts`.
+- **KNOWN VIOLATION** S3: some mutating wallet handlers (withdraw, consolidate, generate
+  address, activate wallet…) check membership only, not a permission on the dashboard. The
+  permission of each handler is a product decision (`.ai/guidelines/authorization.md`).
 
 ### 6. Custody
 
@@ -128,66 +166,96 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   customer's passphrase (Argon2id → AES-GCM) on the wallet row; share B is the service's,
   in **AWS Secrets Manager** (LocalStack locally), referenced by `MPCSecretARN` — its
   value is never in the database. — guarded by `app/services/mpc/*_test.go`
-  (`TestEncryptDecryptRoundTrip`, `TestDecryptWrongPassphrase`, keygen and signing tests)
-  and `TestValidateExistingSeedWalletSecret*` (`database/seeds`).
+  (`TestEncrypt_Decrypt_RoundTrip`, `TestDecrypt_Wrong_Passphrase`, keygen and signing tests)
+  and `TestValidate_Existing_SeedWalletSecret*` (`database/seeders`).
 - Key material (shares, passphrases, derived keys) is never returned after the one-time
   recovery material at creation, never logged, queued or cached. — guarded by
-  `TestWalletRecoveryMaterialSuite` (`app/http/controllers/wallets_recovery_material_test.go`).
+  `TestWallet_Recovery_MaterialSuite` (`tests/feature/api/external/wallets/wallets_recovery_material_test.go`).
 - Signing order (build → policy checks → fetch share B → combine → sign → broadcast →
   persist) is not changed "in passing". Any change to `mpc`, `wallet`, `withdraw` or
   `sweep` runs the testnet e2e (`scripts/e2e`, `tools/e2e-funder`: SOL, BTC, ETH, POL).
 - `facades.Crypt()` (`APP_KEY`) seals TOTP secrets, RPC URLs and ingest signing secrets at
-  rest; it is not the MPC share envelope. **KNOWN VIOLATION** S11: `webhook_configs.secret`
-  is plain text.
+  rest; it is not the MPC share envelope. One write format, `settings.Seal` (`enc:v1:` +
+  the Crypt envelope); `settings.OpenStored` also opens the bare envelope that older
+  `chains.rpc_url` rows hold. — guarded by `app/services/settings/seal_legacy_test.go`.
+  **KNOWN VIOLATION** S11: `webhook_configs.secret` is plain text.
 
 ### 7. Queues and workers
 
 | Mechanism | Carries | Consumer |
 |---|---|---|
-| Goravel queue, `database` connection, queue `blockchain` (`config/queue.go`) | wallet refresh / reconcile jobs (`app/jobs`) | the framework queue runner |
-| AWS SQS (`app/services/queue`) | outbound webhook delivery | `webhook_worker` Lambda |
-| `app/services/localworkers` | local stand-in for `confirmation_tracker` and `webhook_worker` (and optional deposit scan) | started from `main.go` in local mode only |
+| Goravel queue, `sync` connection (`QUEUE_CONNECTION`, default `sync`; `config/queue.go`) | credential mail (`jobs.SendCredentialMailJob`, always `DispatchSync`) | runs in the dispatching process. The `database` connection (queue `blockchain`) is configured but nothing runs `queue:work` and no job uses it |
+| AWS SQS (`app/adapters/queue/sqs`, port `queue.Sender`) | outbound webhook delivery | `webhook_worker` Lambda |
+| `app/services/localworkers` | local stand-in for `confirmation_tracker` and `webhook_worker`, and the wallet balance refresh loop (and optional deposit scan) | started from `main.go` in local mode only |
 
 - Local webhook delivery from the outbox runs only when no SQS webhook queue is
   configured, so a message is never drained twice. — guarded by
-  `TestStart_SkipsOutboxWhenAQueueDelivers` (`app/services/localworkers`).
-- No job payload carries a credential (tokens, passphrases, shares). — UNGUARDED.
+  `TestStart_Skips_OutboxWhenAQueueDelivers` (`app/services/localworkers`) and
+  `TestOne_Consumer_PerQueue` (`tests/architecture`).
+- No job payload carries a credential (tokens, passphrases, shares): a credential mail job
+  carries `(subject_id, purpose)` and mints the token when it runs. — guarded by
+  `app/jobs/send_credential_mail_test.go` and `TestJob_Payload_IsDecodedNotPositional`.
+- The app registers no events or listeners; add an event only together with a listener.
 
 ### 8. Database and migrations
 
 - Schema changes are Goravel migrations in `database/migrations/`, numbered
-  `000000000NNNN0_<name>.go`, registered in `migrations.All()` (`bootstrap/migrations.go`).
-  A migration never edits an applied one; it adds the next number. — guarded by the
-  migration tests beside them (e.g. `non_negative_amounts_test.go`).
+  `000000000NNNN0_<name>.go`, one migration per file, registered in the literal list of
+  `Migrations()` in `bootstrap/migrations.go`. A migration never edits an applied one; it adds
+  the next number. — guarded by the migration tests in `tests/migrations` (e.g.
+  `non_negative_amounts_test.go`).
+- A NEW migration uses the schema builder, `facades.Schema()` from `app/facades`
+  (`Create`, `Table`, `DropIfExists`), unless it needs a Postgres feature the builder does not
+  express (CHECK or partial-unique constraints, `USING` casts, enum types, data backfills):
+  then it runs raw SQL. The applied migrations keep their raw SQL; do not rewrite them. A
+  migration imports no app code (`app/models`, `app/services`, `pkg/*`): copy what it needs
+  into the migration, so a later change there cannot change what a fresh database gets.
+  `artisan make:migration` creates the file and appends it to `Migrations()`, but the
+  framework drops the host and organisation of the module path, so the generated import
+  reads `waas/app/facades`: change it to `github.com/macrowallets/waas/app/facades`.
 - Amounts are base-unit integers/strings (`pkg/amount`, `numeric` columns), never floats,
-  and never negative. — guarded by `TestEnforceNonNegativeAmounts*`.
-- Seed data is test-only (`database/seeds`, `docs/DEV_SEED_DATA.md`).
+  and never negative. — guarded by `TestEnforce_Non_NegativeAmounts*`.
+- Seed data is test-only (`database/seeders`, registered by `WithSeeders(seeders.All)`;
+  `docs/DEV_SEED_DATA.md`). Only `DatabaseSeeder` is registered, so `db:seed --seeder=ChainSeeder`
+  is not available. The chain catalog that
+  `chains:add-missing` writes in production is not seed data: it lives in
+  `app/repositories/chaincatalog`.
 
-### 9. Tests never touch live data
+### 9. Tests never touch live data and never share state
 
 - The destructive suite migrates fresh only a dedicated `*_test` database
   (`TEST_DB_DATABASE`, default `vault_unit_test`); `vault` (dev) and `vault_test` (local
   e2e, holds MPC shares that cannot be recreated) are refused. — guarded by
   `tests/feature/support/testenv/environment_test.go`
-  (`TestValidateConfigurationRejectsProtectedDatabases`,
-  `TestApplyDatabaseOverrideToE2EDatabaseIsRefused`).
+  (`TestValidate_Configuration_RejectsProtectedDatabases`,
+  `TestApply_Database_OverrideToE2EDatabaseIsRefused`).
 - Tests use Redis index `REDIS_DB` (15) of `.env.testing`, never the live index 0, and
   never `FLUSHALL`/`FLUSHDB`; keys are namespaced per test. — guarded by
-  `TestTestRedisURLRefusesTheLiveIndexAndBadInput`,
-  `TestTestingEnvironmentFileUsesANonLiveRedisIndex`.
+  `TestValidate_Redis_DatabaseRefusesTheLiveIndexAndBadInput`,
+  `TestTesting_Environment_FileUsesANonLiveRedisIndex`.
+- Every test starts from empty tables: `fixtures.TestDB(t)` (`tests/feature/support/fixtures`)
+  truncates every table but `migrations` before and after the test, and also deletes the settings
+  cache keys (`*settings:*`, in the worker's Redis index) because the settings service caches
+  groups under `settings:platform:<group>` and `settings:account:<uuid>:<group>`, which would
+  outlive the truncated rows and leak a value into the next test. A test that changes the schema
+  uses `fixtures.TestDBFreshSchema(t)`. — guarded by `tests/feature/support/fixtures/reset_test.go`.
 
 ### 10. Settings
 
 - Account settings are the registry in `app/services/settings`. Account-managed
   groups are `account_security` and `account_webhooks`. `account_sweep_limits`
-  is platform-managed and inherited. The platform group on this branch is
-  `deposit_scan`. A secret (the webhook signing secret) is written and then
-  redacted on read.
+  is platform-managed and inherited. The platform groups (`groups_platform.go`) are
+  `deposit_scan`, `webhook_delivery`, `sweep_limits`, the mail groups (`mail_smtp`, `mail_delivery`,
+  `mail_ses`, `mail_mailgun`, `mail_resend`, `mail_postmark`), the price groups (`price_lookup`,
+  `price_coingecko`, `price_coinmarketcap`, `price_coinapi`) and the provider groups
+  (`provider_alchemy`, `provider_helius`, `provider_quicknode`, `provider_etherscan`). A secret
+  (a signing secret, an API key, a password) is written sealed and redacted on read
+  (`<field>Set` tells whether one is stored).
 - `GET /v1/accounts/{accountId}/settings` is `settings.view` (owner, admin,
   auditor). `PATCH /v1/accounts/{accountId}/settings/{group}` is
   `settings.update` (owner, admin). The user role holds neither. The service
   asks `policies.MayViewSettings` and `policies.MayUpdateSettings`. — guarded by
-  `TestSettingsPermissionsFollowTheAccountRoles`.
+  `TestSettings_Permissions_FollowTheAccountRoles`.
 - `POST /v1/accounts/{accountId}/settings/sections/{section}/reset` deletes
   the stored rows of every account-managed group on the page and writes
   `settings.section_reset` with the group and the field names.
@@ -212,7 +280,8 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 - Account flags reuse the settings permissions: list is `settings.view`, write
   is `settings.update`. An unknown key on write is 404 before the permission
   check. `GET|PATCH /v1/platform/features` is a platform admin
-  (`platform_admins`), not an account owner. — guarded by
+  (`platform_admins`), not an account owner; the whole `/v1/platform` group sits
+  behind `middleware.PlatformAdmin`. — guarded by
   `app/services/features/service_test.go` and `gate_test.go`.
 - `withdrawals-enabled`, `sweep-enabled`, `deposit-scan-enabled`,
   `wallet-creation-enabled`, and `webhook-delivery-enabled` default to on.
@@ -240,11 +309,11 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   tests beside it.
 - `models.AccountRoleOutranks` may be called only from `app/policies`. The
   function is not declared on this branch. — guarded by
-  `TestOnlyPoliciesCallAccountRoleOutranks` (`tests/architecture`).
+  `TestOnly_Policies_CallAccountRoleOutranks` (`tests/architecture`).
 - The platform pivot tables `model_has_roles`, `role_has_permissions`, and
   `model_has_permissions` are not on this branch. Only `app/policies` may read
   them. A migration may create them. — guarded by
-  `TestOnlyPoliciesReadRBACPivots`.
+  `TestOnly_Policies_ReadRBACPivots`.
 - Dashboard permissions decided on this branch: `tokens.read` / `tokens.write`
   on `/v1/accounts/{accountId}/tokens`, `settings.view` / `settings.update`,
   `activity.read` on `GET /v1/accounts/{accountId}/activity` (owner, admin,
@@ -253,7 +322,9 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   refuses a permission the creator does not hold.
 - `GET /v1/platform/activity` is a platform admin, the same gate as platform
   flags. There is no `audit.view` permission row on this branch.
-- Invites, user suspension, and the session watermark are not on this branch.
+- Invites (`account_invites`), user suspension (`users.suspended_at`) and the session
+  watermark (`users.sessions_revoked_at`) are on this branch: see §4 and
+  `.ai/guidelines/identity-and-scope.md`.
 
 ## Running it
 
@@ -295,18 +366,19 @@ snapshots in the `localstack_data` volume; the snapshot key lives in
 | Path | Holds |
 |---|---|
 | `main.go` | boot, Lambda mode switch, local server |
-| `bootstrap/` | Goravel setup: providers, migrations, rules |
+| `bootstrap/` | Goravel setup (`app.go`) and the lists it takes: providers, migrations, commands, jobs, rules |
 | `config/` | config as code, read from env |
-| `routes/` | `admin.go` (`/v1`), `api.go` (`/api/v1`), `webhooks.go` (ingest), `docs.go` (health, Swagger) |
-| `app/http/` | `controllers`, `middleware`, `requests` (FormRequests), `pagination` |
-| `app/services/` | business logic and, for now, the chain/provider/AWS adapters |
-| `app/repositories/`, `app/models/` | persistence and schema types |
-| `app/policies/`, `app/providers/` | Gate policies; service providers and the container wiring |
-| `app/console/`, `app/jobs/`, `app/events/`, `app/listeners/`, `app/mails/`, `app/rules/` | artisan commands, queue jobs, events, mail, validation rules |
-| `database/` | migrations, seeders, seed logic |
-| `pkg/` | `amount`, `types`, `httpclient` |
-| `tests/` | `feature/support` (suite, docker reuse, fixtures, request signing), hand-written `mocks`, `architecture` (machine-checked rules), `contract` (HTTP contract snapshot) |
-| `docs/` | Swagger output and design notes (`GORAVEL_INTEGRATION.md`, `INTEGRATION_STATUS.md` are historical) |
+| `routes/` | `admin.go` (`/v1`, `/v1/platform`), `api.go` (`/api/v1`), `webhooks.go` (ingest), `docs.go` (health, Swagger), `platform_refusals.go` |
+| `app/http/` | `controllers/{dashboard,external,platform,ingest,health}/<feature>/` plus the handlers both surfaces share, `middleware` (+ `requestctx`), `requests` (FormRequests), `responses` (failure writers), `resources` (wire shapes), `pagination` |
+| `app/services/` | business logic, one package per subject (`wallet`, `withdraw`, `sweep`, `account`, `auth`, `settings`, `features`, …); `chain`, `mpc`, `ingest` also hold chain/provider code that has not moved to `app/adapters` yet |
+| `app/adapters/` | clients of outside systems: `chain/{evm,bitcoin,solana,tron,xrp,rpc}`, `ingest`, `price`, `blockheight`, `secretsmanager`, `queue/sqs`, `redis`, `webhook` |
+| `app/repositories/`, `app/models/` | persistence (`internal/db` is the query seam) and schema types |
+| `app/policies/`, `app/providers/`, `app/facades/`, `app/container/` | the one arbiter of who may do what (+ Gate abilities); service providers, each binding the services of its domain; typed re-exports of the framework facades; typed `Make`/`MustMake` |
+| `app/console/`, `app/jobs/`, `app/mails/`, `app/rules/` | artisan commands, queue jobs, mail, validation rules (there is no `app/events/`, `app/listeners/` or `app/dtos/`) |
+| `database/` | `migrations/` and `seeders/` (dev seed logic, `DatabaseSeeder`) |
+| `pkg/`, `packages/` | `pkg/`: `amount`, `numeric`, `types`, `httpclient`, `pgerr`, `lifecycle`, `mpcshare`, `e2evault`. `packages/activitylog`: Goravel package (own ServiceProvider, listed in `bootstrap/providers.go`) |
+| `tests/` | `feature/api/<surface>/<feature>` (HTTP suites), `feature/repositories`, `feature/support` (`HTTPSuite`, `fixtures`, `testenv`, `testutil`, `testdb`), `mocks`, `architecture` (machine-checked rules), `contract` (HTTP contract snapshot), `migrations` |
+| `docs/` | Swagger output (`docs.go`, `swagger.json`, `swagger.yaml`, generated), `DEV_SEED_DATA.md`, and design notes (`GORAVEL_INTEGRATION.md`, `INTEGRATION_STATUS.md`, `alignment-decisions.md`, `superpowers/` are historical) |
 
 Everything inside a `.go` file is English.
 
@@ -353,64 +425,6 @@ go run . artisan wallets:export-keys --all      # every wallet; never the defaul
 
 Passwords are typed on the terminal only (zip password twice, ≥16 chars); never flags/env. `APP_ENV=production` needs `--allow-production` plus a typed confirmation. Open the zip with 7-Zip/WinZip (not Info-ZIP `unzip`). Solana genesis keys are raw scalars (not importable in Phantom); child keys are.
 
-## Project Structure
-
-```
-back/
-├── main.go                  # Entry point: Goravel boot → Lambda or local HTTP
-├── bootstrap/               # Goravel Setup (WithProviders, WithSeeders, WithRouting, WithConfig)
-├── Makefile                 # Dev, build, test, deploy commands
-├── docker-compose.yml       # Postgres, Redis, LocalStack
-├── .env.dev.example         # Dev env template
-│
-├── config/
-│   ├── app.go               # Goravel config: DB, cache, auth, mail, HTTP driver
-│   └── security.go          # Security config
-│
-├── routes/
-│   └── api.go               # All route definitions (Goravel routing)
-│
-├── app/
-│   ├── container/           # DI container (boots all services)
-│   ├── providers/           # Goravel service providers (migrations, auth)
-│   ├── models/              # Goravel ORM models (embed orm.Model)
-│   ├── repositories/        # Database queries via facades.Orm().Query()
-│   ├── http/
-│   │   ├── controllers/     # HTTP handlers + Swagger annotations
-│   │   ├── middleware/       # Session auth, API token auth, CORS, UTXO-only, etc.
-│   │   ├── pagination/      # Pagination helpers
-│   │   └── requests/        # Request validation DTOs
-│   ├── services/
-│   │   ├── account/         # Account management
-│   │   ├── auth/            # Auth (register, login, 2FA, JWT)
-│   │   ├── blockheight/     # Block height tracking
-│   │   ├── chain/           # Blockchain adapters (EVM, Solana, Bitcoin)
-│   │   ├── deposit/         # Deposit scanning + confirmation tracking
-│   │   ├── ingest/          # Webhook ingest from chain providers
-│   │   ├── mpc/             # Multi-party computation
-│   │   ├── queue/           # SQS client
-│   │   ├── wallet/          # Wallet + address derivation
-│   │   ├── webhook/         # Webhook delivery
-│   │   ├── webhooksync/     # Webhook reconciliation
-│   │   └── withdraw/        # Withdrawal execution
-│   ├── mails/               # Goravel mail templates
-│   └── policies/            # Authorization policies
-│
-├── database/
-│   ├── migrations/          # Goravel schema migrations (*.go)
-│   ├── seeders/             # Artisan seeders (DatabaseSeeder → `db:seed`)
-│   └── seeds/               # Seed logic (chains, users, wallets, …)
-│
-├── pkg/
-│   ├── types/               # Shared types (WebhookMessage, etc.)
-│   ├── security/            # Input sanitization
-│   ├── pyjson/              # Python-compatible JSON (ledger/snapshot formats)
-│   └── e2evault/            # Verified wallet passphrases from the e2e vault
-├── docs/                    # Swagger specs + design docs
-├── tools/                   # Standalone binaries: macro-e2e, localstack-secrets-snapshot
-└── tests/                   # Mocks + test utilities
-```
-
 ## Tests
 
 ```bash
@@ -420,13 +434,14 @@ make test-integration TEST_PARALLEL=6 TEST_FLAGS=-v
 make test-integration TEST_FLAGS='-run TestWalletRepository'
 ```
 
-- Unit vs integration is decided per package from its test imports (`go list`), no build tags: a package is integration when its tests import `tests/testenv`, `tests/testutil`, `tests` or `bootstrap`.
-- `mocks.TestDB(t)` migrates the schema fresh once per test binary (a worker clone already is), then truncates every table but `migrations` before and after each test. Tests that run migrations up/down use `mocks.TestDBFreshSchema(t)` (fresh schema before and after).
-- `go run ./tools/testdb prepare | drop-clones` are the template/cleanup steps `make test-integration` runs; both refuse names outside `vault_unit_test*`.
+- Unit vs integration is decided per package from its test imports (`go list`), no build tags: a package is integration when its tests import `tests/feature/support/testenv`, `tests/feature/support/testutil`, `tests` or `bootstrap`.
+- `fixtures.TestDB(t)` (`tests/feature/support/fixtures`) migrates the schema fresh once per test binary (a worker clone already is), then truncates every table but `migrations` before and after each test and deletes the settings cache keys (`*settings:*`) that survive the rows. Tests that run migrations up/down use `fixtures.TestDBFreshSchema(t)` (fresh schema before and after). HTTP suites embed `support.HTTPSuite`; unreachable endpoints use `testutil.ClosedLocalURL`.
+- `go run ./tests/feature/support/testdb prepare | drop-clones` are the template/cleanup steps `make test-integration` runs; both refuse names outside `vault_unit_test*`.
 - Running `go test ./app/repositories` directly still works on `vault_unit_test` itself (no clone; take the lock with `flock ~/.local/state/macro-e2e/locks/vault_unit_test.lock …` when another run may be active).
 - `TEST_TIMEOUT` (default 30m) is a safety net per `go test` invocation.
 - Timings on the dev machine: `make test` ~2.5 min (was ~35 min with `-p 1` and `migrate:fresh` twice per test); `test-unit` ~1.5 min (mostly `app/services/mpc` keygen), `test-integration` ~40 s with 6 workers, ~1.7 min with `TEST_PARALLEL=1`.
 - Unreachable endpoints in tests use a just-released local port (`testutil.ClosedLocalURL`), not port 1: on WSL2 `127.0.0.1:1` hangs until the client timeout instead of refusing.
+- A worktree that runs the suite next to another run sets its own `TEST_DB_DATABASE` (`vault_unit_test_<name>`) and `TEST_DB_LOCK`, so the template databases and locks do not collide.
 
 ## Migrations
 
@@ -441,36 +456,49 @@ make db-seed            # artisan db:seed
 make migrate-fresh-seed # artisan migrate:fresh --seed
 ```
 
-To create a new migration, add a file in `database/migrations/` implementing `Signature()`, `Up()`, and `Down()`, then register it in the migrations provider.
+To create a new migration, run `go run . artisan make:migration <name>` (or add a file in `database/migrations/` implementing `Signature()`, `Up()`, and `Down()`) and register it in the literal list of `Migrations()` in `bootstrap/migrations.go` (see invariant 8).
 
 See `docs/GORAVEL_INTEGRATION.md` for the full schema builder reference.
 
 ## API Routes
 
-Two auth schemes defined in `routes/api.go`:
+Two auth schemes, in `routes/admin.go` and `routes/api.go`:
 
-- **Dashboard** (`/v1/*`) — JWT session auth via `middleware.SessionAuth`
+- **Dashboard** (`/v1/*`) — JWT session auth via `middleware.SessionAuth`; `/v1/platform/*` additionally behind `middleware.PlatformAdmin`
 - **External API** (`/api/v1/*`) — Bearer token auth via `middleware.APITokenAuth`
 
-Swagger UI: http://localhost:2002/swagger/index.html
+Swagger UI: http://localhost:2002/swagger/index.html. `docs/` is generated: `make swagger-install` (pins `swag@v1.8.12`) then `make swagger-generate`; regenerate in the change that edits an annotation (`.ai/guidelines/http-layer.md`, "Swagger").
 
 ## Key Env Vars
 
 ```bash
 PORT=2002
+APP_KEY=               # required at boot: 32 bytes (make key-generate); seals TOTP secrets, RPC URLs, signing secrets
+JWT_SECRET=            # required at boot, >= 32 chars advised (make jwt-secret)
 DB_HOST=localhost
 DB_PORT=5432
 DB_DATABASE=vault
 DB_USERNAME=vault
 DB_PASSWORD=vault
-REDIS_HOST=localhost
+REDIS_HOST=localhost   # REDIS_HOST/PORT/PASSWORD/DB is the only Redis config (no REDIS_URL)
 REDIS_PORT=6379
+# REDIS_PASSWORD=
+# REDIS_DB=0           # tests use index 15 (.env.testing)
+TRUSTED_PROXIES=127.0.0.1/32,::1/128   # peers whose X-Forwarded-For is believed; set it to the proxy/LB of the deployment
+THROTTLE_LOGIN_PER_IP_EMAIL=10   # per minute; 0 turns the limit off
+THROTTLE_LOGIN_PER_IP=60
+THROTTLE_RECOVER_PER_IP_EMAIL=5
+THROTTLE_AUTH_PER_IP=60
+THROTTLE_API_PER_MINUTE=600      # /api/v1, per API token
 ETH_RPC_URL=https://eth-sepolia.public.blastapi.io
 POLYGON_RPC_URL=https://rpc-amoy.polygon.technology
 SOLANA_RPC_URL=https://api.devnet.solana.com
 BTC_RPC_URL=https://blockstream.info/testnet/api
 API_KEY_SECRET=dev-secret-key-not-for-production
 ```
+
+Redis is the cache driver (rate limits, locks, settings cache, deposit scanner state): the app needs
+it reachable. `.env.dev.example` / `.env.example` carry the full lists, with the throttle variables.
 
 ### Bitcoin-family provider failover
 

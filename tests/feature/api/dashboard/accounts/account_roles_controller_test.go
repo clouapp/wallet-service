@@ -10,6 +10,7 @@ import (
 	contractstestinghttp "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/feature/support"
@@ -80,7 +81,7 @@ func (s *accountRolesSuite) member(role string) (uuid.UUID, string) {
 
 func (s *accountRolesSuite) join(accountID uuid.UUID, role string) string {
 	s.T().Helper()
-	hash, err := authsvc.NewService().HashPassword(accountRolesPassword)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(accountRolesPassword)
 	s.Require().NoError(err)
 	userID := uuid.New()
 	email := role + "-" + userID.String()[:8] + "@example.com"

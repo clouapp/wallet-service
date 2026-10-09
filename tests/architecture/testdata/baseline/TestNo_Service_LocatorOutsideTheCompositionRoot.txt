@@ -1,0 +1,1 @@
+# TestNo_Service_LocatorOutsideTheCompositionRoot: known violations, rewritten by go test ./tests/architecture -update-baseline

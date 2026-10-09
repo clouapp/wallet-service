@@ -11,6 +11,7 @@ import (
 	"github.com/goravel/framework/facades"
 	"github.com/pquerna/otp/totp"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/feature/support"
@@ -282,7 +283,7 @@ func (s *DashboardFundTOTPSuite) assign(userID, walletID uuid.UUID, roles string
 
 func (s *DashboardFundTOTPSuite) insertUser(withTOTP bool) fundCaller {
 	s.T().Helper()
-	svc := authsvc.NewService()
+	svc := authsvc.NewService(appfacades.Hash())
 	userID := uuid.New()
 	email := "fund-" + userID.String()[:8] + "@example.com"
 	hash, err := svc.HashPassword(dashboardFundTOTPPassword)

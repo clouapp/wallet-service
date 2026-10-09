@@ -60,7 +60,12 @@ func (s *WalletUnitTestSuite) TestCreate_Wallet_PassphraseTooShort() {
 	ctx := context.Background()
 	_, err := s.service.CreateWallet(ctx, testAccountID, "eth", "Test", "short")
 	s.Require().Error(err)
-	s.Contains(err.Error(), "passphrase must be at least 12 characters")
+	s.ErrorIs(err, ErrPassphraseTooShort)
+}
+
+func (s *WalletUnitTestSuite) TestCreate_Wallet_AccountRequired() {
+	_, err := s.service.CreateWallet(context.Background(), uuid.Nil, "eth", "Test", testPassphrase)
+	s.ErrorIs(err, ErrAccountRequired)
 }
 
 func (s *WalletUnitTestSuite) TestCreate_Wallet_UnknownChain() {
@@ -73,7 +78,7 @@ func (s *WalletUnitTestSuite) TestGenerate_Address_WalletNotFound() {
 	ctx := context.Background()
 	_, err := s.service.GenerateAddress(ctx, [16]byte{}, "user_123", "test-label", `{}`, "")
 	s.Require().Error(err)
-	s.Contains(err.Error(), "wallet not found")
+	s.ErrorIs(err, ErrWalletNotFound)
 }
 
 // ---------------------------------------------------------------------------

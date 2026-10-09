@@ -3,17 +3,21 @@ package providers
 import (
 	"github.com/goravel/framework/contracts/foundation"
 
-	"github.com/macrowallets/waas/app/listeners"
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/account"
+	"github.com/macrowallets/waas/app/services/apitoken"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/app/services/currencies"
+	"github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/sessions"
+	"github.com/macrowallets/waas/app/services/settings"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
-// IdentityServiceProvider binds the account-and-user repositories and the
-// account service by type. The vault container still holds the same instances
-// for callers that have not moved off container.Get.
+// IdentityServiceProvider binds the account-and-user repositories, the
+// account and user services, and the second-factor and session services by
+// type.
 type IdentityServiceProvider struct{}
 
 func (p *IdentityServiceProvider) Register(app foundation.Application) {
@@ -42,7 +46,28 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 		return repositories.NewTotpRecoveryCodeRepository(nil), nil
 	})
 	app.Singleton((*authsvc.Service)(nil), func(foundation.Application) (any, error) {
-		return authsvc.NewService(), nil
+		return authsvc.NewService(appfacades.Hash()), nil
+	})
+	app.Singleton((*authsvc.SecondFactorVerifier)(nil), func(app foundation.Application) (any, error) {
+		return newSecondFactorVerifier(app)
+	})
+	app.Singleton((*authsvc.TwoFactorLogin)(nil), func(app foundation.Application) (any, error) {
+		return newTwoFactorLogin(app)
+	})
+	app.Singleton((*authsvc.SessionRevoker)(nil), func(app foundation.Application) (any, error) {
+		return newSessionRevoker(app)
+	})
+	app.Singleton((*authsvc.SessionIssuer)(nil), func(app foundation.Application) (any, error) {
+		return newSessionIssuer(app)
+	})
+	app.Singleton((*authsvc.Credentials)(nil), func(app foundation.Application) (any, error) {
+		return newCredentials(app)
+	})
+	app.Singleton((*authsvc.TOTPEnrollment)(nil), func(app foundation.Application) (any, error) {
+		return newTOTPEnrollment(app)
+	})
+	app.Singleton((*authsvc.SignIn)(nil), func(app foundation.Application) (any, error) {
+		return newSignIn(app)
 	})
 	app.Singleton((*usersvc.Service)(nil), func(app foundation.Application) (any, error) {
 		store, err := resolve[*repositories.UserRepository](app)
@@ -65,13 +90,18 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
+		currencyCatalog, err := resolve[*currencies.Service](app)
+		if err != nil {
+			return nil, err
+		}
 		return usersvc.NewService(usersvc.Deps{
-			Store:     store,
-			Recovery:  recovery,
-			Activity:  activityLog,
-			Admins:    admins,
-			Sessions:  revoker,
-			ResetMail: listeners.NewCredentialMailDispatcher(),
+			Store:      store,
+			Recovery:   recovery,
+			Activity:   activityLog,
+			Admins:     admins,
+			Sessions:   revoker,
+			ResetMail:  newCredentialMailDispatcher(app),
+			Currencies: currencyCatalog,
 		}), nil
 	})
 	app.Singleton((*sessions.RefreshTokens)(nil), func(app foundation.Application) (any, error) {
@@ -117,6 +147,18 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
+		passwords, err := resolve[*authsvc.Service](app)
+		if err != nil {
+			return nil, err
+		}
+		limits, err := resolve[*settings.Service](app)
+		if err != nil {
+			return nil, err
+		}
+		flags, err := resolve[*features.Service](app)
+		if err != nil {
+			return nil, err
+		}
 		return account.NewService(account.Deps{
 			Accounts:    accounts,
 			Memberships: memberships,
@@ -124,8 +166,26 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 			Tokens:      tokens,
 			Activity:    activityLog,
 			Invites:     invites,
-			InviteMail:  listeners.NewCredentialMailDispatcher(),
+			InviteMail:  newCredentialMailDispatcher(app),
+			Passwords:   passwords,
+			SweepLimits: limits,
+			Features:    flags,
 		}).WithPlatformAdmins(admins), nil
+	})
+	app.Singleton((*apitoken.Service)(nil), func(app foundation.Application) (any, error) {
+		accounts, err := resolve[*account.Service](app)
+		if err != nil {
+			return nil, err
+		}
+		passwords, err := resolve[*authsvc.Service](app)
+		if err != nil {
+			return nil, err
+		}
+		return apitoken.NewService(apitoken.Deps{
+			Tokens:     accounts,
+			Secrets:    passwords,
+			SigningKey: appfacades.Config().GetString("jwt.secret"),
+		}), nil
 	})
 }
 

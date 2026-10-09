@@ -3,6 +3,7 @@ package users_test
 import (
 	"bytes"
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -139,5 +140,19 @@ func assertSameUserWire(t *testing.T, user *models.User) {
 		}
 	} else if prefs["display_in_fiat"] != *user.Preferences.DisplayInFiat {
 		t.Fatalf("display_in_fiat wire = %v", prefs["display_in_fiat"])
+	}
+}
+
+// TestUser_HoldsOnlyWireFields: the resource has no field for a secret or an
+// internal column, so nothing depends on a json:"-" tag to keep it off the wire.
+func TestUser_HoldsOnlyWireFields(t *testing.T) {
+	t.Parallel()
+
+	typ := reflect.TypeOf(users.User{})
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if field.Tag.Get("json") == "-" || field.Tag.Get("json") == "" {
+			t.Errorf("field %s is not a wire field", field.Name)
+		}
 	}
 }

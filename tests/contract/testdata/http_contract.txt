@@ -159,7 +159,7 @@ content-type: application/json; charset=utf-8
 ### 32 chains: GET /v1/chains
 status: 200
 content-type: application/json; charset=utf-8
-{"data":[{"created_at":"<time>","updated_at":"<time>","id":"eth","name":"Ethereum","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":1,"is_testnet":false,"required_confirmations":12,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1027.png","display_order":1,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"btc","name":"Bitcoin","adapter_type":"bitcoin","native_symbol":"btc","native_decimals":8,"is_testnet":false,"required_confirmations":6,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1.png","display_order":3,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"polygon","name":"Polygon","adapter_type":"evm","native_symbol":"pol","native_decimals":18,"network_id":137,"is_testnet":false,"required_confirmations":128,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/3890.png","display_order":5,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"sol","name":"Solana","adapter_type":"solana","native_symbol":"sol","native_decimals":9,"is_testnet":false,"required_confirmations":1,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/5426.png","display_order":7,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"base","name":"Base","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":8453,"is_testnet":false,"required_confirmations":12,"icon_url":"https://icons.llamao.fi/icons/chains/rsz_base.jpg","display_order":9,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"arbitrum","name":"Arbitrum One","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":42161,"is_testnet":false,"required_confirmations":120,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/11841.png","display_order":11,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"bsc","name":"BNB Smart Chain","adapter_type":"evm","native_symbol":"bnb","native_decimals":18,"network_id":56,"is_testnet":false,"required_confirmations":30,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1839.png","display_order":13,"status":"active"}]}
+{"data":[{"created_at":"<time>","updated_at":"<time>","id":"eth","name":"Ethereum","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":1,"is_testnet":false,"required_confirmations":12,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1027.png","display_order":1,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"btc","name":"Bitcoin","adapter_type":"bitcoin","native_symbol":"btc","native_decimals":8,"is_testnet":false,"required_confirmations":6,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1.png","display_order":3,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"polygon","name":"Polygon","adapter_type":"evm","native_symbol":"pol","native_decimals":18,"network_id":137,"is_testnet":false,"required_confirmations":128,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/3890.png","display_order":5,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"sol","name":"Solana","adapter_type":"solana","native_symbol":"sol","native_decimals":9,"is_testnet":false,"required_confirmations":1,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/5426.png","display_order":7,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"base","name":"Base","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":8453,"is_testnet":false,"required_confirmations":12,"icon_url":"https://icons.llamao.fi/icons/chains/rsz_base.jpg","display_order":9,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"arbitrum","name":"Arbitrum One","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":42161,"is_testnet":false,"required_confirmations":120,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/11841.png","display_order":11,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"bsc","name":"BNB Smart Chain","adapter_type":"evm","native_symbol":"bnb","native_decimals":18,"network_id":56,"is_testnet":false,"required_confirmations":30,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1839.png","display_order":13,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tron","name":"TRON","adapter_type":"tron","native_symbol":"trx","native_decimals":6,"is_testnet":false,"required_confirmations":20,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1958.png","display_order":15,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"ltc","name":"Litecoin","adapter_type":"bitcoin","native_symbol":"ltc","native_decimals":8,"is_testnet":false,"required_confirmations":6,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/2.png","display_order":17,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"xrp","name":"XRP Ledger","adapter_type":"xrp","native_symbol":"xrp","native_decimals":6,"is_testnet":false,"required_confirmations":1,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/52.png","display_order":19,"status":"active"}]}
 
 ### 33 chain: GET /v1/chains/eth
 status: 200
@@ -269,7 +269,7 @@ content-type: application/json; charset=utf-8
 ### 54 external chains: GET /api/v1/chains
 status: 200
 content-type: application/json; charset=utf-8
-{"data":[{"created_at":"<time>","updated_at":"<time>","id":"eth","name":"Ethereum","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":1,"is_testnet":false,"required_confirmations":12,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1027.png","display_order":1,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"teth","name":"Sepolia","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":11155111,"is_testnet":true,"mainnet_chain_id":"eth","required_confirmations":12,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1027.png","display_order":2,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"btc","name":"Bitcoin","adapter_type":"bitcoin","native_symbol":"btc","native_decimals":8,"is_testnet":false,"required_confirmations":6,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1.png","display_order":3,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tbtc","name":"Bitcoin Testnet","adapter_type":"bitcoin","native_symbol":"btc","native_decimals":8,"is_testnet":true,"mainnet_chain_id":"btc","required_confirmations":6,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1.png","display_order":4,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"polygon","name":"Polygon","adapter_type":"evm","native_symbol":"pol","native_decimals":18,"network_id":137,"is_testnet":false,"required_confirmations":128,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/3890.png","display_order":5,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tpolygon","name":"Polygon Amoy","adapter_type":"evm","native_symbol":"pol","native_decimals":18,"network_id":80002,"is_testnet":true,"mainnet_chain_id":"polygon","required_confirmations":128,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/3890.png","display_order":6,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"sol","name":"Solana","adapter_type":"solana","native_symbol":"sol","native_decimals":9,"is_testnet":false,"required_confirmations":1,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/5426.png","display_order":7,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tsol","name":"Solana Devnet","adapter_type":"solana","native_symbol":"sol","native_decimals":9,"is_testnet":true,"mainnet_chain_id":"sol","required_confirmations":1,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/5426.png","display_order":8,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"base","name":"Base","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":8453,"is_testnet":false,"required_confirmations":12,"icon_url":"https://icons.llamao.fi/icons/chains/rsz_base.jpg","display_order":9,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tbase","name":"Base Sepolia","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":84532,"is_testnet":true,"mainnet_chain_id":"base","required_confirmations":12,"icon_url":"https://icons.llamao.fi/icons/chains/rsz_base.jpg","display_order":10,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"arbitrum","name":"Arbitrum One","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":42161,"is_testnet":false,"required_confirmations":120,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/11841.png","display_order":11,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tarbitrum","name":"Arbitrum Sepolia","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":421614,"is_testnet":true,"mainnet_chain_id":"arbitrum","required_confirmations":120,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/11841.png","display_order":12,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"bsc","name":"BNB Smart Chain","adapter_type":"evm","native_symbol":"bnb","native_decimals":18,"network_id":56,"is_testnet":false,"required_confirmations":30,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1839.png","display_order":13,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tbsc","name":"BNB Smart Chain Testnet","adapter_type":"evm","native_symbol":"bnb","native_decimals":18,"network_id":97,"is_testnet":true,"mainnet_chain_id":"bsc","required_confirmations":30,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1839.png","display_order":14,"status":"active"}]}
+{"data":[{"created_at":"<time>","updated_at":"<time>","id":"eth","name":"Ethereum","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":1,"is_testnet":false,"required_confirmations":12,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1027.png","display_order":1,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"teth","name":"Sepolia","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":11155111,"is_testnet":true,"mainnet_chain_id":"eth","required_confirmations":12,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1027.png","display_order":2,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"btc","name":"Bitcoin","adapter_type":"bitcoin","native_symbol":"btc","native_decimals":8,"is_testnet":false,"required_confirmations":6,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1.png","display_order":3,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tbtc","name":"Bitcoin Testnet","adapter_type":"bitcoin","native_symbol":"btc","native_decimals":8,"is_testnet":true,"mainnet_chain_id":"btc","required_confirmations":6,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1.png","display_order":4,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"polygon","name":"Polygon","adapter_type":"evm","native_symbol":"pol","native_decimals":18,"network_id":137,"is_testnet":false,"required_confirmations":128,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/3890.png","display_order":5,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tpolygon","name":"Polygon Amoy","adapter_type":"evm","native_symbol":"pol","native_decimals":18,"network_id":80002,"is_testnet":true,"mainnet_chain_id":"polygon","required_confirmations":128,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/3890.png","display_order":6,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"sol","name":"Solana","adapter_type":"solana","native_symbol":"sol","native_decimals":9,"is_testnet":false,"required_confirmations":1,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/5426.png","display_order":7,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tsol","name":"Solana Devnet","adapter_type":"solana","native_symbol":"sol","native_decimals":9,"is_testnet":true,"mainnet_chain_id":"sol","required_confirmations":1,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/5426.png","display_order":8,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"base","name":"Base","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":8453,"is_testnet":false,"required_confirmations":12,"icon_url":"https://icons.llamao.fi/icons/chains/rsz_base.jpg","display_order":9,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tbase","name":"Base Sepolia","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":84532,"is_testnet":true,"mainnet_chain_id":"base","required_confirmations":12,"icon_url":"https://icons.llamao.fi/icons/chains/rsz_base.jpg","display_order":10,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"arbitrum","name":"Arbitrum One","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":42161,"is_testnet":false,"required_confirmations":120,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/11841.png","display_order":11,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tarbitrum","name":"Arbitrum Sepolia","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":421614,"is_testnet":true,"mainnet_chain_id":"arbitrum","required_confirmations":120,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/11841.png","display_order":12,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"bsc","name":"BNB Smart Chain","adapter_type":"evm","native_symbol":"bnb","native_decimals":18,"network_id":56,"is_testnet":false,"required_confirmations":30,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1839.png","display_order":13,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tbsc","name":"BNB Smart Chain Testnet","adapter_type":"evm","native_symbol":"bnb","native_decimals":18,"network_id":97,"is_testnet":true,"mainnet_chain_id":"bsc","required_confirmations":30,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1839.png","display_order":14,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tron","name":"TRON","adapter_type":"tron","native_symbol":"trx","native_decimals":6,"is_testnet":false,"required_confirmations":20,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1958.png","display_order":15,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"ttron","name":"TRON Nile","adapter_type":"tron","native_symbol":"trx","native_decimals":6,"is_testnet":true,"mainnet_chain_id":"tron","required_confirmations":20,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1958.png","display_order":16,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"ltc","name":"Litecoin","adapter_type":"bitcoin","native_symbol":"ltc","native_decimals":8,"is_testnet":false,"required_confirmations":6,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/2.png","display_order":17,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"tltc","name":"Litecoin Testnet","adapter_type":"bitcoin","native_symbol":"ltc","native_decimals":8,"is_testnet":true,"mainnet_chain_id":"ltc","required_confirmations":6,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/2.png","display_order":18,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"xrp","name":"XRP Ledger","adapter_type":"xrp","native_symbol":"xrp","native_decimals":6,"is_testnet":false,"required_confirmations":1,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/52.png","display_order":19,"status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"txrp","name":"XRP Ledger Testnet","adapter_type":"xrp","native_symbol":"xrp","native_decimals":6,"is_testnet":true,"mainnet_chain_id":"xrp","required_confirmations":1,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/52.png","display_order":20,"status":"active"}]}
 
 ### 55 external wallets: GET /api/v1/wallets
 status: 200
@@ -340,3 +340,131 @@ content-type: application/json; charset=utf-8
 status: 204
 content-type: 
 
+
+### 69 external within the rate limit: GET /api/v1/wallets
+status: 401
+content-type: application/json; charset=utf-8
+{"error":{"code":"unauthorized","message":"invalid or expired api token"}}
+
+### 70 external over the rate limit: GET /api/v1/wallets
+status: 429
+content-type: application/json
+{"error":{"code":"too_many_requests","message":"too many requests"}}
+
+
+### 71 register an admin: POST /v1/auth/register
+status: 201
+content-type: application/json; charset=utf-8
+{"access_token":"<jwt>","account":{"environment":"prod","id":"<uuid:58>","linked_account_id":"<uuid:59>","name":"Member Org","role":"owner","status":"active"},"account_id":"<uuid:58>","accounts":[{"environment":"prod","id":"<uuid:58>","linked_account_id":"<uuid:59>","name":"Member Org","role":"owner","status":"active"},{"environment":"test","id":"<uuid:59>","linked_account_id":"<uuid:58>","name":"Member Org [test]","role":"owner","status":"active"}],"user":{"created_at":"<time>","updated_at":"<time>","id":"<uuid:60>","email":"admin@example.com","full_name":"Contract Member","totp_enabled":false,"status":"active","default_account_id":"<uuid:58>","preferences":{}}}
+
+### 72 register an auditor: POST /v1/auth/register
+status: 201
+content-type: application/json; charset=utf-8
+{"access_token":"<jwt>","account":{"environment":"prod","id":"<uuid:61>","linked_account_id":"<uuid:62>","name":"Member Org","role":"owner","status":"active"},"account_id":"<uuid:61>","accounts":[{"environment":"prod","id":"<uuid:61>","linked_account_id":"<uuid:62>","name":"Member Org","role":"owner","status":"active"},{"environment":"test","id":"<uuid:62>","linked_account_id":"<uuid:61>","name":"Member Org [test]","role":"owner","status":"active"}],"user":{"created_at":"<time>","updated_at":"<time>","id":"<uuid:63>","email":"auditor@example.com","full_name":"Contract Member","totp_enabled":false,"status":"active","default_account_id":"<uuid:61>","preferences":{}}}
+
+### 73 register a user: POST /v1/auth/register
+status: 201
+content-type: application/json; charset=utf-8
+{"access_token":"<jwt>","account":{"environment":"prod","id":"<uuid:64>","linked_account_id":"<uuid:65>","name":"Member Org","role":"owner","status":"active"},"account_id":"<uuid:64>","accounts":[{"environment":"prod","id":"<uuid:64>","linked_account_id":"<uuid:65>","name":"Member Org","role":"owner","status":"active"},{"environment":"test","id":"<uuid:65>","linked_account_id":"<uuid:64>","name":"Member Org [test]","role":"owner","status":"active"}],"user":{"created_at":"<time>","updated_at":"<time>","id":"<uuid:66>","email":"user@example.com","full_name":"Contract Member","totp_enabled":false,"status":"active","default_account_id":"<uuid:64>","preferences":{}}}
+
+### 74 account users as a user: GET /v1/accounts/{{account}}/users
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"forbidden"}}
+
+### 75 update account as an auditor: PATCH /v1/accounts/{{account}}
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"forbidden"}}
+
+### 76 account tokens as a user: GET /v1/accounts/{{account}}/tokens
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"forbidden"}}
+
+### 77 freeze wallet as an auditor: POST /v1/wallets/{{wallet}}/freeze
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"only owners and account admins may freeze wallets"}}
+
+### 78 archive wallet as an auditor: POST /v1/wallets/{{wallet}}/archive
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"only wallet/account owners and admins may archive wallets"}}
+
+### 79 account settings as a user: GET /v1/accounts/{{account}}/settings
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"you do not have permission to view account settings"}}
+
+### 80 update account settings as an auditor: PATCH /v1/accounts/{{account}}/settings/account_security
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"you do not have permission to update account settings"}}
+
+### 81 account activity as a user: GET /v1/accounts/{{account}}/activity
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"you do not have permission to view account activity"}}
+
+### 82 account features as a user: GET /v1/accounts/{{account}}/features
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"you do not have permission to view account features"}}
+
+### 83 platform accounts as an account admin: GET /v1/platform/accounts
+status: 403
+content-type: application/json
+{"error":{"code":"forbidden","message":"you do not have permission to view accounts"}}
+
+
+### 84 activate an active wallet: POST /v1/wallets/{{wallet}}/activate
+status: 409
+content-type: application/json
+{"error":{"code":"conflict","message":"wallet is not pending activation"}}
+
+
+### 85 archive a wallet: POST /v1/wallets/{{archivedWallet}}/archive
+status: 200
+content-type: application/json; charset=utf-8
+{"id":"<uuid:67>","chain":"eth","label":"eth test wallet","address_index":0,"deposit_address_id":"<uuid:68>","account_id":"<uuid:4>","status":"archived","required_approvals":1,"read_model_status":"idle","gas_status":"unseeded","sweep_policy_version":1,"deposit_address":{"created_at":"<time>","updated_at":"<time>","id":"<uuid:68>","wallet_id":"<uuid:67>","chain":"eth","address":"0x2222222222222222222222222222222222222222","derivation_index":0,"external_user_id":"system","metadata":"","is_active":true,"label":"Deposit Address","derivation_type":"genesis"},"created_at":"<time>","updated_at":"<time>","network":"ethereum-mainnet","testnet":false}
+
+### 86 archive an archived wallet: POST /v1/wallets/{{archivedWallet}}/archive
+status: 409
+content-type: application/json; charset=utf-8
+{"error":{"code":"conflict","message":"wallet already archived"}}
+
+### 87 test an undeliverable webhook: POST /v1/wallets/{{wallet}}/webhooks/{{webhook}}/test
+status: 502
+content-type: application/json; charset=utf-8
+{"error":{"code":"provider_unavailable","message":"webhook test delivery failed"}}
+
+### 88 withdraw preview on an unsupported chain: POST /v1/wallets/{{xrpWallet}}/withdraw/preview
+status: 422
+content-type: application/json; charset=utf-8
+{"error":{"code":"unsupported_chain","message":"unsupported_chain"}}
+
+### 89 convert a negative amount: GET /v1/convert?from=USD&to=BRL&amount=-1
+status: 400
+content-type: application/json; charset=utf-8
+{"error":{"code":"invalid_request","message":"amount must be a positive number"}}
+
+### 90 create a scoped account token: POST /v1/accounts/{{account}}/tokens
+status: 201
+content-type: application/json; charset=utf-8
+{"metadata":{"created_at":"<time>","updated_at":"<time>","id":"<uuid:69>","account_id":"<uuid:4>","created_by":"<uuid:60>","name":"contract scoped token","permissions":["transactions.read"],"spending_limit":"{}"},"token":"<jwt>"}
+
+### 91 external wallets outside the token scope: GET /api/v1/wallets
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"forbidden"}}
+
+### 92 external transaction with a malformed id: GET /api/v1/transactions/not-a-uuid
+status: 400
+content-type: application/json; charset=utf-8
+{"error":{"code":"invalid_request","message":"invalid tx id"}}
+
+### 93 external withdraw preview on an unsupported chain: POST /api/v1/wallets/{{xrpWallet}}/withdraw/preview
+status: 422
+content-type: application/json; charset=utf-8
+{"error":{"code":"unsupported_chain","message":"unsupported_chain"}}

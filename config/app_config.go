@@ -1,6 +1,6 @@
 package config
 
-import "github.com/goravel/framework/facades"
+import "github.com/macrowallets/waas/app/facades"
 
 func registerApp() {
 	appEnv := envString("APP_ENV", "local")

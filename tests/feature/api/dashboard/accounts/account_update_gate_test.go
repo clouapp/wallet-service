@@ -9,6 +9,7 @@ import (
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/feature/support"
@@ -56,7 +57,7 @@ func (s *AccountUpdateGateTestSuite) TestAccount_Write_FollowsTheAccountRole() {
 func (s *AccountUpdateGateTestSuite) login(role string, accountID uuid.UUID) string {
 	userID := uuid.New()
 	email := role + "-" + userID.String()[:8] + "@example.com"
-	hash, err := authsvc.NewService().HashPassword(accountUpdateGatePassword)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(accountUpdateGatePassword)
 	s.Require().NoError(err)
 	_, err = facades.Orm().Query().Exec(
 		`INSERT INTO users (id, email, password_hash, status, created_at, updated_at)

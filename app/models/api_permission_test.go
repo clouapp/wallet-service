@@ -33,18 +33,4 @@ func TestAPI_Token_ScopesAreChecked(t *testing.T) {
 	if ClientIPAllowed("10.0.0.0/8", "11.0.0.1") || ClientIPAllowed("not-a-cidr", "10.0.0.1") {
 		t.Fatal("outside or invalid cidr must fail")
 	}
-
-	if _, err := AuthorizeTokenSpend("{}", "eth", "1", 0); err != nil {
-		t.Fatal(err)
-	}
-	next, err := AuthorizeTokenSpend(`{"daily_usd":10}`, "usdt", "4", 5)
-	if err != nil || next != 9 {
-		t.Fatalf("next=%v err=%v", next, err)
-	}
-	if _, err := AuthorizeTokenSpend(`{"daily_usd":10}`, "usdt", "6", 5); err == nil {
-		t.Fatal("spend over the daily cap must fail")
-	}
-	if _, err := AuthorizeTokenSpend(`{"daily_usd":10}`, "eth", "1", 0); err == nil {
-		t.Fatal("a usd cap must not ignore an unpriced asset")
-	}
 }

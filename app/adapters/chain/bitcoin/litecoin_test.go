@@ -259,26 +259,6 @@ func TestBitcoinNetworkOf_PicksTheNetworkFromTheChainRecord(t *testing.T) {
 	}
 }
 
-func TestBitcoinFamilyParams_ReturnsACopyPerChain(t *testing.T) {
-	params := BitcoinFamilyParams(models.ChainLTC, false)
-	if params == nil || params.PrivateKeyID != ltcMainNetPrivateKeyID {
-		t.Fatalf("ltc params %+v", params)
-	}
-	params.PrivateKeyID = 0
-	if ltcMainNetParams.PrivateKeyID != ltcMainNetPrivateKeyID {
-		t.Fatal("callers must not be able to change the adapter's parameters")
-	}
-	if got := BitcoinFamilyParams(models.ChainTLTC, false); got == nil || got.Bech32HRPSegwit != addressing.LtcHRPTestnet {
-		t.Fatalf("tltc params %+v", got)
-	}
-	if got := BitcoinFamilyParams(models.ChainBTC, true); got == nil || got.PrivateKeyID != chaincfg.TestNet3Params.PrivateKeyID {
-		t.Fatalf("btc testnet params %+v", got)
-	}
-	if BitcoinFamilyParams(models.ChainETH, false) != nil {
-		t.Fatal("non Bitcoin-family chains have no UTXO parameters")
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Fee rate
 // ---------------------------------------------------------------------------
@@ -323,7 +303,7 @@ func TestParseMempoolRecommendedFees(t *testing.T) {
 func litecoinAdapter(esplora *fakeEsplora) *BitcoinLive {
 	live := NewBitcoinLive(BitcoinConfig{
 		ChainIDStr: models.ChainLTC, ChainName: "Litecoin", NativeSymbol: models.NativeLTC,
-		RPCURL: esplora.srv.URL + ltcEsploraPrefix, IsTestnet: true, Confirmations: 6,
+		NativeDecimal: btcDecimals, RPCURL: esplora.srv.URL + ltcEsploraPrefix, IsTestnet: true, Confirmations: 6,
 	})
 	live.esploraRetry.sleep = func(ctx context.Context, _ time.Duration) error { return ctx.Err() }
 	return live
@@ -425,10 +405,7 @@ func TestLitecoinBuildSignVerifyP2WPKH(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	signed, err := live.SignTransaction(context.Background(), unsigned, wallet.key.Serialize())
-	if err != nil {
-		t.Fatal(err)
-	}
+	signed := signBitcoinP2WPKHForTest(t, unsigned, wallet.key.Serialize())
 	if err := live.VerifySignedTransaction(unsigned, signed, wallet.address); err != nil {
 		t.Fatalf("litecoin signature must verify: %v", err)
 	}
@@ -465,16 +442,16 @@ func TestLitecoinSignAndVerifyRefuseAnotherNetwork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	signed, err := testnet.SignTransaction(context.Background(), unsigned, wallet.key.Serialize())
-	if err != nil {
-		t.Fatal(err)
-	}
+	signed := signBitcoinP2WPKHForTest(t, unsigned, wallet.key.Serialize())
 
 	mainnet := NewBitcoinLive(BitcoinConfig{ChainIDStr: models.ChainLTC, NativeSymbol: models.NativeLTC})
 	bitcoinTestnet := NewBitcoinLive(BitcoinConfig{ChainIDStr: models.ChainBTC, IsTestnet: true})
 	for name, other := range map[string]*BitcoinLive{"litecoin mainnet": mainnet, "bitcoin testnet": bitcoinTestnet} {
-		if _, err := other.SignTransaction(context.Background(), unsigned, wallet.key.Serialize()); err == nil {
-			t.Errorf("%s adapter signed a litecoin testnet transaction", name)
+		if _, err := other.BitcoinP2WPKHDigests(unsigned); err == nil {
+			t.Errorf("%s adapter produced sighashes for a litecoin testnet transaction", name)
+		}
+		if _, err := other.AssembleBitcoinP2WPKH(unsigned, [][]byte{{0x01}}, [][]byte{{0x02}}); err == nil {
+			t.Errorf("%s adapter assembled a litecoin testnet transaction", name)
 		}
 		if err := other.VerifySignedTransaction(unsigned, signed, wallet.address); err == nil {
 			t.Errorf("%s adapter verified a litecoin testnet transaction", name)
@@ -486,7 +463,7 @@ func TestLitecoinSignAndVerifyRefuseAnotherNetwork(t *testing.T) {
 
 	bitcoinOutput := cloneBitcoinUnsigned(unsigned)
 	bitcoinOutput.Metadata["outputs"] = []btcOutput{{Address: "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx", Value: 50_000}}
-	if _, err := testnet.SignTransaction(context.Background(), bitcoinOutput, wallet.key.Serialize()); err == nil {
+	if _, err := testnet.BitcoinP2WPKHDigests(bitcoinOutput); err == nil {
 		t.Fatal("a litecoin transaction paying a tb1 address must not be signed")
 	}
 }

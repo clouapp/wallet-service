@@ -9,6 +9,7 @@ import (
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/feature/support"
@@ -53,7 +54,7 @@ func (s *WalletSettingsTestSuite) SetupTest() {
 }
 
 func (s *WalletSettingsTestSuite) memberToken(role string) string {
-	hash, err := authsvc.NewService().HashPassword(walletSettingsTestPassword)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(walletSettingsTestPassword)
 	s.Require().NoError(err)
 	userID := uuid.New()
 	email := role + "-" + userID.String()[:8] + "@example.com"
@@ -148,7 +149,12 @@ func (s *WalletSettingsTestSuite) TestChain_Rules_ForFeeSettings() {
 	s.AssertError(tooHigh, 422, "validation_failed", "validation failed")
 	tooHighBody, err := tooHigh.Content()
 	s.Require().NoError(err)
-	s.Contains(tooHighBody, "fee_rate_min must not exceed fee_rate_max: 41 > 40")
+	// encoding/json escapes ">" as \u003e on the wire, so compare the decoded message.
+	var tooHighParsed struct {
+		Errors map[string][]string `json:"errors"`
+	}
+	s.Require().NoError(json.Unmarshal([]byte(tooHighBody), &tooHighParsed))
+	s.Equal([]string{"fee_rate_min must not exceed fee_rate_max: 41 > 40"}, tooHighParsed.Errors["fee_rate_min"])
 
 	sol := s.wallet(models.ChainSOL)
 	flat := s.patch(s.ownerToken, sol.ID, `{"fee_multiplier": 2}`)
@@ -163,6 +169,17 @@ func (s *WalletSettingsTestSuite) TestViewers_Cannot_ChangeSettings() {
 	denied := s.patch(s.viewerToken, wallet.ID, `{"fee_multiplier": 2}`)
 	s.AssertError(denied, 403, "forbidden", "only wallet/account owners and admins may update wallet settings")
 	s.False(s.stored(wallet.ID).FeeMultiplier.Valid)
+}
+
+// TestViewers_Are_RefusedBeforeTheBodyIsRead pins the order: a caller who
+// may not update the wallet learns nothing about the body, so a body the
+// owner would get 400 or 422 for is the same 403 for them.
+func (s *WalletSettingsTestSuite) TestViewers_Are_RefusedBeforeTheBodyIsRead() {
+	wallet := s.wallet(models.ChainBase)
+	for _, body := range []string{`{}`, `{"status": "active"}`, `{"fee_multiplier": 0.5}`, `not json`} {
+		denied := s.patch(s.viewerToken, wallet.ID, body)
+		s.AssertError(denied, 403, "forbidden", "only wallet/account owners and admins may update wallet settings")
+	}
 }
 
 func (s *WalletSettingsTestSuite) TestOther_Accounts_WalletsAreNotReachable() {

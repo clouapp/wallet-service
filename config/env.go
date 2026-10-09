@@ -1,8 +1,9 @@
 package config
 
 import (
-	"github.com/goravel/framework/facades"
 	"github.com/spf13/cast"
+
+	"github.com/macrowallets/waas/app/facades"
 )
 
 // envString reads an environment-backed value via Goravel config (viper + OS env).

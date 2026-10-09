@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	contractsorm "github.com/goravel/framework/contracts/database/orm"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories/internal/db"
@@ -23,7 +23,7 @@ type AccountActivityRepository struct {
 }
 
 // NewAccountActivityRepository wraps an orm.Query. Pass nil for a fresh query per call.
-func NewAccountActivityRepository(query contractsorm.Query) *AccountActivityRepository {
+func NewAccountActivityRepository(query orm.Query) *AccountActivityRepository {
 	return &AccountActivityRepository{Base: db.NewBase(query)}
 }
 
@@ -33,7 +33,7 @@ func (r *AccountActivityRepository) Within(ctx context.Context, fn func(context.
 	if fn == nil {
 		return fmt.Errorf("account activity transaction: callback is required")
 	}
-	return r.Transaction(ctx, func(tx contractsorm.Query) error {
+	return r.Transaction(ctx, func(tx orm.Query) error {
 		return fn(db.WithTx(ctx, tx))
 	})
 }
@@ -120,10 +120,10 @@ func (r *AccountActivityRepository) Find(ctx context.Context, accountID, id uuid
 		return nil, models.ErrRepositoryNotFound
 	}
 	var row models.AccountActivity
-	if err := r.Query(ctx).Where("id = ? AND account_id = ?", id, accountID).First(&row); err != nil {
-		return nil, fmt.Errorf("find activity: %w", err)
+	if err := r.Query(ctx).Where("id = ? AND account_id = ?", id, accountID).FirstOrFail(&row); err != nil {
+		return nil, db.LookupError(err, "find activity")
 	}
-	if row.ID == uuid.Nil || row.AccountID == nil || *row.AccountID != accountID {
+	if row.AccountID == nil || *row.AccountID != accountID {
 		return nil, models.ErrRepositoryNotFound
 	}
 	return &row, nil

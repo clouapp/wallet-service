@@ -28,9 +28,7 @@ func BodyLimit(limit int64) contractshttp.Middleware {
 			return
 		}
 		if origin.ContentLength > limit {
-			_ = responses.Send(ctx, http.StatusRequestEntityTooLarge, contractshttp.Json{
-				"error": "request body too large",
-			}).Abort()
+			_ = responses.Fail(ctx, http.StatusRequestEntityTooLarge, responses.CodeRequestTooLarge, "request body too large").Abort()
 			return
 		}
 		if origin.Body != nil && origin.Body != http.NoBody && requestCarriesBody(origin.Method) {

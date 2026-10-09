@@ -2,6 +2,7 @@ package providers
 
 import (
 	"fmt"
+	"log/slog"
 
 	"github.com/goravel/framework/contracts/foundation"
 
@@ -11,13 +12,12 @@ import (
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/currencies"
-	"github.com/macrowallets/waas/pkg/security"
+	"github.com/macrowallets/waas/app/services/settings"
 )
 
 // ChainServiceProvider binds the chain, token, chain-resource, and currency
-// repositories by type, and the chain catalogue service that reads them.
-// Price and sweep stay constructed in the vault container and receive these
-// same repository instances.
+// repositories by type, the chain catalogue services that read them, and the
+// chain registry the catalogue fills.
 type ChainServiceProvider struct{}
 
 func (p *ChainServiceProvider) Register(app foundation.Application) {
@@ -35,6 +35,9 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 			Install:  registerActiveChains,
 			Registry: chainpkg.NewRegistry(),
 		}), nil
+	})
+	app.Singleton((*chainpkg.Registry)(nil), func(app foundation.Application) (any, error) {
+		return loadChainRegistry(app)
 	})
 	app.Singleton((*chainsvc.Service)(nil), func(app foundation.Application) (any, error) {
 		chains, err := resolve[*repositories.ChainRepository](app)
@@ -119,8 +122,30 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 
 func (p *ChainServiceProvider) Boot(foundation.Application) {}
 
-// chainRPCSealer seals chains.rpc_url with the process cipher. Errors do not
-// include the URL.
+// loadChainRegistry installs the chain catalog Boot read, with the active
+// tokens, on the registry every chain consumer shares. A catalog or token
+// read that failed at Boot is logged and leaves those chains out; the process
+// stays up.
+func loadChainRegistry(app foundation.Application) (*chainpkg.Registry, error) {
+	registryService, err := resolve[*chainregistry.ChainRegistryService](app)
+	if err != nil {
+		return nil, fmt.Errorf("vault: chain registry: %w", err)
+	}
+	activeTokens, loaded := bootedActiveTokens()
+	if !loaded {
+		slog.Error("failed to load tokens from DB", "error", errActiveTokensNotLoaded)
+	}
+	if err := registryService.Load(registerActiveTokens(nil, activeTokens)); err != nil {
+		slog.Error("failed to load chains from DB", "error", err)
+	}
+	registry := registryService.Registry()
+	slog.Info("chain registry loaded", "chains", registry.ChainIDs())
+	return registry, nil
+}
+
+// chainRPCSealer seals chains.rpc_url with the process cipher. It writes the
+// enc:v1: format and reads that and the bare Crypt envelope older rows hold.
+// Errors do not include the URL.
 type chainRPCSealer struct{}
 
 func (chainRPCSealer) Seal(plaintext string) (string, error) {
@@ -128,7 +153,7 @@ func (chainRPCSealer) Seal(plaintext string) (string, error) {
 	if cipher == nil {
 		return "", fmt.Errorf("seal chain rpc: crypt is not available")
 	}
-	sealed, err := security.SealSecret(cipher, plaintext)
+	sealed, err := settings.Seal(cipher, plaintext)
 	if err != nil || sealed == "" || sealed == plaintext {
 		return "", fmt.Errorf("seal chain rpc")
 	}
@@ -140,7 +165,7 @@ func (chainRPCSealer) Open(stored string) (string, error) {
 	if cipher == nil {
 		return "", fmt.Errorf("open chain rpc: crypt is not available")
 	}
-	opened, err := security.OpenSecret(cipher, stored)
+	opened, err := settings.OpenStored(cipher, stored)
 	if err != nil || opened == "" {
 		return "", fmt.Errorf("open chain rpc")
 	}

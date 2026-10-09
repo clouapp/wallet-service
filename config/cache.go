@@ -2,8 +2,9 @@ package config
 
 import (
 	contractscache "github.com/goravel/framework/contracts/cache"
-	"github.com/goravel/framework/facades"
 	redisfacades "github.com/goravel/redis/facades"
+
+	"github.com/macrowallets/waas/app/facades"
 )
 
 func registerCache() {

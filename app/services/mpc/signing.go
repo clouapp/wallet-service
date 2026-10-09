@@ -63,6 +63,10 @@ func (s *TSSService) Sign(ctx context.Context, curve Curve, shareA, shareB []byt
 	// Buffered channels.
 	outCh := make(chan tss.Message, partyCount*partyCount*10)
 	endCh := make(chan common.SignatureData, partyCount)
+	sigCh := make(chan partySignature, partyCount)
+	forwardCtx, stopForwarding := context.WithCancel(ctx)
+	defer stopForwarding()
+	go forward(forwardCtx, endCh, sigCh, newPartySignature)
 	errCh := make(chan error, partyCount*4)
 
 	// Determine which sorted index corresponds to each save data using OriginalIndex.
@@ -104,7 +108,7 @@ func (s *TSSService) Sign(ctx context.Context, curve Curve, shareA, shareB []byt
 	}
 
 	// Collect signatures from both parties; they should agree.
-	sigs := make([]common.SignatureData, 0, partyCount)
+	sigs := make([]partySignature, 0, partyCount)
 
 loop:
 	for {
@@ -130,8 +134,8 @@ loop:
 				go routeMessage(parties[dest[0].Index], msg, errCh)
 			}
 
-		case sigData := <-endCh:
-			sigs = append(sigs, sigData)
+		case sig := <-sigCh:
+			sigs = append(sigs, sig)
 			if len(sigs) == partyCount {
 				break loop
 			}
@@ -140,20 +144,44 @@ loop:
 
 	// Use the first completed signature to produce the DER encoding.
 	sigData := sigs[0]
-	if !signatureMatchesKey(saveA, inputs.TxHashes[0], sigData.R, sigData.S) {
+	if !signatureMatchesKey(saveA, inputs.TxHashes[0], sigData.r, sigData.s) {
 		return nil, fmt.Errorf("Sign: signature does not verify against the signing public key")
 	}
 
 	// If the library produced a pre-encoded DER signature, return it.
-	if len(sigData.Signature) > 0 {
-		return sigData.Signature, nil
+	if len(sigData.signature) > 0 {
+		return sigData.signature, nil
 	}
 
 	// Otherwise DER-encode from R and S components.
-	if len(sigData.R) == 0 || len(sigData.S) == 0 {
+	if len(sigData.r) == 0 || len(sigData.s) == 0 {
 		return nil, fmt.Errorf("Sign: signature data missing R or S")
 	}
-	return derEncode(sigData.R, sigData.S), nil
+	return derEncode(sigData.r, sigData.s), nil
+}
+
+// partySignature is what Sign reads from tss-lib's SignatureData. That message
+// embeds a mutex, so it must not be copied around; the library's end channel
+// carries it by value, which is why it is converted once, at the channel.
+type partySignature struct {
+	r, s, signature []byte
+}
+
+func newPartySignature(data *common.SignatureData) partySignature {
+	return partySignature{r: data.R, s: data.S, signature: data.Signature}
+}
+
+// forward moves each value of in to out as convert(&value) until ctx ends. The
+// value never leaves this function, so a caller sees pointers only.
+func forward[T, R any](ctx context.Context, in <-chan T, out chan<- R, convert func(*T) R) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case value := <-in:
+			out <- convert(&value)
+		}
+	}
 }
 
 // applyKeyDerivationDelta checks that both shares hold the same wallet key and, for a

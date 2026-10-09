@@ -7,10 +7,11 @@ import (
 	"testing"
 )
 
-// commandExceptions stay fat on purpose: withdraw:preflight keeps the service
-// lookup macro-e2e does not own, and wallets:export-keys stays the zip path.
+// commandExceptions stay fat on purpose: wallets:export-keys owns the terminal,
+// the signal handler and the archive path, so its Handle cannot reduce to one
+// service call. Its adapters (Secrets Manager, the RPC decrypt, APP_ENV) come
+// in through its constructor.
 var commandExceptions = map[string]bool{
-	"app/console/commands/withdraw_preflight.go":  true,
 	"app/console/commands/wallets_export_keys.go": true,
 }
 
@@ -30,8 +31,8 @@ func TestCommands_Are_Thin(t *testing.T) {
 			violations = append(violations, file.Path+" "+problem)
 		}
 	}
-	if handlers != 13 {
-		t.Fatalf("thin command handlers = %d, want 13", handlers)
+	if handlers != 15 {
+		t.Fatalf("thin command handlers = %d, want 15", handlers)
 	}
 	for _, line := range violations {
 		t.Errorf("fat command: %s", line)

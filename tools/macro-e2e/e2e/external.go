@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/macrowallets/waas/pkg/pyjson"
+	"github.com/macrowallets/waas/tools/internal/pyjson"
 )
 
 const (

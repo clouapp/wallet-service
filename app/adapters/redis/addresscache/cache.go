@@ -12,13 +12,13 @@ import (
 
 // Cache adds watched addresses with SADD. The service keeps the key. Members are not logged.
 type Cache struct {
-	client *redis.Client
+	client redis.UniversalClient
 }
 
 var _ wallet.AddressCache = (*Cache)(nil)
 
 // New wraps client. A nil client returns a nil cache so the service keeps its nil-client path.
-func New(client *redis.Client) wallet.AddressCache {
+func New(client redis.UniversalClient) wallet.AddressCache {
 	if client == nil {
 		return nil
 	}

@@ -3,6 +3,7 @@ package currencies_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -70,4 +71,28 @@ func (f *fakeStore) FindByCode(_ context.Context, code string) (*models.Currency
 		return nil, f.err
 	}
 	return f.byCode[code], nil
+}
+
+func TestGet_ByCode_SeparatesAMissingCurrencyFromAFailure(t *testing.T) {
+	t.Parallel()
+
+	usd := &models.Currency{Code: "USD"}
+	store := &fakeStore{byCode: map[string]*models.Currency{"USD": usd}}
+	svc := currencies.NewService(currencies.Deps{Store: store})
+
+	found, err := svc.Get(context.Background(), "USD")
+	require.NoError(t, err)
+	assert.Equal(t, usd, found)
+
+	_, err = svc.Get(context.Background(), "XYZ")
+	assert.ErrorIs(t, err, currencies.ErrNotFound)
+
+	store.err = fmt.Errorf("find: %w", models.ErrRepositoryNotFound)
+	_, err = svc.Get(context.Background(), "XYZ")
+	assert.ErrorIs(t, err, currencies.ErrNotFound)
+
+	store.err = errors.New("store down")
+	_, err = svc.Get(context.Background(), "XYZ")
+	assert.ErrorIs(t, err, store.err)
+	assert.NotErrorIs(t, err, currencies.ErrNotFound)
 }

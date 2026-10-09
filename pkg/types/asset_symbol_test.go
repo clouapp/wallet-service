@@ -6,16 +6,16 @@ func TestCanonical_Asset_SymbolMapsLegacyMaticToPol(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]string{
-		"matic":    NativeSymbolPOL,
-		"MATIC":    NativeSymbolPOL,
-		" Matic ":  NativeSymbolPOL,
-		"pol":      "pol",
-		"POL":      "POL",
-		"USDC":     "USDC",
-		"":         "",
-		"maticx":   "maticx",
-		"wmatic":   "wmatic",
-		" eth ":    "eth",
+		"matic":   NativeSymbolPOL,
+		"MATIC":   NativeSymbolPOL,
+		" Matic ": NativeSymbolPOL,
+		"pol":     "pol",
+		"POL":     "POL",
+		"USDC":    "USDC",
+		"":        "",
+		"maticx":  "maticx",
+		"wmatic":  "wmatic",
+		" eth ":   "eth",
 	}
 	for input, want := range cases {
 		if got := CanonicalAssetSymbol(input); got != want {

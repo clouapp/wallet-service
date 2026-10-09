@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/cacheguard"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/pkg/numeric"
 )
@@ -58,45 +59,41 @@ func limitsFromSettings(accountID uuid.UUID, values settings.SweepLimitValues) *
 	return limits
 }
 
-// acquireWalletOpsLock takes a short-lived Redis mutex keyed by walletID so
+// acquireWalletOpsLock takes a short-lived cache mutex keyed by walletID so
 // that only one in-flight withdrawal/consolidation touches a given wallet's
-// addresses at a time. When Redis is not configured (s.rdb == nil) the lock
-// is a no-op — safe for unit tests and dev runs without a Redis instance.
-func (s *service) acquireWalletOpsLock(ctx context.Context, walletID uuid.UUID) (func(), error) {
-	if s.rdb == nil {
-		return func() {}, nil
+// addresses at a time. Without a cache the lock cannot be taken, so it refuses;
+// so it does when the cache is down, which is not reported as a busy wallet.
+func (s *service) acquireWalletOpsLock(walletID uuid.UUID) (func(), error) {
+	if s.cache == nil {
+		return nil, ErrCacheUnavailable
 	}
 	key := "vault:lock:wallet_ops:" + walletID.String()
-	ok, err := s.rdb.SetNX(ctx, key, "1", 60*time.Second)
+	ok, err := cacheguard.Acquire(s.cache, key, 60*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("acquire wallet ops lock: %w", err)
 	}
 	if !ok {
 		return nil, ErrInFlightConsolidation
 	}
-	return func() {
-		// Use a background context for release so an already-cancelled
-		// request context cannot leak the lock until its 60s TTL.
-		_ = s.rdb.Del(context.Background(), key)
-	}, nil
+	return func() { s.cache.Forget(key) }, nil
 }
 
 // incrDailyQuota atomically increments the per-account daily consolidate
-// counter in Redis and returns ErrDailyQuotaExceeded once the limit is
-// crossed. The first increment of a given UTC day sets a 24h TTL so the key
-// self-expires. No-op when Redis is not configured or when accountID is nil.
-func (s *service) incrDailyQuota(ctx context.Context, accountID uuid.UUID, limits *Limits) error {
-	if s.rdb == nil || accountID == uuid.Nil {
+// counter and returns ErrDailyQuotaExceeded once the limit is crossed. The
+// first increment of a given UTC day sets a 24h TTL so the key self-expires.
+// A nil accountID has nothing to meter; without a cache it refuses.
+func (s *service) incrDailyQuota(accountID uuid.UUID, limits *Limits) error {
+	if accountID == uuid.Nil {
 		return nil
+	}
+	if s.cache == nil {
+		return ErrCacheUnavailable
 	}
 	key := fmt.Sprintf("vault:quota:consolidate:%s:%s",
 		accountID.String(), time.Now().UTC().Format("2006-01-02"))
-	n, err := s.rdb.Incr(ctx, key)
+	n, err := cacheguard.Count(s.cache, key, 1, 24*time.Hour)
 	if err != nil {
 		return fmt.Errorf("incr daily quota: %w", err)
-	}
-	if n == 1 {
-		_ = s.rdb.Expire(ctx, key, 24*time.Hour)
 	}
 	if int(n) > limits.MaxConsolidateReqPerDay {
 		return ErrDailyQuotaExceeded

@@ -79,3 +79,30 @@ func TestRedact_Text_StripsPEMPrivateKey(t *testing.T) {
 		t.Fatalf("PEM was not replaced in place: %q", got)
 	}
 }
+
+// The Goravel gin driver logs "decode json [<whole body>] error: ..." for a
+// body that is not valid JSON, so a truncated login carries the credentials.
+func TestRedact_Text_HidesTheBodyTheGinDriverQuotesForMalformedJSON(t *testing.T) {
+	cases := map[string]string{
+		"truncated login": `decode json [{"email":"luiz@example.com","password":"hunter2-secret] error: unexpected end of JSON input`,
+		"multiline":       "decode json [{\n  \"email\": \"luiz@example.com\",\n  \"password\": \"hunter2-secret\"\n] error: invalid character ']'",
+		"bracket in body": `decode json [{"password":"a]b-hunter2-secret","email":"luiz@example.com"] error: unexpected end of JSON input`,
+	}
+	for name, message := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := RedactText(message)
+			for _, leaked := range []string{"luiz@example.com", "hunter2-secret"} {
+				if strings.Contains(got, leaked) {
+					t.Fatalf("%q leaked in %q", leaked, got)
+				}
+			}
+			if !strings.HasPrefix(got, "decode json [") || !strings.Contains(got, "] error:") {
+				t.Fatalf("the message shape is gone: %q", got)
+			}
+		})
+	}
+	const unrelated = "decode json config failed: bad value"
+	if got := RedactText(unrelated); got != unrelated {
+		t.Fatalf("unrelated text changed: %q", got)
+	}
+}

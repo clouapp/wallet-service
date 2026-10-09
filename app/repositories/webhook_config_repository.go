@@ -23,20 +23,13 @@ type WebhookConfigRepository struct {
 	cipher settings.Cipher
 }
 
-// WebhookConfigRepositoryDeps is the query and the cipher that seals webhook secrets.
-// Query may be nil, which starts a fresh query per call. Cipher is required.
-type WebhookConfigRepositoryDeps struct {
-	Query  orm.Query
-	Cipher settings.Cipher
-}
-
-// NewWebhookConfigRepository wraps an orm.Query. A nil Query starts a fresh query per call.
-// Cipher seals and opens webhook_configs.secret; it is required.
-func NewWebhookConfigRepository(deps WebhookConfigRepositoryDeps) *WebhookConfigRepository {
-	if deps.Cipher == nil {
+// NewWebhookConfigRepository wraps an orm.Query. A nil query starts a fresh query per call.
+// The cipher seals and opens webhook_configs.secret; it is required.
+func NewWebhookConfigRepository(query orm.Query, cipher settings.Cipher) *WebhookConfigRepository {
+	if cipher == nil {
 		panic("webhook config repository: cipher is required")
 	}
-	return &WebhookConfigRepository{Base: db.NewBase(deps.Query), cipher: deps.Cipher}
+	return &WebhookConfigRepository{Base: db.NewBase(query), cipher: cipher}
 }
 
 // Create inserts a webhook config. The stored secret is sealed; cfg.Secret stays plaintext.
@@ -70,11 +63,8 @@ func (r *WebhookConfigRepository) FindByWalletID(ctx context.Context, walletID u
 // FindByIDAndWallet returns the config when it belongs to the wallet, or ErrRepositoryNotFound.
 func (r *WebhookConfigRepository) FindByIDAndWallet(ctx context.Context, id, walletID uuid.UUID) (*models.WebhookConfig, error) {
 	var cfg models.WebhookConfig
-	if err := r.Query(ctx).Where("id = ? AND wallet_id = ?", id, walletID).First(&cfg); err != nil {
-		return nil, fmt.Errorf("find webhook config: %w", err)
-	}
-	if cfg.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("id = ? AND wallet_id = ?", id, walletID).FirstOrFail(&cfg); err != nil {
+		return nil, db.LookupError(err, "find webhook config")
 	}
 	return r.openWebhookSecret(&cfg)
 }
@@ -97,30 +87,19 @@ func (r *WebhookConfigRepository) FindAll(ctx context.Context) ([]models.Webhook
 	return r.openWebhookSecrets(cfgs)
 }
 
-// WebhookOwnership is the columns that decide whether an account may see a
-// webhook. The signing secret is not selected and is not opened.
-type WebhookOwnership struct {
-	ID        uuid.UUID  `gorm:"column:id"`
-	AccountID *uuid.UUID `gorm:"column:account_id"`
-	WalletID  *uuid.UUID `gorm:"column:wallet_id"`
-}
-
 // FindOwnership loads id, account_id, and wallet_id for one config. A missing
 // row is ErrRepositoryNotFound. The signing secret stays sealed.
-func (r *WebhookConfigRepository) FindOwnership(ctx context.Context, id uuid.UUID) (*WebhookOwnership, error) {
+func (r *WebhookConfigRepository) FindOwnership(ctx context.Context, id uuid.UUID) (*models.WebhookOwnership, error) {
 	if id == uuid.Nil {
 		return nil, models.ErrRepositoryNotFound
 	}
-	var row WebhookOwnership
+	var row models.WebhookOwnership
 	err := r.Query(ctx).Model(&models.WebhookConfig{}).
 		Select("id", "account_id", "wallet_id").
 		Where("id = ?", id).
-		First(&row)
+		FirstOrFail(&row)
 	if err != nil {
-		return nil, db.NotFound(err, "find webhook ownership")
-	}
-	if row.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+		return nil, db.LookupError(err, "find webhook ownership")
 	}
 	return &row, nil
 }
@@ -128,11 +107,8 @@ func (r *WebhookConfigRepository) FindOwnership(ctx context.Context, id uuid.UUI
 // FindByID returns the config, or ErrRepositoryNotFound. The secret is opened.
 func (r *WebhookConfigRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.WebhookConfig, error) {
 	var cfg models.WebhookConfig
-	if err := r.Query(ctx).Where("id = ?", id).First(&cfg); err != nil {
-		return nil, fmt.Errorf("find webhook config: %w", err)
-	}
-	if cfg.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("id = ?", id).FirstOrFail(&cfg); err != nil {
+		return nil, db.LookupError(err, "find webhook config")
 	}
 	return r.openWebhookSecret(&cfg)
 }

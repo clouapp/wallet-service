@@ -10,11 +10,9 @@ import (
 func TestNew_Refresh_CurrencyKeepsItsDependencies(t *testing.T) {
 	registry := chainpkg.NewRegistry()
 	balances := refresh.NewBalanceService(refresh.Deps{})
-	dispatcher := &refreshAddressDispatcherStub{}
 	cmd := NewRefreshCurrency(RefreshCurrencyDeps{
-		Registry:   registry,
-		Balances:   balances,
-		Dispatcher: dispatcher,
+		Registry: registry,
+		Balances: balances,
 	})
 	if cmd == nil {
 		t.Fatal("NewRefreshCurrency returned nil")
@@ -24,9 +22,6 @@ func TestNew_Refresh_CurrencyKeepsItsDependencies(t *testing.T) {
 	}
 	if cmd.balances != balances {
 		t.Fatal("refresh currency did not keep the balance service")
-	}
-	if cmd.dispatcher != dispatcher {
-		t.Fatal("refresh currency did not keep the refresh dispatcher")
 	}
 }
 
@@ -38,8 +33,7 @@ func TestNew_Refresh_CurrencyRequiresARegistry(t *testing.T) {
 		}
 	}()
 	NewRefreshCurrency(RefreshCurrencyDeps{
-		Balances:   refresh.NewBalanceService(refresh.Deps{}),
-		Dispatcher: &refreshAddressDispatcherStub{},
+		Balances: refresh.NewBalanceService(refresh.Deps{}),
 	})
 }
 
@@ -51,20 +45,6 @@ func TestNew_Refresh_CurrencyRequiresBalances(t *testing.T) {
 		}
 	}()
 	NewRefreshCurrency(RefreshCurrencyDeps{
-		Registry:   chainpkg.NewRegistry(),
-		Dispatcher: &refreshAddressDispatcherStub{},
-	})
-}
-
-func TestNew_Refresh_CurrencyRequiresADispatcher(t *testing.T) {
-	defer func() {
-		got := recover()
-		if got != "refresh:currency: refresh dispatcher is required" {
-			t.Fatalf("panic = %v", got)
-		}
-	}()
-	NewRefreshCurrency(RefreshCurrencyDeps{
 		Registry: chainpkg.NewRegistry(),
-		Balances: refresh.NewBalanceService(refresh.Deps{}),
 	})
 }

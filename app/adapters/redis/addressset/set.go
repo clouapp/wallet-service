@@ -12,11 +12,11 @@ import (
 
 // Set reads watched addresses with SISMEMBER. The service keeps the key and the decision.
 type Set struct {
-	client *redis.Client
+	client redis.UniversalClient
 }
 
 // New wraps client. A nil client returns a nil set so ingest falls back to the address store.
-func New(client *redis.Client) ingest.AddressSet {
+func New(client redis.UniversalClient) ingest.AddressSet {
 	if client == nil {
 		return nil
 	}

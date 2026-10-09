@@ -10,13 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/tests/memcache"
 	"github.com/stretchr/testify/assert"
 )
 
 func redisChallengeStore(t *testing.T, ttl time.Duration) *authsvc.CacheTOTPChallengeStore {
 	t.Helper()
 	store, err := authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{
-		Cache: newMemCache(),
+		Cache: memcache.New(),
 		TTL:   ttl,
 	})
 	require.NoError(t, err)
@@ -26,7 +27,7 @@ func redisChallengeStore(t *testing.T, ttl time.Duration) *authsvc.CacheTOTPChal
 func redisAttemptLimiter(t *testing.T, window time.Duration) *authsvc.CacheAttemptLimiter {
 	t.Helper()
 	limiter, err := authsvc.NewCacheAttemptLimiter(authsvc.AttemptLimiterDeps{
-		Cache:  newMemCache(),
+		Cache:  memcache.New(),
 		Window: window,
 	})
 	require.NoError(t, err)
@@ -56,7 +57,7 @@ func TestCache_TOTPChallengeStore_IssueAndResolve(t *testing.T) {
 }
 
 func TestCache_TOTPChallengeStore_KeysDoNotContainTheToken(t *testing.T) {
-	cache := newMemCache()
+	cache := memcache.New()
 	store, err := authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{
 		Cache: cache,
 		TTL:   time.Minute,
@@ -67,7 +68,7 @@ func TestCache_TOTPChallengeStore_KeysDoNotContainTheToken(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { store.Revoke(token) })
 
-	for _, key := range cache.keys() {
+	for _, key := range cache.Keys() {
 		assert.NotContains(t, key, token)
 	}
 }
@@ -143,7 +144,7 @@ func TestCache_TOTPChallengeStore_ValidatesInput(t *testing.T) {
 	_, err := authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{TTL: time.Minute})
 	assert.Error(t, err)
 	_, err = authsvc.NewCacheTOTPChallengeStore(authsvc.ChallengeStoreDeps{
-		Cache: newMemCache(),
+		Cache: memcache.New(),
 		TTL:   0,
 	})
 	assert.Error(t, err)
@@ -207,4 +208,47 @@ func TestCache_AttemptLimiter_WindowLapses(t *testing.T) {
 	got, err := limiter.Claim(userID)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), got)
+}
+
+// An unreachable cache refuses the attempt: a second factor is never checked
+// without a counted attempt.
+func TestCache_AttemptLimiter_RefusesWhenTheCacheIsDown(t *testing.T) {
+	limiter, err := authsvc.NewCacheAttemptLimiter(authsvc.AttemptLimiterDeps{
+		Cache:  memcache.Down{Cache: memcache.New()},
+		Window: time.Minute,
+	})
+	require.NoError(t, err)
+
+	_, err = limiter.Claim(uuid.New())
+	require.ErrorIs(t, err, memcache.ErrUnavailable)
+}
+
+// A counter that lapsed between Add and Increment is recreated without an
+// expiry; the claim gives it the window again so the lockout cannot stick.
+func TestCache_AttemptLimiter_GivesALapsedCounterItsWindow(t *testing.T) {
+	cache := &lapsingCache{Cache: memcache.New()}
+	limiter, err := authsvc.NewCacheAttemptLimiter(authsvc.AttemptLimiterDeps{
+		Cache:  cache,
+		Window: time.Minute,
+	})
+	require.NoError(t, err)
+
+	got, err := limiter.Claim(uuid.New())
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), got)
+	assert.Equal(t, time.Minute, cache.putTTL, "the recreated counter has no window")
+}
+
+// lapsingCache loses every Add, as if the key existed and then expired
+// before Increment recreated it.
+type lapsingCache struct {
+	*memcache.Cache
+	putTTL time.Duration
+}
+
+func (c *lapsingCache) Add(string, any, time.Duration) bool { return false }
+
+func (c *lapsingCache) Put(key string, value any, ttl time.Duration) error {
+	c.putTTL = ttl
+	return c.Cache.Put(key, value, ttl)
 }

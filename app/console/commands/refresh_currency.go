@@ -11,20 +11,18 @@ import (
 )
 
 type RefreshCurrency struct {
-	registry   *chainpkg.Registry
-	balances   *refresh.BalanceService
-	dispatcher refresh.Dispatcher
-	run        *refresh.Operator
+	registry *chainpkg.Registry
+	balances *refresh.BalanceService
+	run      *refresh.Operator
 }
 
 // RefreshCurrencyDeps is everything the refresh:currency command needs.
-// Registry, Balances, and Dispatcher are required.
+// Registry and Balances are required.
 type RefreshCurrencyDeps struct {
-	Registry   *chainpkg.Registry
-	Balances   *refresh.BalanceService
-	Dispatcher refresh.Dispatcher
-	Wallets    refresh.WalletLookup
-	Addresses  refresh.AddressLookup
+	Registry  *chainpkg.Registry
+	Balances  *refresh.BalanceService
+	Wallets   refresh.WalletLookup
+	Addresses refresh.AddressLookup
 }
 
 // NewRefreshCurrency refreshes wallets that hold one currency.
@@ -35,19 +33,14 @@ func NewRefreshCurrency(deps RefreshCurrencyDeps) *RefreshCurrency {
 	if deps.Balances == nil {
 		panic("refresh:currency: balance refresh service is required")
 	}
-	if deps.Dispatcher == nil {
-		panic("refresh:currency: refresh dispatcher is required")
-	}
 	return &RefreshCurrency{
-		registry:   deps.Registry,
-		balances:   deps.Balances,
-		dispatcher: deps.Dispatcher,
+		registry: deps.Registry,
+		balances: deps.Balances,
 		run: refresh.NewOperator(refresh.OperatorDeps{
-			Balances:   deps.Balances,
-			Dispatcher: deps.Dispatcher,
-			Wallets:    deps.Wallets,
-			Addresses:  deps.Addresses,
-			Chains:     deps.Registry,
+			Balances:  deps.Balances,
+			Wallets:   deps.Wallets,
+			Addresses: deps.Addresses,
+			Chains:    deps.Registry,
 		}),
 	}
 }
@@ -68,7 +61,6 @@ func (c *RefreshCurrency) Extend() command.Extend {
 		Flags: []command.Flag{
 			&command.StringFlag{Name: "scope", Value: "full", Usage: "balances|transactions|tokens|utxos|full"},
 			&command.StringFlag{Name: "chain", Usage: "required when currency exists on multiple chains"},
-			&command.BoolFlag{Name: "queue", Usage: "dispatch to queue instead of sync execution"},
 			&command.BoolFlag{Name: "force", Usage: "ignore freshness guards"},
 			&command.StringFlag{Name: "reason", Value: "manual", Usage: "reason for refresh"},
 		},
@@ -80,7 +72,6 @@ func (c *RefreshCurrency) Handle(ctx console.Context) error {
 		Currency:  ctx.ArgumentString("currency"),
 		Addresses: ctx.ArgumentStringSlice("addresses"),
 		Chain:     ctx.Option("chain"),
-		Queue:     ctx.OptionBool("queue"),
 		Reason:    ctx.Option("reason"),
 	})
 	printReport(ctx, out.Info, out.Warning, out.Line, out.SoftError)

@@ -84,7 +84,7 @@ func classifyQuoteError(err error) *Error {
 
 func classifyAssetError(err error) *Error {
 	if errors.Is(err, withdraw.ErrUnknownAsset) {
-		return newError(KindUnprocessable, CodeUnknownAsset, err.Error(), err)
+		return newError(KindUnprocessable, CodeUnknownAsset, withdraw.ErrUnknownAsset.Error(), err)
 	}
 	return newError(KindInvalidInput, CodeInvalidAmount, err.Error(), err)
 }

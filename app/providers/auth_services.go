@@ -6,13 +6,17 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/goravel/framework/contracts/foundation"
 
-	"github.com/macrowallets/waas/app/container"
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/app/services/credentialmail"
+	"github.com/macrowallets/waas/app/services/sessions"
 	"github.com/macrowallets/waas/app/services/settings"
+	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
 const (
@@ -60,7 +64,32 @@ func openSealedTotp(stored string) (string, error) {
 	return settings.Open(appfacades.Crypt(), stored)
 }
 
-func wireAuthServices(c *container.Container) error {
+// newSecondFactorVerifier checks a TOTP code or a recovery code against the
+// sealed secret. Login, withdrawals and the profile routes share it.
+func newSecondFactorVerifier(app foundation.Application) (*authsvc.SecondFactorVerifier, error) {
+	bridge, err := newAuthRepoBridge(app)
+	if err != nil {
+		return nil, err
+	}
+	passwords, err := resolve[*authsvc.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.VerifierDeps{
+		Service:  passwords,
+		Counters: bridge,
+		Recovery: bridge,
+		Decrypt:  openSealedTotp,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("vault: two factor login: %w", err)
+	}
+	return verifier, nil
+}
+
+// newTwoFactorLogin keeps the login challenge and the attempt counter in the
+// cache, with the windows from auth.two_factor.
+func newTwoFactorLogin(app foundation.Application) (*authsvc.TwoFactorLogin, error) {
 	cfg := appfacades.Config()
 	challengeTTL := time.Duration(cfg.GetInt("auth.two_factor.challenge_ttl_seconds", defaultTwoFactorChallengeTTLSeconds)) * time.Second
 	attemptWindow := time.Duration(cfg.GetInt("auth.two_factor.attempt_window_seconds", defaultTwoFactorAttemptWindowSeconds)) * time.Second
@@ -71,24 +100,22 @@ func wireAuthServices(c *container.Container) error {
 		TTL:   challengeTTL,
 	})
 	if err != nil {
-		return fmt.Errorf("vault: two factor login: %w", err)
+		return nil, fmt.Errorf("vault: two factor login: %w", err)
 	}
 	attempts, err := authsvc.NewCacheAttemptLimiter(authsvc.AttemptLimiterDeps{
 		Cache:  appfacades.Cache(),
 		Window: attemptWindow,
 	})
 	if err != nil {
-		return fmt.Errorf("vault: two factor login: %w", err)
+		return nil, fmt.Errorf("vault: two factor login: %w", err)
 	}
-	bridge := authRepoBridge{users: c.UserRepo, recovery: c.TotpRecoveryCodeRepo, refresh: c.RefreshTokenRepo}
-	verifier, err := authsvc.NewSecondFactorVerifier(authsvc.VerifierDeps{
-		Service:  authsvc.NewService(),
-		Counters: bridge,
-		Recovery: bridge,
-		Decrypt:  openSealedTotp,
-	})
+	verifier, err := resolve[*authsvc.SecondFactorVerifier](app)
 	if err != nil {
-		return fmt.Errorf("vault: two factor login: %w", err)
+		return nil, err
+	}
+	bridge, err := newAuthRepoBridge(app)
+	if err != nil {
+		return nil, err
 	}
 	login, err := authsvc.NewTwoFactorLogin(authsvc.LoginDeps{
 		Challenges:  challenges,
@@ -98,19 +125,190 @@ func wireAuthServices(c *container.Container) error {
 		MaxAttempts: maxAttempts,
 	})
 	if err != nil {
-		return fmt.Errorf("vault: two factor login: %w", err)
+		return nil, fmt.Errorf("vault: two factor login: %w", err)
+	}
+	return login, nil
+}
+
+// newSessionRevoker moves a user's session watermark and revokes the refresh
+// tokens, recording the revocation in the account activity.
+func newSessionRevoker(app foundation.Application) (*authsvc.SessionRevoker, error) {
+	bridge, err := newAuthRepoBridge(app)
+	if err != nil {
+		return nil, err
+	}
+	activityLog, err := resolve[*repositories.AccountActivityRepository](app)
+	if err != nil {
+		return nil, err
 	}
 	revoker, err := authsvc.NewSessionRevoker(authsvc.RevokerDeps{
 		Watermarks: bridge,
 		Refresh:    bridge,
-		Activity:   repositories.NewAccountActivityRepository(nil),
+		Activity:   activityLog,
 	})
 	if err != nil {
-		return fmt.Errorf("vault: session revoker: %w", err)
+		return nil, fmt.Errorf("vault: session revoker: %w", err)
 	}
+	return revoker, nil
+}
 
-	c.SecondFactor = verifier
-	c.TwoFactorLogin = login
-	c.SessionRevoker = revoker
-	return nil
+func newAuthRepoBridge(app foundation.Application) (authRepoBridge, error) {
+	users, err := resolve[*repositories.UserRepository](app)
+	if err != nil {
+		return authRepoBridge{}, err
+	}
+	recovery, err := resolve[*repositories.TotpRecoveryCodeRepository](app)
+	if err != nil {
+		return authRepoBridge{}, err
+	}
+	refresh, err := resolve[*repositories.RefreshTokenRepository](app)
+	if err != nil {
+		return authRepoBridge{}, err
+	}
+	return authRepoBridge{users: users, recovery: recovery, refresh: refresh}, nil
+}
+
+// newSessionIssuer mints the dashboard sessions with a stored refresh token,
+// after the revocation watermark the revoker keeps.
+func newSessionIssuer(app foundation.Application) (*authsvc.SessionIssuer, error) {
+	passwords, err := resolve[*authsvc.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	refresh, err := resolve[*sessions.RefreshTokens](app)
+	if err != nil {
+		return nil, err
+	}
+	revoker, err := resolve[*authsvc.SessionRevoker](app)
+	if err != nil {
+		return nil, err
+	}
+	issuer, err := authsvc.NewSessionIssuer(authsvc.IssuerDeps{
+		Passwords: passwords,
+		Refresh:   refresh,
+		Revoker:   revoker,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("vault: session issuer: %w", err)
+	}
+	return issuer, nil
+}
+
+// newCredentials changes a password, signed in or with a reset token, and ends
+// the sessions the old one opened.
+func newCredentials(app foundation.Application) (*authsvc.Credentials, error) {
+	passwords, err := resolve[*authsvc.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	users, err := resolve[*usersvc.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	resets, err := resolve[*sessions.PasswordResets](app)
+	if err != nil {
+		return nil, err
+	}
+	issuer, err := resolve[*authsvc.SessionIssuer](app)
+	if err != nil {
+		return nil, err
+	}
+	revoker, err := resolve[*authsvc.SessionRevoker](app)
+	if err != nil {
+		return nil, err
+	}
+	credentials, err := authsvc.NewCredentials(authsvc.CredentialsDeps{
+		Passwords: passwords,
+		Users:     users,
+		Resets:    resets,
+		Sessions:  issuer,
+		Revoker:   revoker,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("vault: credentials: %w", err)
+	}
+	return credentials, nil
+}
+
+// newTOTPEnrollment turns a user's TOTP on and off, sealing the secret with
+// the process Crypt (the enc:v1: envelope the verifier opens).
+func newTOTPEnrollment(app foundation.Application) (*authsvc.TOTPEnrollment, error) {
+	passwords, err := resolve[*authsvc.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	verifier, err := resolve[*authsvc.SecondFactorVerifier](app)
+	if err != nil {
+		return nil, err
+	}
+	users, err := resolve[*usersvc.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	issuer, err := resolve[*authsvc.SessionIssuer](app)
+	if err != nil {
+		return nil, err
+	}
+	enrollment, err := authsvc.NewTOTPEnrollment(authsvc.EnrollmentDeps{
+		Passwords: passwords,
+		Verifier:  verifier,
+		Users:     users,
+		Sealer:    settings.CryptSealer{},
+		Sessions:  issuer,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("vault: totp enrollment: %w", err)
+	}
+	return enrollment, nil
+}
+
+// newSignIn signs dashboard users in and out: registration with its welcome
+// mail, the password login and its 2FA step, refresh and logout.
+func newSignIn(app foundation.Application) (*authsvc.SignIn, error) {
+	users, err := resolve[*usersvc.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	accounts, err := resolve[*account.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	welcome, err := resolve[*credentialmail.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	passwords, err := resolve[*authsvc.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	twoFactor, err := resolve[*authsvc.TwoFactorLogin](app)
+	if err != nil {
+		return nil, err
+	}
+	issuer, err := resolve[*authsvc.SessionIssuer](app)
+	if err != nil {
+		return nil, err
+	}
+	refresh, err := resolve[*sessions.RefreshTokens](app)
+	if err != nil {
+		return nil, err
+	}
+	revoker, err := resolve[*authsvc.SessionRevoker](app)
+	if err != nil {
+		return nil, err
+	}
+	signIn, err := authsvc.NewSignIn(authsvc.SignInDeps{
+		Users:     users,
+		Accounts:  accounts,
+		Welcome:   welcome,
+		Passwords: passwords,
+		TwoFactor: twoFactor,
+		Sessions:  issuer,
+		Refresh:   refresh,
+		Revoker:   revoker,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("vault: sign in: %w", err)
+	}
+	return signIn, nil
 }

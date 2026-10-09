@@ -21,7 +21,7 @@ func SessionAuth() http.Middleware {
 	return func(ctx http.Context) {
 		bearer := ctx.Request().Header("Authorization", "")
 		if !strings.HasPrefix(bearer, "Bearer ") {
-			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "missing or malformed bearer token"}).Abort()
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "missing or malformed bearer token").Abort()
 			return
 		}
 		token := strings.TrimPrefix(bearer, "Bearer ")
@@ -29,22 +29,22 @@ func SessionAuth() http.Middleware {
 		authGuard := facades.Auth(ctx)
 		payload, err := authGuard.Parse(token)
 		if err != nil || payload == nil {
-			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "invalid token"}).Abort()
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid token").Abort()
 			return
 		}
 
 		var user models.User
 		if err := authGuard.User(&user); err != nil {
-			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user not found"}).Abort()
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "user not found").Abort()
 			return
 		}
 
 		if user.ID == uuid.Nil {
-			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user not found"}).Abort()
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "user not found").Abort()
 			return
 		}
 		if !policies.UserMayHoldSession(user.Status) {
-			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "user is not active"}).Abort()
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "user is not active").Abort()
 			return
 		}
 		if policies.UserIsSuspended(user.SuspendedAt) {
@@ -52,7 +52,7 @@ func SessionAuth() http.Middleware {
 			return
 		}
 		if authsvc.SessionRevoked(payload.IssuedAt, user.SessionsRevokedAt) {
-			_ = responses.Send(ctx, http.StatusUnauthorized, http.Json{"error": "session revoked"}).Abort()
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "session revoked").Abort()
 			return
 		}
 

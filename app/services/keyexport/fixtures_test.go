@@ -10,12 +10,12 @@ import (
 
 	"github.com/google/uuid"
 
-	bitcoinchain "github.com/macrowallets/waas/app/adapters/chain/bitcoin"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/addressing"
 	"github.com/macrowallets/waas/app/services/chain"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	walletsvc "github.com/macrowallets/waas/app/services/wallet"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 const (
@@ -202,13 +202,23 @@ func newWalletFixture(t *testing.T, keys *mpcpkg.KeygenResult, curve mpcpkg.Curv
 	}
 }
 
-// registryFor gives Bitcoin the adapter that decides tb1 vs bc1 for child addresses.
+// networkChain is the part of the Bitcoin adapter the wallet service reads when it
+// derives a child address: which network the registered chain record points at,
+// so a Bitcoin record on testnet yields tb1 and not bc1.
+type networkChain struct {
+	types.Chain
+	id      string
+	testnet bool
+}
+
+func (c networkChain) ID() string      { return c.id }
+func (c networkChain) IsTestnet() bool { return c.testnet }
+
+// registryFor gives Bitcoin the chain that decides tb1 vs bc1 for child addresses.
 func registryFor(network Network) *chain.Registry {
 	registry := chain.NewRegistry()
 	if network.AdapterType == models.AdapterTypeBitcoin {
-		registry.RegisterChain(bitcoinchain.NewBitcoinLive(bitcoinchain.BitcoinConfig{
-			ChainIDStr: network.ChainID, RPCURL: "http://127.0.0.1:9", IsTestnet: network.Testnet,
-		}))
+		registry.RegisterChain(networkChain{id: network.ChainID, testnet: network.Testnet})
 	}
 	return registry
 }

@@ -12,16 +12,14 @@ import (
 // account and reports whether the request may continue.
 func abortUnlessAccountAllows(ctx http.Context, account *models.Account) bool {
 	if account == nil {
-		abortWithJSON(ctx, http.StatusNotFound, http.Json{"error": "account not found"})
+		_ = responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "account not found").Abort()
 		return false
 	}
 	if policies.AccountAllowsRequest(account.Status, ctx.Request().Method()) {
 		return true
 	}
-	abortWithJSON(ctx, http.StatusForbidden, http.Json{
-		"error":  "account is " + account.Status + "; only reads are allowed",
-		"code":   responses.CodeAccountFrozen,
-		"status": account.Status,
-	})
+	_ = responses.FailWith(ctx, http.StatusForbidden, responses.CodeAccountFrozen,
+		"account is "+account.Status+"; only reads are allowed",
+		map[string]any{"status": account.Status}).Abort()
 	return false
 }

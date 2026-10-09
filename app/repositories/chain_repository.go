@@ -45,11 +45,8 @@ func (r *ChainRepository) FindByID(ctx context.Context, id string) (*models.Chai
 		return nil, models.ErrRepositoryNotFound
 	}
 	var chain models.Chain
-	if err := r.Query(ctx).Where("id", id).First(&chain); err != nil {
-		return nil, fmt.Errorf("find chain: %w", err)
-	}
-	if chain.ID == "" {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("id", id).FirstOrFail(&chain); err != nil {
+		return nil, db.LookupError(err, "find chain")
 	}
 	return &chain, nil
 }

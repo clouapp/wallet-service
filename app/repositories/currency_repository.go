@@ -67,11 +67,8 @@ func (r *CurrencyRepository) FindByCode(ctx context.Context, code string) (*mode
 		return nil, models.ErrRepositoryNotFound
 	}
 	var currency models.Currency
-	if err := r.Query(ctx).Where("code = ?", code).First(&currency); err != nil {
-		return nil, fmt.Errorf("find currency: %w", err)
-	}
-	if currency.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("code = ?", code).FirstOrFail(&currency); err != nil {
+		return nil, db.LookupError(err, "find currency")
 	}
 	return &currency, nil
 }

@@ -14,23 +14,15 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
-	authsvc "github.com/macrowallets/waas/app/services/auth"
-	featuressvc "github.com/macrowallets/waas/app/services/features"
-	"github.com/macrowallets/waas/app/services/settings"
 )
 
 func TestCreate_Account_OutageOmitsTheCause(t *testing.T) {
 	cause := errors.New(`create account: pq: insert into "accounts" ("name") values ('Acme')`)
-	ctrl := NewAccountsController(AccountsControllerDeps{
-		AccountService: accountsvc.NewService(accountsvc.Deps{
-			Accounts: createFailsAccounts{err: cause},
-		}),
-		Passwords: &authsvc.Service{},
-		Limits:    &settings.Service{},
-		Features:  &featuressvc.Service{},
-	})
+	ctrl := NewAccountController(accountsvc.NewService(accountsvc.Deps{
+		Accounts: createFailsAccounts{err: cause},
+	}))
 	response := &recordingResponse{}
-	ctrl.CreateAccount(&recordingContext{
+	ctrl.Store(&recordingContext{
 		base:     context.WithValue(context.Background(), requestctx.KeyUserID, uuid.New()),
 		request:  &recordingRequest{name: "Acme"},
 		response: response,

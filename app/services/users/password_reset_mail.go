@@ -3,6 +3,7 @@ package users
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/google/uuid"
 )
@@ -27,4 +28,13 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 		return fmt.Errorf("password reset mail: dispatcher is required")
 	}
 	return s.resetMail.DispatchPasswordReset(user.ID)
+}
+
+// ForgotPassword is RequestPasswordReset for the anonymous recovery route,
+// whose answer is the same whatever happened, so it says nothing about the
+// address: a failure is logged without the address and not returned.
+func (s *Service) ForgotPassword(ctx context.Context, email string) {
+	if err := s.RequestPasswordReset(ctx, email); err != nil {
+		slog.Error("auth: send password reset mail failed")
+	}
 }

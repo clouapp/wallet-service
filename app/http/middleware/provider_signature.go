@@ -11,8 +11,8 @@ import (
 	"github.com/gin-gonic/gin"
 	contractshttp "github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	ingestsvc "github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
@@ -31,8 +31,9 @@ type inboundWebhook struct {
 type inboundWebhookKey struct{}
 
 // InboundSignatureDeps is the subscription lookup and the provider whose
-// VerifyInbound implements the existing signature scheme. A zero value is
-// resolved from the container when the request arrives.
+// VerifyInbound implements the existing signature scheme. Subscriptions is
+// required; a nil Lookup uses the built-in providers and a nil Decrypt opens
+// the secret with the application key.
 type InboundSignatureDeps struct {
 	Subscriptions *ingestsvc.Subscriptions
 	Lookup        func() map[string]providers.WebhookProvider
@@ -42,12 +43,10 @@ type InboundSignatureDeps struct {
 // ProviderSignature checks the provider signature on
 // POST /v1/webhooks/ingest/{provider}/{chainID} before the body is parsed.
 // Any other route continues. A failed check aborts and does not reach ingest.
-func ProviderSignature() contractshttp.Middleware {
-	return ProviderSignatureWith(InboundSignatureDeps{})
-}
-
-// ProviderSignatureWith is ProviderSignature with explicit dependencies.
-func ProviderSignatureWith(deps InboundSignatureDeps) contractshttp.Middleware {
+func ProviderSignature(deps InboundSignatureDeps) contractshttp.Middleware {
+	if deps.Subscriptions == nil {
+		panic("provider signature: webhook subscriptions are required")
+	}
 	return func(ctx contractshttp.Context) {
 		if _, _, _, ok := VerifiedInboundWebhook(ctx); ok {
 			continueChain(ctx)
@@ -61,30 +60,30 @@ func ProviderSignatureWith(deps InboundSignatureDeps) contractshttp.Middleware {
 		}
 		rawBody, status, message := readInboundBody(ginCtx.Request)
 		if status != 0 {
-			abortWithJSON(ctx, status, contractshttp.Json{"error": message})
+			_ = responses.FailMessage(ctx, status, message).Abort()
 			return
 		}
 
 		sub, status, message := inboundSubscription(ctx, deps, providerName, chainID)
 		if status != 0 {
-			abortWithJSON(ctx, status, contractshttp.Json{"error": message})
+			_ = responses.FailMessage(ctx, status, message).Abort()
 			return
 		}
 		secret, err := decryptInboundSecret(deps, sub.SigningSecret)
 		if err != nil {
 			slog.Error("ingest decrypt signing secret")
-			abortWithJSON(ctx, http.StatusInternalServerError, contractshttp.Json{"error": "configuration error"})
+			_ = responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "configuration error").Abort()
 			return
 		}
 		provider, found := deps.provider(providerName)
 		if !found {
-			abortWithJSON(ctx, http.StatusBadRequest, contractshttp.Json{"error": "unknown provider"})
+			_ = responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "unknown provider").Abort()
 			return
 		}
 		valid, verifyErr := provider.VerifyInbound(providers.Header(ginCtx.Request.Header), rawBody, secret)
 		if verifyErr != nil || !valid {
 			slog.Warn("ingest webhook signature rejected", "provider", providerName)
-			abortWithJSON(ctx, http.StatusUnauthorized, contractshttp.Json{"error": "invalid webhook signature"})
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeInvalidSignature, "invalid webhook signature").Abort()
 			return
 		}
 
@@ -119,12 +118,7 @@ func (d InboundSignatureDeps) provider(name string) (providers.WebhookProvider, 
 	if d.Lookup != nil {
 		return providers.Resolve(name, d.Lookup)
 	}
-	catalog := container.MustMake[*ingestsvc.Catalog]()
-	var lookup func() map[string]providers.WebhookProvider
-	if catalog != nil {
-		lookup = catalog.Lookup
-	}
-	return providers.Resolve(name, lookup)
+	return providers.Resolve(name, nil)
 }
 
 func inboundWebhookNames(ginCtx *gin.Context) (providerName, chainID string, ok bool) {
@@ -172,11 +166,7 @@ func readInboundBody(req *http.Request) ([]byte, int, string) {
 }
 
 func inboundSubscription(ctx contractshttp.Context, deps InboundSignatureDeps, providerName, chainID string) (*models.WebhookSubscription, int, string) {
-	subs := deps.Subscriptions
-	if subs == nil {
-		subs = container.MustMake[*ingestsvc.Subscriptions]()
-	}
-	sub, err := subs.FindByProviderAndChain(ctx.Context(), providerName, chainID)
+	sub, err := deps.Subscriptions.FindByProviderAndChain(ctx.Context(), providerName, chainID)
 	if errors.Is(err, models.ErrRepositoryNotFound) {
 		sub, err = nil, nil
 	}

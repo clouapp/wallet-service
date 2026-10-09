@@ -2,8 +2,10 @@ package architecture
 
 import (
 	"go/ast"
+	"go/token"
 	"go/types"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -346,5 +348,58 @@ func responseIsModelPackage(modulePath string, pkg *types.Package) bool {
 	if pkg == nil {
 		return false
 	}
-	return pkg.Path() == modulePath+"/app/models" || pkg.Path() == modulePath+"/pkg/authmodel"
+	return pkg.Path() == modulePath+"/app/models"
+}
+
+// TestError_Bodies_GoThroughTheResponsesWriters reports a map literal with an
+// "error" key whose value is not an object, in production code under app/ or
+// routes/: the legacy {"error":"text"} shape. Nothing wraps it into the
+// envelope, so it would reach the wire as written. A failure is
+// written by responses.Fail, FailWith, FailMessage or Error
+// (.ai/guidelines/http-error-contract.md).
+func TestError_Bodies_GoThroughTheResponsesWriters(t *testing.T) {
+	module := sharedModule(t)
+	var violations Violations
+	for _, file := range module.ProductionFiles("app", "routes") {
+		ast.Inspect(file.AST, func(node ast.Node) bool {
+			literal, ok := node.(*ast.CompositeLit)
+			if !ok || !isMapLiteral(literal) {
+				return true
+			}
+			for _, element := range literal.Elts {
+				pair, ok := element.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+				key, ok := pair.Key.(*ast.BasicLit)
+				if !ok || key.Kind != token.STRING {
+					continue
+				}
+				if name, err := strconv.Unquote(key.Value); err != nil || name != "error" {
+					continue
+				}
+				if _, object := pair.Value.(*ast.CompositeLit); object {
+					continue
+				}
+				violations.Add("%s builds a legacy {\"error\": ...} map", file.Path)
+			}
+			return true
+		})
+	}
+	Report(t, &violations)
+}
+
+// isMapLiteral reports a map composite literal: map[...]..., or a named map
+// such as http.Json.
+func isMapLiteral(literal *ast.CompositeLit) bool {
+	switch typed := literal.Type.(type) {
+	case *ast.MapType:
+		return true
+	case *ast.SelectorExpr:
+		return typed.Sel.Name == "Json"
+	case *ast.Ident:
+		return typed.Name == "Json"
+	default:
+		return false
+	}
 }

@@ -76,11 +76,8 @@ func (r *WithdrawalRepository) FindByID(ctx context.Context, id uuid.UUID) (*mod
 		return nil, fmt.Errorf("withdrawal id is required")
 	}
 	var w models.Withdrawal
-	if err := r.Query(ctx).Where("id = ?", id).First(&w); err != nil {
-		return nil, fmt.Errorf("find withdrawal: %w", err)
-	}
-	if w.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("id = ?", id).FirstOrFail(&w); err != nil {
+		return nil, db.LookupError(err, "find withdrawal")
 	}
 	return &w, nil
 }
@@ -88,11 +85,8 @@ func (r *WithdrawalRepository) FindByID(ctx context.Context, id uuid.UUID) (*mod
 // FindByIDAndWallet returns the withdrawal when it belongs to walletID.
 func (r *WithdrawalRepository) FindByIDAndWallet(ctx context.Context, withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error) {
 	var w models.Withdrawal
-	if err := r.Query(ctx).Where("id = ? AND wallet_id = ?", withdrawalID, walletID).First(&w); err != nil {
-		return nil, fmt.Errorf("find withdrawal: %w", err)
-	}
-	if w.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("id = ? AND wallet_id = ?", withdrawalID, walletID).FirstOrFail(&w); err != nil {
+		return nil, db.LookupError(err, "find withdrawal")
 	}
 	return &w, nil
 }
@@ -103,11 +97,8 @@ func (r *WithdrawalRepository) FindByTransactionID(ctx context.Context, transact
 		return nil, fmt.Errorf("transaction id is required")
 	}
 	var w models.Withdrawal
-	if err := r.Query(ctx).Where("transaction_id = ?", transactionID).First(&w); err != nil {
-		return nil, fmt.Errorf("find withdrawal by transaction: %w", err)
-	}
-	if w.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("transaction_id = ?", transactionID).FirstOrFail(&w); err != nil {
+		return nil, db.LookupError(err, "find withdrawal by transaction")
 	}
 	return &w, nil
 }

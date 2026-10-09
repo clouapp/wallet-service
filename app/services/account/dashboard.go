@@ -2,7 +2,11 @@ package account
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
+	"sort"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -10,55 +14,181 @@ import (
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 )
 
-// UpdateAccount applies a name and/or view_all_wallets change on the account
-// the caller already loaded. A blank name is left as stored. Each column is
-// written on its own, matching the previous handler: a later failure leaves
-// the earlier column committed and the in-memory account updated only for
-// the writes that succeeded.
-func (s *Service) UpdateAccount(ctx context.Context, account *models.Account, name string, viewAllWallets *bool) error {
-	if ctx == nil {
-		return fmt.Errorf("update account: context is required")
-	}
-	if account == nil {
-		return fmt.Errorf("update account: account is required")
-	}
-	if err := s.requireAccounts(); err != nil {
-		return err
-	}
-	if name != "" {
-		if err := s.accounts.SetName(ctx, account.ID, name); err != nil {
-			return err
-		}
-		account.Name = name
-	}
-	if viewAllWallets != nil {
-		if err := s.accounts.SetViewAllWallets(ctx, account.ID, *viewAllWallets); err != nil {
-			return err
-		}
-		account.ViewAllWallets = *viewAllWallets
-	}
-	return nil
+var (
+	// ErrAccountNotCreated is an account, or its owner membership, that could
+	// not be inserted.
+	ErrAccountNotCreated = errors.New("create the account")
+	// ErrNotMember is an account the user is not an active member of.
+	ErrNotMember = errors.New("not a member of this account")
+	// ErrUserNotFound is a signed-in user whose row cannot be read.
+	ErrUserNotFound = errors.New("user not found")
+)
+
+// View is an account as the dashboard serves it: the row and its sweep
+// limits, which live in settings. A failed limits read fails the view; it is
+// never served without them.
+type View struct {
+	Account     models.Account
+	SweepLimits *string
 }
 
-// SetStatus sets accounts.status and the same field on the loaded account.
-func (s *Service) SetStatus(ctx context.Context, account *models.Account, status string) error {
+// Detail is GET /v1/accounts/{accountId}: the view and the account's active
+// feature keys in catalog order.
+type Detail struct {
+	View
+	Features []string
+}
+
+// CreateAccountInput is POST /v1/accounts: the account's name and the user who
+// becomes its owner.
+type CreateAccountInput struct {
+	Name    string
+	OwnerID uuid.UUID
+}
+
+// UpdateAccountInput is PATCH /v1/accounts/{accountId}. A blank Name and a
+// nil ViewAllWallets are left as stored.
+type UpdateAccountInput struct {
+	Name           string
+	ViewAllWallets *bool
+}
+
+// CreateForOwner creates an active account with the caller as its owner and
+// returns its view. A failed insert is ErrAccountNotCreated.
+func (s *Service) CreateForOwner(ctx context.Context, in CreateAccountInput) (View, error) {
+	account, err := s.Create(ctx, in.Name, in.OwnerID)
+	if err != nil {
+		return View{}, fmt.Errorf("%w: %w", ErrAccountNotCreated, err)
+	}
+	return s.view(ctx, *account)
+}
+
+// Detail returns the view of the account the caller already loaded and its
+// active feature keys. A failed feature read is logged and returned.
+func (s *Service) Detail(ctx context.Context, account *models.Account) (Detail, error) {
+	view, err := s.view(ctx, *account)
+	if err != nil {
+		return Detail{}, err
+	}
+	if s.features == nil {
+		return Detail{}, fmt.Errorf("account service: features are required")
+	}
+	names, err := s.features.ActiveForAccount(ctx, account.ID)
+	if err != nil {
+		slog.Error(fmt.Sprintf("account: active features: %v", err))
+		return Detail{}, err
+	}
+	return Detail{View: view, Features: names}, nil
+}
+
+// UpdateAccount applies a name and/or view_all_wallets change on the account
+// the caller already loaded and returns its view. Each column is written on
+// its own, matching the previous handler: a later failure leaves the earlier
+// column committed and the in-memory account updated only for the writes that
+// succeeded.
+func (s *Service) UpdateAccount(ctx context.Context, account *models.Account, in UpdateAccountInput) (View, error) {
 	if ctx == nil {
-		return fmt.Errorf("set account status: context is required")
+		return View{}, fmt.Errorf("update account: context is required")
 	}
 	if account == nil {
-		return fmt.Errorf("set account status: account is required")
-	}
-	if status == "" {
-		return fmt.Errorf("set account status: status is required")
+		return View{}, fmt.Errorf("update account: account is required")
 	}
 	if err := s.requireAccounts(); err != nil {
-		return err
+		return View{}, err
+	}
+	if in.Name != "" {
+		if err := s.accounts.SetName(ctx, account.ID, in.Name); err != nil {
+			return View{}, err
+		}
+		account.Name = in.Name
+	}
+	if in.ViewAllWallets != nil {
+		if err := s.accounts.SetViewAllWallets(ctx, account.ID, *in.ViewAllWallets); err != nil {
+			return View{}, err
+		}
+		account.ViewAllWallets = *in.ViewAllWallets
+	}
+	return s.view(ctx, *account)
+}
+
+// Archive sets the account the caller already loaded to archived and returns
+// its view.
+func (s *Service) Archive(ctx context.Context, account *models.Account) (View, error) {
+	return s.changeStatus(ctx, account, models.AccountStatusArchived)
+}
+
+// Freeze sets the account the caller already loaded to frozen and returns its
+// view.
+func (s *Service) Freeze(ctx context.Context, account *models.Account) (View, error) {
+	return s.changeStatus(ctx, account, models.AccountStatusFrozen)
+}
+
+// changeStatus sets accounts.status and the same field on the loaded account.
+func (s *Service) changeStatus(ctx context.Context, account *models.Account, status string) (View, error) {
+	if ctx == nil {
+		return View{}, fmt.Errorf("set account status: context is required")
+	}
+	if account == nil {
+		return View{}, fmt.Errorf("set account status: account is required")
+	}
+	if err := s.requireAccounts(); err != nil {
+		return View{}, err
 	}
 	if err := s.accounts.SetStatus(ctx, account.ID, status); err != nil {
-		return err
+		return View{}, err
 	}
 	account.Status = status
-	return nil
+	return s.view(ctx, *account)
+}
+
+// SetDefaultAccount makes an account the user is a member of the user's
+// default account and returns its view. A membership that is missing, or
+// cannot be read, is ErrNotMember; a user that cannot be read is
+// ErrUserNotFound. An account that cannot be read back after the write has no
+// view: the result is nil with no error.
+func (s *Service) SetDefaultAccount(ctx context.Context, userID, accountID uuid.UUID) (*View, error) {
+	member, err := s.FindMember(ctx, accountID, userID)
+	if err != nil || member == nil {
+		return nil, ErrNotMember
+	}
+	user, err := s.FindUserByID(ctx, userID)
+	logUnreadable("default account: read user", err)
+	if user == nil {
+		return nil, ErrUserNotFound
+	}
+	if err := s.users.UpdateDefaultAccountID(ctx, user.ID, &accountID); err != nil {
+		return nil, err
+	}
+	account, err := s.FindByID(ctx, accountID)
+	logUnreadable("default account: read account", err)
+	if account == nil {
+		return nil, nil
+	}
+	view, err := s.view(ctx, *account)
+	if err != nil {
+		return nil, err
+	}
+	return &view, nil
+}
+
+// logUnreadable logs a read that failed for a reason other than a missing row,
+// where the caller answers as if the row were missing.
+func logUnreadable(read string, err error) {
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+		slog.Error("account: "+read, "error", err)
+	}
+}
+
+// view reads the account's sweep limits for its dashboard view.
+func (s *Service) view(ctx context.Context, account models.Account) (View, error) {
+	if s.sweepLimits == nil {
+		return View{}, fmt.Errorf("account service: sweep limits are required")
+	}
+	document, err := s.sweepLimits.AccountSweepLimitsWire(ctx, account.ID)
+	if err != nil {
+		return View{}, err
+	}
+	return View{Account: account, SweepLimits: document}, nil
 }
 
 // ListMembers pages the account's active memberships.
@@ -112,6 +242,51 @@ func (s *Service) ListForMember(ctx context.Context, userID uuid.UUID, search, e
 		return nil, 0, err
 	}
 	return s.accounts.PaginateByMember(ctx, userID, search, environment, limit, offset)
+}
+
+// MemberAccount is the view of an account with the listing user's role on it.
+type MemberAccount struct {
+	View
+	Role string
+}
+
+// ListForMemberWithRoles is ListForMember with the user's stored role and the
+// sweep limits on each listed account. A listed account with no active role is
+// a broken membership and fails the read instead of being served without one;
+// so do sweep limits that cannot be read.
+func (s *Service) ListForMemberWithRoles(ctx context.Context, userID uuid.UUID, search, environment string, limit, offset int) ([]MemberAccount, int64, error) {
+	accounts, total, err := s.ListForMember(ctx, userID, search, environment, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	items := make([]MemberAccount, 0, len(accounts))
+	if len(accounts) == 0 {
+		return items, total, nil
+	}
+
+	accountIDs := make([]uuid.UUID, len(accounts))
+	for i, account := range accounts {
+		accountIDs[i] = account.ID
+	}
+	roles, err := s.RolesForUserAccounts(ctx, userID, accountIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	for _, account := range accounts {
+		role, ok := roles[account.ID]
+		if !ok || strings.TrimSpace(role) == "" {
+			return nil, 0, fmt.Errorf("account %s has no role for user %s", account.ID, userID)
+		}
+		items = append(items, MemberAccount{View: View{Account: account}, Role: role})
+	}
+	for i := range items {
+		view, err := s.view(ctx, items[i].Account)
+		if err != nil {
+			return nil, 0, err
+		}
+		items[i].View = view
+	}
+	return items, total, nil
 }
 
 // RolesForUserAccounts returns the caller's role on each account.
@@ -321,4 +496,56 @@ func (s *Service) requireAccounts() error {
 		return fmt.Errorf("account service: accounts repository is required")
 	}
 	return nil
+}
+
+// SignInAccount is one account of a signed-in user with the user's role on it.
+type SignInAccount struct {
+	Account models.Account
+	Role    string
+}
+
+// SignInAccounts is what a login answers with: the user's accounts and which of
+// them is the default. DefaultID is uuid.Nil when the user has no account.
+type SignInAccounts struct {
+	Accounts  []SignInAccount
+	DefaultID uuid.UUID
+}
+
+// SignInAccounts lists the accounts the user belongs to, ordered by environment
+// and then id because the store has no order and the list is part of the login
+// body. The default is the user's own default account when they still belong to
+// it, otherwise the first account. A membership whose account cannot be read is
+// left out; a failed membership read is the error.
+func (s *Service) SignInAccounts(ctx context.Context, userID uuid.UUID, defaultAccountID *uuid.UUID) (SignInAccounts, error) {
+	memberships, err := s.ListMemberships(ctx, userID)
+	if err != nil {
+		return SignInAccounts{}, err
+	}
+
+	var result SignInAccounts
+	for _, membership := range memberships {
+		account, err := s.FindByID(ctx, membership.AccountID)
+		if err != nil || account == nil {
+			continue
+		}
+		result.Accounts = append(result.Accounts, SignInAccount{Account: *account, Role: membership.Role})
+	}
+
+	sort.Slice(result.Accounts, func(i, j int) bool {
+		left, right := result.Accounts[i].Account, result.Accounts[j].Account
+		if left.Environment != right.Environment {
+			return left.Environment < right.Environment
+		}
+		return left.ID.String() < right.ID.String()
+	})
+
+	for _, entry := range result.Accounts {
+		if defaultAccountID != nil && *defaultAccountID == entry.Account.ID {
+			result.DefaultID = entry.Account.ID
+		}
+	}
+	if result.DefaultID == uuid.Nil && len(result.Accounts) > 0 {
+		result.DefaultID = result.Accounts[0].Account.ID
+	}
+	return result, nil
 }

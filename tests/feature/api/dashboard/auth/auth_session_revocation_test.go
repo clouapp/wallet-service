@@ -9,6 +9,7 @@ import (
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
@@ -40,7 +41,7 @@ func (s *SessionRevocationTestSuite) changePassword(bearer, current, next string
 }
 
 func (s *SessionRevocationTestSuite) seedResetToken(userID uuid.UUID) string {
-	svc := authsvc.NewService()
+	svc := authsvc.NewService(appfacades.Hash())
 	raw, err := svc.GenerateRandomToken()
 	s.Require().NoError(err)
 	_, err = facades.Orm().Query().Exec(
@@ -170,4 +171,35 @@ func (s *SessionRevocationTestSuite) TestSign_In_RightAfterAResetGetsAWorkingSes
 	var session loginBody
 	s.decode(resp, &session)
 	s.assertSessionWorks(session)
+}
+
+func (s *SessionRevocationTestSuite) logout(bearer string) contractstesting.Response {
+	return s.authedPost(bearer, "/v1/auth/logout", "")
+}
+
+// A JWT holds only key, sub, iat (whole seconds) and exp, so a login in the
+// second of a logout would mint the very token the logout just blacklisted.
+func (s *SessionRevocationTestSuite) TestLogout_ThenSignIn_WithinTheSameSecondGetsAWorkingSession() {
+	user := s.seedUser(false)
+	for range 3 {
+		old := s.signIn(user.Email)
+
+		s.logout(old.AccessToken).AssertNoContent()
+		renewed := s.signIn(user.Email)
+
+		s.NotEqual(old.AccessToken, renewed.AccessToken, "a new login must not reuse the logged-out token")
+		s.assertSessionWorks(renewed)
+		s.assertSessionRevoked(s.getMe(old.AccessToken))
+	}
+}
+
+func (s *SessionRevocationTestSuite) TestLogout_EndsEverySessionOfTheUser() {
+	user := s.seedUser(false)
+	caller := s.signIn(user.Email)
+	otherDevice := s.signIn(user.Email)
+
+	s.logout(caller.AccessToken).AssertNoContent()
+
+	s.assertSessionRefused(caller)
+	s.assertSessionRefused(otherDevice)
 }

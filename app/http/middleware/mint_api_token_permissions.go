@@ -7,6 +7,7 @@ import (
 
 	"github.com/goravel/framework/contracts/http"
 
+	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/policies"
 )
 
@@ -24,7 +25,7 @@ func MintAPITokenPermissions() http.Middleware {
 		if apply {
 			decision := policies.MintAPITokenPermissions(AccountRole(ctx), permissions)
 			if !decision.Allowed() {
-				abortWithJSON(ctx, http.StatusForbidden, http.Json{"error": decision.Message()})
+				_ = responses.FailMessage(ctx, http.StatusForbidden, decision.Message()).Abort()
 				return
 			}
 		}

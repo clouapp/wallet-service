@@ -42,3 +42,17 @@ func TestAccounts_From_NilIsAnEmptyList(t *testing.T) {
 		t.Fatalf("nil page = %s, want []", raw)
 	}
 }
+
+func TestPlatform_Lifecycle_KeepsTheStatusBody(t *testing.T) {
+	t.Parallel()
+
+	account := &models.Account{ID: uuid.MustParse("11111111-1111-4111-8111-111111111111"), Name: "Acme", Status: models.AccountStatusFrozen}
+	raw, err := json.Marshal(NewLifecycle(account))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `{"id":"11111111-1111-4111-8111-111111111111","status":"frozen"}`
+	if string(raw) != want {
+		t.Fatalf("wire = %s", raw)
+	}
+}

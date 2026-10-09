@@ -1,8 +1,10 @@
 # Custody and signing
 
-> Status: the custody model HOLDS. TARGET: key material confined to the custody
-> packages, a single signing entry point per curve, nothing of it on the wire
-> or in logs by construction (no `json:"-"` reliance). Migration: §3.5, §3.6.
+> Status: HOLDS. Key material stays in `app/services/mpc` and the custody
+> services, and nothing of it is on the wire by construction: models carry no wire
+> tags (`TestModels_Carry_NoWireTags`) and no resource has a key column
+> (`app/http/resources/key_columns_test.go`). Logging is covered by
+> `errors-and-logging.md`.
 
 ## The model
 
@@ -33,7 +35,7 @@ Curves: secp256k1 (EVM, BTC) and ed25519 (SOL). HD derivation (`hdkey`,
   webhook. A model carries no wire tag, so a key column cannot leak by a missing
   `json:"-"`; the resource simply does not have the field.
 - A passphrase arrives in exactly one form request field, crosses to the service
-  in a DTO, and is discarded after the operation. It is never stored, compared
+  as an input struct field, and is discarded after the operation. It is never stored, compared
   as plain text, or logged.
 - **Signing is one entry point per curve**, inside the custody service, taking
   an unsigned transaction built by the chain adapter and returning a signed one.

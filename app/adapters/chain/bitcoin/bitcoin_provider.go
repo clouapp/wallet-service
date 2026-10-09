@@ -14,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 
 	"github.com/macrowallets/waas/app/adapters/chain/rpc"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -215,7 +216,7 @@ func (p directProvider) broadcast(ctx context.Context, raw []byte) (string, erro
 func (p directProvider) broadcastREST(ctx context.Context, raw []byte) (string, error) {
 	status, body, err := p.live.esploraPost(ctx, "/tx", hex.EncodeToString(raw))
 	if err != nil {
-		return "", err
+		return "", chain.ClassifyBroadcast(chain.Unavailable(err))
 	}
 	reason := strings.TrimSpace(string(body))
 	if status >= http.StatusOK && status < http.StatusMultipleChoices {
@@ -224,7 +225,7 @@ func (p directProvider) broadcastREST(ctx context.Context, raw []byte) (string, 
 	if status >= http.StatusBadRequest && status < http.StatusInternalServerError && !isRateLimited(status, body) {
 		return "", &btcBroadcastRejectedError{provider: p.label(), reason: fmt.Sprintf("HTTP %d: %s", status, reason)}
 	}
-	return "", &esploraStatusError{path: "/tx", status: status, body: reason}
+	return "", chain.FromProviderHTTP(status, reason)
 }
 
 func (p directProvider) broadcastRPC(ctx context.Context, raw []byte) (string, error) {
@@ -240,7 +241,7 @@ func (p directProvider) broadcastRPC(ctx context.Context, raw []byte) (string, e
 		}
 	}
 	if err != nil {
-		return "", unsupportedWhenMethodNotFound(err)
+		return "", chain.ClassifyBroadcast(unsupportedWhenMethodNotFound(err))
 	}
 	return txHash, nil
 }

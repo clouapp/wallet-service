@@ -1,14 +1,15 @@
 # Queues and workers
 
-> Status: PARTLY HOLDS (the split exists). TARGET: one consumer per queue,
-> thin jobs with typed payloads, no dead events, the split written down and
-> tested. Migration: alignment prompt (Part 1) §3.10.
+> Status: HOLDS. One consumer per queue, thin jobs with typed payloads and no
+> domain events are guarded by `tests/architecture` (`queue_runner_test.go`,
+> `thin_jobs_test.go`, `thin_commands_test.go`).
 
 ## What runs where
 
 | Mechanism | Used for | Consumer |
 |---|---|---|
-| Goravel queue (`database` connection, queue `blockchain`) | wallet refresh jobs (balances, transactions, tokens, UTXOs), reconcile | the framework's queue runner |
+| Goravel queue (`QUEUE_CONNECTION`, default `sync`) | credential mail (`SendCredentialMailJob`, always `DispatchSync`) | runs in the dispatching process. A `database` connection (queue `blockchain`, `failed_jobs`) is configured, but nothing consumes it |
+| `localworkers` balance loop | the wallet balance read model (`WalletRefresher.RefreshAll`, every `vault.local_workers` interval) | started from `main.go` only in local; the deployed Lambdas have no balance refresher yet |
 | AWS SQS (`app/adapters/queue/sqs`) | outbound webhook delivery | the webhook worker (local: `localworkers`) |
 | `localworkers` | local stand-in for the deployed workers (goroutine tickers) | started from `main.go` only in local |
 
@@ -32,10 +33,16 @@ keep compiling.
 - `ShouldRetry` distinguishes a known failure (retry) from an unknown outcome
   (do not retry; e.g. a broadcast whose result is unknown is reconciled, not
   re-sent).
-- **Events**: every registered event has a dispatcher and a listener. Remove
-  events nobody dispatches and listeners nobody registers. If an event only
-  enqueues one job, the service dispatches the job through a `Dispatcher` port.
-- Services never call `facades.Queue()` / `facades.Event()` directly; they get a
+- **No domain events.** The app registers none (`bootstrap/app.go` has no
+  `WithEvents`): Goravel's `Dispatch` fails with `EventListenerNotBind` for an
+  event without a listener. Add an event only together with a listener that
+  does something.
+- **No queue without a consumer.** The wallet refresh jobs were removed because
+  nothing ran `queue:work` and there is no `jobs` table; a wallet's balances
+  are refreshed by the `localworkers` loop and by the `refresh:*` /
+  `reconcile:wallet` commands, which run in process. Add a queue only together
+  with its worker and its table.
+- Services never call `facades.Queue()` directly; they get a
   dispatcher port.
 - Artisan commands are thin (resolve a typed service → one call), end through one
   `fail(ctx, err)` helper with a non-zero exit, and contain no query.

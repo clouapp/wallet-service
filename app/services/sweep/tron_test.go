@@ -18,13 +18,13 @@ import (
 	"github.com/shopspring/decimal"
 	"google.golang.org/protobuf/encoding/protowire"
 
-	tronchain "github.com/macrowallets/waas/app/adapters/chain/tron"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/addressing"
 	"github.com/macrowallets/waas/app/services/chain"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/feature/support/chainfixtures"
 )
 
 const (
@@ -178,22 +178,6 @@ func (f *fakeTronNode) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// tronSigningChain is the production Nile adapter against the fake node;
-// broadcasts are recorded and immediately included, never sent.
-type tronSigningChain struct {
-	*tronchain.TronLive
-	node       *fakeTronNode
-	broadcasts *[]*types.SignedTx
-}
-
-func (c *tronSigningChain) BroadcastTransaction(ctx context.Context, signed *types.SignedTx) (string, error) {
-	*c.broadcasts = append(*c.broadcasts, signed)
-	c.node.record("broadcast:" + signed.TxHash)
-	c.node.include(signed.TxHash)
-	c.node.moveTRX(signed.RawBytes)
-	return signed.TxHash, nil
-}
-
 // moveTRX applies a TransferContract's amount to the in-memory balances; other
 // contracts leave them alone.
 func (f *fakeTronNode) moveTRX(transaction []byte) {
@@ -254,16 +238,21 @@ func protoVarint(message []byte, number protowire.Number) (uint64, bool) {
 	return 0, false
 }
 
-func newTronSigningChain(t *testing.T, broadcasts *[]*types.SignedTx) (*tronSigningChain, *fakeTronNode) {
+// newTronSigningChain is the production Nile adapter against the fake node;
+// broadcasts are recorded and immediately included, never sent.
+func newTronSigningChain(t *testing.T, broadcasts *[]*types.SignedTx) (*chainfixtures.TronNile, *fakeTronNode) {
 	t.Helper()
 	node := newFakeTronNode(t)
 	server := httptest.NewServer(node)
 	t.Cleanup(server.Close)
-	live := tronchain.NewTronLive(tronchain.TronConfig{
-		ChainIDStr: models.ChainTron, ChainName: "TRON Nile", NativeSymbol: models.NativeTRX,
-		RPCURL: server.URL, IsTestnet: true, Confirmations: 20, Tokens: []types.Token{tronTestUSDT},
+	adapter := chainfixtures.NewTronNile(server.URL, []types.Token{tronTestUSDT}, func(_ context.Context, signed *types.SignedTx) (string, error) {
+		*broadcasts = append(*broadcasts, signed)
+		node.record("broadcast:" + signed.TxHash)
+		node.include(signed.TxHash)
+		node.moveTRX(signed.RawBytes)
+		return signed.TxHash, nil
 	})
-	return &tronSigningChain{TronLive: live, node: node, broadcasts: broadcasts}, node
+	return adapter, node
 }
 
 // assertTronSentFrom decodes the Transaction protobuf and recovers its signer over
@@ -600,7 +589,7 @@ func TestTronSweepLimitsAndSupport(t *testing.T) {
 	if limits.MaxAddressesPerRequest[models.AdapterTypeTron] != 50 {
 		t.Fatalf("TRON address cap %d", limits.MaxAddressesPerRequest[models.AdapterTypeTron])
 	}
-	if quoteRecipient(models.AdapterTypeTron, "") != tronchain.TronFeeProbeRecipient() || quoteRecipient(models.AdapterTypeTron, tronTestDestination) != tronTestDestination {
+	if quoteRecipient(models.AdapterTypeTron, "") != chain.TronFeeProbeRecipient() || quoteRecipient(models.AdapterTypeTron, tronTestDestination) != tronTestDestination {
 		t.Fatal("TRON quote recipient")
 	}
 }

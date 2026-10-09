@@ -118,3 +118,12 @@ func TransactionsFrom(transactions []models.Transaction) []Transaction {
 	}
 	return views
 }
+
+// List documents the paginated list of transactions, as pagination.Response
+// writes it.
+type List struct {
+	Data   []Transaction `json:"data"`
+	Total  int64         `json:"total" example:"1"`
+	Limit  int           `json:"limit" example:"50"`
+	Offset int           `json:"offset" example:"0"`
+}

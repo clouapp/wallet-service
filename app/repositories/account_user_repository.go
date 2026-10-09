@@ -2,7 +2,6 @@ package repositories
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -42,11 +41,8 @@ func (r *AccountUserRepository) Create(ctx context.Context, au *models.AccountUs
 // Status is not filtered, so a suspended row is still found.
 func (r *AccountUserRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.AccountUser, error) {
 	var au models.AccountUser
-	if err := r.Query(ctx).Where("id = ?", id).First(&au); err != nil {
-		return nil, fmt.Errorf("find account user by id: %w", err)
-	}
-	if au.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("id = ?", id).FirstOrFail(&au); err != nil {
+		return nil, db.LookupError(err, "find account user by id")
 	}
 	return &au, nil
 }
@@ -76,11 +72,8 @@ func (r *AccountUserRepository) findMembership(ctx context.Context, accountID, u
 	if activeOnly {
 		q = q.Where("deleted_at IS NULL AND status = ?", models.StatusActive)
 	}
-	if err := q.First(&au); err != nil {
-		return nil, fmt.Errorf("find account user: %w", err)
-	}
-	if au.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := q.FirstOrFail(&au); err != nil {
+		return nil, db.LookupError(err, "find account user")
 	}
 	return &au, nil
 }
@@ -126,12 +119,12 @@ func (r *AccountUserRepository) RolesForUserAccounts(ctx context.Context, userID
 	return roles, nil
 }
 
-// PaginateByUserID pages the user's active memberships.
+// PaginateByUserID pages the user's active memberships, oldest first.
 func (r *AccountUserRepository) PaginateByUserID(ctx context.Context, userID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error) {
 	return r.paginate(ctx, "user_id = ? AND deleted_at IS NULL AND status = '"+models.StatusActive+"'", userID, limit, offset)
 }
 
-// PaginateByAccountID pages an account's active memberships.
+// PaginateByAccountID pages an account's active memberships, oldest first.
 func (r *AccountUserRepository) PaginateByAccountID(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error) {
 	return r.paginate(ctx, "account_id = ? AND deleted_at IS NULL", accountID, limit, offset)
 }
@@ -179,7 +172,8 @@ func (r *AccountUserRepository) paginate(ctx context.Context, where string, id u
 		return nil, 0, fmt.Errorf("count account users: %w", err)
 	}
 	var members []models.AccountUser
-	if err := r.Query(ctx).Where(where, id).Offset(offset).Limit(limit).Find(&members); err != nil {
+	// Creation order, then id: a stable order, so offset and limit page every row once.
+	if err := r.Query(ctx).Where(where, id).Order("created_at").Order("id").Offset(offset).Limit(limit).Find(&members); err != nil {
 		return nil, 0, fmt.Errorf("list account users: %w", err)
 	}
 	return members, total, nil
@@ -273,15 +267,9 @@ func (r *AccountUserRepository) FindForOwnerAttach(ctx context.Context, accountI
 	err := r.Query(ctx).
 		Where("account_id = ? AND user_id = ?", accountID, userID).
 		OrderByRaw("CASE WHEN deleted_at IS NULL THEN 0 ELSE 1 END, created_at DESC").
-		First(&au)
+		FirstOrFail(&au)
 	if err != nil {
-		if errors.Is(err, models.ErrRepositoryNotFound) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("find account user: %w", err)
-	}
-	if au.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+		return nil, db.LookupError(err, "find account user")
 	}
 	return &au, nil
 }

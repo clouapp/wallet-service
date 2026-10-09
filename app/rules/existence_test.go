@@ -45,8 +45,40 @@ func TestDB_Exists_PassesWhenTheReadFailsOrTheValueIsBlank(t *testing.T) {
 	if !rule.Passes(context.Background(), nil, "", "chains", "id") {
 		t.Fatal("expected a blank value to pass")
 	}
-	if !rule.Passes(context.Background(), nil, "eth") {
-		t.Fatal("expected a rule without a column to pass")
+}
+
+// A rule written without its table and column is a bug in the form request.
+// It fails every value, so it cannot pass unnoticed.
+func TestDB_Exists_FailsWithoutItsParameters(t *testing.T) {
+	rows := &fakeRows{count: 1}
+	rule := NewDBExists(rows)
+	for name, options := range map[string][]any{
+		"none":         nil,
+		"table only":   {"chains"},
+		"blank column": {"chains", ""},
+		"blank table":  {"", "id"},
+		"not strings":  {1, 2},
+	} {
+		if rule.Passes(context.Background(), nil, "eth", options...) {
+			t.Errorf("%s: expected the rule to fail", name)
+		}
+	}
+	if rows.table != "" {
+		t.Fatal("the port was asked although the rule had no parameters")
+	}
+}
+
+func TestUnique_FailsWithoutItsParameters(t *testing.T) {
+	rows := &fakeRows{count: 0}
+	rule := NewUnique(rows)
+	for name, options := range map[string][]any{
+		"none":         nil,
+		"table only":   {"users"},
+		"blank column": {"users", ""},
+	} {
+		if rule.Passes(context.Background(), nil, "new@example.com", options...) {
+			t.Errorf("%s: expected the rule to fail", name)
+		}
 	}
 }
 

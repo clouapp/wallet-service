@@ -1,19 +1,14 @@
 package wallets
 
 import (
-	"context"
-	"errors"
-	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/support/carbon"
 
-	"github.com/macrowallets/waas/app/container"
 	addressresource "github.com/macrowallets/waas/app/http/resources/addresses"
 	"github.com/macrowallets/waas/app/models"
-	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/txkind"
 )
 
@@ -140,28 +135,11 @@ type Transaction struct {
 }
 
 // TransactionsForChain is the wallet transaction JSON, including asset
-// decimals. The dashboard transaction handlers call it so the body stays the same.
-func TransactionsForChain(ctx context.Context, chainID string, transactions []models.Transaction) []Transaction {
-	return transactionsFrom(transactions, loadAssetDecimalsCatalog(ctx, chainID))
-}
-
-// loadAssetDecimalsCatalog reads the chain and its active tokens; a failed read
-// leaves those decimals unknown instead of failing the listing.
-func loadAssetDecimalsCatalog(ctx context.Context, chainID string) assetDecimalsCatalog {
-	chainRecord, chainErr := container.MustMake[*chainsvc.Service]().FindByID(ctx, chainID)
-	if errors.Is(chainErr, models.ErrRepositoryNotFound) {
-		chainRecord, chainErr = nil, nil
-	}
-	if chainErr != nil {
-		slog.Warn("load chain for transaction decimals", "chain", chainID, "error", chainErr)
-		chainRecord = nil
-	}
-	tokens, tokenErr := container.MustMake[*chainsvc.Service]().FindTokens(ctx, chainID)
-	if tokenErr != nil {
-		slog.Warn("load tokens for transaction decimals", "chain", chainID, "error", tokenErr)
-		tokens = nil
-	}
-	return newAssetDecimalsCatalog(chainRecord, tokens)
+// decimals. chain and tokens are the chain record and its active tokens the
+// caller read; either may be nil/empty and then those decimals are omitted. The
+// dashboard transaction handlers call it so the body stays the same.
+func TransactionsForChain(chain *models.Chain, tokens []models.Token, transactions []models.Transaction) []Transaction {
+	return transactionsFrom(transactions, newAssetDecimalsCatalog(chain, tokens))
 }
 
 // assetDecimalsCatalog holds the native and token decimals of one chain.

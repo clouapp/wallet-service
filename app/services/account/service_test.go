@@ -93,6 +93,26 @@ func (s *AccountServiceTestSuite) TestAddUser_ReAdd_ClearsDeletedAt() {
 	s.Equal("user", role)
 }
 
+// Adding a member who is on the account already is a refusal: no second row,
+// and the role they hold stays.
+func (s *AccountServiceTestSuite) TestAdd_User_TwiceIsAlreadyAMember() {
+	svc := s.service()
+	ctx := context.Background()
+	ownerID := uuid.New()
+
+	acc, err := svc.Create(ctx, "Twice Test Account", ownerID)
+	s.Require().NoError(err)
+	userID := uuid.New()
+	s.Require().NoError(svc.AddUser(ctx, acc.ID, userID, "admin", ownerID))
+
+	err = svc.AddUser(ctx, acc.ID, userID, "user", ownerID)
+
+	s.ErrorIs(err, accountsvc.ErrAlreadyMember)
+	role, err := svc.GetUserRole(ctx, acc.ID, userID)
+	s.Require().NoError(err)
+	s.Equal("admin", role)
+}
+
 // TestIsolation_UserCannotAccessOtherAccount verifies that GetUserRole returns empty
 // string when a user has no membership in the queried account.
 func (s *AccountServiceTestSuite) TestIsolation_User_CannotAccessOtherAccount() {

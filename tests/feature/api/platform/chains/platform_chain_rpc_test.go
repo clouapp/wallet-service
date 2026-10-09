@@ -19,7 +19,7 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
-	"github.com/macrowallets/waas/pkg/security"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
@@ -80,10 +80,10 @@ func (s *PlatformChainRPCTestSuite) TestA_Platform_AdminReplacesTheEndpointTheDi
 	if stored.RpcURL == "" || stored.RpcURL == server.URL || strings.Contains(stored.RpcURL, token) {
 		s.Fail("endpoint was not sealed")
 	}
-	if !security.IsSealedSecret(stored.RpcURL) {
-		s.Fail("endpoint is not a sealed envelope")
+	if !settings.IsSealed(stored.RpcURL) {
+		s.Fail("endpoint is not stored with the enc:v1: prefix")
 	}
-	opened, err := security.OpenSecret(facades.Crypt(), stored.RpcURL)
+	opened, err := settings.OpenStored(facades.Crypt(), stored.RpcURL)
 	s.Require().NoError(err)
 	endpoint, err := models.DialEndpoint(opened)
 	s.Require().NoError(err)
@@ -136,7 +136,7 @@ func (s *PlatformChainRPCTestSuite) TestA_Platform_AdminReplacesTheEndpointTheDi
 	}
 }
 
-func (s *PlatformChainRPCTestSuite) TestA_Non_AdminIsForbiddenAnUnknownChainIsNotFoundAndAnEmptyURLIsRejected() {
+func (s *PlatformChainRPCTestSuite) TestA_Non_AdminIsForbiddenWhateverTheChainAndAnEmptyURLIsRejected() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 	before := s.loadChain(models.ChainETH).RpcURL
@@ -149,9 +149,10 @@ func (s *PlatformChainRPCTestSuite) TestA_Non_AdminIsForbiddenAnUnknownChainIsNo
 		s.Fail("a non-admin changed the stored endpoint")
 	}
 
+	// An unknown chain is not a 404 for a member: the group guard answers first.
 	missing := s.patchRaw(session.AccessToken, "/v1/platform/chains/no-such-chain/rpc", `{"rpcUrl":""}`)
-	missing.AssertNotFound()
-	s.AssertError(missing, 404, responses.CodeNotFound, "chain not found")
+	missing.AssertForbidden()
+	s.AssertError(missing, 403, responses.CodeForbidden, "you do not have permission to update chains")
 
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)

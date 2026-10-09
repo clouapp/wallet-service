@@ -51,11 +51,8 @@ func (r *WalletRepository) Create(ctx context.Context, wallet *models.Wallet) er
 // FindByID returns the wallet with its deposit address, or ErrRepositoryNotFound.
 func (r *WalletRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.Wallet, error) {
 	var wallet models.Wallet
-	if err := r.Query(ctx).With("DepositAddress").Where("id = ?", id).First(&wallet); err != nil {
-		return nil, fmt.Errorf("find wallet: %w", err)
-	}
-	if wallet.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).With("DepositAddress").Where("id = ?", id).FirstOrFail(&wallet); err != nil {
+		return nil, db.LookupError(err, "find wallet")
 	}
 	return &wallet, nil
 }
@@ -63,11 +60,8 @@ func (r *WalletRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.
 // FindByIDAndAccount returns the wallet when it belongs to accountID, or ErrRepositoryNotFound.
 func (r *WalletRepository) FindByIDAndAccount(ctx context.Context, id, accountID uuid.UUID) (*models.Wallet, error) {
 	var wallet models.Wallet
-	if err := r.Query(ctx).With("DepositAddress").Where("id = ? AND account_id = ?", id, accountID).First(&wallet); err != nil {
-		return nil, fmt.Errorf("find wallet for account: %w", err)
-	}
-	if wallet.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).With("DepositAddress").Where("id = ? AND account_id = ?", id, accountID).FirstOrFail(&wallet); err != nil {
+		return nil, db.LookupError(err, "find wallet for account")
 	}
 	return &wallet, nil
 }

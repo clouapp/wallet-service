@@ -48,6 +48,9 @@ type btcOutput struct {
 
 // BitcoinP2WPKHDigests returns one BIP-143 sighash per input. It does not sign.
 func (a *BitcoinLive) BitcoinP2WPKHDigests(unsigned *types.UnsignedTx) ([][]byte, error) {
+	if err := a.requireBuiltOnThisNetwork(unsigned); err != nil {
+		return nil, err
+	}
 	return bitcoinP2WPKHDigests(unsigned)
 }
 
@@ -102,6 +105,9 @@ func bitcoinP2WPKHDigests(unsigned *types.UnsignedTx) ([][]byte, error) {
 // mpc. signatures[i] is the DER encoding plus SIGHASH_ALL; publicKeys[i] is the
 // compressed key. The witness layout is unchanged.
 func (a *BitcoinLive) AssembleBitcoinP2WPKH(unsigned *types.UnsignedTx, signatures, publicKeys [][]byte) (*types.SignedTx, error) {
+	if err := a.requireBuiltOnThisNetwork(unsigned); err != nil {
+		return nil, err
+	}
 	return assembleBitcoinP2WPKH(unsigned, signatures, publicKeys)
 }
 

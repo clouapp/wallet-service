@@ -1,8 +1,9 @@
-// Package responses is the single place a JSON body leaves this service.
+// Package responses is where every error body is written.
 // Every non-2xx answer is the envelope {"error":{"code","message"}}, with any
 // extra fields inside that object. A failed form request stays HTTP 422 with
-// an "errors" map. Success bodies stay on Send, which uses
-// ctx.Response().Json, so their bytes do not move.
+// an "errors" map. Success bodies are written by the handler with
+// ctx.Response().Success().Json or Status(code).Json (application/json;
+// charset=utf-8, no trailing newline).
 package responses
 
 import (
@@ -44,6 +45,20 @@ const (
 	CodeProviderUnavailable = resources.CodeProviderUnavailable
 	CodeUnavailable         = resources.CodeUnavailable
 	CodeTimeout             = resources.CodeTimeout
+
+	// CodeInternalError is the 500 code some routes answer instead of
+	// CodeInternal. Both are on the wire today; unifying them is a contract
+	// change (http-error-contract.md).
+	CodeInternalError = resources.CodeInternalError
+
+	// Domain codes a handler answers with a status other than their default.
+	CodeInsufficientFunds             = resources.CodeInsufficientFunds
+	CodeWalletNotGasReady             = resources.CodeWalletNotGasReady
+	CodeUnsupportedChain              = resources.CodeUnsupportedChain
+	CodeSweepLimitExceeded            = resources.CodeSweepLimitExceeded
+	CodeSpendingLimitExceeded         = resources.CodeSpendingLimitExceeded
+	CodeSpendingLimitInvalid          = resources.CodeSpendingLimitInvalid
+	CodeSpendingLimitQuoteUnavailable = resources.CodeSpendingLimitQuoteUnavailable
 )
 
 const contentTypeJSON = "application/json"
@@ -68,20 +83,30 @@ var messageCodes = map[string]string{
 // SuspendedUser answers login, refresh and the next session request when
 // users.suspended_at is set. The envelope is {"error":{"code","message"}}.
 func SuspendedUser(ctx contractshttp.Context) contractshttp.AbortableResponse {
-	return Send(ctx, http.StatusForbidden, contractshttp.Json{
-		"error": SuspendedUserMessage,
-		"code":  CodeForbidden,
-	})
+	return Fail(ctx, http.StatusForbidden, CodeForbidden, SuspendedUserMessage)
 }
 
-// Send writes body, wrapping a legacy {"error":"text"} map into the envelope.
-// A body that is not that legacy shape is written unchanged, through
-// ctx.Response().Json so success bytes stay where they are.
-func Send(ctx contractshttp.Context, status int, body any) contractshttp.AbortableResponse {
-	if wrapped, ok := WrapLegacy(status, body); ok {
-		return ctx.Response().Json(status, wrapped)
-	}
-	return ctx.Response().Json(status, body)
+// Fail writes the error envelope through ctx.Response().Json: content type
+// application/json; charset=utf-8 and no trailing newline, the bytes the
+// legacy {"error":"text"} maps were written with. Error writes the same
+// envelope through JSON, with a trailing newline; a route keeps the writer
+// it has, since moving it changes the bytes on the wire.
+func Fail(ctx contractshttp.Context, status int, code, message string) contractshttp.AbortableResponse {
+	return FailWith(ctx, status, code, message, nil)
+}
+
+// FailWith is Fail with the contract fields that travel inside the error
+// object (limit_type, retry_after_seconds, action, status). A field named
+// code or message is ignored.
+func FailWith(ctx contractshttp.Context, status int, code, message string, fields map[string]any) contractshttp.AbortableResponse {
+	return ctx.Response().Json(status, resources.NewError(resources.ErrorDeps{Code: code, Message: message}).With(fields))
+}
+
+// FailMessage is Fail for a message known only at run time: the code is
+// CodeFor(status, message), the rule the legacy maps were wrapped with.
+// A message known when the call is written names its code with Fail.
+func FailMessage(ctx contractshttp.Context, status int, message string) contractshttp.AbortableResponse {
+	return Fail(ctx, status, CodeFor(status, message), message)
 }
 
 // JSON encodes v with encoding/json and writes it with the given status.
@@ -142,31 +167,6 @@ func FieldError(ctx contractshttp.Context, field, message string) contractshttp.
 	return FieldsFailed(ctx, map[string][]string{field: {message}})
 }
 
-// WrapLegacy converts a legacy error map into the envelope. The bool is false
-// when body is not a map whose "error" value is a string.
-func WrapLegacy(status int, body any) (resources.ErrorEnvelope, bool) {
-	fields, ok := asMap(body)
-	if !ok {
-		return resources.ErrorEnvelope{}, false
-	}
-	message, ok := fields["error"].(string)
-	if !ok {
-		return resources.ErrorEnvelope{}, false
-	}
-	explicit, _ := fields["code"].(string)
-	extra := map[string]any{}
-	for key, value := range fields {
-		if key == "error" || key == "code" {
-			continue
-		}
-		extra[key] = value
-	}
-	return resources.NewError(resources.ErrorDeps{
-		Code:    codeFor(status, message, explicit),
-		Message: message,
-	}).With(extra), true
-}
-
 // FieldMessages flattens Goravel's {field: {rule: message}} bag into
 // {field: [message, ...]} with rule names sorted, so the wire is stable.
 func FieldMessages(errs contractsvalidation.Errors) map[string][]string {
@@ -198,10 +198,12 @@ func FieldMessages(errs contractsvalidation.Errors) map[string][]string {
 	return fields
 }
 
-func codeFor(status int, message, explicit string) string {
-	if explicit != "" {
-		return explicit
-	}
+// CodeFor is the code of a message whose code the caller does not name: a
+// listed sentence (the signature failures), a message that is itself a
+// machine code, or the status default. It is the heuristic the legacy maps
+// were wrapped with, kept only for FailMessage: a decision's sentence, a
+// refusal the service chose, a sentinel's text.
+func CodeFor(status int, message string) string {
 	if code, ok := messageCodes[message]; ok {
 		return code
 	}
@@ -241,15 +243,4 @@ func codeFor(status int, message, explicit string) string {
 func encodeFailure(ctx contractshttp.Context) contractshttp.AbortableResponse {
 	body := []byte(`{"error":{"code":"` + resources.CodeInternal + `","message":"` + internalMessage + `"}}` + "\n")
 	return ctx.Response().Data(http.StatusInternalServerError, contentTypeJSON, body)
-}
-
-func asMap(body any) (map[string]any, bool) {
-	switch typed := body.(type) {
-	case map[string]any:
-		return typed, true
-	case contractshttp.Json:
-		return map[string]any(typed), true
-	default:
-		return nil, false
-	}
 }

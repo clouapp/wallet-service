@@ -41,10 +41,10 @@ func TestSave_PlatformAccountSweepLimits_AccountRowOverridesThePlatformRow(t *te
 		t.Fatalf("platform row did not apply before the account write: %+v", before)
 	}
 
-	view, err := service.SavePlatformAccountSweepLimits(ctx, actor, accountID, "  "+groupAccountSweepLimits+"  ", map[string]any{
+	view, err := service.SavePlatformAccountSweepLimits(ctx, actor, accountID, "  "+groupAccountSweepLimits+"  ", document(map[string]any{
 		keyMaxAddressesEVM:     7,
 		keyDailyWithdrawCapUSD: "",
-	})
+	}))
 	if err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -110,9 +110,9 @@ func TestSave_PlatformAccountSweepLimits_AccountRowOverridesThePlatformRow(t *te
 		t.Fatalf("metadata stored a value: %s", encoded)
 	}
 
-	if _, err := service.SavePlatformAccountSweepLimits(ctx, actor, accountID, groupAccountSweepLimits, map[string]any{
+	if _, err := service.SavePlatformAccountSweepLimits(ctx, actor, accountID, groupAccountSweepLimits, document(map[string]any{
 		keyDailyWithdrawCapUSD: "0",
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("zero cap: %v", err)
 	}
 	zeroCap, ok := store.get(accountID, groupAccountSweepLimits, keyDailyWithdrawCapUSD)
@@ -139,10 +139,9 @@ func TestSave_PlatformAccountSweepLimits_NotFoundComesBeforeForbidden(t *testing
 		WithAccounts(accounts)
 	ctx := context.Background()
 
+	body := document(map[string]any{keyMaxAddressesEVM: 7})
 	for _, name := range []string{"no-such-group", groupSweepLimits, groupMailSMTP, groupAccountSecurity, groupAccountWebhooks} {
-		_, err := service.SavePlatformAccountSweepLimits(ctx, actor, accountID, name, map[string]any{
-			keyMaxAddressesEVM: 7,
-		})
+		_, err := service.SavePlatformAccountSweepLimits(ctx, actor, accountID, name, body)
 		if !errors.Is(err, ErrGroupNotFound) {
 			t.Fatalf("%s = %v, want group not found", name, err)
 		}
@@ -151,11 +150,11 @@ func TestSave_PlatformAccountSweepLimits_NotFoundComesBeforeForbidden(t *testing
 		t.Fatalf("ineligible group looked up account %d admin %d rows %d", accounts.calls, admins.calls, len(store.listed))
 	}
 
-	_, err := service.SavePlatformAccountSweepLimits(ctx, actor, uuid.Nil, groupAccountSweepLimits, map[string]any{keyMaxAddressesEVM: 7})
+	_, err := service.SavePlatformAccountSweepLimits(ctx, actor, uuid.Nil, groupAccountSweepLimits, body)
 	if !errors.Is(err, ErrAccountNotFound) {
 		t.Fatalf("nil account = %v", err)
 	}
-	_, err = service.SavePlatformAccountSweepLimits(ctx, actor, uuid.New(), groupAccountSweepLimits, map[string]any{keyMaxAddressesEVM: 7})
+	_, err = service.SavePlatformAccountSweepLimits(ctx, actor, uuid.New(), groupAccountSweepLimits, body)
 	if !errors.Is(err, ErrAccountNotFound) {
 		t.Fatalf("unknown account = %v", err)
 	}
@@ -163,12 +162,15 @@ func TestSave_PlatformAccountSweepLimits_NotFoundComesBeforeForbidden(t *testing
 		t.Fatalf("unknown account checked admin %d or listed %d", admins.calls, len(store.listed))
 	}
 
-	_, err = service.SavePlatformAccountSweepLimits(ctx, actor, accountID, groupAccountSweepLimits, map[string]any{keyMaxAddressesEVM: 7})
+	_, err = service.SavePlatformAccountSweepLimits(ctx, actor, accountID, groupAccountSweepLimits, body)
 	if !errors.Is(err, ErrPlatformForbidden) {
 		t.Fatalf("non-admin = %v", err)
 	}
 	if len(store.listed) != 0 {
 		t.Fatalf("non-admin listed %d rows", len(store.listed))
+	}
+	if body.reads != 0 {
+		t.Fatalf("a refused write read the body %d times", body.reads)
 	}
 	stored, ok := store.get(accountID, groupAccountSweepLimits, keyMaxAddressesEVM)
 	if !ok || stored != "17" {
@@ -203,7 +205,7 @@ func TestSave_PlatformAccountSweepLimits_ZeroNegativeAndANegativeCapAreNotStored
 		{keyMaxAddressesEVM: -2, keyMaxAddressesSolana: 12, keyMaxAddressesBitcoin: 30, keyMaxConsolidateRequestsPerDay: 8},
 		{keyMaxAddressesEVM: 40, keyMaxAddressesSolana: 12, keyMaxAddressesBitcoin: 30, keyMaxConsolidateRequestsPerDay: 8, keyDailyWithdrawCapUSD: "-1.50"},
 	} {
-		_, err := service.SavePlatformAccountSweepLimits(ctx, actor, accountID, groupAccountSweepLimits, body)
+		_, err := service.SavePlatformAccountSweepLimits(ctx, actor, accountID, groupAccountSweepLimits, document(body))
 		validation, ok := err.(*ValidationError)
 		if !ok || validation.empty() {
 			t.Fatalf("body %#v error = %v, want validation", body, err)
@@ -228,4 +230,52 @@ func TestSave_PlatformAccountSweepLimits_ZeroNegativeAndANegativeCapAreNotStored
 	if len(cache.keys) != 0 {
 		t.Fatalf("a rejected write forgot %v", cache.keys)
 	}
+}
+
+// TestSave_PlatformAccountSweepLimits_ReturnsTheBodyReadFailureAsItIs pins the
+// one call the handler makes: the body is read after the write is
+// authorized, and a body that cannot be read is that error, untouched, with
+// nothing stored, logged or forgotten.
+func TestSave_PlatformAccountSweepLimits_ReturnsTheBodyReadFailureAsItIs(t *testing.T) {
+	t.Parallel()
+
+	actor := uuid.New()
+	accountID := uuid.New()
+	store := newMemoryStore()
+	activity := &recordingActivity{}
+	cache := &memoryCache{}
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: cache, Activity: activity}).
+		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}}).
+		WithAccounts(&setAccounts{ids: map[uuid.UUID]bool{accountID: true}})
+	unreadable := errors.New("request body is too large")
+	body := &recordedDocument{err: unreadable}
+
+	_, err := service.SavePlatformAccountSweepLimits(context.Background(), actor, accountID, groupAccountSweepLimits, body)
+
+	if err != unreadable {
+		t.Fatalf("err = %v, want the read failure as it is", err)
+	}
+	if body.reads != 1 {
+		t.Fatalf("body reads = %d", body.reads)
+	}
+	if _, ok := store.get(accountID, groupAccountSweepLimits, keyMaxAddressesEVM); ok {
+		t.Fatal("an unread body stored a row")
+	}
+	if len(activity.rows) != 0 || len(cache.keys) != 0 {
+		t.Fatalf("an unread body wrote activity %d or forgot %v", len(activity.rows), cache.keys)
+	}
+}
+
+// recordedDocument is the body of a settings write, counting its reads.
+type recordedDocument struct {
+	body  map[string]any
+	err   error
+	reads int
+}
+
+func document(body map[string]any) *recordedDocument { return &recordedDocument{body: body} }
+
+func (d *recordedDocument) Read() (map[string]any, error) {
+	d.reads++
+	return d.body, d.err
 }

@@ -4,16 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/responses"
 )
-
-// optionalString accepts any present string and skips an absent one, so a
-// filter the handler already accepts does not become a new 422.
-const optionalString = "string"
 
 // Open is the form-request base for a route whose permission is middleware.
 type Open struct{}
@@ -22,23 +17,34 @@ func (Open) Authorize(http.Context) error {
 	return nil
 }
 
-func optionalStringRules(fields ...string) map[string]string {
-	rules := make(map[string]string, len(fields))
-	for _, field := range fields {
-		if field == "" {
-			continue
-		}
-		rules[field] = optionalString
-	}
-	return rules
+// FormRequestWithAfter is a form request with checks that need the bound
+// request: a CIDR list, a JSON object whose fields a rule cannot reach. Like
+// Laravel's FormRequest::after, but After runs only once every rule passed and
+// the body bound, so a request with a failing rule answers that rule's errors
+// alone. A non-empty map is answered with the same 422 a rule failure gets.
+type FormRequestWithAfter interface {
+	After(ctx http.Context) map[string][]string
 }
 
 // Validate runs a form request and writes the branch's 422 on rule failure.
 // An empty rule map still binds the body; a missing body is not an error.
+// A request that implements FormRequestWithAfter is checked last.
 func Validate(ctx http.Context, req http.FormRequest) http.Response {
 	if ctx == nil || req == nil {
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid request body")
 	}
+	if response := validateRules(ctx, req); response != nil {
+		return response
+	}
+	if after, ok := req.(FormRequestWithAfter); ok {
+		if fields := after.After(ctx); len(fields) > 0 {
+			return responses.FieldsFailed(ctx, fields)
+		}
+	}
+	return nil
+}
+
+func validateRules(ctx http.Context, req http.FormRequest) http.Response {
 	if len(req.Rules(ctx)) == 0 {
 		return bindRulelessRequest(ctx, req)
 	}
@@ -48,7 +54,7 @@ func Validate(ctx http.Context, req http.FormRequest) http.Response {
 		if validationErrors != nil {
 			return responses.ValidationFailed(ctx, validationErrors)
 		}
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid request body")
 	}
 	if validationErrors != nil {
 		return responses.ValidationFailed(ctx, validationErrors)
@@ -78,32 +84,7 @@ func bindRulelessRequest(ctx http.Context, req http.FormRequest) http.Response {
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
-		return responses.Send(ctx, http.StatusBadRequest, http.Json{"error": "invalid request body"})
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid request body")
 	}
 	return nil
-}
-
-func routeValue(ctx http.Context, name string) string {
-	if ctx == nil || ctx.Request() == nil || name == "" {
-		return ""
-	}
-	return ctx.Request().Route(name)
-}
-
-func queryValue(ctx http.Context, name, fallback string) string {
-	if ctx == nil || ctx.Request() == nil || name == "" {
-		return fallback
-	}
-	return ctx.Request().Query(name, fallback)
-}
-
-func inputValue(ctx http.Context, name string) string {
-	if ctx == nil || ctx.Request() == nil || name == "" {
-		return ""
-	}
-	return ctx.Request().Input(name)
-}
-
-func trimmedRoute(ctx http.Context, name string) string {
-	return strings.TrimSpace(routeValue(ctx, name))
 }

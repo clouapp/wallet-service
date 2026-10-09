@@ -14,6 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/models"
+	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 	ctltestutil "github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
@@ -66,7 +67,7 @@ func (s *feeEstimateSuite) SetupTest() {
 	s.adapter.ValidateAddressFn = func(address string) bool {
 		return len(address) == 42 && strings.HasPrefix(address, "0x")
 	}
-	container.Get().Registry.RegisterChain(gasSizingChain{s.adapter})
+	container.MustMake[*chainpkg.Registry]().RegisterChain(gasSizingChain{s.adapter})
 }
 
 func (s *feeEstimateSuite) seedWallet(accountID uuid.UUID) uuid.UUID {
@@ -179,6 +180,9 @@ func (s *feeEstimateSuite) TestInvalid_Inputs_AreRejectedBeforeQuoting() {
 		s.Equal(tc.code, feeEstimateErrorCode(body), tc.query.Encode())
 		s.NotEmpty(feeEstimateErrorMessage(body), tc.query.Encode())
 	}
+
+	unknown := s.get(feeEstimatePath(walletID, url.Values{"amount": {"1"}, "asset": {"DOGE"}}), bearer, 422)
+	s.Equal("unknown asset", feeEstimateErrorMessage(unknown), "the symbol stays out of the body")
 }
 
 func feeEstimateErrorBody(body map[string]any) map[string]any {

@@ -13,7 +13,6 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/mr-tron/base58"
 
-	bitcoinchain "github.com/macrowallets/waas/app/adapters/chain/bitcoin"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/addressing"
 	"github.com/macrowallets/waas/app/services/hdkey"
@@ -49,7 +48,7 @@ func utxoParams(chainID string, testnet bool) (*chaincfg.Params, error) {
 	if !models.IsBitcoinFamilyChainID(chainID) {
 		return nil, fmt.Errorf("chain %q has no Bitcoin-family key format", chainID)
 	}
-	params := bitcoinchain.BitcoinFamilyParams(utxoFamily(chainID), testnet)
+	params := addressing.BitcoinFamilyParams(utxoFamily(chainID), testnet)
 	if params == nil {
 		return nil, fmt.Errorf("chain %q has no Bitcoin-family key format", chainID)
 	}

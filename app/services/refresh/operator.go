@@ -44,37 +44,31 @@ type ChainCatalog interface {
 
 // OperatorDeps is everything the refresh and reconcile commands share.
 type OperatorDeps struct {
-	Balances       *BalanceService
-	Dispatcher     Dispatcher
-	Wallets        WalletLookup
-	Addresses      AddressLookup
-	Transactions   TransactionLookup
-	Chains         ChainCatalog
-	RequestRefresh func(walletID, chainID string) error
+	Balances     *BalanceService
+	Wallets      WalletLookup
+	Addresses    AddressLookup
+	Transactions TransactionLookup
+	Chains       ChainCatalog
 }
 
 // Operator runs one refresh or reconcile the way the artisan command asks.
 type Operator struct {
-	balances       *BalanceService
-	dispatcher     Dispatcher
-	wallets        WalletLookup
-	addresses      AddressLookup
-	transactions   TransactionLookup
-	chains         ChainCatalog
-	requestRefresh func(walletID, chainID string) error
+	balances     *BalanceService
+	wallets      WalletLookup
+	addresses    AddressLookup
+	transactions TransactionLookup
+	chains       ChainCatalog
 }
 
 // NewOperator wires the operator from OperatorDeps. A missing finder is
 // reported when that command runs.
 func NewOperator(deps OperatorDeps) *Operator {
 	return &Operator{
-		balances:       deps.Balances,
-		dispatcher:     deps.Dispatcher,
-		wallets:        deps.Wallets,
-		addresses:      deps.Addresses,
-		transactions:   deps.Transactions,
-		chains:         deps.Chains,
-		requestRefresh: deps.RequestRefresh,
+		balances:     deps.Balances,
+		wallets:      deps.Wallets,
+		addresses:    deps.Addresses,
+		transactions: deps.Transactions,
+		chains:       deps.Chains,
 	}
 }
 
@@ -83,24 +77,15 @@ type WalletCommand struct {
 	WalletID string
 	Scope    string
 	Chain    string
-	Queue    bool
 	Reason   string
 }
 
-// RefreshWallet refreshes one wallet in process or on the queue.
+// RefreshWallet refreshes one wallet in process.
 func (o *Operator) RefreshWallet(ctx context.Context, cmd WalletCommand) (Output, error) {
 	var out Output
 	wallet, err := o.walletByID(ctx, cmd.WalletID)
 	if err != nil {
 		return out, err
-	}
-	chainID := cmd.Chain
-	if chainID == "" {
-		chainID = wallet.Chain
-	}
-	if cmd.Queue {
-		out.Info = append(out.Info, "dispatching wallet refresh to blockchain queue: wallet="+cmd.WalletID+" scope="+cmd.Scope+" reason="+cmd.Reason)
-		return out, o.dispatchQueuedRefresh(cmd.Scope, cmd.WalletID, chainID)
 	}
 	out.Info = append(out.Info, "sync mode: refreshing wallet="+cmd.WalletID+" scope="+cmd.Scope+" reason="+cmd.Reason)
 	if err := o.refresh(ctx, "refresh:wallet", wallet); err != nil {
@@ -114,7 +99,6 @@ func (o *Operator) RefreshWallet(ctx context.Context, cmd WalletCommand) (Output
 type AddressCommand struct {
 	Chain     string
 	Addresses []string
-	Queue     bool
 	Reason    string
 }
 
@@ -144,13 +128,6 @@ func (o *Operator) RefreshAddresses(ctx context.Context, cmd AddressCommand) (Ou
 			}
 			return out, err
 		}
-		if cmd.Queue {
-			out.Info = append(out.Info, "dispatching refresh for address "+addr+" wallet="+wallet.ID.String()+" reason="+cmd.Reason)
-			if err := o.dispatchNamed("refresh:address", "balances", wallet.ID.String(), wallet.Chain); err != nil {
-				return out, fmt.Errorf("dispatch failed for address %s: %w", addr, err)
-			}
-			continue
-		}
 		out.Info = append(out.Info, "sync mode: refreshing address "+addr+" wallet="+wallet.ID.String())
 		if err := o.refresh(ctx, "refresh:address", wallet); err != nil {
 			return out, fmt.Errorf("refresh failed for address %s: %w", addr, err)
@@ -166,7 +143,6 @@ type CurrencyCommand struct {
 	Currency  string
 	Addresses []string
 	Chain     string
-	Queue     bool
 	Reason    string
 }
 
@@ -204,13 +180,6 @@ func (o *Operator) RefreshCurrency(ctx context.Context, cmd CurrencyCommand) (Ou
 			}
 			return out, err
 		}
-		if cmd.Queue {
-			out.Info = append(out.Info, "dispatching refresh for currency="+currency+" address="+addr+" wallet="+wallet.ID.String()+" reason="+cmd.Reason)
-			if err := o.dispatchNamed("refresh:currency", "balances", wallet.ID.String(), wallet.Chain); err != nil {
-				return out, fmt.Errorf("dispatch failed for address %s: %w", addr, err)
-			}
-			continue
-		}
 		out.Info = append(out.Info, "sync mode: refreshing currency="+currency+" address="+addr+" wallet="+wallet.ID.String())
 		if err := o.refresh(ctx, "refresh:currency", wallet); err != nil {
 			return out, fmt.Errorf("refresh failed for address %s: %w", addr, err)
@@ -225,7 +194,6 @@ func (o *Operator) RefreshCurrency(ctx context.Context, cmd CurrencyCommand) (Ou
 type TxCommand struct {
 	Chain  string
 	TxHash string
-	Queue  bool
 	Reason string
 }
 
@@ -249,10 +217,6 @@ func (o *Operator) RefreshTransaction(ctx context.Context, cmd TxCommand) (Outpu
 		}
 		return out, fmt.Errorf("failed to load wallet for transaction: %w", err)
 	}
-	if cmd.Queue {
-		out.Info = append(out.Info, "dispatching tx refresh to blockchain queue: chain="+cmd.Chain+" tx_hash="+cmd.TxHash+" wallet="+wallet.ID.String()+" reason="+cmd.Reason)
-		return out, o.dispatchNamed("refresh:tx", "transactions", wallet.ID.String(), wallet.Chain)
-	}
 	out.Info = append(out.Info, "sync mode: refreshing tx chain="+cmd.Chain+" tx_hash="+cmd.TxHash+" wallet="+wallet.ID.String())
 	if err := o.refresh(ctx, "refresh:tx", wallet); err != nil {
 		return out, fmt.Errorf("refresh failed: %w", err)
@@ -264,20 +228,15 @@ func (o *Operator) RefreshTransaction(ctx context.Context, cmd TxCommand) (Outpu
 // ReconcileCommand is one reconcile:wallet invocation.
 type ReconcileCommand struct {
 	WalletID string
-	Queue    bool
 	Reason   string
 }
 
-// Reconcile compares one wallet with the chain, in process or on the queue.
+// Reconcile compares one wallet with the chain, in process.
 func (o *Operator) Reconcile(ctx context.Context, cmd ReconcileCommand) (Output, error) {
 	var out Output
 	wallet, err := o.walletByID(ctx, cmd.WalletID)
 	if err != nil {
 		return out, err
-	}
-	if cmd.Queue {
-		out.Info = append(out.Info, "dispatching wallet reconciliation to blockchain queue: wallet="+cmd.WalletID+" reason="+cmd.Reason)
-		return out, o.dispatchNamed("reconcile:wallet", "reconcile", cmd.WalletID, wallet.Chain)
 	}
 	out.Info = append(out.Info, "sync mode: reconciling wallet="+cmd.WalletID+" reason="+cmd.Reason)
 	if err := o.refresh(ctx, "reconcile:wallet", wallet); err != nil {
@@ -347,76 +306,6 @@ func (o *Operator) refresh(ctx context.Context, label string, wallet *models.Wal
 		return fmt.Errorf("%s: balance refresh service is not initialized", label)
 	}
 	return o.balances.RefreshWallet(ctx, wallet)
-}
-
-func (o *Operator) dispatchNamed(label, name, walletID, chainID string) error {
-	if o == nil || o.dispatcher == nil {
-		return fmt.Errorf("%s: refresh dispatcher is not initialized", label)
-	}
-	switch name {
-	case "balances":
-		return o.dispatcher.DispatchBalances(walletID, chainID)
-	case "transactions":
-		return o.dispatcher.DispatchTransactions(walletID, chainID)
-	case "reconcile":
-		return o.dispatcher.DispatchReconcile(walletID, chainID)
-	default:
-		return fmt.Errorf("%s: refresh dispatcher is not initialized", label)
-	}
-}
-
-func (o *Operator) dispatchQueuedRefresh(scope, walletID, chainID string) error {
-	switch scope {
-	case "balances":
-		if err := o.requestWalletRefresh(walletID, chainID); err != nil {
-			return err
-		}
-		return o.dispatchNamed("refresh:wallet", "balances", walletID, chainID)
-	case "full":
-		if err := o.requestWalletRefresh(walletID, chainID); err != nil {
-			return err
-		}
-		return o.dispatchScopedJobs(scope, walletID, chainID)
-	default:
-		return o.dispatchScopedJobs(scope, walletID, chainID)
-	}
-}
-
-func (o *Operator) requestWalletRefresh(walletID, chainID string) error {
-	if o == nil || o.requestRefresh == nil {
-		return fmt.Errorf("refresh:wallet: event dispatcher is not initialized")
-	}
-	return o.requestRefresh(walletID, chainID)
-}
-
-func (o *Operator) dispatchScopedJobs(scope, walletID, chainID string) error {
-	if o == nil || o.dispatcher == nil {
-		return fmt.Errorf("refresh:wallet: refresh dispatcher is not initialized")
-	}
-	switch scope {
-	case "balances":
-		return o.dispatcher.DispatchBalances(walletID, chainID)
-	case "transactions":
-		return o.dispatcher.DispatchTransactions(walletID, chainID)
-	case "tokens":
-		return o.dispatcher.DispatchTokens(walletID, chainID)
-	case "utxos":
-		return o.dispatcher.DispatchUTXOs(walletID, chainID)
-	case "full":
-		for _, call := range []func(string, string) error{
-			o.dispatcher.DispatchBalances,
-			o.dispatcher.DispatchTransactions,
-			o.dispatcher.DispatchTokens,
-			o.dispatcher.DispatchUTXOs,
-		} {
-			if err := call(walletID, chainID); err != nil {
-				return err
-			}
-		}
-		return nil
-	default:
-		return fmt.Errorf("unknown scope: %s", scope)
-	}
 }
 
 func resolveCurrency(catalog ChainCatalog, currency, chainFlag string) (string, error) {

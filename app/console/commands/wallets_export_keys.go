@@ -13,14 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/console"
 	"github.com/goravel/framework/contracts/console/command"
-	"github.com/goravel/framework/facades"
 
-	"github.com/macrowallets/waas/app/container"
-	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/evmcall"
 	"github.com/macrowallets/waas/app/services/keyexport"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
@@ -32,34 +28,39 @@ const (
 	walletsExportKeysWalletSeparator = ","
 )
 
-// chainRecordSource loads the chain row the export classifies. The command does not
-// import the repository package; bootstrap passes the bound repository.
-type chainRecordSource interface {
-	FindByID(ctx context.Context, id string) (*models.Chain, error)
-}
-
 // WalletsExportKeys writes, per wallet, the private keys reconstructed from both MPC
 // shares (checked against every database address) and the two shares into an
 // AES-256 zip. Passwords are only typed on the terminal; nothing secret is printed.
 type WalletsExportKeys struct {
-	wallets   keyexport.WalletSource
-	addresses keyexport.AddressSource
-	chains    chainRecordSource
+	wallets    keyexport.WalletSource
+	addresses  keyexport.AddressSource
+	chains     keyexport.ChainSource
+	shareB     func() (keyexport.ShareBSource, error)
+	decryptRPC func(sealed string) (string, error)
+	appEnv     string
 }
 
 // WalletsExportKeysDeps is everything wallets:export-keys needs at construction.
 // Wallets, Addresses, and Chains may be nil here; the command refuses a missing
-// one when it runs, before any secret is read. Secrets Manager is resolved then,
-// so a process without it can still serve the other commands.
+// one when it runs, before any secret is read. ShareB is called then, so a
+// process without Secrets Manager can still serve the other commands. DecryptRPC
+// opens a chain's sealed RPC URL for the adapters whose network it names. AppEnv
+// is the APP_ENV the production confirmation and the archive metadata use.
 type WalletsExportKeysDeps struct {
-	Wallets   keyexport.WalletSource
-	Addresses keyexport.AddressSource
-	Chains    chainRecordSource
+	Wallets    keyexport.WalletSource
+	Addresses  keyexport.AddressSource
+	Chains     keyexport.ChainSource
+	ShareB     func() (keyexport.ShareBSource, error)
+	DecryptRPC func(sealed string) (string, error)
+	AppEnv     string
 }
 
 // NewWalletsExportKeys wires the export command from WalletsExportKeysDeps.
 func NewWalletsExportKeys(deps WalletsExportKeysDeps) *WalletsExportKeys {
-	return &WalletsExportKeys{wallets: deps.Wallets, addresses: deps.Addresses, chains: deps.Chains}
+	return &WalletsExportKeys{
+		wallets: deps.Wallets, addresses: deps.Addresses, chains: deps.Chains,
+		shareB: deps.ShareB, decryptRPC: deps.DecryptRPC, appEnv: deps.AppEnv,
+	}
 }
 
 type walletsExportKeysFlags struct {
@@ -113,7 +114,7 @@ func (c *WalletsExportKeys) Handle(ctx console.Context) error {
 	stopSignals := cleanUpOnSignal(tty, &output)
 	defer stopSignals()
 
-	if err := keyexport.RequireEnvironmentAllowed(facades.Config().GetString("app.env"), invocation.allowProduction, tty); err != nil {
+	if err := keyexport.RequireEnvironmentAllowed(c.appEnv, invocation.allowProduction, tty); err != nil {
 		return fail(ctx, err)
 	}
 	now := time.Now()
@@ -159,7 +160,7 @@ func runWalletsExport(cmd *WalletsExportKeys, ctx console.Context, invocation wa
 		return fail(ctx, errors.New("no wallet passed reconstruction; nothing was written"))
 	}
 
-	files, err := keyexport.ArchiveFiles(result, keyexport.ArchiveMeta{GeneratedAt: now, AppEnv: facades.Config().GetString("app.env")})
+	files, err := keyexport.ArchiveFiles(result, keyexport.ArchiveMeta{GeneratedAt: now, AppEnv: cmd.appEnv})
 	if err != nil {
 		return fail(ctx, err)
 	}
@@ -266,18 +267,18 @@ func cleanUpOnSignal(tty *keyexport.TTY, output *atomic.Pointer[keyexport.Archiv
 }
 
 func (c *WalletsExportKeys) newWalletsExportService() (*keyexport.Service, error) {
-	if c == nil || c.wallets == nil || c.addresses == nil || c.chains == nil {
-		return nil, errors.New("key export: wallets, addresses and chains are required")
+	if c == nil || c.wallets == nil || c.addresses == nil || c.chains == nil || c.shareB == nil {
+		return nil, errors.New("key export: wallets, addresses, chains and share B are required")
 	}
-	secrets, err := container.Make[*secretsmanager.Client]()
+	shareB, err := c.shareB()
 	if err != nil {
-		return nil, errors.New("secrets manager is not configured; share B cannot be fetched")
+		return nil, err
 	}
 	return keyexport.NewService(keyexport.Dependencies{
 		Wallets:   c.wallets,
 		Addresses: c.addresses,
-		Networks:  chainNetworkResolver{chains: c.chains},
-		ShareB:    secretsManagerShareB{secrets: secrets},
+		Networks:  keyexport.ChainNetworkResolver{Chains: c.chains, DecryptRPC: c.decryptRPC},
+		ShareB:    shareB,
 		MPC:       mpcpkg.NewTSSService(),
 	})
 }
@@ -293,65 +294,6 @@ func walletsExportPassphrases(invocation walletsExportKeysInvocation, tty keyexp
 		}
 		return vault.Read(ctx, walletID)
 	}}
-}
-
-// chainNetworkResolver classifies a chain record like the wallet API does; the RPC
-// URL is decrypted only for adapters whose network it names and never leaves here.
-type chainNetworkResolver struct {
-	chains chainRecordSource
-}
-
-func (r chainNetworkResolver) ResolveNetwork(ctx context.Context, chainID string) (keyexport.Network, error) {
-	if ctx == nil {
-		return keyexport.Network{}, errors.New("chain repository: context is required")
-	}
-	if r.chains == nil {
-		return keyexport.Network{}, errors.New("chain repository is not configured")
-	}
-	record, err := r.chains.FindByID(ctx, chainID)
-	if err != nil || record == nil {
-		return keyexport.Network{}, fmt.Errorf("chain record %s not found", chainID)
-	}
-	resolved := record.ResolveNetwork(networkRPCURLOf(record))
-	return keyexport.Network{ChainID: record.ID, AdapterType: record.AdapterType, Name: resolved.Name, Testnet: resolved.Testnet}, nil
-}
-
-func networkRPCURLOf(record *models.Chain) string {
-	if record.AdapterType != models.AdapterTypeSolana && record.AdapterType != models.AdapterTypeBitcoin {
-		return ""
-	}
-	stored, err := facades.Crypt().DecryptString(record.RpcURL)
-	if err != nil {
-		return ""
-	}
-	rpcURL, err := models.ResolveRPCURL(stored)
-	if err != nil {
-		return ""
-	}
-	return rpcURL
-}
-
-type secretValueGetter interface {
-	GetSecretValue(ctx context.Context, input *secretsmanager.GetSecretValueInput, opts ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error)
-}
-
-type secretsManagerShareB struct {
-	secrets secretValueGetter
-}
-
-func (s secretsManagerShareB) FetchShareB(ctx context.Context, wallet models.Wallet) ([]byte, error) {
-	if s.secrets == nil {
-		return nil, errors.New("secrets manager is not configured")
-	}
-	arn := strings.TrimSpace(wallet.MPCSecretARN)
-	if arn == "" {
-		return nil, fmt.Errorf("wallet %s has no MPC secret ARN", wallet.ID)
-	}
-	out, err := s.secrets.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{SecretId: &arn})
-	if err != nil {
-		return nil, fmt.Errorf("fetch share B of wallet %s", wallet.ID)
-	}
-	return out.SecretBinary, nil
 }
 
 func reportWalletsExportPlan(ctx console.Context, plans []keyexport.WalletPlan, refused []keyexport.Refusal, outPath string) {

@@ -160,3 +160,18 @@ func (s *TotpHolesTestSuite) TestCode_Consumed_AtLoginIsRejectedForWithdrawal() 
 	}, body)
 	s.AssertError(resp, 401, "unauthorized", "invalid 2FA code")
 }
+
+// The proof is read only when the user has 2FA on: the body of a user without
+// it is not read, so a body that does not bind changes nothing; for a user
+// with 2FA it is the form request's 400.
+func (s *TotpHolesTestSuite) TestDisable_TOTP_ReadsTheBodyOnlyOfAUserWithIt() {
+	without := s.seedUser(false)
+	resp := s.authedDeleteJSON(s.signIn(without.Email).AccessToken, "/v1/users/me/totp", `{"code":123456}`)
+	resp.AssertOk()
+
+	with := s.seedUser(true)
+	session := s.signedInWithTOTP(with)
+	resp = s.authedDeleteJSON(session.AccessToken, "/v1/users/me/totp", `{"code":123456}`)
+	s.AssertError(resp, 400, "invalid_request", "invalid request body")
+	s.True(s.storedUser(with.ID).TotpEnabled)
+}

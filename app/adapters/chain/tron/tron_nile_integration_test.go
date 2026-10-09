@@ -18,6 +18,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/addressing"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -130,7 +131,7 @@ func TestTronNileMainnetUSDTQuoteFallsBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, to := range map[string]string{"existing holder": recipient, "new holder": TronFeeProbeRecipient()} {
+	for name, to := range map[string]string{"existing holder": recipient, "new holder": chain.TronFeeProbeRecipient()} {
 		quote, err := adapter.QuoteTransferFee(context.Background(), types.TransferRequest{From: holder, To: to, Amount: big.NewInt(1), Token: &token})
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
@@ -152,10 +153,10 @@ func TestTronNileQuotesToday(t *testing.T) {
 	token := tronTestNileUSDT
 	for name, req := range map[string]types.TransferRequest{
 		"TRX to an existing account": {From: tronNileTRXOwner, To: tronNileRecipient, Amount: big.NewInt(tronNileTRXAmount)},
-		"TRX to a new account":       {From: tronNileTRXOwner, To: TronFeeProbeRecipient(), Amount: big.NewInt(tronNileTRXAmount)},
+		"TRX to a new account":       {From: tronNileTRXOwner, To: chain.TronFeeProbeRecipient(), Amount: big.NewInt(tronNileTRXAmount)},
 		"USDT to an existing holder": {From: tronNileUSDTOwner, To: tronNileRecipient, Amount: big.NewInt(tronNileUSDTAmount), Token: &token},
-		"USDT to a new holder":       {From: tronNileUSDTOwner, To: TronFeeProbeRecipient(), Amount: big.NewInt(tronNileUSDTAmount), Token: &token},
-		"USDT from a sender without": {From: TronFeeProbeRecipient(), To: tronNileRecipient, Amount: big.NewInt(tronNileUSDTAmount), Token: &token},
+		"USDT to a new holder":       {From: tronNileUSDTOwner, To: chain.TronFeeProbeRecipient(), Amount: big.NewInt(tronNileUSDTAmount), Token: &token},
+		"USDT from a sender without": {From: chain.TronFeeProbeRecipient(), To: tronNileRecipient, Amount: big.NewInt(tronNileUSDTAmount), Token: &token},
 	} {
 		quote, err := adapter.QuoteTransferFee(ctx, req)
 		if err != nil {

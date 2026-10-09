@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	contractscache "github.com/goravel/framework/contracts/cache"
+
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/security"
 )
@@ -65,7 +67,7 @@ func (s *Service) CheckUpdate(ctx context.Context) (CheckOutput, error) {
 }
 
 // Stream refreshes prices once, then holds the CoinAPI socket.
-func (s *Service) Stream(ctx context.Context, apiKey string, cache PriceCache, log LogFunc) error {
+func (s *Service) Stream(ctx context.Context, apiKey string, cache contractscache.Driver, log LogFunc) error {
 	if log == nil {
 		log = func(string, string) {}
 	}

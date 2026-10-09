@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	"github.com/macrowallets/waas/app/models"
 )
 
 func TestGate_Missing_RowAndOnProceedOffBlocks(t *testing.T) {
@@ -209,5 +211,50 @@ func TestGate_Nil_AccountProceeds(t *testing.T) {
 	service := newTestService(newMemoryStore(), memoryAdmins{})
 	if err := service.Gate(context.Background(), uuid.Nil, FlagSweepEnabled, CodeSweepPaused); err != nil {
 		t.Fatalf("nil account: %v", err)
+	}
+}
+
+// TestGate_Wallet_GatesOnTheWalletAccountElseTheCaller pins the account a
+// wallet's money movement is gated on: the wallet's own account when it has
+// one, otherwise the caller's account. Only the paused account is stored off.
+func TestGate_Wallet_GatesOnTheWalletAccountElseTheCaller(t *testing.T) {
+	t.Parallel()
+
+	paused, open := uuid.New(), uuid.New()
+	nilAccount := uuid.Nil
+	cases := []struct {
+		name   string
+		wallet *models.Wallet
+		caller uuid.UUID
+		paused bool
+	}{
+		{"the wallet account wins over an open caller", &models.Wallet{AccountID: &paused}, open, true},
+		{"the wallet account wins over a paused caller", &models.Wallet{AccountID: &open}, paused, false},
+		{"a wallet without an account falls back to the caller", &models.Wallet{}, paused, true},
+		{"a wallet on the nil account falls back to the caller", &models.Wallet{AccountID: &nilAccount}, paused, true},
+		{"no wallet falls back to the caller", nil, paused, true},
+		{"no wallet and no caller is the nil account", nil, uuid.Nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			store := newMemoryStore()
+			service := newTestService(store, memoryAdmins{})
+			ctx := context.Background()
+			if _, err := service.Set(ctx, paused, uuid.New(), "owner", FlagWithdrawalsEnabled, false); err != nil {
+				t.Fatalf("pause: %v", err)
+			}
+
+			err := service.GateWallet(ctx, tc.wallet, tc.caller, FlagWithdrawalsEnabled, CodeWithdrawalsPaused)
+
+			var gate *GateError
+			if tc.paused != (errors.As(err, &gate) && gate.Code == CodeWithdrawalsPaused) {
+				t.Fatalf("paused = %t, err = %v", tc.paused, err)
+			}
+			if !tc.paused && err != nil {
+				t.Fatalf("open: %v", err)
+			}
+		})
 	}
 }

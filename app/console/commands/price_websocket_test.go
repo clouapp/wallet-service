@@ -1,26 +1,15 @@
 package commands
 
 import (
-	"context"
 	"testing"
-	"time"
 
 	"github.com/macrowallets/waas/app/services/price"
+	"github.com/macrowallets/waas/tests/memcache"
 )
-
-type priceWebSocketCacheStub struct{}
-
-func (priceWebSocketCacheStub) Get(context.Context, string) (string, error) {
-	return "", nil
-}
-
-func (priceWebSocketCacheStub) Set(context.Context, string, []byte, time.Duration) error {
-	return nil
-}
 
 func TestNew_Price_WebSocketKeepsItsDependencies(t *testing.T) {
 	prices := price.NewService(price.Deps{})
-	cache := priceWebSocketCacheStub{}
+	cache := memcache.New()
 	cmd := NewPriceWebSocket(PriceWebSocketDeps{
 		Prices:     prices,
 		CoinAPIKey: "test-key",

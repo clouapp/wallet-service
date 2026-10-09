@@ -20,12 +20,10 @@ const (
 	LayerServices     = "services"
 	LayerAdapters     = "adapters"
 	LayerRepositories = "repositories"
-	LayerDTOs         = "dtos"
 	LayerModels       = "models"
 	LayerMails        = "mails"
 	LayerConsole      = "console"
 	LayerJobs         = "jobs"
-	LayerEvents       = "events"
 	LayerRules        = "rules"
 	LayerFacades      = "facades"
 	LayerDatabase     = "database"
@@ -49,13 +47,10 @@ var zones = map[string]string{
 	"app/services":     LayerServices,
 	"app/adapters":     LayerAdapters,
 	"app/repositories": LayerRepositories,
-	"app/dtos":         LayerDTOs,
 	"app/models":       LayerModels,
 	"app/mails":        LayerMails,
 	"app/console":      LayerConsole,
 	"app/jobs":         LayerJobs,
-	"app/events":       LayerEvents,
-	"app/listeners":    LayerEvents,
 	"app/rules":        LayerRules,
 	"app/facades":      LayerFacades,
 	"database":         LayerDatabase,
@@ -71,38 +66,36 @@ var zones = map[string]string{
 // layer except the test harness.
 var everything = []string{
 	LayerBootstrap, LayerConfig, LayerRoutes, LayerContainer, LayerProviders, LayerHTTP,
-	LayerPolicies, LayerServices, LayerAdapters, LayerRepositories, LayerDTOs, LayerModels,
-	LayerMails, LayerConsole, LayerJobs, LayerEvents, LayerRules, LayerFacades, LayerDatabase,
+	LayerPolicies, LayerServices, LayerAdapters, LayerRepositories, LayerModels,
+	LayerMails, LayerConsole, LayerJobs, LayerRules, LayerFacades, LayerDatabase,
 	LayerPackages, LayerDocs,
 }
 
-// allowed is the TARGET table of .ai/guidelines/controllers-and-services.md and
-// the alignment plan §3.1: which layers a production file of each layer may
-// import. packages/* (today pkg/*) is installable outside the project, so every
-// layer may import it and it imports nothing of the module.
+// allowed is the layer table of .ai/guidelines/controllers-and-services.md:
+// which layers a production file of each layer may import. packages/* (today
+// pkg/*) is installable outside the project, so every layer may import it and it
+// imports nothing of the module.
 var allowed = map[string][]string{
 	LayerMain:         everything,
 	LayerBootstrap:    everything,
 	LayerProviders:    everything,
-	LayerConfig:       {},
+	LayerConfig:       {LayerFacades},
 	LayerContainer:    {},
 	LayerModels:       {},
 	LayerPackages:     {},
 	LayerDocs:         {},
-	LayerDTOs:         {LayerModels},
-	LayerPolicies:     {LayerDTOs, LayerModels},
-	LayerMails:        {LayerDTOs, LayerModels},
-	LayerServices:     {LayerServices, LayerDTOs, LayerModels, LayerMails, LayerPolicies},
-	LayerAdapters:     {LayerAdapters, LayerServices, LayerDTOs, LayerModels},
-	LayerRepositories: {LayerRepositories, LayerServices, LayerDTOs, LayerModels},
-	LayerHTTP:         {LayerHTTP, LayerContainer, LayerDTOs, LayerModels, LayerServices, LayerMails, LayerPolicies, LayerFacades},
+	LayerPolicies:     {LayerModels},
+	LayerMails:        {LayerModels},
+	LayerServices:     {LayerServices, LayerModels, LayerMails, LayerPolicies},
+	LayerAdapters:     {LayerAdapters, LayerServices, LayerModels},
+	LayerRepositories: {LayerRepositories, LayerServices, LayerModels, LayerFacades},
+	LayerHTTP:         {LayerHTTP, LayerModels, LayerServices, LayerMails, LayerPolicies, LayerFacades},
 	LayerFacades:      {},
-	LayerRoutes:       {LayerContainer, LayerHTTP, LayerServices, LayerModels},
-	LayerRules:        {LayerDTOs, LayerModels},
-	LayerConsole:      {LayerConsole, LayerContainer, LayerServices, LayerDTOs, LayerModels},
-	LayerJobs:         {LayerContainer, LayerServices, LayerDTOs, LayerModels},
-	LayerEvents:       {LayerEvents, LayerJobs, LayerContainer, LayerServices, LayerDTOs, LayerModels},
-	LayerDatabase:     {LayerDatabase, LayerConfig, LayerServices, LayerAdapters, LayerRepositories, LayerDTOs, LayerModels},
+	LayerRoutes:       {LayerContainer, LayerHTTP, LayerServices, LayerModels, LayerDocs, LayerFacades},
+	LayerRules:        {LayerModels},
+	LayerConsole:      {LayerConsole, LayerServices, LayerModels, LayerFacades},
+	LayerJobs:         {LayerServices, LayerModels},
+	LayerDatabase:     {LayerDatabase, LayerConfig, LayerServices, LayerAdapters, LayerRepositories, LayerModels},
 	LayerTests:        append([]string{LayerTests}, everything...),
 	LayerTools:        append([]string{LayerTools}, everything...),
 }

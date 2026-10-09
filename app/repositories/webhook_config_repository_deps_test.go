@@ -10,12 +10,11 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/pkg/pgerr"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
 func TestNew_Webhook_ConfigRepositoryKeepsDependencies(t *testing.T) {
-	testutil.BootTest()
 	fixtures.TestDB(t)
 
 	ctx := context.Background()
@@ -27,23 +26,12 @@ func TestNew_Webhook_ConfigRepositoryKeepsDependencies(t *testing.T) {
 				t.Fatal("a nil cipher was accepted")
 			}
 		}()
-		repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{
-			Query: facades.Orm().Query(),
-		})
+		repositories.NewWebhookConfigRepository(facades.Orm().Query(), nil)
 	}()
 
-	fresh := repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{Cipher: cipher})
-	if fresh == nil || fresh.Bound() != nil {
-		t.Fatal("a nil query was filled in")
-	}
-
-	query := facades.Orm().Query()
-	bound := repositories.NewWebhookConfigRepository(repositories.WebhookConfigRepositoryDeps{
-		Query:  query,
-		Cipher: cipher,
-	})
-	if bound == nil || bound.Bound() != query {
-		t.Fatal("the repository dropped the query")
+	fresh := repositories.NewWebhookConfigRepository(nil, cipher)
+	if fresh == nil {
+		t.Fatal("a nil query was refused")
 	}
 
 	id := uuid.New()
@@ -72,7 +60,7 @@ func TestNew_Webhook_ConfigRepositoryKeepsDependencies(t *testing.T) {
 		Events:   `{"deposit.confirmed"}`,
 		IsActive: true,
 	})
-	if !repositories.IsUniqueViolation(err) {
+	if !pgerr.IsUniqueViolation(err) {
 		t.Fatal("the primary key constraint was not mapped as a unique violation")
 	}
 

@@ -18,8 +18,12 @@ const (
 	GasStatusLow      = "low"
 )
 
-// WalletStatusArchived marks a retired wallet (wallet_status enum).
-const WalletStatusArchived = "archived"
+// WalletStatusArchived marks a retired wallet and WalletStatusFrozen one whose
+// money movement is paused until frozen_until (wallet_status enum).
+const (
+	WalletStatusArchived = "archived"
+	WalletStatusFrozen   = "frozen"
+)
 
 // Wallet is an MPC co-signing wallet. The customer owns share_A (encrypted with
 // their passphrase); the service holds share_B in AWS Secrets Manager.
@@ -47,7 +51,7 @@ type Wallet struct {
 	FeeMultiplier     numeric.NullDecimal `gorm:"type:decimal(8,4)"`
 	RequiredApprovals int                 `gorm:"default:1"`
 	FrozenUntil       *time.Time
-	ActivationCode    *string             `gorm:"type:char(6)"`
+	ActivationCode    *string `gorm:"type:char(6)"`
 
 	BalanceAsset        *string             `gorm:"type:varchar(32)"`
 	BalanceRaw          *string             `gorm:"type:text"`
@@ -55,9 +59,9 @@ type Wallet struct {
 	BalanceUSD          numeric.NullDecimal `gorm:"type:decimal(28,10)"`
 	BalanceLastSyncedAt *time.Time          `gorm:"type:timestamptz"`
 	ReadModelStatus     string              `gorm:"type:wallet_read_model_status;default:idle"`
-	GasStatus          string     `gorm:"type:wallet_gas_status;not null;default:unseeded;index"`
-	GasLastCheckedAt   *time.Time `gorm:"type:timestamptz"`
-	SweepPolicyVersion int        `gorm:"not null;default:1"`
+	GasStatus           string              `gorm:"type:wallet_gas_status;not null;default:unseeded;index"`
+	GasLastCheckedAt    *time.Time          `gorm:"type:timestamptz"`
+	SweepPolicyVersion  int                 `gorm:"not null;default:1"`
 
 	DepositAddress *Address `gorm:"foreignKey:DepositAddressID"`
 }

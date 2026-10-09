@@ -18,7 +18,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -444,7 +444,7 @@ func TestScan_LatestBlocks_EachScanCallsScanOptionsFromSettings(t *testing.T) {
 		start          = uint64(1000)
 	)
 	f := newScanFixture(t, head, DefaultScanOptions())
-	rdb := testutil.TestRedis(t)
+	rdb := testenv.TestRedis(t)
 	key := "vault:checkpoint:" + scanTestChain
 	if err := rdb.Set(context.Background(), key, start, 0).Err(); err != nil {
 		t.Fatal(err)

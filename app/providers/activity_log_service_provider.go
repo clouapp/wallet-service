@@ -12,16 +12,16 @@ import (
 const activityLogName = "audit"
 
 // ActivityLogServiceProvider registers the tables the slotkit capture package
-// watches and installs the gorm plugin. Tables the plan names that do not
-// exist on this branch are not registered: account_role_permissions,
-// model_has_roles and role_has_permissions. account_invites is registered
+// watches. The package's own ServiceProvider (registered before this one in
+// bootstrap.Providers) binds the manual API and installs the gorm plugin.
+// Tables the plan names that do not exist on this branch are not registered:
+// account_role_permissions, model_has_roles and role_has_permissions. account_invites is registered
 // without token_hash: the before-image never selects it. member.invited and
 // invite.accepted stay the caller-named events. users.suspended_at is on the
 // allowlist. suspension_reason is not: a free-text reason can carry a secret.
 type ActivityLogServiceProvider struct{}
 
-func (p *ActivityLogServiceProvider) Register(app foundation.Application) {
-	activitylog.App = app
+func (p *ActivityLogServiceProvider) Register(_ foundation.Application) {
 	for _, table := range auditedTables() {
 		if err := activitylog.Register(table); err != nil {
 			panic(fmt.Errorf("activitylog: %w", err))
@@ -29,11 +29,7 @@ func (p *ActivityLogServiceProvider) Register(app foundation.Application) {
 	}
 }
 
-func (p *ActivityLogServiceProvider) Boot(app foundation.Application) {
-	if err := activitylog.Install(app.MakeOrm()); err != nil {
-		panic(fmt.Errorf("activitylog: %w", err))
-	}
-}
+func (p *ActivityLogServiceProvider) Boot(_ foundation.Application) {}
 
 func auditedTables() []activitylog.Table {
 	return []activitylog.Table{

@@ -27,9 +27,7 @@ func RecoverPanic(ctx contractshttp.Context, recovered any) {
 	if ctx == nil || ctx.Request() == nil {
 		return
 	}
-	_ = responses.Send(ctx, http.StatusInternalServerError, contractshttp.Json{
-		"error": "internal error",
-	}).Abort()
+	_ = responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error").Abort()
 }
 
 func reportPanic(ctx contractshttp.Context, method, path, requestID string, recovered any) {

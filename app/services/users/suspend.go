@@ -26,6 +26,15 @@ type PlatformAdmins interface {
 	Contains(ctx context.Context, userID uuid.UUID) (bool, error)
 }
 
+// IsPlatformAdmin reports whether the user has a platform_admins row. The
+// platform route group asks it before any handler runs.
+func (s *Service) IsPlatformAdmin(ctx context.Context, userID uuid.UUID) (bool, error) {
+	if s.admins == nil {
+		return false, fmt.Errorf("platform admin lookup: platform admins are required")
+	}
+	return s.admins.Contains(ctx, userID)
+}
+
 // Sessions ends the dashboard sessions of a user. Suspension calls RevokeAll
 // so a watermark and the refresh tokens move with suspended_at. RevokeAllBy
 // is the same revoke with the platform admin as the activity actor.
@@ -70,9 +79,6 @@ func (s *Service) RevokeSessions(ctx context.Context, actorID, targetID uuid.UUI
 	}
 	if s.sessions == nil {
 		return fmt.Errorf("revoke sessions: sessions are required")
-	}
-	if _, err := s.existingUser(ctx, targetID); err != nil {
-		return err
 	}
 	admin, err := s.admins.Contains(ctx, actorID)
 	if err != nil {
@@ -122,9 +128,6 @@ func (s *Service) changeSuspension(ctx context.Context, actorID, targetID uuid.U
 	}
 	if suspend && s.sessions == nil {
 		return Suspension{}, fmt.Errorf("%s: sessions are required", op)
-	}
-	if _, err := s.existingUser(ctx, targetID); err != nil {
-		return Suspension{}, err
 	}
 	admin, err := s.admins.Contains(ctx, actorID)
 	if err != nil {
@@ -180,23 +183,6 @@ func (s *Service) changeSuspension(ctx context.Context, actorID, targetID uuid.U
 		return Suspension{}, err
 	}
 	return result, nil
-}
-
-// existingUser resolves the platform user before an admin check. A missing
-// user is ErrNotFound. The caller still has to be a platform admin before
-// anything is written.
-func (s *Service) existingUser(ctx context.Context, id uuid.UUID) (*models.User, error) {
-	user, err := s.store.FindByID(ctx, id)
-	if err != nil {
-		if errors.Is(err, models.ErrRepositoryNotFound) {
-			return nil, ErrNotFound
-		}
-		return nil, err
-	}
-	if user == nil || user.ID == uuid.Nil {
-		return nil, ErrNotFound
-	}
-	return user, nil
 }
 
 func suspensionChange(suspend bool, now time.Time) (*time.Time, string, models.ActivityMetadata, error) {

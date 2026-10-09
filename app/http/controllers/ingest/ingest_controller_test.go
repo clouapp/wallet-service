@@ -3,6 +3,7 @@ package ingest
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -22,86 +23,25 @@ import (
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 )
 
-func ingestControllerDeps() IngestControllerDeps {
-	return IngestControllerDeps{
-		Ingest: &ingestsvc.Service{},
-		Lookup: func() map[string]providers.WebhookProvider {
-			return map[string]providers.WebhookProvider{
-				"alchemy":   providers.NewAlchemyProvider(""),
-				"helius":    providers.NewHeliusProvider(""),
-				"quicknode": providers.NewQuickNodeProvider(""),
-			}
-		},
-	}
-}
-
-func TestNew_Ingest_ControllerKeepsItsDependencies(t *testing.T) {
-	deps := ingestControllerDeps()
-	ctrl := NewIngestController(deps)
+func TestNew_IngestController_KeepsItsDependency(t *testing.T) {
+	inbound := &recordingReceiver{}
+	ctrl := NewIngestController(inbound)
 	if ctrl == nil {
 		t.Fatal("NewIngestController returned nil")
 	}
-	if ctrl.ingest != deps.Ingest {
-		t.Fatal("ingest controller did not keep the ingest service")
-	}
-	if ctrl.lookup == nil {
-		t.Fatal("ingest controller did not keep the provider lookup")
-	}
-	found, ok := ctrl.lookup()["alchemy"]
-	if !ok || found == nil {
-		t.Fatal("ingest controller did not keep the provider lookup")
-	}
-	helius, ok := ctrl.lookup()["helius"]
-	if !ok || helius == nil {
-		t.Fatal("ingest controller did not keep the helius provider")
-	}
-	quicknode, ok := ctrl.lookup()["quicknode"]
-	if !ok || quicknode == nil {
-		t.Fatal("ingest controller did not keep the quicknode provider")
+	if ctrl.inbound != inboundReceiver(inbound) {
+		t.Fatal("ingest controller did not keep the inbound webhook service")
 	}
 }
 
-func TestNew_Ingest_ControllerAllowsNilLookup(t *testing.T) {
-	deps := ingestControllerDeps()
-	deps.Lookup = nil
-	ctrl := NewIngestController(deps)
-	if ctrl == nil {
-		t.Fatal("NewIngestController returned nil")
-	}
-	if ctrl.lookup != nil {
-		t.Fatal("ingest controller did not keep a nil provider lookup")
-	}
-	if ctrl.ingest != deps.Ingest {
-		t.Fatal("ingest controller dropped a required dependency")
-	}
-}
-
-func TestNew_Ingest_ControllerRequiresEveryDependency(t *testing.T) {
-	cases := []struct {
-		name  string
-		clear func(*IngestControllerDeps)
-		panic string
-	}{
-		{
-			name:  "ingest service",
-			clear: func(deps *IngestControllerDeps) { deps.Ingest = nil },
-			panic: "ingest controller: ingest service is required",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			deps := ingestControllerDeps()
-			tc.clear(&deps)
-			defer func() {
-				got := recover()
-				if got != tc.panic {
-					t.Fatalf("panic = %v", got)
-				}
-			}()
-			NewIngestController(deps)
-			t.Fatal("expected a panic")
-		})
-	}
+func TestNew_IngestController_RequiresTheInboundService(t *testing.T) {
+	defer func() {
+		if got := recover(); got != "ingest controller: inbound webhook service is required" {
+			t.Fatalf("panic = %v", got)
+		}
+	}()
+	NewIngestController(nil)
+	t.Fatal("expected a panic")
 }
 
 func TestProvider_Signature_FailsClosedBeforeParsing(t *testing.T) {
@@ -139,16 +79,13 @@ func TestProvider_Signature_FailsClosedBeforeParsing(t *testing.T) {
 	}
 }
 
-func TestHandle_Webhook_IngestRefusesAnUnverifiedBodyBeforeParsing(t *testing.T) {
+func TestStore_RefusesAnUnverifiedBodyBeforeParsing(t *testing.T) {
 	provider := &scriptedProvider{}
 	sink := &recordingIngest{}
-	ctrl := NewIngestController(IngestControllerDeps{Ingest: &ingestsvc.Service{}})
-	ctrl.ingest = sink
-	ctrl.lookup = func() map[string]providers.WebhookProvider {
-		return map[string]providers.WebhookProvider{"alchemy": provider}
-	}
+	receiver := &recordingReceiver{}
+	ctrl := NewIngestController(receiver)
 	ctx, recorder := newIngestContext(rawWebhookBody(), "")
-	if err := ctrl.HandleWebhookIngest(ctx).Render(); err != nil {
+	if err := ctrl.Store(ctx).Render(); err != nil {
 		t.Fatal(err)
 	}
 	if recorder.Code != http.StatusUnauthorized {
@@ -157,12 +94,12 @@ func TestHandle_Webhook_IngestRefusesAnUnverifiedBodyBeforeParsing(t *testing.T)
 	if !strings.Contains(recorder.Body.String(), `"code":"invalid_signature"`) || !strings.Contains(recorder.Body.String(), `"message":"invalid webhook signature"`) {
 		t.Fatalf("body = %s", recorder.Body.String())
 	}
-	if provider.parseCalls != 0 || sink.calls != 0 {
-		t.Fatalf("parse = %d, ingest = %d", provider.parseCalls, sink.calls)
+	if provider.parseCalls != 0 || sink.calls != 0 || receiver.calls != 0 {
+		t.Fatalf("parse = %d, ingest = %d, received = %d", provider.parseCalls, sink.calls, receiver.calls)
 	}
 }
 
-func TestHandle_Webhook_IngestHandsATypedEventAfterTheSignature(t *testing.T) {
+func TestStore_HandsATypedEventAfterTheSignature(t *testing.T) {
 	const (
 		bodyMarker   = "RAW-WEBHOOK-BODY-DO-NOT-LOG"
 		secretMarker = "opened-signing-secret"
@@ -176,7 +113,7 @@ func TestHandle_Webhook_IngestHandsATypedEventAfterTheSignature(t *testing.T) {
 	store := &memorySubs{sub: &models.WebhookSubscription{SigningSecret: "sealed-signing-secret"}}
 	sink := &recordingIngest{}
 	ctx, recorder := newIngestContext(raw, sigMarker)
-	middleware.ProviderSignatureWith(middleware.InboundSignatureDeps{
+	middleware.ProviderSignature(middleware.InboundSignatureDeps{
 		Subscriptions: ingestsvc.NewSubscriptions(store),
 		Lookup: func() map[string]providers.WebhookProvider {
 			return map[string]providers.WebhookProvider{"alchemy": provider}
@@ -208,12 +145,10 @@ func TestHandle_Webhook_IngestHandsATypedEventAfterTheSignature(t *testing.T) {
 		t.Fatalf("verify calls=%d secret=%q body=%q", provider.verifyCalls, provider.gotSecret, provider.gotBody)
 	}
 	handlerCtx := ginpkg.NewContext(ginInstanceOf(ctx))
-	ctrl := NewIngestController(IngestControllerDeps{Ingest: &ingestsvc.Service{}})
-	ctrl.ingest = sink
-	ctrl.lookup = func() map[string]providers.WebhookProvider {
+	ctrl := NewIngestController(ingestsvc.NewInbound(sink, func() map[string]providers.WebhookProvider {
 		return map[string]providers.WebhookProvider{"alchemy": provider}
-	}
-	if err := ctrl.HandleWebhookIngest(handlerCtx).Render(); err != nil {
+	}))
+	if err := ctrl.Store(handlerCtx).Render(); err != nil {
 		t.Fatal(err)
 	}
 	if recorder.Code != http.StatusOK {
@@ -231,6 +166,16 @@ func TestHandle_Webhook_IngestHandsATypedEventAfterTheSignature(t *testing.T) {
 			t.Fatalf("response leaked %q", secret)
 		}
 	}
+}
+
+type recordingReceiver struct {
+	calls int
+	err   error
+}
+
+func (r *recordingReceiver) Receive(context.Context, ingestsvc.Webhook) error {
+	r.calls++
+	return r.err
 }
 
 type recordingIngest struct {
@@ -291,7 +236,7 @@ func postIngest(t *testing.T, path string, body []byte, deps middleware.InboundS
 	continued := false
 	engine := gin.New()
 	engine.POST(path, func(c *gin.Context) {
-		middleware.ProviderSignatureWith(deps)(ginpkg.NewContext(c))
+		middleware.ProviderSignature(deps)(ginpkg.NewContext(c))
 	}, func(*gin.Context) { continued = true })
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
@@ -317,4 +262,36 @@ func newIngestContext(body []byte, signature string) (contractshttp.Context, *ht
 
 func ginInstanceOf(ctx contractshttp.Context) *gin.Context {
 	return ctx.(interface{ Instance() *gin.Context }).Instance()
+}
+
+func TestStore_AnswersTheServiceRefusalsAsTheyAlwaysWere(t *testing.T) {
+	for name, tc := range map[string]struct {
+		err    error
+		status int
+		body   string
+	}{
+		"unknown provider": {ingestsvc.ErrUnknownProvider, http.StatusBadRequest, `{"error":{"code":"invalid_request","message":"unknown provider"}}`},
+		"invalid payload":  {ingestsvc.ErrInvalidPayload, http.StatusBadRequest, `{"error":{"code":"invalid_request","message":"invalid payload"}}`},
+		"ingest failure":   {errors.New("db down"), http.StatusInternalServerError, `{"error":{"code":"internal","message":"internal error"}}` + "\n"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			provider := &scriptedProvider{valid: true}
+			store := &memorySubs{sub: &models.WebhookSubscription{SigningSecret: "sealed"}}
+			ctx, recorder := newIngestContext(rawWebhookBody(), "sig")
+			middleware.ProviderSignature(middleware.InboundSignatureDeps{
+				Subscriptions: ingestsvc.NewSubscriptions(store),
+				Lookup: func() map[string]providers.WebhookProvider {
+					return map[string]providers.WebhookProvider{"alchemy": provider}
+				},
+				Decrypt: func(string) (string, error) { return "secret", nil },
+			})(ctx)
+			ctrl := NewIngestController(&recordingReceiver{err: tc.err})
+			if err := ctrl.Store(ginpkg.NewContext(ginInstanceOf(ctx))).Render(); err != nil {
+				t.Fatal(err)
+			}
+			if recorder.Code != tc.status || recorder.Body.String() != tc.body {
+				t.Fatalf("status = %d body %q", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
 }

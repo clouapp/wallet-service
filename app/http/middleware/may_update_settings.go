@@ -5,14 +5,15 @@ import (
 
 	"github.com/goravel/framework/contracts/http"
 
+	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/policies"
 	settingssvc "github.com/macrowallets/waas/app/services/settings"
 )
 
-// MayUpdateSettings refuses a dashboard settings write unless
-// policies.MayUpdateSettings allows the account role AccountContext already
-// stored. That permission is settings.write. The routes are
-// PATCH and PUT /v1/accounts/{accountId}/settings/{group},
+// MayUpdateSettings refuses a dashboard settings write unless the Gate's
+// account.update-settings (policies.MayUpdateSettings) allows the account
+// role AccountContext already stored. That permission is settings.write.
+// The routes are PATCH and PUT /v1/accounts/{accountId}/settings/{group},
 // POST /v1/accounts/{accountId}/settings/sections/{section}/cache, and
 // POST /v1/accounts/{accountId}/settings/sections/{section}/reset.
 // Owner and admin hold it. Auditor and user do not, and the retired viewer
@@ -22,20 +23,14 @@ import (
 // FlushSection and ResetSection, which answer 404 for an unknown page before
 // they answer 403.
 func MayUpdateSettings() http.Middleware {
-	return func(ctx http.Context) {
+	return authorize(facades.Gate(), policies.AbilityAccountUpdateSettings, func(ctx http.Context) (map[string]any, outcome) {
 		if strings.TrimSpace(ctx.Request().Route("section")) != "" {
-			ctx.Request().Next()
-			return
+			return nil, pass
 		}
 		group := strings.TrimSpace(ctx.Request().Route("group"))
 		if group != "" && !settingssvc.AccountGroupExists(group) {
-			ctx.Request().Next()
-			return
+			return nil, pass
 		}
-		if !policies.MayUpdateSettings(AccountRole(ctx)) {
-			abortWithJSON(ctx, http.StatusForbidden, http.Json{"error": settingssvc.ErrUpdateForbidden.Error()})
-			return
-		}
-		ctx.Request().Next()
-	}
+		return accountRoleArguments(ctx), decide
+	})
 }

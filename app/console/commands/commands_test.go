@@ -91,7 +91,7 @@ func TestRefresh_Wallet_HasExpectedFlags(t *testing.T) {
 			flagNames[ff.Name] = true
 		}
 	}
-	for _, expected := range []string{"scope", "chain", "queue", "force", "reason"} {
+	for _, expected := range []string{"scope", "chain", "force", "reason"} {
 		if !flagNames[expected] {
 			t.Errorf("missing flag: %s", expected)
 		}
@@ -156,7 +156,7 @@ func TestRefresh_Address_HasExpectedFlags(t *testing.T) {
 			flagNames[ff.Name] = true
 		}
 	}
-	for _, expected := range []string{"scope", "queue", "force", "reason"} {
+	for _, expected := range []string{"scope", "force", "reason"} {
 		if !flagNames[expected] {
 			t.Errorf("missing flag: %s", expected)
 		}
@@ -175,7 +175,7 @@ func TestReconcile_Wallet_HasExpectedFlags(t *testing.T) {
 			flagNames[ff.Name] = true
 		}
 	}
-	for _, expected := range []string{"queue", "force", "reason"} {
+	for _, expected := range []string{"force", "reason"} {
 		if !flagNames[expected] {
 			t.Errorf("missing flag: %s", expected)
 		}
@@ -204,5 +204,28 @@ func TestRefresh_Currency_HasTwoArguments(t *testing.T) {
 	ext := cmd.Extend()
 	if len(ext.Arguments) != 2 {
 		t.Fatalf("expected 2 arguments (currency, addresses), got %d", len(ext.Arguments))
+	}
+}
+
+func TestRefresh_Commands_HaveNoQueueFlag(t *testing.T) {
+	for name, cmd := range map[string]interface{ Extend() command.Extend }{
+		"refresh:wallet":   &RefreshWallet{},
+		"refresh:address":  &RefreshAddress{},
+		"refresh:currency": &RefreshCurrency{},
+		"refresh:tx":       &RefreshTx{},
+		"reconcile:wallet": &ReconcileWallet{},
+	} {
+		for _, f := range cmd.Extend().Flags {
+			var flagName string
+			switch ff := f.(type) {
+			case *command.StringFlag:
+				flagName = ff.Name
+			case *command.BoolFlag:
+				flagName = ff.Name
+			}
+			if flagName == "queue" {
+				t.Errorf("%s still has a --queue flag; the refresh queue has no consumer", name)
+			}
+		}
 	}
 }

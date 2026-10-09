@@ -12,9 +12,9 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/awslabs/aws-lambda-go-api-proxy/httpadapter"
-	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/facades"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/localworkers"
@@ -27,45 +27,45 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-// @title           Vault Custody Service API
-// @version         1.0
-// @description     Multi-chain cryptocurrency custody service with deposit scanning, withdrawals, and webhooks
-// @termsOfService  http://swagger.io/terms/
+//	@title			Vault Custody Service API
+//	@version		1.0
+//	@description	Multi-chain cryptocurrency custody service with deposit scanning, withdrawals, and webhooks
+//	@termsOfService	http://swagger.io/terms/
 
-// @contact.name   API Support
-// @contact.email  support@vault.dev
+//	@contact.name	API Support
+//	@contact.email	support@vault.dev
 
-// @license.name  MIT
-// @license.url   https://opensource.org/licenses/MIT
+//	@license.name	MIT
+//	@license.url	https://opensource.org/licenses/MIT
 
-// @host      localhost:8080
-// @BasePath  /
+//	@host		localhost:8080
+//	@BasePath	/
 
-// @securityDefinitions.apikey ApiKeyAuth
-// @in header
-// @name X-API-Key
+//	@securityDefinitions.apikey	ApiKeyAuth
+//	@in							header
+//	@name						X-API-Key
 
-// @securityDefinitions.apikey SignatureAuth
-// @in header
-// @name X-API-Signature
+//	@securityDefinitions.apikey	SignatureAuth
+//	@in							header
+//	@name						X-API-Signature
 
-// @tag.name Chains
-// @tag.description Operations about blockchain networks
+//	@tag.name			Chains
+//	@tag.description	Operations about blockchain networks
 
-// @tag.name Wallets
-// @tag.description Wallet management operations
+//	@tag.name			Wallets
+//	@tag.description	Wallet management operations
 
-// @tag.name Addresses
-// @tag.description Address generation and lookup
+//	@tag.name			Addresses
+//	@tag.description	Address generation and lookup
 
-// @tag.name Withdrawals
-// @tag.description Withdrawal request operations
+//	@tag.name			Withdrawals
+//	@tag.description	Withdrawal request operations
 
-// @tag.name Transactions
-// @tag.description Transaction history and details
+//	@tag.name			Transactions
+//	@tag.description	Transaction history and details
 
-// @tag.name Webhooks
-// @tag.description Webhook configuration for event notifications
+//	@tag.name			Webhooks
+//	@tag.description	Webhook configuration for event notifications
 
 var (
 	deposits    *deposit.Service
@@ -202,6 +202,9 @@ const (
 	defaultLocalPort        = "8080"
 	exitCodeFailure         = 1
 	exitCodeShutdownTimeout = 2
+	// maxHeaderBytes is the gin driver's default header_limit (4096 KiB), which
+	// its Listen applied before the server moved into pkg/lifecycle.
+	maxHeaderBytes = 4096 << 10
 )
 
 // runLocal serves HTTP and runs the local workers until SIGINT or SIGTERM, then
@@ -218,9 +221,13 @@ func runLocal() {
 		slog.Error("server error", "error", err)
 		os.Exit(exitCodeFailure)
 	}
+	// The hard request cut lives here, at the net/http level. In Lambda mode only
+	// the cooperative middleware.RequestTimeout deadline applies.
 	server, err := lifecycle.NewListenerServer(lifecycle.ListenerServerDeps{
-		Router:   facades.Route(),
-		Listener: listener,
+		Router:         facades.Route(),
+		Listener:       listener,
+		Wrap:           bootstrap.RequestTimeoutHandler(),
+		MaxHeaderBytes: maxHeaderBytes,
 	})
 	if err != nil {
 		slog.Error("server error", "error", err)

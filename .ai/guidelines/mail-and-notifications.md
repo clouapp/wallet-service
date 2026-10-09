@@ -29,13 +29,23 @@ job. A non-credential mail (welcome) may use the same job with its own purpose.
 - A send whose outcome is unknown (deadline hit mid-send) is **not retried**: a
   retry would mint a second credential and invalidate the one already in the
   inbox. Log at WARN; the user asks again.
-- `/forgot-password` answers the same whether or not the address exists.
+- `POST /v1/auth/recover` answers the same whether or not the address exists.
 
 ## Drivers and environments
 
 Driver and credentials come from config (`MAIL_*`); local uses Mailpit or a
 `log` driver that is refused in production. SMTP passwords and API keys are
 never hardcoded, never in fixtures, never logged.
+
+`facades.Mail()` is `app/providers/mail.Mailer`, bound by `MailServiceProvider`
+over the framework SMTP application. Each `Send` reads the platform `mail_smtp`
+row and the `mail_delivery` From header from the settings service; a field not
+in use, a missing row or a failed read keeps the `MAIL_*` value. The framework
+dials with the process config, so the send writes its document to the `mail`
+key, dials, and puts the previous document back, holding one process-wide lock
+for the whole send: sends are serialised. The provider declares no
+`Relationship()`: one naming `binding.Mail` would give the key back to the
+framework mailer.
 
 ## Never logged
 

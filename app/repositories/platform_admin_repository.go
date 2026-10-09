@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	contractsorm "github.com/goravel/framework/contracts/database/orm"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories/internal/db"
@@ -19,7 +19,7 @@ type PlatformAdminRepository struct {
 
 // NewPlatformAdminRepository wraps an orm.Query. Pass nil for a fresh query
 // per call.
-func NewPlatformAdminRepository(query contractsorm.Query) *PlatformAdminRepository {
+func NewPlatformAdminRepository(query orm.Query) *PlatformAdminRepository {
 	return &PlatformAdminRepository{Base: db.NewBase(query)}
 }
 

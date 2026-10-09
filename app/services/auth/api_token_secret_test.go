@@ -10,7 +10,7 @@ import (
 func TestGenerate_API_TokenSecretIs32BytesHex(t *testing.T) {
 	t.Parallel()
 
-	svc := authsvc.NewService()
+	svc := authsvc.NewService(nil)
 	first, err := svc.GenerateAPITokenSecret()
 	if err != nil {
 		t.Fatalf("generate secret: %v", err)
@@ -40,7 +40,7 @@ func TestGenerate_API_TokenSecretIs32BytesHex(t *testing.T) {
 func TestAPI_Token_HashAcceptsLegacyStoredForm(t *testing.T) {
 	t.Parallel()
 
-	svc := authsvc.NewService()
+	svc := authsvc.NewService(nil)
 	legacyIDHash := svc.HashToken("11111111-1111-4111-8111-111111111111")
 	placeholder := "test-hash-already-stored"
 
@@ -61,7 +61,7 @@ func TestAPI_Token_HashAcceptsLegacyStoredForm(t *testing.T) {
 func TestAPI_Token_HashRejectsSecretDigestWithoutTheClaim(t *testing.T) {
 	t.Parallel()
 
-	svc := authsvc.NewService()
+	svc := authsvc.NewService(nil)
 	secret, err := svc.GenerateAPITokenSecret()
 	if err != nil {
 		t.Fatalf("generate secret: %v", err)

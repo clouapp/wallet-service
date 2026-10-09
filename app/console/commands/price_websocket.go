@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 
+	contractscache "github.com/goravel/framework/contracts/cache"
 	"github.com/goravel/framework/contracts/console"
 	"github.com/goravel/framework/contracts/console/command"
 
@@ -12,7 +13,7 @@ import (
 type PriceWebSocket struct {
 	prices     *price.Service
 	coinAPIKey string
-	cache      price.PriceCache
+	cache      contractscache.Driver
 }
 
 // PriceWebSocketDeps is everything the price:websocket command needs. Cache may
@@ -20,7 +21,7 @@ type PriceWebSocket struct {
 type PriceWebSocketDeps struct {
 	Prices     *price.Service
 	CoinAPIKey string
-	Cache      price.PriceCache
+	Cache      contractscache.Driver
 }
 
 // NewPriceWebSocket streams CoinAPI prices.

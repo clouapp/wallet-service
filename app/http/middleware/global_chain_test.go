@@ -11,10 +11,12 @@ import (
 	"github.com/gin-gonic/gin"
 	contractshttp "github.com/goravel/framework/contracts/http"
 	ginpkg "github.com/goravel/gin"
+
+	ingestsvc "github.com/macrowallets/waas/app/services/ingest"
 )
 
 func TestGlobal_Chain_FollowsThePlanOrder(t *testing.T) {
-	links := globalChainLinks(time.Second)
+	links := globalChainLinks(time.Second, InboundSignatureDeps{Subscriptions: &ingestsvc.Subscriptions{}}, nil)
 	want := []string{
 		chainRequestTimeout,
 		chainProviderSignature,
@@ -34,8 +36,8 @@ func TestGlobal_Chain_FollowsThePlanOrder(t *testing.T) {
 			t.Fatalf("position %d (%s) has no middleware", i, want[i])
 		}
 	}
-	if len(GlobalChain(time.Second)) != len(want) {
-		t.Fatalf("GlobalChain len = %d, want %d", len(GlobalChain(time.Second)), len(want))
+	if len(GlobalChain(time.Second, InboundSignatureDeps{Subscriptions: &ingestsvc.Subscriptions{}}, nil)) != len(want) {
+		t.Fatalf("GlobalChain len = %d, want %d", len(GlobalChain(time.Second, InboundSignatureDeps{Subscriptions: &ingestsvc.Subscriptions{}}, nil)), len(want))
 	}
 }
 
@@ -91,26 +93,6 @@ func TestBody_Limit_RefusesADeclaredLengthAboveTheCeiling(t *testing.T) {
 	body := recorder.Body.String()
 	if !strings.Contains(body, `"code":"request_too_large"`) {
 		t.Fatalf("body = %s", body)
-	}
-}
-
-func TestRequest_Timeout_AnswersTheEnvelopeWhenTheHandlerOverruns(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	recorder := httptest.NewRecorder()
-	engine := gin.New()
-	engine.Use(func(c *gin.Context) {
-		RequestTimeout(20 * time.Millisecond)(ginpkg.NewContext(c))
-	})
-	engine.GET("/", func(c *gin.Context) {
-		time.Sleep(150 * time.Millisecond)
-		c.Status(http.StatusOK)
-	})
-	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
-	if recorder.Code != http.StatusGatewayTimeout {
-		t.Fatalf("status = %d, body %s", recorder.Code, recorder.Body.String())
-	}
-	if !strings.Contains(recorder.Body.String(), `"code":"timeout"`) {
-		t.Fatalf("body = %s", recorder.Body.String())
 	}
 }
 

@@ -1,8 +1,10 @@
 # Identity and scope
 
-> Status: PARTLY HOLDS. Authentication and membership already live in
-> middleware. TARGET: typed accessors and unexported context keys instead of
-> `ctx.Value("string")`. Migration: alignment prompt (Part 1) §3.3, §3.9.
+> Status: HOLDS. Authentication, membership and wallet scope live in middleware;
+> handlers read the actor and the scope through the typed accessors of
+> `app/http/middleware/requestctx`. A `ctx.Value("…")` string-keyed read or write
+> outside `app/http/middleware` is refused
+> (`TestContext_Values_AreReadOnlyInMiddleware`).
 
 ## Who is asking
 
@@ -11,17 +13,43 @@ field or header:
 
 | Actor | Surface | Authenticated by | Put on the context by |
 |---|---|---|---|
-| `*models.User` | dashboard `/v1` | Goravel JWT guard (`facades.Auth(ctx).Parse`), refresh token rotation, optional TOTP | `middleware.SessionAuth` |
+| `*models.User` | dashboard `/v1`, platform `/v1/platform` | Goravel JWT guard (`appfacades.Auth(ctx).Parse`), refresh token rotation, optional TOTP; the user must be active, not suspended, and the token not revoked | `middleware.SessionAuth` |
 | `*models.AccessToken` (API token) | external `/api/v1` | JWT (`sub: api_token`, `jti` = token row, `account_id` claim) signed with `jwt.secret`; the token row must exist and be active; when the token carries `require_signature`, an `X-Signature` HMAC over the body is mandatory | `middleware.APITokenAuth` |
 
 An API token belongs to ONE account and acts only inside it. A user acts in the
 accounts they are a member of.
 
-The actor lives on the request context under an **unexported** key in
-`app/http/middleware`; only the auth middleware can set it, and
-`middleware.CurrentUser(ctx)` / `CurrentAPIToken(ctx)` are the only readers.
-Do not add an exported setter: a `WithUser(ctx, u)` that any package can call
-is a context every policy then trusts.
+Only the auth middleware writes the actor onto the request context (the keys are
+the constants of `requestctx`, `KeyUser`, `KeyUserID`, `KeyAPIToken`, …), and
+`requestctx.User(ctx)` / `MustUser` / `UserID` / `APIToken` are the readers
+everyone else uses. The keys are plain strings, so the architecture test, not the
+type system, keeps other packages from writing them. Do not add an exported
+setter: a `WithUser(ctx, u)` that any package can call is a context every
+policy then trusts.
+
+## Ending a dashboard session
+
+A dashboard JWT carries only `key`, `sub`, `iat` and `exp`, with `iat` in whole
+seconds, so two tokens of one user minted in the same second are byte-identical.
+That rules out per-token revocation (the guard's `Logout` blacklists the token
+string, which a login in the same second would mint again and find refused).
+
+Every way of ending a session (logout, password change or reset, TOTP disable,
+platform revoke) goes through `auth.SessionRevoker.RevokeAll`. **Logout therefore
+ends every session of the user**, on all devices: it also deletes the refresh
+tokens and writes `user.sessions_revoked` to the activity log. The access token
+of another device is refused at once with 401 `session revoked` (it used to live
+until it expired, at most 15 minutes). The rule:
+
+- The watermark (`users.sessions_revoked_at`) is the start of the NEXT second
+  after the revocation, so the whole revocation second is void.
+- `SessionAuth` refuses a token whose `iat` is before the watermark.
+- A new session is minted only after the watermark (`AwaitIssuable` waits out
+  the rest of the second, at most ~1s), so its `iat` is at or after it and it
+  differs from every token issued before.
+
+Do not blacklist individual tokens and do not add a sub-second discriminator:
+the guard offers no way to set a `jti`.
 
 ## The scope chain
 
@@ -36,7 +64,7 @@ actor → account → wallet
 | chain capability | `UTXOOnly` on UTXO-only routes | same |
 
 Each step loads the row once and puts it on the context
-(`CurrentAccount`, `CurrentWallet`, `CurrentAccountRole`). Handlers and services
+(read with `requestctx.Account`, `Wallet`, `AccountRole`). Handlers and services
 receive the loaded rows; nobody reloads them by id.
 
 Rules:
@@ -55,7 +83,9 @@ Rules:
 
 ## Context keys
 
-No string literal keys. The middleware package declares unexported key types;
-`ctx.Value("wallet").(*models.Wallet)` (unchecked assertion on a string key) is
-exactly what this replaces. `tests/architecture` refuses `ctx.Value("` outside
+The keys are the string constants of `requestctx`. Nobody reads or writes
+`ctx.Value("wallet").(*models.Wallet)` (an unchecked assertion on a string
+literal): the readers do a checked assertion and return `(value, ok)`, and the
+`Must*` variants panic only where the route guarantees the value.
+`tests/architecture` refuses `ctx.Value("…")` / `WithValue("…")` outside
 `app/http/middleware`.

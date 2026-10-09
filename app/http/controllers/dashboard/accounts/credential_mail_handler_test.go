@@ -11,10 +11,10 @@ func TestHandlers_Leave_CredentialDispatchToTheDecidingService(t *testing.T) {
 		path      string
 		signature string
 	}{
-		{"account_controller.go", "func (ctrl *AccountsController) AddAccountUser"},
-		{"invites_controller.go", "func (ctrl *InvitesController) Create"},
-		{"invites_controller.go", "func (ctrl *InvitesController) Resend"},
-		{"../auth/auth_controller.go", "func (ctrl *AuthController) ForgotPassword"},
+		{"member_controller.go", "func (c *MemberController) Store"},
+		{"invite_controller.go", "func (c *InviteController) Store"},
+		{"invite_controller.go", "func (c *InviteController) Resend"},
+		{"../auth/password_controller.go", "func (c *PasswordController) Forgot"},
 	}
 	for _, check := range checks {
 		source, err := os.ReadFile(check.path)
@@ -65,11 +65,11 @@ func TestHandlers_Leave_CredentialDispatchToTheDecidingService(t *testing.T) {
 }
 
 func TestRegister_Sends_WelcomeWithoutTheCredentialJob(t *testing.T) {
-	source, err := os.ReadFile("../auth/auth_controller.go")
+	source, err := os.ReadFile("../../../../services/auth/sign_in.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := functionBody(t, string(source), "func (ctrl *AuthController) Register")
+	body := functionBody(t, string(source), "func (s *SignIn) Register")
 	onboard := strings.Index(body, "Onboard(")
 	login := strings.Index(body, "LoginUsingID(")
 	send := strings.Index(body, "SendWelcome(")
@@ -112,11 +112,11 @@ func TestRegister_Sends_WelcomeWithoutTheCredentialJob(t *testing.T) {
 }
 
 func TestSettings_Test_MailUsesSend(t *testing.T) {
-	controller, err := os.ReadFile("../../platform/settings/settings_controller.go")
+	controller, err := os.ReadFile("../../platform/settings/setting_controller.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := functionBody(t, string(controller), "func (ctrl *SettingsController) TestMail")
+	handler := functionBody(t, string(controller), "func (c *SettingController) Test")
 	if !strings.Contains(handler, "SendPlatformMailTest(") {
 		t.Fatal("settings test mail must be sent by the settings service")
 	}

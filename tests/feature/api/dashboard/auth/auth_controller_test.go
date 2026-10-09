@@ -3,7 +3,11 @@ package auth
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
+	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
@@ -49,6 +53,33 @@ func (s *AuthControllerTestSuite) TestLogin_Invalid_Credentials() {
 	body := `{"email":"nonexistent@example.com","password":"wrongpass"}`
 	resp := s.Post("/v1/auth/login", support.Session{}, body)
 	s.AssertError(resp, 401, "unauthorized", "invalid credentials")
+}
+
+// TestLogin_MalformedJSON answers 400 with the same envelope as an empty body.
+// The gin driver logs the quoted body of such a request; hiding it from the log
+// (app/services/security.RedactText) must not change this answer.
+func (s *AuthControllerTestSuite) TestLogin_Malformed_JSON() {
+	resp := s.Post("/v1/auth/login", support.Session{}, `{"email":"admin@macro.markets","password":"secre`)
+	s.AssertError(resp, 400, "invalid_request", "invalid request body")
+	content, err := resp.Content()
+	s.Require().NoError(err)
+	s.Equal(`{"error":{"code":"invalid_request","message":"invalid request body"}}`, content)
+}
+
+// TestLogin_UnknownEmail_SpendsABcryptCompare keeps response time from telling a
+// registered email from an unknown one: both run one bcrypt compare.
+func (s *AuthControllerTestSuite) TestLogin_Unknown_Email_SpendsABcryptCompare() {
+	start := time.Now()
+	_ = bcrypt.CompareHashAndPassword([]byte(authsvc.DummyPasswordHash), []byte("wrongpass"))
+	oneCompare := time.Since(start)
+
+	body := `{"email":"nonexistent-timing@example.com","password":"wrongpass"}`
+	start = time.Now()
+	resp := s.Post("/v1/auth/login", support.Session{}, body)
+	elapsed := time.Since(start)
+
+	s.AssertError(resp, 401, "unauthorized", "invalid credentials")
+	s.GreaterOrEqual(elapsed, oneCompare/2, "an unknown email must cost about one bcrypt compare, took %s against %s", elapsed, oneCompare)
 }
 
 // TestRecover_AlwaysReturns200 ensures user enumeration is not possible (ForgotPassword handler).

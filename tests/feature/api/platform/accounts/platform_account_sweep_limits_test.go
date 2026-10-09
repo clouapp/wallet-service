@@ -124,7 +124,7 @@ func (s *PlatformAccountSweepLimitsTestSuite) TestAn_Admin_WriteOverridesThePlat
 	s.NotContains(raw, "enc:v1:")
 }
 
-func (s *PlatformAccountSweepLimitsTestSuite) TestAnother_Group_AndAnUnknownAccountAreNotFoundBeforeForbidden() {
+func (s *PlatformAccountSweepLimitsTestSuite) TestAnother_Group_AndAnUnknownAccountAreNotFoundForAdminsAndForbiddenForMembers() {
 	member := s.seedUser(false)
 	memberSession := s.signIn(member.Email)
 	admin := s.seedUser(false)
@@ -133,19 +133,22 @@ func (s *PlatformAccountSweepLimitsTestSuite) TestAnother_Group_AndAnUnknownAcco
 	accountID := s.createAccount("Known")
 	body := `{"max_addresses_evm":7,"daily_withdraw_cap_usd":""}`
 
+	// A member is refused before the handler looks the group or the account up,
+	// so the answer does not tell which of them exist.
 	for _, group := range []string{"no-such-group", "sweep_limits", "mail_smtp", "account_security", "account_webhooks"} {
-		for _, token := range []string{memberSession.AccessToken, adminSession.AccessToken} {
-			missing := s.putRaw(token, s.groupPath(accountID, group), body)
-			s.AssertError(missing, 404, responses.CodeNotFound, "settings group not found")
-		}
+		refused := s.putRaw(memberSession.AccessToken, s.groupPath(accountID, group), body)
+		s.AssertError(refused, 403, responses.CodeForbidden, "you do not have permission to update settings")
+
+		missing := s.putRaw(adminSession.AccessToken, s.groupPath(accountID, group), body)
+		s.AssertError(missing, 404, responses.CodeNotFound, "settings group not found")
 	}
 	badID := s.putRaw(adminSession.AccessToken, "/v1/platform/accounts/not-a-uuid/settings/account_sweep_limits", body)
 	s.AssertError(badID, 404, "not_found", "account not found")
 	badIDOtherGroup := s.putRaw(memberSession.AccessToken, "/v1/platform/accounts/not-a-uuid/settings/no-such-group", body)
-	s.AssertError(badIDOtherGroup, 404, "not_found", "settings group not found")
+	s.AssertError(badIDOtherGroup, 403, responses.CodeForbidden, "you do not have permission to update settings")
 
 	unknownAccount := s.putRaw(memberSession.AccessToken, s.groupPath(uuid.New(), "account_sweep_limits"), body)
-	s.AssertError(unknownAccount, 404, responses.CodeNotFound, "account not found")
+	s.AssertError(unknownAccount, 403, responses.CodeForbidden, "you do not have permission to update settings")
 	unknownForAdmin := s.putRaw(adminSession.AccessToken, s.groupPath(uuid.New(), "account_sweep_limits"), body)
 	s.AssertError(unknownForAdmin, 404, "not_found", "account not found")
 
@@ -159,6 +162,29 @@ func (s *PlatformAccountSweepLimitsTestSuite) TestAnother_Group_AndAnUnknownAcco
 
 	missing := s.Put(s.groupPath(accountID, "account_sweep_limits"), support.Session{}, body)
 	s.AssertError(missing, 401, "unauthorized", "missing or malformed bearer token")
+}
+
+// TestThe_Body_IsReadAfterTheGroupAndTheAccount pins the order for an admin:
+// an unknown group or account is 404 whatever the body, and only a write
+// that may go ahead reads it, so a body that is not a JSON object is 400
+// there alone.
+func (s *PlatformAccountSweepLimitsTestSuite) TestThe_Body_IsReadAfterTheGroupAndTheAccount() {
+	admin := s.seedUser(false)
+	s.grantPlatformAdmin(admin.ID)
+	adminSession := s.signIn(admin.Email)
+	accountID := s.createAccount("Known")
+	body := `null`
+
+	missingGroup := s.putRaw(adminSession.AccessToken, s.groupPath(accountID, "sweep_limits"), body)
+	s.AssertError(missingGroup, 404, responses.CodeNotFound, "settings group not found")
+	missingAccount := s.putRaw(adminSession.AccessToken, s.groupPath(uuid.New(), "account_sweep_limits"), body)
+	s.AssertError(missingAccount, 404, "not_found", "account not found")
+	unreadable := s.putRaw(adminSession.AccessToken, s.groupPath(accountID, "account_sweep_limits"), body)
+	s.AssertError(unreadable, 400, responses.CodeInvalidRequest, "invalid request body")
+	s.Equal(int64(0), s.count(
+		`SELECT count(*) FROM settings WHERE account_id = ? AND "group" = 'account_sweep_limits'`,
+		accountID,
+	))
 }
 
 func (s *PlatformAccountSweepLimitsTestSuite) TestZero_Negative_AndANegativeCapLeaveTheRowUnchanged() {
@@ -198,7 +224,7 @@ func (s *PlatformAccountSweepLimitsTestSuite) TestZero_Negative_AndANegativeCapL
 
 func (s *PlatformAccountSweepLimitsTestSuite) loadLimits(accountID uuid.UUID) *sweep.Limits {
 	s.T().Helper()
-	limits, err := container.Get().SweepService.LoadLimits(context.Background(), accountID)
+	limits, err := container.MustMake[*sweep.Box]().Service.LoadLimits(context.Background(), accountID)
 	s.Require().NoError(err)
 	s.Require().NotNil(limits)
 	return limits

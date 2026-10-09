@@ -42,7 +42,7 @@ func newTronFeeFixture(t *testing.T) tronFeeFixture {
 
 // requireBuiltMatchesQuote signs the built transaction and checks the quote priced
 // exactly its bandwidth and fee_limit.
-func (f tronFeeFixture) requireBuiltMatchesQuote(t *testing.T, unsigned *types.UnsignedTx, quote TronFeeQuote) {
+func (f tronFeeFixture) requireBuiltMatchesQuote(t *testing.T, unsigned *types.UnsignedTx, quote chain.TronFeeQuote) {
 	t.Helper()
 	signed, err := f.adapter.SignTransaction(context.Background(), unsigned, f.key)
 	if err != nil {

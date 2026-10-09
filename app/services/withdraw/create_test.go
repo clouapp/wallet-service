@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	contractscache "github.com/goravel/framework/contracts/cache"
 
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
@@ -14,6 +15,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/memcache"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -22,7 +24,7 @@ const createTestPassphrase = "create-passphrase-0001"
 func TestCreate_Unknown_ChainIsNotAStoreFailure(t *testing.T) {
 	registry := chain.NewRegistry()
 	registry.RegisterChain(mocks.NewMockChain("eth"))
-	svc := &Service{registry: registry}
+	svc := &Service{registry: registry, cache: memcache.New()}
 	svc.UseCreate(memUsers{}, acceptTotp{}, &memWithdrawalRows{}, &memChains{decimals: 18})
 	storeDown := errors.New("db down")
 	_, missing := svc.Create(context.Background(), CreateInput{
@@ -219,12 +221,13 @@ func TestCreate_Rejects_ABadPassphraseBeforeTheRow(t *testing.T) {
 	broadcaster := &fakeBroadcaster{}
 	feeChain := newCreateChain(t, broadcaster, "1", nil)
 	rows := &memWithdrawalRows{}
-	locker := &recordingLocker{}
+	cache := memcache.New()
 	svc := newCreateService(t, feeChain.chain, rows, acceptTotp{}, &memChains{decimals: 18})
-	svc.locker = locker
+	svc.cache = cache
+	wallet := sealedCreateWallet(t, "eth", nil)
 
 	_, err := svc.Create(context.Background(), CreateInput{
-		Wallet:             sealedCreateWallet(t, "eth", nil),
+		Wallet:             wallet,
 		DashboardUserID:    uuid.New(),
 		TotpCode:           "000000",
 		Passphrase:         "wrong-passphrase-00",
@@ -239,8 +242,8 @@ func TestCreate_Rejects_ABadPassphraseBeforeTheRow(t *testing.T) {
 	if rows.creates != 0 || feeChain.requests != 0 || broadcaster.calls != 0 {
 		t.Fatalf("creates %d fees %d broadcasts %d", rows.creates, feeChain.requests, broadcaster.calls)
 	}
-	if locker.incrKey == "" || locker.incrTTL.Seconds() != 60 {
-		t.Fatal("failed passphrase was not counted")
+	if got := cache.GetInt(passphraseAttemptsKey(wallet.ID.String())); got != 1 {
+		t.Fatalf("failed passphrase counted %d times, want 1", got)
 	}
 }
 
@@ -248,12 +251,14 @@ func TestCreate_Stops_AtThePassphraseAttemptCap(t *testing.T) {
 	broadcaster := &fakeBroadcaster{}
 	feeChain := newCreateChain(t, broadcaster, "1", nil)
 	rows := &memWithdrawalRows{}
-	locker := &recordingLocker{count: 5}
+	cache := memcache.New()
 	svc := newCreateService(t, feeChain.chain, rows, acceptTotp{}, &memChains{decimals: 18})
-	svc.locker = locker
+	svc.cache = cache
+	wallet := sealedCreateWallet(t, "eth", nil)
+	cache.Add(passphraseAttemptsKey(wallet.ID.String()), int64(maxPassphraseAttempts), passphraseAttemptWindow)
 
 	_, err := svc.Create(context.Background(), CreateInput{
-		Wallet:             sealedCreateWallet(t, "eth", nil),
+		Wallet:             wallet,
 		DashboardUserID:    uuid.New(),
 		TotpCode:           "000000",
 		Passphrase:         createTestPassphrase,
@@ -265,8 +270,77 @@ func TestCreate_Stops_AtThePassphraseAttemptCap(t *testing.T) {
 	if !ok || refusal.Status != CreateStatusTooManyRequests || refusal.Message != ErrTooManyAttempts.Error() {
 		t.Fatalf("got %v", err)
 	}
-	if rows.creates != 0 || broadcaster.calls != 0 || locker.incrKey != "" {
-		t.Fatalf("creates %d broadcasts %d incr %q", rows.creates, broadcaster.calls, locker.incrKey)
+	if rows.creates != 0 || broadcaster.calls != 0 {
+		t.Fatalf("creates %d broadcasts %d", rows.creates, broadcaster.calls)
+	}
+}
+
+func TestCreate_Locks_AWalletAfterFiveWrongPassphrases(t *testing.T) {
+	broadcaster := &fakeBroadcaster{}
+	feeChain := newCreateChain(t, broadcaster, "1", nil)
+	rows := &memWithdrawalRows{}
+	svc := newCreateService(t, feeChain.chain, rows, acceptTotp{}, &memChains{decimals: 18})
+	wallet := sealedCreateWallet(t, "eth", nil)
+	attempt := func(passphrase string) *CreateRefusal {
+		t.Helper()
+		_, err := svc.Create(context.Background(), CreateInput{
+			Wallet:             wallet,
+			DashboardUserID:    uuid.New(),
+			TotpCode:           "000000",
+			Passphrase:         passphrase,
+			Amount:             "1",
+			DestinationAddress: "0xdest",
+			IdempotencyKey:     uuid.New().String(),
+		})
+		refusal, ok := err.(*CreateRefusal)
+		if !ok {
+			t.Fatalf("got %v", err)
+		}
+		return refusal
+	}
+
+	for try := 1; try <= 5; try++ {
+		if refusal := attempt("wrong-passphrase-00"); refusal.Status != CreateStatusUnauthorized {
+			t.Fatalf("wrong passphrase %d: %v", try, refusal)
+		}
+	}
+	if refusal := attempt("wrong-passphrase-00"); refusal.Status != CreateStatusTooManyRequests {
+		t.Fatalf("sixth wrong passphrase: %v", refusal)
+	}
+	if refusal := attempt(createTestPassphrase); refusal.Status != CreateStatusTooManyRequests {
+		t.Fatalf("the right passphrase inside the lockout: %v", refusal)
+	}
+}
+
+func TestCreate_Refuses_WhenThePassphraseCounterCannotBeRead(t *testing.T) {
+	for name, cache := range map[string]contractscache.Driver{
+		"cache not configured": nil,
+		"cache outage":         memcache.Down{Cache: memcache.New()},
+	} {
+		t.Run(name, func(t *testing.T) {
+			broadcaster := &fakeBroadcaster{}
+			feeChain := newCreateChain(t, broadcaster, "1", nil)
+			rows := &memWithdrawalRows{}
+			svc := newCreateService(t, feeChain.chain, rows, acceptTotp{}, &memChains{decimals: 18})
+			svc.cache = cache
+
+			_, err := svc.Create(context.Background(), CreateInput{
+				Wallet:             sealedCreateWallet(t, "eth", nil),
+				DashboardUserID:    uuid.New(),
+				TotpCode:           "000000",
+				Passphrase:         createTestPassphrase,
+				Amount:             "1",
+				DestinationAddress: "0xdest",
+				IdempotencyKey:     uuid.New().String(),
+			})
+			refusal, ok := err.(*CreateRefusal)
+			if !ok || refusal.Status != CreateStatusInternal || refusal.Message != "internal error" {
+				t.Fatalf("got %v", err)
+			}
+			if rows.creates != 0 || broadcaster.calls != 0 {
+				t.Fatalf("creates %d broadcasts %d", rows.creates, broadcaster.calls)
+			}
+		})
 	}
 }
 
@@ -477,7 +551,7 @@ func newCreateService(t *testing.T, mock *mocks.MockChain, rows WithdrawalRows, 
 	t.Helper()
 	registry := chain.NewRegistry()
 	registry.RegisterChain(mock)
-	svc := &Service{registry: registry}
+	svc := &Service{registry: registry, cache: memcache.New()}
 	svc.UseCreate(memUsers{}, totp, rows, chains)
 	return svc
 }
@@ -603,4 +677,31 @@ func (m *memWithdrawalRows) RetryBroadcast(_ context.Context, _ uuid.UUID, amoun
 		return m.retryErr
 	}
 	return nil
+}
+
+func TestCreate_Refusal_NeverCarriesTheInternalErrorText(t *testing.T) {
+	broadcaster := &fakeBroadcaster{}
+	feeChain := newCreateChain(t, broadcaster, "1", nil)
+	rows := &memWithdrawalRows{}
+	svc := newCreateService(t, feeChain.chain, rows, acceptTotp{}, &memChains{decimals: 18})
+
+	_, err := svc.Create(context.Background(), CreateInput{
+		Wallet:             sealedCreateWallet(t, "eth", nil),
+		DashboardUserID:    uuid.New(),
+		TotpCode:           "000000",
+		Passphrase:         createTestPassphrase,
+		Asset:              "NOTACOIN",
+		Amount:             "1",
+		DestinationAddress: "0xdest",
+	})
+	refusal, ok := err.(*CreateRefusal)
+	if !ok || refusal.Status != CreateStatusUnprocessable {
+		t.Fatalf("got %v", err)
+	}
+	if refusal.Message != "unknown asset" {
+		t.Fatalf("message %q echoes the resolver error instead of the fixed sentence", refusal.Message)
+	}
+	if !errors.Is(refusal, ErrUnknownAsset) {
+		t.Fatalf("the detailed error must stay reachable for the log through Unwrap: %v", refusal)
+	}
 }

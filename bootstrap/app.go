@@ -1,37 +1,25 @@
 package bootstrap
 
 import (
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
 	"time"
 
-	"github.com/goravel/framework/contracts/console"
-	contractsevent "github.com/goravel/framework/contracts/event"
 	contractsfoundation "github.com/goravel/framework/contracts/foundation"
 	contractsconfiguration "github.com/goravel/framework/contracts/foundation/configuration"
-	"github.com/goravel/framework/contracts/queue"
-	goravelfacades "github.com/goravel/framework/facades"
 	"github.com/goravel/framework/foundation"
 
-	"github.com/macrowallets/waas/app/adapters/redis/pricecache"
-	"github.com/macrowallets/waas/app/console/commands"
 	"github.com/macrowallets/waas/app/container"
-	"github.com/macrowallets/waas/app/dtos"
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/middleware"
-	"github.com/macrowallets/waas/app/jobs"
-	"github.com/macrowallets/waas/app/listeners"
+	"github.com/macrowallets/waas/app/policies"
 	"github.com/macrowallets/waas/app/providers"
-	"github.com/macrowallets/waas/app/repositories"
-	"github.com/macrowallets/waas/app/services/activity"
-	chainpkg "github.com/macrowallets/waas/app/services/chain"
-	"github.com/macrowallets/waas/app/services/chainregistry"
-	"github.com/macrowallets/waas/app/services/chains"
-	"github.com/macrowallets/waas/app/services/credentialmail"
-	"github.com/macrowallets/waas/app/services/deposit"
-	"github.com/macrowallets/waas/app/services/price"
-	"github.com/macrowallets/waas/app/services/refresh"
-	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/config"
 	"github.com/macrowallets/waas/database/seeders"
+	"github.com/macrowallets/waas/routes"
 )
 
 // Boot wires Goravel and returns the application instance.
@@ -40,110 +28,32 @@ func Boot() contractsfoundation.Application {
 		WithMigrations(Migrations).
 		WithProviders(Providers).
 		WithSeeders(seeders.All).
-		WithJobs(func() []queue.Job {
-			refresher := container.MustMake[*refresh.WalletRefresher]()
-			return []queue.Job{
-				jobs.NewRefreshWalletBalances(refresher),
-				jobs.NewRefreshWalletTransactions(refresher),
-				jobs.NewRefreshWalletTokens(refresher),
-				jobs.NewRefreshWalletUTXOs(refresher),
-				jobs.NewReconcileWalletState(refresher),
-				jobs.NewSendCredentialMailJob(container.MustMake[*credentialmail.Service]()),
-			}
-		}).
-		WithCommands(func() []console.Command {
-			balances := container.MustMake[*refresh.BalanceService]()
-			dispatcher := listeners.NewRefreshDispatcher()
-			deposits := container.MustMake[*deposit.Service]()
-			registry := container.MustMake[*chainpkg.Registry]()
-			prices := container.MustMake[*price.Service]()
-			wallets := container.MustMake[*walletrecords.Wallets]()
-			addresses := container.MustMake[*walletrecords.Addresses]()
-			transactions := container.MustMake[*walletrecords.Transactions]()
-			return []console.Command{
-				commands.NewRefreshWallet(commands.RefreshWalletDeps{
-					Balances:       balances,
-					Dispatcher:     dispatcher,
-					Wallets:        wallets,
-					RequestRefresh: dispatchWalletRefreshRequested,
-				}),
-				commands.NewRefreshAddress(commands.RefreshAddressDeps{
-					Balances:   balances,
-					Dispatcher: dispatcher,
-					Wallets:    wallets,
-					Addresses:  addresses,
-				}),
-				commands.NewRefreshCurrency(commands.RefreshCurrencyDeps{
-					Registry:   registry,
-					Balances:   balances,
-					Dispatcher: dispatcher,
-					Wallets:    wallets,
-					Addresses:  addresses,
-				}),
-				commands.NewRefreshTx(commands.RefreshTxDeps{
-					Balances:     balances,
-					Dispatcher:   dispatcher,
-					Wallets:      wallets,
-					Transactions: transactions,
-				}),
-				commands.NewScanDeposits(deposits),
-				commands.NewReconcileWallet(commands.ReconcileWalletDeps{
-					Balances:   balances,
-					Dispatcher: dispatcher,
-					Wallets:    wallets,
-				}),
-				commands.NewPriceWebSocket(commands.PriceWebSocketDeps{
-					Prices:     prices,
-					CoinAPIKey: container.MustMake[*price.CoinAPICredential]().Key,
-					Cache:      pricecache.New(container.MustMake[*container.SharedRedis]().Client),
-				}),
-				commands.NewPriceCheckUpdate(prices),
-				commands.NewChainsSetRPC(chains.NewReplaceRPC(chains.ReplaceRPCDeps{
-					Store: container.MustMake[*repositories.ChainRepository](),
-					Seal:  func(plaintext string) (string, error) { return goravelfacades.Crypt().EncryptString(plaintext) },
-				})),
-				commands.NewChainsAlignNetwork(chainregistry.NewAligner(chainregistry.AlignerDeps{
-					Store:   repositories.NewChainRegistryRepository(nil),
-					Decrypt: decryptChainRPC,
-					Probe:   chainregistry.ProbeRPCNetwork,
-					Cache:   deposits,
-					Profile: configuredChainProfile,
-				})),
-				commands.NewChainsAddMissing(chainregistry.NewMissingChains(seedMissingAddedChains)),
-				&commands.WithdrawPreflight{},
-				commands.NewPruneActivity(container.MustMake[*activity.Service]()),
-				commands.NewEVMCall(commands.EVMCallDeps{
-					Wallets: container.MustMake[*repositories.WalletRepository](),
-					Signer:  evmCallSigner(),
-				}),
-				commands.NewWalletsExportKeys(commands.WalletsExportKeysDeps{
-					Wallets:   container.MustMake[*repositories.WalletRepository](),
-					Addresses: container.MustMake[*repositories.AddressRepository](),
-					Chains:    container.MustMake[*repositories.ChainRepository](),
-				}),
-				&commands.TransactionsBackfillFees{},
-			}
-		}).
-		WithEvents(func() map[contractsevent.Event][]contractsevent.Listener {
-			// These events stay registered. Each one only enqueues one job, so the
-			// service dispatches that job through the refresh Dispatcher port
-			// and no listener remains.
-			return map[contractsevent.Event][]contractsevent.Listener{
-				&dtos.WalletCreated{}:          {},
-				&dtos.WalletActivated{}:        {},
-				&dtos.DepositDetected{}:        {},
-				&dtos.WithdrawalBroadcasted{}:  {},
-				&dtos.WalletRefreshRequested{}: {},
-			}
-		}).
+		WithJobs(Jobs).
+		WithCommands(Commands).
 		WithRules(Rules).
 		WithConfig(bootConfig).
 		WithMiddleware(func(h contractsconfiguration.Middleware) {
-			h.Use(middleware.GlobalChain(requestTimeout())...).
+			h.Use(middleware.GlobalChain(requestTimeout(), middleware.InboundSignatureDeps{
+				Subscriptions: container.MustMake[*ingest.Subscriptions](),
+				Lookup:        container.MustMake[*ingest.Catalog]().Lookup,
+			}, corsOrigins())...).
 				Recover(middleware.RecoverPanic)
 		}).
-		WithRouting(providers.RegisterRoutes).
+		WithRouting(registerRoutes).
+		WithCallback(defineGates).
 		Create()
+}
+
+// defineGates registers the permission abilities the route guards ask.
+func defineGates() {
+	policies.DefineGates(appfacades.Gate())
+}
+
+// registerRoutes names the rate limiters before the routes that use them, then
+// registers every route group.
+func registerRoutes() {
+	middleware.RegisterThrottles(appfacades.RateLimiter())
+	routes.RegisterHTTP()
 }
 
 // bootConfig loads configuration and then installs the redacting log handler.
@@ -151,7 +61,40 @@ func Boot() contractsfoundation.Application {
 // can be rewritten: the framework caches handlers on first use.
 func bootConfig() {
 	config.Boot()
-	providers.InstallLogRedaction(appfacades.Config(), goravelfacades.App().Json())
+	checkBootConfig()
+	providers.InstallLogRedaction(appfacades.Config(), appfacades.App().Json())
+}
+
+// RequestTimeoutHandler is the hard cut for the local server: it answers 504 at
+// http.request_timeout whatever the handler does. Lambda mode does not use it.
+func RequestTimeoutHandler() func(http.Handler) http.Handler {
+	return middleware.TimeoutHandler(requestTimeout(), corsOrigins())
+}
+
+// checkBootConfig refuses to start on a missing or malformed secret. APP_KEY
+// and JWT_SECRET are exempt only for the commands that create them
+// (`artisan key:generate`, `artisan jwt:secret`), which have to run on a fresh
+// env file. A short JWT_SECRET is a warning.
+func checkBootConfig() {
+	cfg := appfacades.Config()
+	if !config.IsKeyGenerationCommand(os.Args[1:]) {
+		warnings, err := config.ValidateSecrets(cfg.GetString("app.key"), cfg.GetString("jwt.secret"))
+		for _, warning := range warnings {
+			slog.Warn(warning)
+		}
+		if err != nil {
+			panic(fmt.Errorf("refusing to boot: %w", err))
+		}
+	}
+	if _, err := middleware.ParseTrustedProxies(cfg.GetString("http.trusted_proxies")); err != nil {
+		panic(fmt.Errorf("refusing to boot: TRUSTED_PROXIES: %w", err))
+	}
+}
+
+// corsOrigins is http.cors_allowed_origins, parsed once from
+// CORS_ALLOWED_ORIGINS when the config boots.
+func corsOrigins() []string {
+	return appfacades.Config().Get("http.cors_allowed_origins").([]string)
 }
 
 // requestTimeout is http.request_timeout, the same key the gin driver used.

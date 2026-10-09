@@ -18,6 +18,7 @@ import (
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/memcache"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -71,8 +72,10 @@ func (c fakeCatalog) FindByID(id string) (*models.Chain, error) {
 	return nil, errors.New("record not found")
 }
 
+// memoryCache is the in-memory driver plus the TTLs and write count the
+// estimator's caching tests read, and a switch for read and write failures.
 type memoryCache struct {
-	entries  map[string][]byte
+	*memcache.Cache
 	ttls     map[string]time.Duration
 	getErr   error
 	setErr   error
@@ -80,25 +83,23 @@ type memoryCache struct {
 }
 
 func newMemoryCache() *memoryCache {
-	return &memoryCache{entries: map[string][]byte{}, ttls: map[string]time.Duration{}}
+	return &memoryCache{Cache: memcache.New(), ttls: map[string]time.Duration{}}
 }
 
-func (c *memoryCache) Get(_ context.Context, key string) ([]byte, bool, error) {
+func (c *memoryCache) GetString(key string, def ...string) string {
 	if c.getErr != nil {
-		return nil, false, c.getErr
+		return ""
 	}
-	value, ok := c.entries[key]
-	return value, ok, nil
+	return c.Cache.GetString(key, def...)
 }
 
-func (c *memoryCache) Set(_ context.Context, key string, value []byte, ttl time.Duration) error {
+func (c *memoryCache) Put(key string, value any, ttl time.Duration) error {
 	c.setCalls++
 	if c.setErr != nil {
 		return c.setErr
 	}
-	c.entries[key] = value
 	c.ttls[key] = ttl
-	return nil
+	return c.Cache.Put(key, value, ttl)
 }
 
 type dustChain struct{ *mocks.MockChain }
@@ -275,6 +276,51 @@ func TestEstimate_Invalid_InputsFailBeforeQuoting(t *testing.T) {
 	}
 }
 
+// A request without a caller account is priced for the wallet's own account.
+func TestEstimate_Caller_AccountDefaultsToTheWallets(t *testing.T) {
+	owner, caller := uuid.New(), uuid.New()
+	cases := []struct {
+		name   string
+		caller uuid.UUID
+		want   uuid.UUID
+	}{
+		{"no caller", uuid.Nil, owner},
+		{"a caller", caller, caller},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, DefaultCacheTTL)
+			wallet := *f.wallets[models.ChainETH]
+			wallet.AccountID = &owner
+
+			f.estimate(t, Request{Wallet: &wallet, Amount: "0.001", CallerAccountID: tc.caller})
+
+			if len(f.quoter.requests) != 1 || f.quoter.requests[0].CallerAccountID != tc.want {
+				t.Fatalf("quoted %+v, want caller %s", f.quoter.requests, tc.want)
+			}
+		})
+	}
+}
+
+// The message is the fixed sentence the client reads; the symbol and the chain
+// stay on the cause for the log.
+func TestEstimate_Unknown_AssetAnswersTheFixedSentence(t *testing.T) {
+	f := newFixture(t, DefaultCacheTTL)
+	eth := f.wallets[models.ChainETH]
+	for _, asset := range []string{"DOGE", "USDC"} {
+		t.Run(asset, func(t *testing.T) {
+			_, err := f.service.Estimate(context.Background(), Request{Wallet: eth, Asset: asset, Amount: "1"})
+			got := requireError(t, err, KindUnprocessable, CodeUnknownAsset)
+			if got.Message != "unknown asset" {
+				t.Fatalf("message = %q, want %q", got.Message, "unknown asset")
+			}
+			if !strings.Contains(got.Error(), asset) {
+				t.Fatalf("the cause lost the asset: %v", got)
+			}
+		})
+	}
+}
+
 func TestEstimate_Insufficient_FundsStillReturnsTheFee(t *testing.T) {
 	f := newFixture(t, DefaultCacheTTL)
 	f.quoter.quote.Strategy, f.quoter.quote.Basis, f.quoter.quote.AmountSpendable = sweep.StrategyInsufficient, sweep.FeeBasisUnfundedDirect, false
@@ -392,8 +438,8 @@ func TestEstimate_Zero_TTLDisablesTheCache(t *testing.T) {
 
 func TestEstimate_Cache_FailuresFallThroughToAFreshQuote(t *testing.T) {
 	f := newFixture(t, DefaultCacheTTL)
-	f.cache.getErr = errors.New("redis down")
-	f.cache.setErr = errors.New("redis down")
+	f.cache.getErr = errors.New("cache down")
+	f.cache.setErr = errors.New("cache down")
 
 	got := f.estimate(t, Request{Wallet: f.wallets[models.ChainETH], Amount: "1"})
 
@@ -406,8 +452,8 @@ func TestEstimate_Unreadable_CacheEntryIsAMiss(t *testing.T) {
 	f := newFixture(t, DefaultCacheTTL)
 	req := Request{Wallet: f.wallets[models.ChainETH], Amount: "1"}
 	f.estimate(t, req)
-	for key := range f.cache.entries {
-		f.cache.entries[key] = []byte("{not json")
+	for _, key := range f.cache.Keys() {
+		_ = f.cache.Cache.Put(key, "{not json", 0)
 	}
 
 	got := f.estimate(t, req)

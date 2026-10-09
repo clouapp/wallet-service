@@ -9,56 +9,45 @@ import (
 	"strings"
 	"testing"
 
+	contractsconfig "github.com/goravel/framework/contracts/config"
 	contractsmail "github.com/goravel/framework/contracts/mail"
 
-	"github.com/macrowallets/waas/app/providers/mailer"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/config"
 )
 
 func TestDeliver_Uses_SMTPAndFromWhenTheRowsExist(t *testing.T) {
 	const stored = "stored-mailbox-secret"
-	var written map[string]any
-	var restored bool
-	var observed bool
-	cfg := mailer.NewConfig(mailer.Hooks{
-		Baseline: func() map[string]any {
-			return map[string]any{
-				"host": "env-host",
-				"from": map[string]any{"address": "env@example.test", "name": "Env"},
-				"mailers": map[string]any{
-					"smtp": map[string]any{"transport": "smtp", "host": "env-host", "password": "env-mailbox-secret"},
-				},
-			}
-		},
-		Write:   func(doc map[string]any) { written = doc },
-		Restore: func() { restored = true },
-		Observe: func() { observed = true },
-		SMTP: func(context.Context) (mailer.Dial, bool, error) {
-			return mailer.Dial{
-				Host: "127.0.0.1", Port: 2525, Password: stored,
-				UseHost: true, UsePort: true, UsePassword: true,
-			}, true, nil
-		},
-		From: func(context.Context) (mailer.From, bool, error) {
-			return mailer.From{Address: "from-header@example.test", Name: "Macro", UseAddress: true, UseName: true}, true, nil
+	cfg := newDocumentConfig(map[string]any{
+		"host": "env-host",
+		"from": map[string]any{"address": "env@example.test", "name": "Env"},
+		"mailers": map[string]any{
+			"smtp": map[string]any{"transport": "smtp", "host": "env-host", "password": "env-mailbox-secret"},
 		},
 	})
-	transport := &recordingMail{}
-	facade := NewFacade(FacadeDeps{Mailer: NewMailer(MailerDeps{Config: cfg}), Inner: transport})
-	if err := facade.To([]string{"nobody@example.test"}).Send(); err != nil {
+	var dialed map[string]any
+	transport := &recordingMail{onSend: func() { dialed = cfg.mail }}
+	mailer := NewMailer(MailerDeps{Transport: transport, Config: cfg, Settings: storedSettings{
+		smtp: settings.MailSMTP{
+			Host: "127.0.0.1", Port: 2525, Password: stored,
+			UseHost: true, UsePort: true, UsePassword: true,
+		},
+		from: settings.MailDelivery{Address: "from-header@example.test", Name: "Macro", UseAddress: true, UseName: true},
+	}})
+	if err := mailer.To([]string{"nobody@example.test"}).Send(); err != nil {
 		t.Fatalf("send: %v", err)
 	}
-	if !transport.sent || !restored || !observed {
+	if !transport.sent || dialed == nil {
 		t.Fatal("the send did not go through the mailer")
 	}
-	if written["host"] != "127.0.0.1" {
+	if dialed["host"] != "127.0.0.1" {
 		t.Fatal("the send did not use mail_smtp")
 	}
-	from := written["from"].(map[string]any)
+	from := dialed["from"].(map[string]any)
 	if from["address"] != "from-header@example.test" || from["name"] != "Macro" {
 		t.Fatal("the send did not use mail_delivery")
 	}
-	smtp := written["mailers"].(map[string]any)["smtp"].(map[string]any)
+	smtp := dialed["mailers"].(map[string]any)["smtp"].(map[string]any)
 	if smtp["transport"] != "smtp" {
 		t.Fatal("the send left SMTP")
 	}
@@ -66,36 +55,28 @@ func TestDeliver_Uses_SMTPAndFromWhenTheRowsExist(t *testing.T) {
 	if subtle.ConstantTimeCompare([]byte(got), []byte(stored)) != 1 {
 		t.Fatal("the send did not use the mail_smtp password")
 	}
+	if cfg.mail["host"] != "env-host" || cfg.mail["from"].(map[string]any)["address"] != "env@example.test" {
+		t.Fatal("the env document was not restored after the send")
+	}
 }
 
 func TestDeliver_Keeps_TheEnvDocumentWhenTheRowsAreMissing(t *testing.T) {
 	const envPassword = "env-mailbox-secret"
-	var written map[string]any
-	cfg := mailer.NewConfig(mailer.Hooks{
-		Baseline: func() map[string]any {
-			return map[string]any{
-				"from": map[string]any{"address": "env@example.test", "name": "Env"},
-				"mailers": map[string]any{
-					"smtp": map[string]any{"transport": "smtp", "host": "env-host", "password": envPassword},
-				},
-			}
-		},
-		Write: func(doc map[string]any) { written = doc },
-		SMTP: func(context.Context) (mailer.Dial, bool, error) {
-			return mailer.Dial{}, false, nil
-		},
-		From: func(context.Context) (mailer.From, bool, error) {
-			return mailer.From{}, false, nil
+	cfg := newDocumentConfig(map[string]any{
+		"from": map[string]any{"address": "env@example.test", "name": "Env"},
+		"mailers": map[string]any{
+			"smtp": map[string]any{"transport": "smtp", "host": "env-host", "password": envPassword},
 		},
 	})
-	transport := &recordingMail{}
-	if err := NewFacade(FacadeDeps{Mailer: NewMailer(MailerDeps{Config: cfg}), Inner: transport}).Send(); err != nil {
+	var dialed map[string]any
+	transport := &recordingMail{onSend: func() { dialed = cfg.mail }}
+	if err := NewMailer(MailerDeps{Transport: transport, Config: cfg, Settings: storedSettings{}}).Send(); err != nil {
 		t.Fatalf("send: %v", err)
 	}
 	if !transport.sent {
 		t.Fatal("a missing row skipped the send")
 	}
-	smtp := written["mailers"].(map[string]any)["smtp"].(map[string]any)
+	smtp := dialed["mailers"].(map[string]any)["smtp"].(map[string]any)
 	if smtp["transport"] != "smtp" || smtp["host"] != "env-host" {
 		t.Fatal("a missing row replaced the env mailer")
 	}
@@ -103,130 +84,127 @@ func TestDeliver_Keeps_TheEnvDocumentWhenTheRowsAreMissing(t *testing.T) {
 	if subtle.ConstantTimeCompare([]byte(got), []byte(envPassword)) != 1 {
 		t.Fatal("a missing row replaced the env password")
 	}
-	from := written["from"].(map[string]any)
+	from := dialed["from"].(map[string]any)
 	if from["address"] != "env@example.test" || from["name"] != "Env" {
 		t.Fatal("a missing row replaced the env from header")
 	}
 }
 
 func TestDeliver_Keeps_TheEnvDocumentWhenTheReadFails(t *testing.T) {
-	var written map[string]any
-	cfg := mailer.NewConfig(mailer.Hooks{
-		Baseline: func() map[string]any {
-			return map[string]any{
-				"mailers": map[string]any{"smtp": map[string]any{"host": "env-host"}},
-				"from":    map[string]any{"address": "env@example.test", "name": "Env"},
-			}
-		},
-		Write: func(doc map[string]any) { written = doc },
-		SMTP: func(context.Context) (mailer.Dial, bool, error) {
-			return mailer.Dial{Host: "127.0.0.1", Password: "stored-mailbox-secret", UseHost: true, UsePassword: true}, true, errors.New("db down")
-		},
-		From: func(context.Context) (mailer.From, bool, error) {
-			return mailer.From{Address: "replaced@example.test", Name: "Replaced", UseAddress: true, UseName: true}, true, errors.New("db down")
-		},
+	cfg := newDocumentConfig(map[string]any{
+		"mailers": map[string]any{"smtp": map[string]any{"host": "env-host"}},
+		"from":    map[string]any{"address": "env@example.test", "name": "Env"},
 	})
-	if err := NewFacade(FacadeDeps{Mailer: NewMailer(MailerDeps{Config: cfg}), Inner: &recordingMail{}}).Send(); err != nil {
+	var dialed map[string]any
+	transport := &recordingMail{onSend: func() { dialed = cfg.mail }}
+	failing := storedSettings{
+		smtp:    settings.MailSMTP{Host: "127.0.0.1", Password: "stored-mailbox-secret", UseHost: true, UsePassword: true},
+		smtpErr: errors.New("db down"),
+		from:    settings.MailDelivery{Address: "replaced@example.test", Name: "Replaced", UseAddress: true, UseName: true},
+		fromErr: errors.New("db down"),
+	}
+	if err := NewMailer(MailerDeps{Transport: transport, Config: cfg, Settings: failing}).Send(); err != nil {
 		t.Fatalf("send: %v", err)
 	}
-	smtp := written["mailers"].(map[string]any)["smtp"].(map[string]any)
+	smtp := dialed["mailers"].(map[string]any)["smtp"].(map[string]any)
 	if smtp["host"] != "env-host" || smtp["password"] != nil {
 		t.Fatal("a failed read replaced the env mailer")
 	}
-	from := written["from"].(map[string]any)
+	from := dialed["from"].(map[string]any)
 	if from["address"] != "env@example.test" || from["name"] != "Env" {
 		t.Fatal("a failed read replaced the env from header")
 	}
 }
 
+func TestDeliver_Restores_TheEnvDocumentWhenTheDialFails(t *testing.T) {
+	cfg := newDocumentConfig(map[string]any{"host": "env-host"})
+	dialErr := errors.New("connection refused")
+	transport := &recordingMail{err: dialErr}
+	mailer := NewMailer(MailerDeps{Transport: transport, Config: cfg, Settings: storedSettings{
+		smtp: settings.MailSMTP{Host: "127.0.0.1", UseHost: true},
+	}})
+	if err := mailer.Send(); !errors.Is(err, dialErr) {
+		t.Fatalf("send error = %v, want the dial error", err)
+	}
+	if cfg.mail["host"] != "env-host" {
+		t.Fatal("a failed dial left the send's document on the process config")
+	}
+}
+
+// The framework dials with the process config, so the lock is held from the
+// publish to the restore: no other send can publish its document in between.
+func TestDeliver_Holds_TheSendLockAcrossTheDial(t *testing.T) {
+	cfg := newDocumentConfig(map[string]any{})
+	var heldDuringDial bool
+	transport := &recordingMail{onSend: func() { heldDuringDial = !sendLock.TryLock() }}
+	if err := NewMailer(MailerDeps{Transport: transport, Config: cfg}).Send(); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if !heldDuringDial {
+		sendLock.Unlock()
+		t.Fatal("another send could publish its document during this dial")
+	}
+	if !sendLock.TryLock() {
+		t.Fatal("the send kept the lock after it returned")
+	}
+	sendLock.Unlock()
+}
+
 func TestQueue_Refuses_WithoutPublishingOrDialing(t *testing.T) {
-	var written bool
-	cfg := mailer.NewConfig(mailer.Hooks{
-		Baseline: func() map[string]any { return map[string]any{} },
-		Write:    func(map[string]any) { written = true },
-		Restore:  func() {},
-		Observe:  func() {},
-	})
+	cfg := newDocumentConfig(map[string]any{})
 	transport := &recordingMail{}
-	err := NewFacade(FacadeDeps{Mailer: NewMailer(MailerDeps{Config: cfg}), Inner: transport}).Queue()
+	err := NewMailer(MailerDeps{Transport: transport, Config: cfg}).Queue()
 	if !errors.Is(err, errQueueRefused) {
 		t.Fatalf("queue error = %v", err)
 	}
-	if transport.queued || written {
+	if transport.queued || len(cfg.writes) != 0 {
 		t.Fatal("queue published the mail document or reached the transport")
 	}
-	if err := (*Facade)(nil).Queue(); !errors.Is(err, errQueueRefused) {
-		t.Fatalf("nil facade queue error = %v", err)
+	if err := (*Mailer)(nil).Queue(); !errors.Is(err, errQueueRefused) {
+		t.Fatalf("nil mailer queue error = %v", err)
 	}
 }
 
-func TestNew_Mailer_KeepsNilDependencies(t *testing.T) {
-	cfg := mailer.NewConfig(mailer.Hooks{})
-	var held bool
-	got := NewMailer(MailerDeps{
-		Config: cfg,
-		Gate: func(run func() error) error {
-			held = true
-			return run()
-		},
-	})
-	if got == nil || got.Config() != cfg {
-		t.Fatal("the mailer dropped the config")
-	}
-	if err := got.Deliver(func() error { return nil }); err != nil || !held {
-		t.Fatal("the mailer dropped the gate")
-	}
-
-	empty := NewMailer(MailerDeps{})
-	if empty == nil || empty.Config() != nil || empty.gate != nil {
-		t.Fatal("a missing dependency was filled in")
-	}
-}
-
-func TestNew_Facade_KeepsNilDependencies(t *testing.T) {
-	mailer := &Mailer{}
+func TestNew_Mailer_KeepsItsDependencies(t *testing.T) {
+	cfg := newDocumentConfig(map[string]any{})
 	transport := &recordingMail{}
-	got := NewFacade(FacadeDeps{Mailer: mailer, Inner: transport})
-	if got == nil || got.Mailer() != mailer || got.inner != transport {
-		t.Fatal("the facade dropped a dependency")
+	reader := storedSettings{}
+	got := NewMailer(MailerDeps{Transport: transport, Config: cfg, Settings: reader})
+	if got == nil || got.transport != transport || got.config != cfg || got.settings != reader {
+		t.Fatal("the mailer dropped a dependency")
 	}
-	empty := NewFacade(FacadeDeps{})
-	if empty == nil || empty.Mailer() != nil || empty.inner != nil {
+	empty := NewMailer(MailerDeps{})
+	if empty == nil || empty.transport != nil || empty.config != nil || empty.settings != nil {
 		t.Fatal("a missing dependency was filled in")
+	}
+	chained, ok := got.To([]string{"nobody@example.test"}).(*Mailer)
+	if !ok || chained.config != cfg || chained.settings != reader {
+		t.Fatal("a builder call dropped the config or the settings")
 	}
 }
 
 func TestDeliver_Accepts_TheLogDriverWithoutDialing(t *testing.T) {
 	const secret = "env-mailbox-secret"
-	var written bool
-	var observed bool
 	var logs bytes.Buffer
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(previous) })
 
-	cfg := mailer.NewConfig(mailer.Hooks{
-		Baseline: func() map[string]any {
-			return map[string]any{
-				"driver":   "log",
-				"app_env":  "local",
-				"password": secret,
-				"mailers":  map[string]any{"smtp": map[string]any{"password": secret}},
-			}
-		},
-		Write:   func(map[string]any) { written = true },
-		Restore: func() {},
-		Observe: func() { observed = true },
+	cfg := newDocumentConfig(map[string]any{
+		"driver":   "log",
+		"app_env":  "local",
+		"password": secret,
+		"mailers":  map[string]any{"smtp": map[string]any{"password": secret}},
 	})
 	transport := &recordingMail{}
-	err := NewFacade(FacadeDeps{Mailer: NewMailer(MailerDeps{Config: cfg}), Inner: transport}).Send()
+	err := NewMailer(MailerDeps{Transport: transport, Config: cfg}).Send()
 	if err != nil {
 		t.Fatal("log driver send failed")
 	}
 	if transport.sent {
 		t.Fatal("log driver dialed")
 	}
-	if !written || !observed {
+	if len(cfg.writes) != 2 {
 		t.Fatal("log driver skipped the mail document")
 	}
 	text := logs.String()
@@ -240,44 +218,87 @@ func TestDeliver_Accepts_TheLogDriverWithoutDialing(t *testing.T) {
 
 func TestDeliver_Refuses_TheLogDriverInProduction(t *testing.T) {
 	const secret = "env-mailbox-secret"
-	var written bool
-	cfg := mailer.NewConfig(mailer.Hooks{
-		Baseline: func() map[string]any {
-			return map[string]any{
-				"driver":   "log",
-				"app_env":  "production",
-				"password": secret,
-			}
-		},
-		Write:   func(map[string]any) { written = true },
-		Restore: func() {},
-		Observe: func() {},
+	cfg := newDocumentConfig(map[string]any{
+		"driver":   "log",
+		"app_env":  "production",
+		"password": secret,
 	})
 	transport := &recordingMail{}
-	err := NewFacade(FacadeDeps{Mailer: NewMailer(MailerDeps{Config: cfg}), Inner: transport}).Send()
+	err := NewMailer(MailerDeps{Transport: transport, Config: cfg}).Send()
 	if !errors.Is(err, config.ErrLogDriverRefused) {
 		t.Fatal("production log driver was not refused")
 	}
 	if strings.Contains(err.Error(), secret) {
 		t.Fatal("refusal included a credential")
 	}
-	if transport.sent || written {
+	if transport.sent || len(cfg.writes) != 0 {
 		t.Fatal("refused log driver dialed or published")
 	}
 }
 
 func TestDeliver_Refuses_AMissingMailer(t *testing.T) {
-	if err := NewFacade(FacadeDeps{Inner: &recordingMail{}}).Send(); !errors.Is(err, errMailerRequired) {
-		t.Fatal("a missing mailer was sent")
+	if err := NewMailer(MailerDeps{Config: newDocumentConfig(nil)}).Send(); !errors.Is(err, errMailerRequired) {
+		t.Fatal("a mailer without a transport was sent")
 	}
-	if err := (*Facade)(nil).Send(); !errors.Is(err, errMailerRequired) {
-		t.Fatal("a nil facade was sent")
+	if err := NewMailer(MailerDeps{Transport: &recordingMail{}}).Send(); !errors.Is(err, errMailerRequired) {
+		t.Fatal("a mailer without a config was sent")
+	}
+	if err := (*Mailer)(nil).Send(); !errors.Is(err, errMailerRequired) {
+		t.Fatal("a nil mailer was sent")
 	}
 }
 
+// documentConfig is the process config as the mailer sees it: the "mail"
+// document, and every document written to it.
+type documentConfig struct {
+	contractsconfig.Config
+	mail   map[string]any
+	writes []map[string]any
+}
+
+func newDocumentConfig(mail map[string]any) *documentConfig {
+	return &documentConfig{mail: mail}
+}
+
+func (c *documentConfig) Get(path string, _ ...any) any {
+	if path != "mail" {
+		return nil
+	}
+	return c.mail
+}
+
+func (c *documentConfig) Add(name string, value any) {
+	if name != "mail" {
+		return
+	}
+	doc, _ := value.(map[string]any)
+	c.mail = doc
+	c.writes = append(c.writes, doc)
+}
+
+// storedSettings answers the two settings reads with fixed rows or errors.
+type storedSettings struct {
+	smtp    settings.MailSMTP
+	smtpErr error
+	from    settings.MailDelivery
+	fromErr error
+}
+
+func (s storedSettings) EffectiveMailSMTP(context.Context) (settings.MailSMTP, error) {
+	return s.smtp, s.smtpErr
+}
+
+func (s storedSettings) EffectiveMailDelivery(context.Context) (settings.MailDelivery, error) {
+	return s.from, s.fromErr
+}
+
+// recordingMail is the SMTP transport. onSend runs where the dial would, so a
+// test sees the document the dial reads.
 type recordingMail struct {
 	sent   bool
 	queued bool
+	err    error
+	onSend func()
 }
 
 func (m *recordingMail) Attach([]string) contractsmail.Mail { return m }
@@ -294,7 +315,10 @@ func (m *recordingMail) Queue(...contractsmail.Mailable) error {
 }
 func (m *recordingMail) Send(...contractsmail.Mailable) error {
 	m.sent = true
-	return nil
+	if m.onSend != nil {
+		m.onSend()
+	}
+	return m.err
 }
 func (m *recordingMail) Subject(string) contractsmail.Mail { return m }
 func (m *recordingMail) To([]string) contractsmail.Mail    { return m }

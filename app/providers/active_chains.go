@@ -3,30 +3,52 @@ package providers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"math/big"
 	"strings"
 
 	"github.com/goravel/framework/contracts/foundation"
-	"github.com/goravel/framework/facades"
 
 	bitcoinchain "github.com/macrowallets/waas/app/adapters/chain/bitcoin"
 	evmchain "github.com/macrowallets/waas/app/adapters/chain/evm"
 	solanachain "github.com/macrowallets/waas/app/adapters/chain/solana"
 	tronchain "github.com/macrowallets/waas/app/adapters/chain/tron"
 	xrpchain "github.com/macrowallets/waas/app/adapters/chain/xrp"
+	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/chainregistry"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
 // errActiveChainsNotLoaded means Boot has not read the chain catalog yet.
 var errActiveChainsNotLoaded = errors.New("active chains were not loaded during boot")
 
-// openActiveChainEndpoint opens a sealed rpc_url. The container factory uses
-// the process cipher. Tests replace this with a stub that never logs a URL.
+// openActiveChainEndpoint opens a sealed rpc_url with the process cipher when
+// the registry installs a chain. Tests replace this with a stub that never
+// logs a URL.
 var openActiveChainEndpoint = openChainEndpoint
+
+// openChainEndpoint opens a sealed rpc_url and returns the URL to dial.
+// A read failure does not include the URL.
+func openChainEndpoint(stored string) (string, error) {
+	cipher := facades.Crypt()
+	if cipher == nil {
+		return "", fmt.Errorf("open chain rpc")
+	}
+	opened, err := settings.OpenStored(cipher, stored)
+	if err != nil {
+		return "", fmt.Errorf("open chain rpc")
+	}
+	endpoint, err := models.DialEndpoint(opened)
+	if err != nil {
+		return "", fmt.Errorf("open chain rpc")
+	}
+	return endpoint, nil
+}
 
 // chainCatalog is the chain rows the registry service reads. Register only
 // stores this adapter; the query runs in ChainRegistryService.Refresh.
@@ -188,4 +210,34 @@ func bitcoinFallbacks(configured, apiKey string, defaults []string) []bitcoincha
 		fallbacks = append(fallbacks, bitcoinchain.BitcoinFallback{URL: rawURL, APIKey: apiKey})
 	}
 	return fallbacks
+}
+
+// lenientLogScanChains keep their deployed deposit scan: a block whose eth_getLogs
+// fails is scanned for native transfers only. Every other EVM record fails the block
+// so the scanner retries it (evmchain.EVMConfig.StrictLogScan).
+var lenientLogScanChains = map[string]bool{
+	models.ChainETH:      true,
+	models.ChainTETH:     true,
+	models.ChainPolygon:  true,
+	models.ChainTPolygon: true,
+}
+
+// resolveGasReadinessThreshold is the chains.gas_readiness_threshold_raw value.
+// An empty column means the chain has no gas threshold. Environment variables
+// do not fill it in.
+func resolveGasReadinessThreshold(ch *models.Chain) *big.Int {
+	if ch == nil {
+		return nil
+	}
+	return ch.GasReadinessThreshold()
+}
+
+// resolveDustThresholdNative is the chains.dust_threshold_native_raw value.
+// An empty column means no native dust filter. Environment variables do not
+// fill it in.
+func resolveDustThresholdNative(ch *models.Chain) *big.Int {
+	if ch == nil {
+		return nil
+	}
+	return ch.DustThresholdNative()
 }

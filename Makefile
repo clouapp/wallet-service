@@ -74,7 +74,7 @@ S3_FLAG := $(if $(S3_BUCKET),--s3-bucket $(S3_BUCKET),--resolve-s3)
 PARAMETER_OVERRIDES = \
 	Environment=$(ENVIRONMENT) \
 	DatabaseURL=$(DATABASE_URL) \
-	RedisURL=$(REDIS_URL) \
+	RedisHost=$(REDIS_HOST) \
 	EthRpcURL=$(ETH_RPC_URL) \
 	PolygonRpcURL=$(POLYGON_RPC_URL) \
 	SolanaRpcURL=$(SOLANA_RPC_URL) \
@@ -127,8 +127,8 @@ define run_with_test_databases
 	@echo "🔒 Taking $(TEST_DB_LOCK)..."
 	@flock "$(TEST_DB_LOCK)" sh -c 'set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
 		export DB_DATABASE="$(TEST_DB_DATABASE)" TEST_DB_REQUIRED=1; \
-		trap "go run ./tools/testdb drop-clones" EXIT; trap "exit 130" INT TERM; \
-		go run ./tools/testdb drop-clones && go run ./tools/testdb prepare && \
+		trap "go run ./tests/feature/support/testdb drop-clones" EXIT; trap "exit 130" INT TERM; \
+		go run ./tests/feature/support/testdb drop-clones && go run ./tests/feature/support/testdb prepare && \
 		TEST_DB_TEMPLATE="$(TEST_DB_DATABASE)" TEST_DB_WORKERS="$(TEST_PARALLEL)" \
 			go test -p "$(TEST_PARALLEL)" -count=1 -timeout $(TEST_TIMEOUT) $(1)'
 endef
@@ -391,10 +391,10 @@ test: ## Run all tests: test-unit, then test-integration (both always run)
 		echo "🧪 unit: exit $$unit, integration: exit $$integration"; \
 		[ $$unit -eq 0 ] && [ $$integration -eq 0 ]
 
-test-unit: ## Unit tests: packages without PostgreSQL/Redis, all in parallel, no lock
+test-unit: ## Unit tests: packages without PostgreSQL/Redis, all in parallel, no lock; architecture runs in ratchet mode
 	@echo "🧪 Running unit tests..."
 	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
-		go test -count=1 -timeout $(TEST_TIMEOUT) $(TEST_FLAGS) $(UNIT_TEST_PACKAGES)
+		ARCH_MODE=ratchet go test -count=1 -timeout $(TEST_TIMEOUT) $(TEST_FLAGS) $(UNIT_TEST_PACKAGES)
 
 test-integration: ## Integration tests (PostgreSQL/Redis): one cloned database per worker, -p TEST_PARALLEL
 	@echo "🔗 Running integration tests ($(TEST_PARALLEL) workers)..."
@@ -413,12 +413,12 @@ arch-baseline: ## Rewrite tests/architecture/testdata/baseline from the current 
 contract: ## Compare the HTTP contract snapshot (tests/contract/testdata/http_contract.txt)
 	$(call ensure_test_database)
 	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
-		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test ./tests/contract/ -run TestHTTPContract -v -count=1
+		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test ./tests/contract/ -run TestContract_HTTP_Contract -v -count=1
 
 contract-update: ## Rewrite the HTTP contract snapshot (only for a decided contract change)
 	$(call ensure_test_database)
 	@set -a; [ ! -f .env.dev ] || . ./.env.dev; . ./.env.testing; set +a; \
-		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test ./tests/contract/ -run TestHTTPContract -count=1 -args -update-contract
+		DB_DATABASE=$(TEST_DB_DATABASE) TEST_DB_REQUIRED=1 go test ./tests/contract/ -run TestContract_HTTP_Contract -count=1 -args -update-contract
 
 test-coverage: ## Run tests with coverage report
 	@echo "📊 Running tests with coverage..."
@@ -515,7 +515,7 @@ docker-test: docker-build ## Build and run Docker container for testing
 		-p 8080:8080 \
 		--env-file .env.dev \
 		-e DATABASE_URL=postgres://vault:vault@host.docker.internal:5432/vault?sslmode=disable \
-		-e REDIS_URL=redis://host.docker.internal:6379 \
+		-e REDIS_HOST=host.docker.internal \
 		$(DOCKER_IMAGE_NAME):$(DOCKER_TAG)
 
 docker-shell: ## Open shell in PostgreSQL container
@@ -647,7 +647,7 @@ env-info: ## Display current environment configuration
 	@echo "Environment Variables:"
 	@echo "  ENVIRONMENT       = $(ENVIRONMENT)"
 	@echo "  DATABASE_URL      = $(DATABASE_URL)"
-	@echo "  REDIS_URL         = $(REDIS_URL)"
+	@echo "  REDIS_HOST        = $(REDIS_HOST)"
 	@echo "  ETH_RPC_URL       = $(ETH_RPC_URL)"
 	@echo "  POLYGON_RPC_URL   = $(POLYGON_RPC_URL)"
 	@echo "  SOLANA_RPC_URL    = $(SOLANA_RPC_URL)"

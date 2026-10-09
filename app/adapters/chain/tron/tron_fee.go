@@ -48,21 +48,11 @@ const (
 	tronParamMaxFeeLimit         = "getMaxFeeLimit"
 )
 
-// tronFeeProbeRecipient (41cb0600…, the last 20 bytes of sha256("macro-wallets tron
-// fee probe")) prices transfers whose recipient is not known yet. It is treated as
-// never activated and holds no token, so a quote is the worst case: TRX pays the
-// account activation, TRC-20 the first-time storage of the recipient's balance.
-const tronFeeProbeRecipient = "TUUhMwaBT4s7Bd5AmAYUh4pJFQMViufXRL"
-
 // tronFeeProbeAmount sizes a TRX transfer whose amount is unknown with the widest
 // varint an amount can take.
 const tronFeeProbeAmount = int64(math.MaxInt64)
 
 var tronTRC20TransferMethodID = []byte{0xa9, 0x05, 0x9c, 0xbb}
-
-// TronFeeProbeRecipient is the recipient a fee quote uses when the real one is not
-// known yet.
-func TronFeeProbeRecipient() string { return tronFeeProbeRecipient }
 
 // tronChainParams are the network's resource prices, in sun.
 type tronChainParams struct {
@@ -127,41 +117,10 @@ func (a *TronLive) chainParams(ctx context.Context) (tronChainParams, error) {
 	return params, nil
 }
 
-// TronFeeQuote prices one transfer as BuildTransfer encodes it, in sun. Every
-// resource is paid by burning TRX: no free or staked bandwidth/energy is assumed.
-//   - Bandwidth: (signed size + 64) bytes × getTransactionFee, except for a TRX
-//     transfer that activates its recipient, which java-tron bills instead as
-//     getCreateNewAccountFeeInSystemContract + getCreateAccountFee (ActivationFee).
-//   - Energy (TRC-20): FeeLimit = simulated energy × getEnergyFee × 120 %, the
-//     fee_limit encoded in the transaction and the most its call can burn.
-type TronFeeQuote struct {
-	BandwidthBytes      int64
-	SunPerBandwidthByte int64
-	BandwidthFee        *big.Int
-	ActivationFee       *big.Int
-	Energy              int64
-	SunPerEnergy        int64
-	FeeLimit            *big.Int
-	// EnergyIsReference: the sender holds none of the token, so Energy is
-	// tronTRC20ReferenceEnergy rather than a simulation.
-	EnergyIsReference bool
-}
-
-// Fee is the most the transfer can cost its sender besides the amount.
-func (q TronFeeQuote) Fee() *big.Int {
-	fee := new(big.Int)
-	for _, part := range []*big.Int{q.BandwidthFee, q.ActivationFee, q.FeeLimit} {
-		if part != nil {
-			fee.Add(fee, part)
-		}
-	}
-	return fee
-}
-
 // tronTransferPlan is a transfer ready to encode, with its price.
 type tronTransferPlan struct {
 	contract      tronContract
-	quote         TronFeeQuote
+	quote         chain.TronFeeQuote
 	from          string
 	to            string
 	tokenContract string
@@ -188,10 +147,10 @@ const (
 
 // QuoteTransferFee prices req the way BuildTransfer would encode it. An empty
 // recipient is the probe; an unknown TRX amount is sized with the widest varint.
-func (a *TronLive) QuoteTransferFee(ctx context.Context, req types.TransferRequest) (TronFeeQuote, error) {
+func (a *TronLive) QuoteTransferFee(ctx context.Context, req types.TransferRequest) (chain.TronFeeQuote, error) {
 	params, err := a.chainParams(ctx)
 	if err != nil {
-		return TronFeeQuote{}, err
+		return chain.TronFeeQuote{}, err
 	}
 	var plan tronTransferPlan
 	if req.Token == nil {
@@ -200,7 +159,7 @@ func (a *TronLive) QuoteTransferFee(ctx context.Context, req types.TransferReque
 		plan, err = a.planTokenTransfer(ctx, params, req, tronEnergyQuote)
 	}
 	if err != nil {
-		return TronFeeQuote{}, err
+		return chain.TronFeeQuote{}, err
 	}
 	return plan.quote, nil
 }
@@ -296,7 +255,7 @@ func (a *TronLive) planNativeTransfer(ctx context.Context, params tronChainParam
 	if err != nil {
 		return tronTransferPlan{}, fmt.Errorf("tron recipient %s: %w", to, err)
 	}
-	quote := TronFeeQuote{
+	quote := chain.TronFeeQuote{
 		BandwidthBytes:      bandwidthBytes,
 		SunPerBandwidthByte: params.sunPerBandwidthByte,
 		BandwidthFee:        new(big.Int),
@@ -315,7 +274,7 @@ func (a *TronLive) planNativeTransfer(ctx context.Context, params tronChainParam
 
 // recipientActivated reports whether the account exists; the probe never does.
 func (a *TronLive) recipientActivated(ctx context.Context, address string) (bool, error) {
-	if address == "" || address == tronFeeProbeRecipient {
+	if address == "" || address == chain.TronFeeProbeRecipient() {
 		return false, nil
 	}
 	_, found, err := a.account(ctx, address)
@@ -360,7 +319,7 @@ func (a *TronLive) planTokenTransfer(ctx context.Context, params tronChainParams
 	if err != nil {
 		return tronTransferPlan{}, err
 	}
-	quote := TronFeeQuote{
+	quote := chain.TronFeeQuote{
 		BandwidthBytes:      bandwidthBytes,
 		SunPerBandwidthByte: params.sunPerBandwidthByte,
 		BandwidthFee:        new(big.Int).Mul(big.NewInt(bandwidthBytes), big.NewInt(params.sunPerBandwidthByte)),
@@ -582,7 +541,7 @@ func tronRawOrProbe(field, address string) ([]byte, error) {
 
 func probeIfEmptyTron(address string) string {
 	if strings.TrimSpace(address) == "" {
-		return tronFeeProbeRecipient
+		return chain.TronFeeProbeRecipient()
 	}
 	return address
 }

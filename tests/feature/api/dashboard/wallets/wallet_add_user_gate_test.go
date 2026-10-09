@@ -9,6 +9,7 @@ import (
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/feature/support"
@@ -81,6 +82,24 @@ func (s *WalletAddUserGateTestSuite) TestWallet_Add_UserFollowsTheLoadedRoles() 
 	}
 }
 
+// Adding a user who is on the wallet already is 409, not the 500 of a
+// duplicate row, and the roles they hold stay.
+func (s *WalletAddUserGateTestSuite) TestAdd_Wallet_UserTwiceIsAConflict() {
+	account := fixtures.InsertAccount(s.T(), "wallet add user twice")
+	s.seedChain()
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	owner := s.member(models.AccountRoleOwner, account.ID)
+	target := s.insertUser("twice-" + uuid.NewString()[:8] + "@example.com")
+	s.accountMember(account.ID, target, models.AccountRoleUser)
+	s.addUser(owner.token, account.ID, wallet.ID, target, models.WalletRoleViewer).AssertStatus(201)
+
+	resp := s.addUser(owner.token, account.ID, wallet.ID, target, models.WalletRoleSpender)
+
+	s.AssertError(resp, 409, "conflict", "user is already a member of this wallet")
+	s.Equal(int64(1), s.walletMembershipCount(wallet.ID, target))
+	s.Equal(models.WalletRoleViewer, s.storedWalletRoles(wallet.ID, target))
+}
+
 func (s *WalletAddUserGateTestSuite) TestAdd_Wallet_UserValidationStaysUnprocessable() {
 	account := fixtures.InsertAccount(s.T(), "wallet add user validation")
 	s.seedChain()
@@ -116,7 +135,7 @@ func (s *WalletAddUserGateTestSuite) member(role string, accountID uuid.UUID) wa
 
 func (s *WalletAddUserGateTestSuite) insertUser(email string) uuid.UUID {
 	userID := uuid.New()
-	hash, err := authsvc.NewService().HashPassword(walletAddUserGatePassword)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(walletAddUserGatePassword)
 	s.Require().NoError(err)
 	_, err = facades.Orm().Query().Exec(
 		`INSERT INTO users (id, email, password_hash, status, created_at, updated_at)

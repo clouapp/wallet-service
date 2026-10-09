@@ -8,7 +8,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 )
 
 func TestNew_Returns_NilForANilClient(t *testing.T) {
@@ -41,8 +41,8 @@ func TestNil_Store_ReportsAMissingClient(t *testing.T) {
 }
 
 func TestSet_And_Uint64RoundTrip(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	key := prefix + "vault:checkpoint:eth"
 	ctx := context.Background()
 	store := New(client)
@@ -75,8 +75,8 @@ func TestSet_And_Uint64RoundTrip(t *testing.T) {
 }
 
 func TestSet_Keeps_APositiveTTL(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	key := prefix + "vault:checkpoint:ttl"
 	ctx := context.Background()
 
@@ -93,8 +93,8 @@ func TestSet_Keeps_APositiveTTL(t *testing.T) {
 }
 
 func TestUint64_Missing_KeyIsRedisNil(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 
 	_, err := New(client).Uint64(context.Background(), prefix+"vault:checkpoint:missing")
 	if !errors.Is(err, redis.Nil) {
@@ -103,8 +103,8 @@ func TestUint64_Missing_KeyIsRedisNil(t *testing.T) {
 }
 
 func TestSet_Membership_Commands(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	key := prefix + "vault:addresses:eth"
 	ctx := context.Background()
 	store := New(client)
@@ -152,8 +152,8 @@ func TestSet_Membership_Commands(t *testing.T) {
 }
 
 func TestReplace_Set_SwapsMembersInOneTransaction(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	key := prefix + "vault:addresses:eth"
 	ctx := context.Background()
 	if err := client.SAdd(ctx, key, "0xstale").Err(); err != nil {
@@ -189,8 +189,8 @@ func TestReplace_Set_SwapsMembersInOneTransaction(t *testing.T) {
 }
 
 func TestReplace_Set_WithNoMembersOnlyDeletes(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	key := prefix + "vault:addresses:btc"
 	ctx := context.Background()
 	if err := client.SAdd(ctx, key, "tb1qstale").Err(); err != nil {
@@ -225,8 +225,8 @@ func TestReplace_Set_WithNoMembersOnlyDeletes(t *testing.T) {
 }
 
 func TestCommands_Canceled_Context(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	store := New(client)
@@ -254,8 +254,8 @@ func TestCommands_Canceled_Context(t *testing.T) {
 }
 
 func TestS_Card_MissingKeyIsZero(t *testing.T) {
-	client := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, client)
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
 
 	count, err := New(client).SCard(context.Background(), prefix+"vault:addresses:missing")
 	if err != nil {

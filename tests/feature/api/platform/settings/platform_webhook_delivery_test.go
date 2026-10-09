@@ -119,7 +119,7 @@ func (s *PlatformWebhookDeliveryTestSuite) TestA_Stored_LimitAndTimeoutAreWhatDe
 	s.Equal(int64(1), s.count(`SELECT count(*) FROM account_activity WHERE action = 'settings.updated'`))
 
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &accountID)
-	svc := container.Get().WebhookService
+	svc := container.MustMake[*webhook.Service]()
 	enqueued, err := svc.EnqueueScoped(context.Background(), webhook.ScopedEvent{
 		EventType: types.EventWithdrawalBroadcast,
 		SubjectID: uuid.NewString(),
@@ -169,7 +169,7 @@ func (s *PlatformWebhookDeliveryTestSuite) TestA_Missing_RowKeepsTheDefault() {
 
 	cfg := fixtures.InsertScopedWebhookConfig(s.T(), receiver.URL, "delivery-default-secret", []string{"withdrawal.broadcast"}, &accountID, nil)
 	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &accountID)
-	svc := container.Get().WebhookService
+	svc := container.MustMake[*webhook.Service]()
 	enqueued, err := svc.EnqueueScoped(context.Background(), webhook.ScopedEvent{
 		EventType: types.EventWithdrawalBroadcast,
 		SubjectID: uuid.NewString(),
@@ -198,9 +198,10 @@ func (s *PlatformWebhookDeliveryTestSuite) TestZero_Or_NegativeIsRejectedAndANon
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 
+	// An unknown group is not a 404 for a member: the group guard answers first.
 	missing := s.putRaw(session.AccessToken, "/v1/platform/settings/no-such-group", `{"max_attempts":1}`)
-	missing.AssertNotFound()
-	s.AssertError(missing, 404, responses.CodeNotFound, "settings group not found")
+	missing.AssertForbidden()
+	s.AssertError(missing, 403, responses.CodeForbidden, "you do not have permission to update settings")
 
 	forbidden := s.putRaw(session.AccessToken, "/v1/platform/settings/webhook_delivery", `{"max_attempts":4,"timeout_seconds":8}`)
 	forbidden.AssertForbidden()

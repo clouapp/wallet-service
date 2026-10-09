@@ -1,12 +1,20 @@
-package fixtures
+package fixtures_test
 
 import (
+	"os"
 	"testing"
 
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
+
+func TestMain(m *testing.M) {
+	testutil.BootTest()
+	os.Exit(m.Run())
+}
 
 const resetSequence = "amount_sign_backups_id_seq"
 
@@ -34,16 +42,16 @@ func nextSequenceValue(t *testing.T) int64 {
 func TestTestDBEmptiesTablesAndSequencesBetweenTests(t *testing.T) {
 	var migrations int64
 	t.Run("writes", func(t *testing.T) {
-		TestDB(t)
+		fixtures.TestDB(t)
 		migrations = rowCount(t, "migrations")
-		account := InsertAccount(t, "reset")
-		InsertWalletWithAccount(t, models.ChainSOL, &account.ID)
-		InsertUser(t)
+		account := fixtures.InsertAccount(t, "reset")
+		fixtures.InsertWalletWithAccount(t, models.ChainSOL, &account.ID)
+		fixtures.InsertUser(t)
 		nextSequenceValue(t)
 		nextSequenceValue(t)
 	})
 
-	TestDB(t)
+	fixtures.TestDB(t)
 	for _, table := range []string{"accounts", "wallets", "addresses", "users"} {
 		if got := rowCount(t, table); got != 0 {
 			t.Fatalf("%s has %d rows after the reset", table, got)

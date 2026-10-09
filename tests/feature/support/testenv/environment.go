@@ -3,7 +3,6 @@ package testenv
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -16,7 +15,6 @@ import (
 const (
 	testingEnvironmentName = "testing"
 	databaseVariable       = "DB_DATABASE"
-	redisURLVariable       = "REDIS_URL"
 	redisDatabaseVariable  = "REDIS_DB"
 	liveRedisDatabase      = 0
 	maxRedisDatabase       = 15
@@ -77,39 +75,24 @@ func Load() error {
 	return ValidateConfiguration(CurrentConfiguration())
 }
 
-// isolateRedis points REDIS_URL (the app's Redis client) at the REDIS_DB index of
-// .env.testing. The dev REDIS_URL has no index, so without this the suite shares DB 0
-// with a running dev/e2e API and overwrites its caches (e.g. the deposit address cache).
+// isolateRedis refuses a REDIS_DB that is the live index. The app reads its Redis
+// connection from REDIS_HOST/PORT/PASSWORD/DB (config/database.go), so the index
+// .env.testing sets here is the one the suite uses; without it the suite would share
+// DB 0 with a running dev/e2e API and overwrite its caches.
 func isolateRedis() error {
-	redisURL, err := TestRedisURL(os.Getenv(redisURLVariable), os.Getenv(redisDatabaseVariable))
-	if err != nil {
-		return err
-	}
-	if redisURL != "" {
-		os.Setenv(redisURLVariable, redisURL)
-	}
-	return nil
+	return ValidateRedisDatabase(os.Getenv(redisDatabaseVariable))
 }
 
-// TestRedisURL returns redisURL with its database index replaced by testDatabase. An
-// empty redisURL stays empty (no Redis client). testDatabase must be a non-zero index.
-func TestRedisURL(redisURL, testDatabase string) (string, error) {
+// ValidateRedisDatabase accepts only a non-zero Redis index up to maxRedisDatabase.
+func ValidateRedisDatabase(testDatabase string) error {
 	index, err := strconv.Atoi(strings.TrimSpace(testDatabase))
 	if err != nil || index <= liveRedisDatabase || index > maxRedisDatabase {
-		return "", fmt.Errorf(
+		return fmt.Errorf(
 			"refusing test setup: %s must be a Redis index between %d and %d, got %q (index %d is the live dev/e2e one)",
 			redisDatabaseVariable, liveRedisDatabase+1, maxRedisDatabase, testDatabase, liveRedisDatabase,
 		)
 	}
-	if strings.TrimSpace(redisURL) == "" {
-		return "", nil
-	}
-	parsed, err := url.Parse(redisURL)
-	if err != nil || (parsed.Scheme != "redis" && parsed.Scheme != "rediss") {
-		return "", fmt.Errorf("refusing test setup: %s is not a redis:// URL", redisURLVariable)
-	}
-	parsed.Path = "/" + strconv.Itoa(index)
-	return parsed.String(), nil
+	return nil
 }
 
 func applyDatabaseOverride() {

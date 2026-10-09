@@ -71,12 +71,9 @@ func (r *TransactionRepository) FindByIDForAccount(ctx context.Context, id, acco
 	var tx models.Transaction
 	err := r.Query(ctx).
 		Where("id = ? AND wallet_id IN (SELECT id FROM wallets WHERE account_id = ?)", id, accountID).
-		First(&tx)
+		FirstOrFail(&tx)
 	if err != nil {
-		return nil, db.NotFound(err, "find transaction")
-	}
-	if tx.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+		return nil, db.LookupError(err, "find transaction")
 	}
 	return &tx, nil
 }
@@ -84,11 +81,8 @@ func (r *TransactionRepository) FindByIDForAccount(ctx context.Context, id, acco
 // FindByIDAndWallet returns the transaction when it belongs to walletID.
 func (r *TransactionRepository) FindByIDAndWallet(ctx context.Context, txID string, walletID uuid.UUID) (*models.Transaction, error) {
 	var tx models.Transaction
-	if err := r.Query(ctx).Where("id = ? AND wallet_id = ?", txID, walletID).First(&tx); err != nil {
-		return nil, fmt.Errorf("find transaction: %w", err)
-	}
-	if tx.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("id = ? AND wallet_id = ?", txID, walletID).FirstOrFail(&tx); err != nil {
+		return nil, db.LookupError(err, "find transaction")
 	}
 	return &tx, nil
 }
@@ -96,11 +90,8 @@ func (r *TransactionRepository) FindByIDAndWallet(ctx context.Context, txID stri
 // FindByIdempotencyKey returns the transaction stored under a withdrawal idempotency key.
 func (r *TransactionRepository) FindByIdempotencyKey(ctx context.Context, key string) (*models.Transaction, error) {
 	var tx models.Transaction
-	if err := r.Query(ctx).Where("idempotency_key", key).First(&tx); err != nil {
-		return nil, fmt.Errorf("find transaction by idempotency key: %w", err)
-	}
-	if tx.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("idempotency_key", key).FirstOrFail(&tx); err != nil {
+		return nil, db.LookupError(err, "find transaction by idempotency key")
 	}
 	return &tx, nil
 }
@@ -131,11 +122,8 @@ func (r *TransactionRepository) FindByWallet(ctx context.Context, walletID uuid.
 // FindByChainAndTxHash returns the transaction for a chain and hash.
 func (r *TransactionRepository) FindByChainAndTxHash(ctx context.Context, chainID, txHash string) (*models.Transaction, error) {
 	var tx models.Transaction
-	if err := r.Query(ctx).Where("chain = ? AND tx_hash = ?", chainID, txHash).First(&tx); err != nil {
-		return nil, fmt.Errorf("find transaction by hash: %w", err)
-	}
-	if tx.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("chain = ? AND tx_hash = ?", chainID, txHash).FirstOrFail(&tx); err != nil {
+		return nil, db.LookupError(err, "find transaction by hash")
 	}
 	return &tx, nil
 }

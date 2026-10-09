@@ -3,23 +3,46 @@ package auth
 import (
 	"crypto/rand"
 	"encoding/base32"
+	"errors"
 	"fmt"
 
+	"github.com/goravel/framework/contracts/hash"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
 )
 
-type Service struct{}
+// ErrHasherRequired is a password operation on a Service built without a hasher.
+var ErrHasherRequired = errors.New("auth service: password hasher is required")
 
-func NewService() *Service { return &Service{} }
-
-func (s *Service) HashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	return string(bytes), err
+// Service hashes and checks passwords through the hash driver and handles
+// TOTP, recovery codes and tokens.
+type Service struct {
+	hasher hash.Hash
 }
 
+// DummyPasswordHash is a bcrypt hash at cost 10 (the hashing config's rounds) of a
+// random string nobody knows. Login compares the submitted password against it
+// when the email has no user, so a missing user costs the same bcrypt time as a
+// wrong password.
+const DummyPasswordHash = "$2a$10$NJIEW0bsDrp6v6qmmZ4t5.0cbwEo2J8oNSsiEklai1L7uSQVgXIPO"
+
+// NewService hashes passwords with hasher, the process hash facade in production.
+func NewService(hasher hash.Hash) *Service { return &Service{hasher: hasher} }
+
+func (s *Service) HashPassword(password string) (string, error) {
+	if s == nil || s.hasher == nil {
+		return "", ErrHasherRequired
+	}
+	return s.hasher.Make(password)
+}
+
+// CheckPassword reports whether password matches hash. A Service without a
+// hasher matches nothing.
 func (s *Service) CheckPassword(password, hash string) bool {
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+	if s == nil || s.hasher == nil {
+		return false
+	}
+	return s.hasher.Check(password, hash)
 }
 
 func (s *Service) GenerateTOTP(email string) (secret, qrURL string, err error) {

@@ -1,0 +1,186 @@
+package mail
+
+import (
+	"context"
+	"crypto/subtle"
+	"errors"
+	"testing"
+
+	"github.com/macrowallets/waas/app/services/settings"
+)
+
+func TestMerge_Dial_KeepsEnvFieldsThatAreNotInUse(t *testing.T) {
+	t.Parallel()
+
+	cfg := map[string]any{
+		"from": map[string]any{"address": "noreply@vault.dev"},
+		"mailers": map[string]any{
+			"smtp": map[string]any{
+				"transport":  "smtp",
+				"host":       "env-host",
+				"port":       587,
+				"encryption": "tls",
+				"username":   "env-user",
+				"password":   "env-mailbox-secret",
+			},
+		},
+	}
+	mergeDial(cfg, settings.MailSMTP{
+		Host: "127.0.0.1", Port: 2525, Encryption: "starttls", Username: "mailer",
+		UseHost: true, UsePort: true, UseEncryption: true, UseUsername: true,
+	})
+	smtp := cfg["mailers"].(map[string]any)["smtp"].(map[string]any)
+	if smtp["transport"] != "smtp" {
+		t.Fatal("the dial left SMTP")
+	}
+	if smtp["host"] != "127.0.0.1" || cfg["host"] != "127.0.0.1" {
+		t.Fatal("host was not applied for the send")
+	}
+	if smtp["port"] != 2525 || cfg["port"] != 2525 {
+		t.Fatal("port was not applied for the send")
+	}
+	if smtp["encryption"] != "starttls" || cfg["encryption"] != "starttls" {
+		t.Fatal("encryption was not applied for the send")
+	}
+	if smtp["username"] != "mailer" {
+		t.Fatal("username was not applied for the send")
+	}
+	if smtp["password"] != "env-mailbox-secret" || cfg["password"] != nil {
+		t.Fatal("an unused password replaced the env mailer")
+	}
+	if cfg["from"].(map[string]any)["address"] != "noreply@vault.dev" {
+		t.Fatal("the from address was rewritten")
+	}
+}
+
+func TestMerge_From_KeepsEnvFieldsThatAreNotInUse(t *testing.T) {
+	t.Parallel()
+
+	cfg := map[string]any{
+		"from": map[string]any{"address": "noreply@vault.dev", "name": "Vault"},
+		"mailers": map[string]any{
+			"smtp": map[string]any{"transport": "smtp", "password": "env-mailbox-secret"},
+		},
+	}
+	mergeFrom(cfg, settings.MailDelivery{Address: "from-header@example.test", UseAddress: true})
+	from := cfg["from"].(map[string]any)
+	if from["address"] != "from-header@example.test" {
+		t.Fatal("the from address was not applied for the send")
+	}
+	if from["name"] != "Vault" {
+		t.Fatal("an unused from name replaced the env header")
+	}
+	smtp := cfg["mailers"].(map[string]any)["smtp"].(map[string]any)
+	if smtp["transport"] != "smtp" || smtp["password"] != "env-mailbox-secret" {
+		t.Fatal("the from header replaced the env mailer")
+	}
+
+	mergeFrom(cfg, settings.MailDelivery{Name: "Macro", UseName: true})
+	if from["address"] != "from-header@example.test" || from["name"] != "Macro" {
+		t.Fatal("the from name was not applied on its own")
+	}
+}
+
+func TestMerge_Dial_AppliesAPasswordOnlyWhenAsked(t *testing.T) {
+	t.Parallel()
+
+	const stored = "stored-mailbox-secret"
+	cfg := map[string]any{
+		"mailers": map[string]any{"smtp": map[string]any{"password": "env-mailbox-secret"}},
+	}
+	mergeDial(cfg, settings.MailSMTP{Password: stored, UsePassword: true})
+	smtp := cfg["mailers"].(map[string]any)["smtp"].(map[string]any)
+	gotSMTP, _ := smtp["password"].(string)
+	gotRoot, _ := cfg["password"].(string)
+	if subtle.ConstantTimeCompare([]byte(gotSMTP), []byte(stored)) != 1 ||
+		subtle.ConstantTimeCompare([]byte(gotRoot), []byte(stored)) != 1 {
+		t.Fatal("the sealed password was not opened onto the mailer")
+	}
+}
+
+func TestResolve_Keeps_TheEnvDocumentWhenTheReaderIsUnset(t *testing.T) {
+	t.Parallel()
+
+	const envPassword = "env-mailbox-secret"
+	env := map[string]any{
+		"from": map[string]any{"address": "env@example.test", "name": "Env"},
+		"mailers": map[string]any{
+			"smtp": map[string]any{"transport": "smtp", "host": "env-host", "password": envPassword},
+		},
+	}
+	resolved := NewMailer(MailerDeps{}).resolve(context.Background(), env)
+	if resolved["host"] != nil || resolved["password"] != nil {
+		t.Fatal("an unset reader wrote over the env mailer")
+	}
+	smtp := resolved["mailers"].(map[string]any)["smtp"].(map[string]any)
+	if smtp["transport"] != "smtp" || smtp["host"] != "env-host" {
+		t.Fatal("an unset reader replaced the env mailer")
+	}
+	got, _ := smtp["password"].(string)
+	if subtle.ConstantTimeCompare([]byte(got), []byte(envPassword)) != 1 {
+		t.Fatal("an unset reader replaced the env password")
+	}
+	from := resolved["from"].(map[string]any)
+	if from["address"] != "env@example.test" || from["name"] != "Env" {
+		t.Fatal("an unset reader replaced the env from header")
+	}
+}
+
+func TestResolve_Keeps_TheEnvDocumentWhenTheReaderFails(t *testing.T) {
+	t.Parallel()
+
+	env := map[string]any{
+		"mailers": map[string]any{"smtp": map[string]any{"host": "env-host"}},
+		"from":    map[string]any{"address": "env@example.test"},
+	}
+	resolved := NewMailer(MailerDeps{Settings: storedSettings{
+		smtp:    settings.MailSMTP{Host: "127.0.0.1", UseHost: true, Password: "stored-mailbox-secret", UsePassword: true},
+		smtpErr: errors.New("db down"),
+		from:    settings.MailDelivery{Address: "replaced@example.test", UseAddress: true},
+		fromErr: errors.New("db down"),
+	}}).resolve(context.Background(), env)
+	smtp := resolved["mailers"].(map[string]any)["smtp"].(map[string]any)
+	if smtp["host"] != "env-host" || smtp["password"] != nil || resolved["password"] != nil {
+		t.Fatal("a failed read replaced the env mailer")
+	}
+	if resolved["from"].(map[string]any)["address"] != "env@example.test" {
+		t.Fatal("a failed read replaced the env from header")
+	}
+}
+
+func TestResolve_Applies_SMTPAndFromWhenTheRowsExist(t *testing.T) {
+	t.Parallel()
+
+	const stored = "stored-mailbox-secret"
+	env := map[string]any{
+		"mailers": map[string]any{"smtp": map[string]any{"transport": "smtp", "host": "env-host"}},
+		"from":    map[string]any{"address": "env@example.test", "name": "Env"},
+	}
+	resolved := NewMailer(MailerDeps{Settings: storedSettings{
+		smtp: settings.MailSMTP{
+			Host: "127.0.0.1", Port: 2525, Encryption: "starttls", Username: "mailer",
+			Password: stored, UseHost: true, UsePort: true, UseEncryption: true,
+			UseUsername: true, UsePassword: true,
+		},
+		from: settings.MailDelivery{Address: "from-header@example.test", Name: "Macro", UseAddress: true, UseName: true},
+	}}).resolve(context.Background(), env)
+	smtp := resolved["mailers"].(map[string]any)["smtp"].(map[string]any)
+	if smtp["transport"] != "smtp" || smtp["host"] != "127.0.0.1" || resolved["host"] != "127.0.0.1" {
+		t.Fatal("mail_smtp was not applied")
+	}
+	if smtp["port"] != 2525 || smtp["encryption"] != "starttls" || smtp["username"] != "mailer" {
+		t.Fatal("mail_smtp left a field on the env mailer")
+	}
+	got, _ := smtp["password"].(string)
+	if subtle.ConstantTimeCompare([]byte(got), []byte(stored)) != 1 {
+		t.Fatal("mail_smtp password was not applied")
+	}
+	from := resolved["from"].(map[string]any)
+	if from["address"] != "from-header@example.test" || from["name"] != "Macro" {
+		t.Fatal("mail_delivery was not applied")
+	}
+	if env["mailers"].(map[string]any)["smtp"].(map[string]any)["host"] != "env-host" ||
+		env["from"].(map[string]any)["address"] != "env@example.test" {
+		t.Fatal("the overlay wrote into the env document")
+	}
+}

@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/queue"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/services/credentialmail"
 )
 
@@ -21,8 +20,8 @@ type SendCredentialMailJob struct {
 	inviteLink *string
 }
 
-// NewSendCredentialMailJob binds the mail service. A nil service is resolved
-// from the container when the queue runs the registered job.
+// NewSendCredentialMailJob binds the mail service. A job without one refuses
+// every payload.
 func NewSendCredentialMailJob(service *credentialmail.Service) *SendCredentialMailJob {
 	return &SendCredentialMailJob{service: service}
 }
@@ -48,20 +47,26 @@ func (j *SendCredentialMailJob) Handle(args ...any) error {
 	if err != nil {
 		return err
 	}
+	mailer, err := j.mailer()
+	if err != nil {
+		return err
+	}
 	// The invite link is the return value of Send, captured for the sync
 	// runner. It is not a queue argument.
-	link, err := j.mailer().Send(context.Background(), payload.SubjectID, payload.Purpose)
+	link, err := mailer.Send(context.Background(), payload.SubjectID, payload.Purpose)
 	if j.inviteLink != nil {
 		*j.inviteLink = link
 	}
 	return err
 }
 
-func (j *SendCredentialMailJob) mailer() *credentialmail.Service {
-	if j != nil && j.service != nil {
-		return j.service
+// mailer is the mail service the job was built with. A job built without one
+// refuses the payload.
+func (j *SendCredentialMailJob) mailer() (*credentialmail.Service, error) {
+	if j.service == nil {
+		return nil, errors.New("send_credential_mail: mail service is required")
 	}
-	return container.MustMake[*credentialmail.Service]()
+	return j.service, nil
 }
 
 // ShouldRetry refuses another attempt. A second run would mint another
@@ -72,10 +77,12 @@ type SyncRunner func(job queue.Job, args []queue.Arg) error
 
 // DispatchSyncAccountInvite enqueues an invite as the invite id and the
 // purpose, then returns the link the job minted. The link is not an argument.
-// A nil mailer is resolved from the container when the job runs.
 func DispatchSyncAccountInvite(run SyncRunner, inviteID uuid.UUID, mailer *credentialmail.Service) (string, error) {
 	if run == nil {
 		return "", errors.New("send_credential_mail: runner is required")
+	}
+	if mailer == nil {
+		return "", errors.New("send_credential_mail: mail service is required")
 	}
 	args, err := CredentialMailArgs(inviteID, credentialmail.PurposeAccountInvite)
 	if err != nil {

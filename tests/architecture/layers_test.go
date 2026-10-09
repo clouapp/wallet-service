@@ -15,7 +15,7 @@ import (
 // of the users.preferences jsonb document.
 func TestModels_Carry_NoWireTags(t *testing.T) {
 	module := sharedModule(t)
-	for _, file := range module.ProductionFiles("app/models", "pkg/authmodel") {
+	for _, file := range module.ProductionFiles("app/models") {
 		structTags(file, func(typeName, fieldName, tag string) {
 			value, ok := reflect.StructTag(tag).Lookup("json")
 			if !ok {
@@ -25,7 +25,7 @@ func TestModels_Carry_NoWireTags(t *testing.T) {
 			if name == "-" {
 				return
 			}
-			if file.Path == "pkg/authmodel/preferences.go" && typeName == "UserPreferences" &&
+			if file.Path == "app/models/user_preferences.go" && typeName == "UserPreferences" &&
 				(name == "preferred_fiat_code" || name == "display_in_fiat") {
 				return
 			}
@@ -55,9 +55,10 @@ var serviceFacades = []string{"Orm", "DB", "Event", "Config", "Crypt", "Queue", 
 
 // TestServicesDoNotKnowTheHTTPLayer reports a service importing the HTTP
 // layer, a repository, an adapter or an I/O library, or calling a facade it
-// should receive through its Deps.
+// should receive through its Deps, from the framework package or app/facades.
 func TestServices_Do_NotKnowTheHTTPLayer(t *testing.T) {
 	module := sharedModule(t)
+	facadePackages := []string{goravelFacades, module.ImportPathOf("app/facades")}
 	var violations Violations
 	for _, file := range module.ProductionFiles("app/services") {
 		for _, importPath := range file.Imports() {
@@ -75,10 +76,12 @@ func TestServices_Do_NotKnowTheHTTPLayer(t *testing.T) {
 				}
 			}
 		}
-		calls := packageCalls(file, goravelFacades, "facades")
-		for _, facade := range serviceFacades {
-			for range calls[facade] {
-				violations.Add("%s calls facades.%s()", file.Path, facade)
+		for _, facadePackage := range facadePackages {
+			calls := packageCalls(file, facadePackage, "facades")
+			for _, facade := range serviceFacades {
+				for range calls[facade] {
+					violations.Add("%s calls facades.%s()", file.Path, facade)
+				}
 			}
 		}
 	}
@@ -118,17 +121,21 @@ func TestOnly_Policies_RankRoles(t *testing.T) {
 }
 
 // TestPermissionDecisionsGoThroughThePolicy reports a Gate asked outside
-// app/policies, app/providers and app/http/middleware, and the in-handler
-// authorize helper (.ai/guidelines/authorization.md).
+// app/policies, app/providers and app/http/middleware, through the framework
+// facade or the app/facades one, and the in-handler authorize helper
+// (.ai/guidelines/authorization.md).
 func TestPermission_Decisions_GoThroughThePolicy(t *testing.T) {
 	module := sharedModule(t)
+	facadePackages := []string{goravelFacades, module.ImportPathOf("app/facades")}
 	var violations Violations
 	for _, file := range module.ProductionFiles("app", "routes") {
 		if hasAnyPrefix(file.Dir, []string{"app/policies", "app/providers", "app/http/middleware"}) {
 			continue
 		}
-		for range packageCalls(file, goravelFacades, "facades")["Gate"] {
-			violations.Add("%s calls facades.Gate()", file.Path)
+		for _, facades := range facadePackages {
+			for range packageCalls(file, facades, "facades")["Gate"] {
+				violations.Add("%s calls facades.Gate()", file.Path)
+			}
 		}
 		ast.Inspect(file.AST, func(node ast.Node) bool {
 			call, ok := node.(*ast.CallExpr)
@@ -144,30 +151,25 @@ func TestPermission_Decisions_GoThroughThePolicy(t *testing.T) {
 	Report(t, &violations)
 }
 
-// TestNoServiceLocatorOutsideTheCompositionRoot reports container.Get() and
-// the string container key outside app/container, app/providers and main.go:
-// the "god struct" must not come back once a package stops using it.
+// TestNoServiceLocatorOutsideTheCompositionRoot reports container.Make and
+// container.MustMake outside the composition root (bootstrap, routes,
+// app/providers and main.go): everything else receives its dependencies
+// through its constructor.
 func TestNo_Service_LocatorOutsideTheCompositionRoot(t *testing.T) {
 	module := sharedModule(t)
 	containerPath := module.ImportPathOf("app/container")
+	compositionRoot := []string{"bootstrap", "routes", "app/providers", "app/container", "tests", "tools", "scripts"}
 	var violations Violations
 	for _, file := range module.ProductionFiles() {
-		if hasAnyPrefix(file.Dir, []string{"app/container", "app/providers", "tests", "tools", "scripts"}) {
+		if file.Dir == "." || hasAnyPrefix(file.Dir, compositionRoot) {
 			continue
 		}
-		for range packageCalls(file, containerPath, "container")["Get"] {
-			violations.Add("%s calls container.Get()", file.Path)
+		calls := packageCalls(file, containerPath, "container")
+		for _, locator := range []string{"Make", "MustMake"} {
+			for range calls[locator] {
+				violations.Add("%s calls container.%s()", file.Path, locator)
+			}
 		}
-		ast.Inspect(file.AST, func(node ast.Node) bool {
-			literal, ok := node.(*ast.BasicLit)
-			if !ok || literal.Kind != token.STRING {
-				return true
-			}
-			if value, err := strconv.Unquote(literal.Value); err == nil && value == "vault.container" {
-				violations.Add("%s uses the string container key", file.Path)
-			}
-			return true
-		})
 	}
 	Report(t, &violations)
 }

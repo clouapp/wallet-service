@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	contractsorm "github.com/goravel/framework/contracts/database/orm"
+	"github.com/goravel/framework/contracts/database/orm"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories/internal/db"
@@ -27,7 +27,7 @@ type AccountRepository struct {
 }
 
 // NewAccountRepository wraps an orm.Query. Pass nil for a fresh query per call.
-func NewAccountRepository(query contractsorm.Query) *AccountRepository {
+func NewAccountRepository(query orm.Query) *AccountRepository {
 	return &AccountRepository{Base: db.NewBase(query)}
 }
 
@@ -66,11 +66,8 @@ func (r *AccountRepository) Exists(ctx context.Context, id uuid.UUID) (bool, err
 // FindByID returns the account, or ErrRepositoryNotFound.
 func (r *AccountRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.Account, error) {
 	var account models.Account
-	if err := r.Query(ctx).Where("id = ?", id).First(&account); err != nil {
-		return nil, fmt.Errorf("find account: %w", err)
-	}
-	if account.ID == uuid.Nil {
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("id = ?", id).FirstOrFail(&account); err != nil {
+		return nil, db.LookupError(err, "find account")
 	}
 	return &account, nil
 }
@@ -133,7 +130,7 @@ func (r *AccountRepository) PaginateByMember(ctx context.Context, userID uuid.UU
 	return accounts, total, nil
 }
 
-func (r *AccountRepository) memberAccountsQuery(ctx context.Context, userID uuid.UUID, filter AccountListFilter) contractsorm.Query {
+func (r *AccountRepository) memberAccountsQuery(ctx context.Context, userID uuid.UUID, filter AccountListFilter) orm.Query {
 	q := r.Query(ctx).Model(&models.Account{}).
 		Where("id IN (SELECT account_id FROM account_users WHERE user_id = ? AND deleted_at IS NULL)", userID)
 	if filter.Environment != "" {

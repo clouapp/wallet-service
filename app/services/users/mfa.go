@@ -15,10 +15,9 @@ import (
 
 // ResetMFA turns one user's TOTP off and clears the secret and recovery
 // codes the self-service disable path already clears. S3.4.1 names
-// users.mfa.reset; a platform_admins row is the gate on this branch. An
-// unknown user is ErrNotFound before the platform-admin check. A caller
-// who is not a platform admin is ErrMFAForbidden only after that user is
-// found. The user is not
+// users.mfa.reset; a platform_admins row is the gate on this branch. A caller
+// who is not a platform admin is ErrMFAForbidden before any user is read, so
+// the answer does not tell whether the user exists. The user is not
 // suspended. A reset that clears TOTP also stamps sessions_revoked_at and
 // revokes that user's refresh tokens. A user whose TOTP is already clear
 // succeeds and does not append another user.mfa_reset row or revoke again.
@@ -43,9 +42,6 @@ func (s *Service) ResetMFA(ctx context.Context, actorID, targetID uuid.UUID) err
 	}
 	if s.recovery == nil {
 		return fmt.Errorf("reset mfa: recovery codes are required")
-	}
-	if _, err := s.existingUser(ctx, targetID); err != nil {
-		return err
 	}
 	admin, err := s.admins.Contains(ctx, actorID)
 	if err != nil {

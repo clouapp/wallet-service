@@ -69,7 +69,7 @@ func TestQueued_Credential_MailHasNoCredentialAndMailQueueRefuses(t *testing.T) 
 	}
 	assertQueuedMessageHasNoCredential(t, string(resetEncoded), resetID.String(), credentialmail.PurposePasswordReset, mintedLink, password)
 
-	if err := NewFacade(FacadeDeps{}).Queue(); !errors.Is(err, errQueueRefused) {
+	if err := NewMailer(MailerDeps{}).Queue(); !errors.Is(err, errQueueRefused) {
 		t.Fatalf("Queue() error = %v", err)
 	}
 }

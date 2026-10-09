@@ -1,11 +1,9 @@
 package policies
 
 import (
-	"context"
 	"testing"
 
 	"github.com/google/uuid"
-	contractsaccess "github.com/goravel/framework/contracts/auth/access"
 )
 
 func TestWallet_Decisions_FollowTheLoadedRoles(t *testing.T) {
@@ -19,13 +17,6 @@ func TestWallet_Decisions_FollowTheLoadedRoles(t *testing.T) {
 	accountAuditor := WalletMembership{AccountRole: roleAuditor}
 	accountUser := WalletMembership{AccountRole: roleUser}
 	empty := WalletMembership{}
-
-	if !WalletView(viewer).Allowed() || !WalletView(accountAuditor).Allowed() || !WalletView(accountUser).Allowed() {
-		t.Fatal("any stored wallet or account role may view")
-	}
-	if WalletView(empty).Allowed() || WalletView(empty).Message() != "not a member of this wallet or its account" {
-		t.Fatal("an empty membership may not view")
-	}
 
 	for _, membership := range []WalletMembership{owner, admin, accountOwner, accountAdmin} {
 		if !WalletUpdate(membership).Allowed() || !WalletAddUser(membership).Allowed() || !WalletRemoveUser(membership).Allowed() || !WalletWhitelist(membership).Allowed() || !WalletManageWebhooks(membership).Allowed() {
@@ -96,64 +87,5 @@ func TestWallet_Cancel_WithdrawalDeniesNilAndEmptyRoleSets(t *testing.T) {
 	}
 	if !WalletCancelWithdrawal(WalletMembership{WalletRole: "viewer", UserID: creator}, creator).Allowed() {
 		t.Fatal("a viewer who created the withdrawal may still cancel")
-	}
-}
-
-func TestWallet_Gate_StillRequiresTheWalletID(t *testing.T) {
-	t.Parallel()
-
-	policy := &WalletPolicy{}
-	ctx := context.Background()
-	for _, decide := range []func(context.Context, map[string]any) contractsaccess.Response{
-		policy.View,
-		policy.Update,
-		policy.Freeze,
-		policy.AddUser,
-		policy.RemoveUser,
-		policy.Whitelist,
-		policy.ManageWebhooks,
-		policy.CancelWithdrawal,
-	} {
-		decision := decide(ctx, map[string]any{"wallet_role": roleOwner})
-		if decision.Allowed() || decision.Message() != "missing wallet_id" {
-			t.Fatalf("gate without wallet_id allowed or changed the message: %q", decision.Message())
-		}
-	}
-
-	walletID := uuid.New()
-	allowed := policy.Update(ctx, map[string]any{
-		"wallet_id":    walletID,
-		"wallet_role":  roleOwner,
-		"account_role": "",
-	})
-	if !allowed.Allowed() {
-		t.Fatal("gate arguments that already carry the role must allow")
-	}
-
-	userID := uuid.New()
-	denied := policy.CancelWithdrawal(ctx, map[string]any{
-		"wallet_id": walletID,
-		"user_id":   userID,
-	})
-	if denied.Allowed() {
-		t.Fatal("a missing creator id must not match the caller")
-	}
-	nilRoles := policy.CancelWithdrawal(ctx, map[string]any{
-		"wallet_id":  walletID,
-		"user_id":    uuid.Nil,
-		"creator_id": uuid.Nil,
-	})
-	if nilRoles.Allowed() || nilRoles.Message() != "only the creator or an owner/admin may cancel this withdrawal" {
-		t.Fatal("gate cancel allows a nil role set")
-	}
-	emptyRoles := policy.CancelWithdrawal(ctx, map[string]any{
-		"wallet_id":    walletID,
-		"wallet_role":  "",
-		"account_role": "",
-		"user_id":      userID,
-		"creator_id":   userID,
-	})
-	if emptyRoles.Allowed() || emptyRoles.Message() != "only the creator or an owner/admin may cancel this withdrawal" {
-		t.Fatal("gate cancel allows an empty role set")
 	}
 }

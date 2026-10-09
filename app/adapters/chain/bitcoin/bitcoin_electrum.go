@@ -21,6 +21,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -429,11 +430,16 @@ func (p *electrumProvider) broadcast(ctx context.Context, raw []byte) (string, e
 		var txID string
 		err := s.call("blockchain.transaction.broadcast", &txID, hex.EncodeToString(raw))
 		var electrumErr *electrumError
-		if errors.As(err, &electrumErr) && electrumErr.Code == electrumRejectedCode {
+		switch {
+		case err == nil:
+		case errors.As(err, &electrumErr) && electrumErr.Code == electrumRejectedCode:
 			return "", &btcBroadcastRejectedError{provider: p.label(), reason: electrumErr.Message}
-		}
-		if err != nil {
+		case errors.As(err, &electrumErr):
 			return "", err
+		default:
+			// The request was written; a timeout or a dropped connection says nothing
+			// about whether the server relayed it, so reconcile instead of re-sending.
+			return "", chain.UnknownOutcome(err)
 		}
 		return txID, nil
 	})

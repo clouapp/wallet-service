@@ -34,3 +34,15 @@ func AccountsFrom(rows []models.Account) []Account {
 	}
 	return views
 }
+
+// Lifecycle is the answer of freeze, unfreeze and archive: the account and
+// its new status.
+type Lifecycle struct {
+	ID     uuid.UUID `json:"id"`
+	Status string    `json:"status"`
+}
+
+// NewLifecycle projects an account after a lifecycle change.
+func NewLifecycle(account *models.Account) Lifecycle {
+	return Lifecycle{ID: account.ID, Status: account.Status}
+}

@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/macrowallets/waas/app/models"
 )
 
 // CodeWithdrawalsPaused is the domain code §9.2 names when withdrawals are
@@ -92,6 +94,20 @@ func (s *Service) Gate(ctx context.Context, accountID uuid.UUID, key, code strin
 		return nil
 	}
 	return pause(key, code)
+}
+
+// GateWallet is Gate for a wallet's money movement. The account it gates on
+// is the wallet's own account; a wallet without one falls back to the
+// caller's account.
+func (s *Service) GateWallet(ctx context.Context, wallet *models.Wallet, callerAccountID uuid.UUID, key, code string) error {
+	return s.Gate(ctx, gatedAccount(wallet, callerAccountID), key, code)
+}
+
+func gatedAccount(wallet *models.Wallet, callerAccountID uuid.UUID) uuid.UUID {
+	if wallet != nil && wallet.AccountID != nil && *wallet.AccountID != uuid.Nil {
+		return *wallet.AccountID
+	}
+	return callerAccountID
 }
 
 func pause(key, code string) error {

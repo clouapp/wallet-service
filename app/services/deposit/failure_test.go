@@ -21,9 +21,10 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/deposit/pending"
 	"github.com/macrowallets/waas/app/services/depositevents"
+	"github.com/macrowallets/waas/pkg/pgerr"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 	"github.com/macrowallets/waas/tests/pendingredis"
 )
 
@@ -191,8 +192,8 @@ type pendingBackends struct {
 
 func newPendingBackends(t *testing.T) pendingBackends {
 	t.Helper()
-	rdb := testutil.TestRedis(t)
-	prefix := testutil.TestRedisPrefix(t, rdb)
+	rdb := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, rdb)
 	dir := t.TempDir()
 	return pendingBackends{store: openPendingStore(t, rdb, prefix, dir), rdb: rdb, prefix: prefix, dir: dir}
 }
@@ -644,7 +645,7 @@ func TestUnique_Deposit_IndexRejectsASecondRowForTheSameTransaction(t *testing.T
 		t.Fatal(err)
 	}
 	err := repo.Create(context.Background(), newDeposit(models.TxTypeDeposit))
-	if !repositories.IsUniqueViolation(err) {
+	if !pgerr.IsUniqueViolation(err) {
 		t.Fatalf("expected a unique violation for a second deposit row, got %v", err)
 	}
 	if err := repo.Create(context.Background(), newDeposit(models.TxTypeWithdrawal)); err != nil {

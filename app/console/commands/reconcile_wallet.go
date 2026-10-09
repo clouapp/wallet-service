@@ -10,34 +10,27 @@ import (
 )
 
 type ReconcileWallet struct {
-	balances   *refresh.BalanceService
-	dispatcher refresh.Dispatcher
-	run        *refresh.Operator
+	balances *refresh.BalanceService
+	run      *refresh.Operator
 }
 
 // ReconcileWalletDeps is everything the reconcile:wallet command needs.
-// Balances and Dispatcher are required.
+// Balances is required.
 type ReconcileWalletDeps struct {
-	Balances   *refresh.BalanceService
-	Dispatcher refresh.Dispatcher
-	Wallets    refresh.WalletLookup
+	Balances *refresh.BalanceService
+	Wallets  refresh.WalletLookup
 }
 
-// NewReconcileWallet reconciles one wallet in process or on the queue.
+// NewReconcileWallet reconciles one wallet.
 func NewReconcileWallet(deps ReconcileWalletDeps) *ReconcileWallet {
 	if deps.Balances == nil {
 		panic("reconcile:wallet: balance refresh service is required")
 	}
-	if deps.Dispatcher == nil {
-		panic("reconcile:wallet: refresh dispatcher is required")
-	}
 	return &ReconcileWallet{
-		balances:   deps.Balances,
-		dispatcher: deps.Dispatcher,
+		balances: deps.Balances,
 		run: refresh.NewOperator(refresh.OperatorDeps{
-			Balances:   deps.Balances,
-			Dispatcher: deps.Dispatcher,
-			Wallets:    deps.Wallets,
+			Balances: deps.Balances,
+			Wallets:  deps.Wallets,
 		}),
 	}
 }
@@ -55,7 +48,6 @@ func (c *ReconcileWallet) Extend() command.Extend {
 			&command.ArgumentString{Name: "wallet_id", Usage: "wallet UUID to reconcile", Required: true},
 		},
 		Flags: []command.Flag{
-			&command.BoolFlag{Name: "queue", Usage: "dispatch to queue instead of sync execution"},
 			&command.BoolFlag{Name: "force", Usage: "ignore freshness guards"},
 			&command.StringFlag{Name: "reason", Value: "manual", Usage: "reason for reconciliation"},
 		},
@@ -65,7 +57,6 @@ func (c *ReconcileWallet) Extend() command.Extend {
 func (c *ReconcileWallet) Handle(ctx console.Context) error {
 	out, err := c.run.Reconcile(context.Background(), refresh.ReconcileCommand{
 		WalletID: ctx.ArgumentString("wallet_id"),
-		Queue:    ctx.OptionBool("queue"),
 		Reason:   ctx.Option("reason"),
 	})
 	printReport(ctx, out.Info, out.Warning, out.Line, out.SoftError)

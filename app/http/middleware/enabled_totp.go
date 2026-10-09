@@ -11,9 +11,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
+	"github.com/macrowallets/waas/app/http/responses"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 	"github.com/macrowallets/waas/app/services/walletrecords"
@@ -27,11 +27,10 @@ import (
 // share. A caller without TOTP continues. A missing whitelist entry or
 // webhook is left to the handler, which answers 404. External token routes
 // do not register this middleware.
-func RequireEnabledTOTP() http.Middleware {
-	users := container.MustMake[*usersvc.Service]()
-	verifier := container.MustMake[*authsvc.SecondFactorVerifier]()
-	entries := container.MustMake[*walletrecords.Whitelist]()
-	hooks := container.MustMake[*walletrecords.Webhooks]()
+func RequireEnabledTOTP(users *usersvc.Service, verifier *authsvc.SecondFactorVerifier, entries *walletrecords.Whitelist, hooks *walletrecords.Webhooks) http.Middleware {
+	if users == nil || verifier == nil || entries == nil || hooks == nil {
+		panic("require enabled totp: users, verifier, whitelist and webhooks are required")
+	}
 	return func(ctx http.Context) {
 		if changeTargetMissing(ctx, entries, hooks) {
 			ctx.Request().Next()
@@ -39,17 +38,17 @@ func RequireEnabledTOTP() http.Middleware {
 		}
 		userID := SessionUserID(ctx)
 		if userID == uuid.Nil {
-			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "user not found"})
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "user not found").Abort()
 			return
 		}
 		user, err := users.FindByID(ctx.Context(), userID)
 		if err != nil {
 			slog.Error("dashboard totp: load user", "error", err)
-			abortWithJSON(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
+			_ = responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error").Abort()
 			return
 		}
 		if user == nil {
-			abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "user not found"})
+			_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "user not found").Abort()
 			return
 		}
 		if !user.TotpEnabled {
@@ -119,11 +118,11 @@ func dashboardTOTPCode(ctx http.Context) string {
 func abortDashboardTOTP(ctx http.Context, err error) {
 	switch {
 	case errors.Is(err, authsvc.ErrInvalidSecondFactor), errors.Is(err, authsvc.ErrSecondFactorNotEnrolled):
-		abortWithJSON(ctx, http.StatusUnauthorized, http.Json{"error": "invalid 2FA code"})
+		_ = responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "invalid 2FA code").Abort()
 	case errors.Is(err, authsvc.ErrSecondFactorLocked):
-		abortWithJSON(ctx, http.StatusTooManyRequests, http.Json{"error": "too many 2FA attempts, sign in again later"})
+		_ = responses.Fail(ctx, http.StatusTooManyRequests, responses.CodeTooManyRequests, "too many 2FA attempts, sign in again later").Abort()
 	default:
 		slog.Error("dashboard totp", "error", err)
-		abortWithJSON(ctx, http.StatusInternalServerError, http.Json{"error": "internal error"})
+		_ = responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error").Abort()
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/resources/dashboard/accounts"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/apitoken"
 )
 
 func TestAccess_Token_KeepsTheModelWire(t *testing.T) {
@@ -110,5 +111,32 @@ func TestAccess_Tokens_PreserveSliceNilness(t *testing.T) {
 	}
 	if string(emptyPage) != `{"data":[],"limit":20,"offset":0,"total":0}` {
 		t.Fatalf("empty page = %s", emptyPage)
+	}
+}
+
+func TestMinted_Token_KeepsTheMapWire(t *testing.T) {
+	t.Parallel()
+
+	until := time.Date(2031, 2, 3, 4, 5, 6, 0, time.UTC)
+	token := &models.AccessToken{
+		ID: uuid.MustParse("11111111-1111-4111-8111-111111111111"), AccountID: uuid.MustParse("22222222-2222-4222-8222-222222222222"),
+		Name: "ci", TokenHash: "fixture-token-hash", Permissions: `["wallets.read"]`, SpendingLimit: "{}", ValidUntil: &until,
+	}
+	minted := apitoken.Minted{Token: token, JWT: "header.payload.signature"}
+
+	// The handler answered this map before the resource existed.
+	want, err := json.Marshal(map[string]any{"token": minted.JWT, "metadata": accounts.AccessTokenPtr(token)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := json.Marshal(accounts.NewMintedToken(minted))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("wire changed\n got %s\nwant %s", got, want)
+	}
+	if strings.Contains(string(got), "fixture-token-hash") {
+		t.Fatal("the token hash is on the wire")
 	}
 }

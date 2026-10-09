@@ -19,7 +19,7 @@ type WalletBalanceSnapshot struct {
 	BalanceDisplay string              `gorm:"type:text;not null"`
 	BalanceUSD     numeric.NullDecimal `gorm:"type:numeric(28,10)"`
 	CapturedAt     time.Time           `gorm:"type:timestamptz;not null"`
-	Wallet *Wallet `gorm:"foreignKey:WalletID"`
+	Wallet         *Wallet             `gorm:"foreignKey:WalletID"`
 }
 
 func (w *WalletBalanceSnapshot) TableName() string {

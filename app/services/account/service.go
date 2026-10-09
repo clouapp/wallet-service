@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/policies"
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 	audit "github.com/macrowallets/waas/packages/activitylog"
+	"github.com/macrowallets/waas/pkg/pgerr"
 )
 
 // AccountStore is the account writes this service performs.
@@ -93,6 +94,22 @@ type InviteMailDispatcher interface {
 	DispatchAccountInvite(inviteID uuid.UUID) (string, error)
 }
 
+// SweepLimitsReader reads the account_sweep_limits document an account view
+// carries (settings.Service).
+type SweepLimitsReader interface {
+	AccountSweepLimitsWire(ctx context.Context, accountID uuid.UUID) (*string, error)
+}
+
+// FeatureReader lists an account's active feature keys (features.Service).
+type FeatureReader interface {
+	ActiveForAccount(ctx context.Context, accountID uuid.UUID) ([]string, error)
+}
+
+// PasswordHasher hashes the password of a user an invite creates.
+type PasswordHasher interface {
+	HashPassword(password string) (string, error)
+}
+
 // Deps is everything Account needs. Users, Tokens and Activity are required
 // for the dashboard member and token handlers. Older callers that only create
 // accounts may leave them nil. A nil InviteMail leaves an issued invite
@@ -105,6 +122,11 @@ type Deps struct {
 	Activity    ActivityLog
 	Invites     InviteStore
 	InviteMail  InviteMailDispatcher
+	// Passwords is required by AcceptInvite, which creates a user.
+	Passwords PasswordHasher
+	// SweepLimits and Features are required by the dashboard account views.
+	SweepLimits SweepLimitsReader
+	Features    FeatureReader
 }
 
 // MemberChange is a PATCH of one membership. A nil field is left as stored.
@@ -123,6 +145,9 @@ type Service struct {
 	invites     InviteStore
 	admins      PlatformAdmins
 	inviteMail  InviteMailDispatcher
+	passwords   PasswordHasher
+	sweepLimits SweepLimitsReader
+	features    FeatureReader
 }
 
 // NewService builds an account service from Deps.
@@ -135,6 +160,9 @@ func NewService(deps Deps) *Service {
 		activity:    deps.Activity,
 		invites:     deps.Invites,
 		inviteMail:  deps.InviteMail,
+		passwords:   deps.Passwords,
+		sweepLimits: deps.SweepLimits,
+		features:    deps.Features,
 	}
 }
 
@@ -192,7 +220,10 @@ func (s *Service) AddUser(ctx context.Context, accountID, userID uuid.UUID, role
 	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		return err
 	}
-	if err == nil && existing != nil && existing.DeletedAt != nil {
+	if err == nil && existing != nil && existing.DeletedAt == nil {
+		return ErrAlreadyMember
+	}
+	if err == nil && existing != nil {
 		if err := s.memberships.Restore(ctx, existing.ID); err != nil {
 			return err
 		}
@@ -209,7 +240,13 @@ func (s *Service) AddUser(ctx context.Context, accountID, userID uuid.UUID, role
 		Status:    models.MembershipStatusActive,
 		AddedBy:   &addedBy,
 	}
-	return s.memberships.Create(ctx, au)
+	if err := s.memberships.Create(ctx, au); err != nil {
+		if pgerr.IsUniqueViolation(err) {
+			return ErrAlreadyMember
+		}
+		return err
+	}
+	return nil
 }
 
 // RemoveUser soft-deletes the active membership. It does not check rank or
@@ -218,11 +255,24 @@ func (s *Service) RemoveUser(ctx context.Context, accountID, userID uuid.UUID) e
 	return s.memberships.SoftDeleteByAccountAndUser(ctx, accountID, userID)
 }
 
+// UpdateMemberInput is PATCH /v1/accounts/{accountId}/users/{userId}: the
+// caller changes the target's role, status or both. A blank Role or Status is
+// left as stored.
+type UpdateMemberInput struct {
+	AccountID uuid.UUID
+	ActorID   uuid.UUID
+	TargetID  uuid.UUID
+	Role      string
+	Status    string
+}
+
 // UpdateMember changes role and/or status. Suspending a member leaves the
 // API tokens that member minted: they belong to the account. The caller
 // cannot change themselves, grant a role above their own, act on a higher
 // rank, or leave the account without an owner.
-func (s *Service) UpdateMember(ctx context.Context, accountID, actorID, targetID uuid.UUID, change MemberChange) (*models.AccountUser, error) {
+func (s *Service) UpdateMember(ctx context.Context, in UpdateMemberInput) (*models.AccountUser, error) {
+	accountID, actorID, targetID := in.AccountID, in.ActorID, in.TargetID
+	change := memberChangeOf(in.Role, in.Status)
 	if err := validateMemberIDs(accountID, actorID, targetID); err != nil {
 		return nil, err
 	}
@@ -443,6 +493,18 @@ func validateMemberIDs(accountID, actorID, targetID uuid.UUID) error {
 		return fmt.Errorf("member change: account, actor and target are required")
 	}
 	return nil
+}
+
+// memberChangeOf reads a blank field as one to leave as stored.
+func memberChangeOf(role, status string) MemberChange {
+	var change MemberChange
+	if role != "" {
+		change.Role = &role
+	}
+	if status != "" {
+		change.Status = &status
+	}
+	return change
 }
 
 func validateMemberChange(change MemberChange) error {

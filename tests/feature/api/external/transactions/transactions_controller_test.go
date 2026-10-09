@@ -175,6 +175,23 @@ func (s *TransactionsControllerTestSuite) TestGet_Transaction_Success() {
 		})
 }
 
+// A transaction of another account answers exactly like a missing one, and the
+// owner still reads it.
+func (s *TransactionsControllerTestSuite) TestGet_Transaction_OfAnotherAccount_IsNotFound() {
+	testutil.SeededTestDB(s.T())
+	accountA, bearerA, _ := ctltestutil.SetupAPIAuth(s.T(), false)
+	_, bearerB, _ := ctltestutil.SetupAPIAuth(s.T(), false)
+
+	txID := seedTransactionForAccount(s.T(), accountA, "eth")
+
+	resp := s.External("/api/v1/transactions/"+txID, ctltestutil.Token{Bearer: bearerB}).Get()
+	s.AssertError(resp, 404, "not_found", "transaction not found")
+
+	s.External("/api/v1/transactions/"+txID, ctltestutil.Token{Bearer: bearerA}).Get().
+		AssertOk().
+		AssertJson(map[string]any{"id": txID})
+}
+
 func (s *TransactionsControllerTestSuite) TestList_User_Transactions() {
 	testutil.SeededTestDB(s.T())
 	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)

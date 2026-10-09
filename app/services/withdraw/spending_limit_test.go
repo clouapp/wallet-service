@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
+
+	"github.com/macrowallets/waas/tests/memcache"
 )
 
 func TestStore_Spending_LimitBlankAndNonNegative(t *testing.T) {
@@ -60,9 +62,9 @@ func TestStore_Spending_LimitRejectsANegativeAmount(t *testing.T) {
 }
 
 func TestBlank_Spending_LimitDoesNotTouchRedisOrTheQuote(t *testing.T) {
-	locker := &spendLocker{}
+	cache := memcache.New()
 	quote := &fixedQuote{usd: decimal.NewFromInt(1), fail: errors.New("quote must not run")}
-	svc := &Service{locker: locker, usdQuote: quote}
+	svc := &Service{cache: cache, usdQuote: quote}
 	for _, stored := range []string{"", "{}", "null", `{"daily_usd":""}`, `{"daily_usd":null}`} {
 		err := svc.enforceTokenSpendingLimit(context.Background(), WithdrawRequest{
 			AccessTokenID: uuid.New(),
@@ -74,8 +76,8 @@ func TestBlank_Spending_LimitDoesNotTouchRedisOrTheQuote(t *testing.T) {
 			t.Fatalf("blank %s: %v", stored, err)
 		}
 	}
-	if locker.incrs != 0 {
-		t.Fatalf("blank cap incremented redis %d times", locker.incrs)
+	if keys := cache.Keys(); len(keys) != 0 {
+		t.Fatalf("blank cap touched the cache: %v", keys)
 	}
 	if quote.calls != 0 {
 		t.Fatalf("blank cap quoted %d times", quote.calls)
@@ -85,11 +87,11 @@ func TestBlank_Spending_LimitDoesNotTouchRedisOrTheQuote(t *testing.T) {
 func TestDaily_USD_CapIsPerTokenAndRefundsARejectedSpend(t *testing.T) {
 	tokenID := uuid.New()
 	otherID := uuid.New()
-	locker := &spendLocker{}
+	cache := memcache.New()
 	quote := &scriptedQuote{usd: []decimal.Decimal{
 		decimal.NewFromInt(60), decimal.NewFromInt(50), decimal.NewFromInt(30), decimal.NewFromInt(10),
 	}}
-	svc := &Service{locker: locker, usdQuote: quote}
+	svc := &Service{cache: cache, usdQuote: quote}
 	req := WithdrawRequest{
 		AccessTokenID: tokenID,
 		SpendingLimit: `{"daily_usd":"100"}`,
@@ -118,12 +120,12 @@ func TestDaily_USD_CapIsPerTokenAndRefundsARejectedSpend(t *testing.T) {
 	if !strings.Contains(key, tokenID.String()) || !strings.HasSuffix(key, day) {
 		t.Fatalf("key %s is not the token's UTC day", key)
 	}
-	if locker.totals[key] != 9000 {
-		t.Fatalf("token counter = %d cents, want 9000", locker.totals[key])
+	if got := cache.GetInt64(key); got != 9000 {
+		t.Fatalf("token counter = %d cents, want 9000", got)
 	}
 	otherKey := spendingLimitKey(otherID, time.Now().UTC())
-	if locker.totals[otherKey] != 1000 {
-		t.Fatalf("other token counter = %d cents, want 1000", locker.totals[otherKey])
+	if got := cache.GetInt64(otherKey); got != 1000 {
+		t.Fatalf("other token counter = %d cents, want 1000", got)
 	}
 	if quote.assets[0] != "USDC" || !quote.amounts[0].Equal(decimal.NewFromInt(1)) {
 		t.Fatalf("quote saw asset %s amount %v", quote.assets[0], quote.amounts[0])
@@ -131,7 +133,7 @@ func TestDaily_USD_CapIsPerTokenAndRefundsARejectedSpend(t *testing.T) {
 }
 
 func TestSet_Cap_WithoutAPriceStopsTheWithdrawal(t *testing.T) {
-	svc := &Service{locker: &spendLocker{}, usdQuote: failingQuote{}}
+	svc := &Service{cache: memcache.New(), usdQuote: failingQuote{}}
 	err := svc.enforceTokenSpendingLimit(context.Background(), WithdrawRequest{
 		AccessTokenID: uuid.New(),
 		SpendingLimit: `{"daily_usd":"10"}`,
@@ -147,7 +149,7 @@ func TestSet_Cap_WithoutAPriceStopsTheWithdrawal(t *testing.T) {
 }
 
 func TestStored_Negative_CapIsNotTreatedAsUnlimited(t *testing.T) {
-	err := (&Service{locker: &spendLocker{}, usdQuote: &fixedQuote{usd: decimal.NewFromInt(1)}}).enforceTokenSpendingLimit(
+	err := (&Service{cache: memcache.New(), usdQuote: &fixedQuote{usd: decimal.NewFromInt(1)}}).enforceTokenSpendingLimit(
 		context.Background(),
 		WithdrawRequest{
 			AccessTokenID: uuid.New(),
@@ -162,12 +164,13 @@ func TestStored_Negative_CapIsNotTreatedAsUnlimited(t *testing.T) {
 }
 
 func TestRequest_Over_TheDailyCapDoesNotNeedAWallet(t *testing.T) {
-	locker := &spendLocker{acquired: true}
-	svc := &Service{locker: locker, usdQuote: &fixedQuote{usd: decimal.NewFromInt(25)}}
+	cache := memcache.New()
+	tokenID := uuid.New()
+	svc := &Service{cache: cache, usdQuote: &fixedQuote{usd: decimal.NewFromInt(25)}}
 	_, _, err := svc.Request(context.Background(), WithdrawRequest{
 		Passphrase:    "validpassphrase123",
 		WalletID:      uuid.New(),
-		AccessTokenID: uuid.New(),
+		AccessTokenID: tokenID,
 		SpendingLimit: `{"daily_usd":"10"}`,
 		Asset:         "USDC",
 		QuoteAmount:   "25",
@@ -175,17 +178,19 @@ func TestRequest_Over_TheDailyCapDoesNotNeedAWallet(t *testing.T) {
 	if !errors.Is(err, ErrSpendingLimitExceeded) {
 		t.Fatalf("got %v", err)
 	}
-	if locker.totals[locker.lastKey] != 0 {
-		t.Fatalf("rejected spend stayed reserved: %d", locker.totals[locker.lastKey])
+	if got := cache.GetInt64(spendingLimitKey(tokenID, time.Now().UTC())); got != 0 {
+		t.Fatalf("rejected spend stayed reserved: %d", got)
 	}
 }
 
 func TestRequest_Blank_CapStillReportsABusyWallet(t *testing.T) {
-	locker := &spendLocker{}
-	svc := &Service{locker: locker, usdQuote: failingQuote{}}
+	cache := memcache.New()
+	walletID := uuid.New()
+	cache.Add("vault:lock:withdrawal:"+walletID.String(), 1, time.Minute)
+	svc := &Service{cache: cache, usdQuote: failingQuote{}}
 	_, _, err := svc.Request(context.Background(), WithdrawRequest{
 		Passphrase:    "validpassphrase123",
-		WalletID:      uuid.New(),
+		WalletID:      walletID,
 		SpendingLimit: "{}",
 		Asset:         "USDC",
 		QuoteAmount:   "1",
@@ -193,50 +198,9 @@ func TestRequest_Blank_CapStillReportsABusyWallet(t *testing.T) {
 	if !errors.Is(err, ErrConcurrentWithdraw) {
 		t.Fatalf("got %v", err)
 	}
-	if locker.incrs != 0 {
-		t.Fatalf("blank cap incremented redis %d times", locker.incrs)
+	if got := cache.Keys(); len(got) != 1 {
+		t.Fatalf("blank cap wrote a counter next to the held lock: %v", got)
 	}
-}
-
-type spendLocker struct {
-	acquired bool
-	incrs    int
-	lastKey  string
-	totals   map[string]int64
-}
-
-func (s *spendLocker) SetNX(context.Context, string, string, time.Duration) (bool, error) {
-	return s.acquired, nil
-}
-
-func (s *spendLocker) Del(context.Context, string) error { return nil }
-
-func (s *spendLocker) Int(context.Context, string) (int, error) { return 0, nil }
-
-func (s *spendLocker) IncrExpire(context.Context, string, time.Duration) error { return nil }
-
-func (s *spendLocker) IncrBy(_ context.Context, key string, delta int64, expiration time.Duration) (int64, error) {
-	if delta <= 0 {
-		return 0, errors.New("delta must be positive")
-	}
-	if expiration <= 0 {
-		return 0, errors.New("ttl must be positive")
-	}
-	if s.totals == nil {
-		s.totals = map[string]int64{}
-	}
-	s.incrs++
-	s.lastKey = key
-	s.totals[key] += delta
-	return s.totals[key], nil
-}
-
-func (s *spendLocker) DecrBy(_ context.Context, key string, delta int64) error {
-	if delta <= 0 {
-		return errors.New("delta must be positive")
-	}
-	s.totals[key] -= delta
-	return nil
 }
 
 type fixedQuote struct {

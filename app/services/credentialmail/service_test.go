@@ -30,7 +30,7 @@ func TestSend_Password_ResetStoresOnlyTheHash(t *testing.T) {
 		}),
 		Tokens: tokenIssuerFunc{
 			mint: func() (string, error) { return raw, nil },
-			hash: authsvc.NewService().HashToken,
+			hash: authsvc.NewService(nil).HashToken,
 		},
 		Resets: resetWriterFunc(func(ctx context.Context, token *models.PasswordResetToken) error {
 			stored = token.TokenHash
@@ -54,7 +54,7 @@ func TestSend_Password_ResetStoresOnlyTheHash(t *testing.T) {
 	if stored == "" || stored == raw || strings.Contains(stored, raw) {
 		t.Fatalf("stored hash leaked the token: %q", stored)
 	}
-	if !authsvc.NewService().CheckToken(raw, stored) {
+	if !authsvc.NewService(nil).CheckToken(raw, stored) {
 		t.Fatal("stored value is not the hash of the minted token")
 	}
 	if sentTo != "person@example.com" || !strings.Contains(sentLink, raw) || strings.Contains(sentLink, stored) {

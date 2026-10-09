@@ -2,8 +2,9 @@ package config
 
 import (
 	contractsdriver "github.com/goravel/framework/contracts/database/driver"
-	"github.com/goravel/framework/facades"
 	postgres_facades "github.com/goravel/postgres/facades"
+
+	"github.com/macrowallets/waas/app/facades"
 )
 
 func registerDatabase() {

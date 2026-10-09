@@ -14,17 +14,14 @@ import (
 	"github.com/goravel/framework/foundation"
 
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
-	"github.com/macrowallets/waas/app/http/requests"
+	accountsrequests "github.com/macrowallets/waas/app/http/requests/dashboard/accounts"
 	"github.com/macrowallets/waas/app/http/resources"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
-	authsvc "github.com/macrowallets/waas/app/services/auth"
-	featuressvc "github.com/macrowallets/waas/app/services/features"
-	"github.com/macrowallets/waas/app/services/settings"
 )
 
-// TestAddAccountUserDeniesWhenTheMembershipReadFails proves a failed read of
+// TestAdd_Account_UserDeniesWhenTheMembershipReadFails proves a failed read of
 // the membership just written does not answer 201. A missing row stays the
 // created response; this store error is not that answer.
 func TestAdd_Account_UserDeniesWhenTheMembershipReadFails(t *testing.T) {
@@ -38,17 +35,12 @@ func TestAdd_Account_UserDeniesWhenTheMembershipReadFails(t *testing.T) {
 	memberships := &readFailsMemberships{actor: &models.AccountUser{
 		ID: uuid.New(), AccountID: accountID, UserID: callerID, Role: models.AccountRoleOwner, Status: models.MembershipStatusActive,
 	}}
-	ctrl := NewAccountsController(AccountsControllerDeps{
-		AccountService: accountsvc.NewService(accountsvc.Deps{
-			Memberships: memberships,
-			Users: emailUsers{user: &models.User{
-				ID: targetID, Email: "member@example.com",
-			}},
-		}),
-		Passwords: &authsvc.Service{},
-		Limits:    &settings.Service{},
-		Features:  &featuressvc.Service{},
-	})
+	ctrl := NewMemberController(accountsvc.NewService(accountsvc.Deps{
+		Memberships: memberships,
+		Users: emailUsers{user: &models.User{
+			ID: targetID, Email: "member@example.com",
+		}},
+	}))
 	response := &recordingResponse{}
 	ctx := &recordingContext{
 		base: context.WithValue(
@@ -62,7 +54,7 @@ func TestAdd_Account_UserDeniesWhenTheMembershipReadFails(t *testing.T) {
 		response: response,
 	}
 
-	ctrl.AddAccountUser(ctx)
+	ctrl.Store(ctx)
 
 	if !memberships.created {
 		t.Fatal("the membership write did not run")
@@ -141,11 +133,11 @@ type recordingRequest struct {
 
 func (r *recordingRequest) ValidateRequest(req http.FormRequest) (contractsvalidation.Errors, error) {
 	switch body := req.(type) {
-	case *requests.AddAccountUserRequest:
+	case *accountsrequests.AddAccountUserRequest:
 		body.Email = r.email
 		body.Role = r.role
 		return nil, nil
-	case *requests.CreateAccountRequest:
+	case *accountsrequests.CreateAccountRequest:
 		body.Name = r.name
 		return nil, nil
 	default:

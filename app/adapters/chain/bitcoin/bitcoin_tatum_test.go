@@ -15,6 +15,7 @@ import (
 
 	"github.com/macrowallets/waas/app/adapters/chain/rpc"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
@@ -249,8 +250,14 @@ func TestTatumFallback_KeyNeverReachesErrorsOrLogs(t *testing.T) {
 		if strings.Contains(err.Error(), tatumTestKey) {
 			t.Fatalf("%s error leaks the key: %v", name, err)
 		}
-		if !strings.Contains(err.Error(), "401") {
-			t.Errorf("%s error %q does not say 401", name, err)
+		// Since b0e2b3d a gateway failure is the provider sentinel; only the Data API
+		// path still names the upstream status.
+		if name == "balance" {
+			if !strings.Contains(err.Error(), "401") {
+				t.Errorf("%s error %q does not say 401", name, err)
+			}
+		} else if !errors.Is(err, chain.ErrProvider) {
+			t.Errorf("%s error %q is not the provider sentinel", name, err)
 		}
 	}
 	if !strings.Contains(dataErr.Error(), redactedSecret) {

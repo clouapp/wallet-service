@@ -18,6 +18,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/addressing"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -285,6 +286,6 @@ func requireSun(t *testing.T, name string, got *big.Int, want int64) {
 	}
 }
 
-func describeQuote(q TronFeeQuote) string {
+func describeQuote(q chain.TronFeeQuote) string {
 	return fmt.Sprintf("bytes=%d bw=%v act=%v energy=%d limit=%v ref=%v", q.BandwidthBytes, q.BandwidthFee, q.ActivationFee, q.Energy, q.FeeLimit, q.EnergyIsReference)
 }

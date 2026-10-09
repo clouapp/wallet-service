@@ -3,8 +3,6 @@ package policies
 import (
 	"context"
 	"sync"
-
-	"github.com/google/uuid"
 )
 
 // requestGrantsKey is the context key for one request's role and catalog grants.
@@ -20,21 +18,18 @@ func RequestGrantsKey() any {
 // There is no permission-override store, so the sets are the code catalog.
 // Scope middleware fills it before a policy decides.
 type requestGrantLoad struct {
-	mu        sync.Mutex
-	loaded    bool
-	accountID uuid.UUID
-	userID    uuid.UUID
-	roleName  string
-	account   Grants
-	wallet    Grants
+	mu      sync.Mutex
+	loaded  bool
+	account Grants
+	wallet  Grants
 }
 
 // AttachRequestGrants is the filled value middleware stores after it has
 // already loaded an active membership. A missing or suspended membership
 // never reaches this call.
-func AttachRequestGrants(accountID, userID uuid.UUID, role string) any {
+func AttachRequestGrants(role string) any {
 	load := &requestGrantLoad{}
-	load.remember(accountID, userID, role)
+	load.remember(role)
 	return load
 }
 
@@ -70,38 +65,15 @@ func WalletRequestGrants(ctx context.Context) (Grants, bool) {
 	return load.walletGrants()
 }
 
-func (g *requestGrantLoad) remember(accountID, userID uuid.UUID, role string) {
+func (g *requestGrantLoad) remember(role string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.loaded {
 		return
 	}
 	g.loaded = true
-	g.accountID = accountID
-	g.userID = userID
-	g.roleName = role
 	g.account = AccountRoleGrants(role)
 	g.wallet = WalletGrants(role)
-}
-
-// storedRole is the role middleware stored for this account and user.
-// A grant that is still empty, or that belongs to another pair, is not a membership.
-func (g *requestGrantLoad) storedRole(accountID, userID uuid.UUID) (string, bool) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if !g.loaded || g.accountID != accountID || g.userID != userID {
-		return "", false
-	}
-	return g.roleName, true
-}
-
-func (g *requestGrantLoad) role() (string, uuid.UUID, bool) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if !g.loaded {
-		return "", uuid.Nil, false
-	}
-	return g.roleName, g.userID, true
 }
 
 func (g *requestGrantLoad) accountGrants() (Grants, bool) {

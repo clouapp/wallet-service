@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	contractscache "github.com/goravel/framework/contracts/cache"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
@@ -73,7 +74,7 @@ type Service struct {
 	quoter   sweep.FeeQuoter
 	registry AdapterRegistry
 	chains   ChainCatalog
-	cache    Cache
+	cache    contractscache.Driver
 	cacheTTL time.Duration
 	now      func() time.Time
 }
@@ -85,7 +86,7 @@ type Deps struct {
 	Quoter   sweep.FeeQuoter
 	Registry AdapterRegistry
 	Chains   ChainCatalog
-	Cache    Cache
+	Cache    contractscache.Driver
 	CacheTTL time.Duration
 	Now      func() time.Time
 }
@@ -100,6 +101,15 @@ func NewService(deps Deps) (*Service, error) {
 		now = time.Now
 	}
 	return &Service{quoter: deps.Quoter, registry: deps.Registry, chains: deps.Chains, cache: deps.Cache, cacheTTL: deps.CacheTTL, now: now}, nil
+}
+
+// callerAccount is the account the estimate is priced for: the caller's, or the
+// wallet's own when the request names none.
+func callerAccount(req Request) uuid.UUID {
+	if req.CallerAccountID == uuid.Nil && req.Wallet != nil && req.Wallet.AccountID != nil {
+		return *req.Wallet.AccountID
+	}
+	return req.CallerAccountID
 }
 
 // resolvedRequest is a validated Request in base units.
@@ -119,7 +129,7 @@ func (s *Service) Estimate(ctx context.Context, req Request) (*Estimate, error) 
 		return nil, err
 	}
 	key := cacheKey(resolved)
-	if cached, ok := s.cached(ctx, key); ok {
+	if cached, ok := s.cached(key); ok {
 		return cached, nil
 	}
 	quote, err := s.quoter.QuoteWithdrawalFee(ctx, sweep.FeeQuoteRequest{
@@ -127,14 +137,14 @@ func (s *Service) Estimate(ctx context.Context, req Request) (*Estimate, error) 
 		Asset:           resolved.asset.WalletAsset,
 		Amount:          resolved.baseUnits,
 		ToAddress:       resolved.to,
-		CallerAccountID: req.CallerAccountID,
+		CallerAccountID: callerAccount(req),
 	})
 	if err != nil {
 		return nil, classifyQuoteError(err)
 	}
 	estimatedAt := s.now().UTC()
 	estimate := buildEstimate(resolved, quote, estimatedAt, estimatedAt.Add(max(s.cacheTTL, 0)))
-	s.store(ctx, key, estimate)
+	s.store(key, estimate)
 	return estimate, nil
 }
 
@@ -200,21 +210,17 @@ func cacheKey(req *resolvedRequest) string {
 		strings.ToUpper(req.asset.WalletAsset), req.baseUnits, to)
 }
 
-// cached returns a stored estimate. A cache failure is logged and treated as a miss.
-func (s *Service) cached(ctx context.Context, key string) (*Estimate, bool) {
+// cached returns a stored estimate. An unreadable entry is logged and treated as a miss.
+func (s *Service) cached(key string) (*Estimate, bool) {
 	if s.cache == nil || s.cacheTTL <= 0 {
 		return nil, false
 	}
-	raw, ok, err := s.cache.Get(ctx, key)
-	if err != nil {
-		slog.Warn("fee estimate cache read failed", "error", err)
-		return nil, false
-	}
-	if !ok {
+	raw := s.cache.GetString(key, "")
+	if raw == "" {
 		return nil, false
 	}
 	var estimate Estimate
-	if err := json.Unmarshal(raw, &estimate); err != nil {
+	if err := json.Unmarshal([]byte(raw), &estimate); err != nil {
 		slog.Warn("fee estimate cache entry unreadable", "error", err)
 		return nil, false
 	}
@@ -222,7 +228,7 @@ func (s *Service) cached(ctx context.Context, key string) (*Estimate, bool) {
 	return &estimate, true
 }
 
-func (s *Service) store(ctx context.Context, key string, estimate *Estimate) {
+func (s *Service) store(key string, estimate *Estimate) {
 	if s.cache == nil || s.cacheTTL <= 0 {
 		return
 	}
@@ -231,7 +237,7 @@ func (s *Service) store(ctx context.Context, key string, estimate *Estimate) {
 		slog.Warn("fee estimate cache encode failed", "error", err)
 		return
 	}
-	if err := s.cache.Set(ctx, key, raw, s.cacheTTL); err != nil {
+	if err := s.cache.Put(key, string(raw), s.cacheTTL); err != nil {
 		slog.Warn("fee estimate cache write failed", "error", err)
 	}
 }

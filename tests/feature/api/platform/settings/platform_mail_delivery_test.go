@@ -1,7 +1,6 @@
 package settings
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -9,6 +8,7 @@ import (
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/app/container"
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/settings"
@@ -32,11 +32,9 @@ func (s *PlatformMailDeliveryTestSuite) SetupTest() {
 	settings.FacadeCache{}.Forget("settings:platform:mail_delivery")
 	_, err := facades.Orm().Query().Exec(`DELETE FROM settings WHERE account_id IS NULL AND "group" = 'mail_delivery'`)
 	s.Require().NoError(err)
-	appfacades.RestoreMailBaseline()
 }
 
 func (s *PlatformMailDeliveryTestSuite) TearDownTest() {
-	appfacades.RestoreMailBaseline()
 }
 
 func (s *PlatformMailDeliveryTestSuite) TestA_Platform_AdminStoresTheFromHeaderTheMailerReads() {
@@ -141,13 +139,10 @@ func (s *PlatformMailDeliveryTestSuite) TestA_Missing_RowKeepsTheEnvFromHeader()
 func (s *PlatformMailDeliveryTestSuite) TestA_Failed_ReadKeepsTheEnvFromHeader() {
 	envAddress := appfacades.Config().GetString("mail.from.address")
 	envName := appfacades.Config().GetString("mail.from.name")
-	previous := appfacades.SetMailFromReader(func(context.Context) (appfacades.MailFrom, error) {
-		return appfacades.MailFrom{Address: "replaced@example.test", Name: "Replaced", UseAddress: true, UseName: true}, errMailReadFailed
-	})
-	defer appfacades.SetMailFromReader(previous)
+	failing := failedDeliveryRead{Settings: container.MustMake[*settings.Service]()}
 
 	var seenAddress, seenName string
-	_ = sendWelcomeObserved(func() {
+	_ = sendWelcomeObservedWith(failing, func() {
 		seenAddress = appfacades.Config().GetString("mail.from.address")
 		seenName = appfacades.Config().GetString("mail.from.name")
 	})

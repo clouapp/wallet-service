@@ -11,6 +11,7 @@ import (
 	contractstesting "github.com/goravel/framework/contracts/testing/http"
 	"github.com/goravel/framework/facades"
 
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
@@ -43,7 +44,7 @@ type memberSession struct {
 func (s *AccountMembersTestSuite) loginUser(role, status string, accountID uuid.UUID) memberSession {
 	userID := uuid.New()
 	email := role + "-" + userID.String()[:8] + "@example.com"
-	hash, err := authsvc.NewService().HashPassword(membersTestPassword)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(membersTestPassword)
 	s.Require().NoError(err)
 	_, err = facades.Orm().Query().Exec(
 		`INSERT INTO users (id, email, password_hash, status, created_at, updated_at)
@@ -225,7 +226,7 @@ func (s *AccountMembersTestSuite) postInvite(token string, accountID uuid.UUID, 
 
 func (s *AccountMembersTestSuite) insertUser(email string) uuid.UUID {
 	userID := uuid.New()
-	hash, err := authsvc.NewService().HashPassword(membersTestPassword)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(membersTestPassword)
 	s.Require().NoError(err)
 	_, err = facades.Orm().Query().Exec(
 		`INSERT INTO users (id, email, password_hash, status, created_at, updated_at)
@@ -319,7 +320,7 @@ func (s *AccountMembersTestSuite) TestInvite_Link_UsesTheFrontendURL() {
 	const storedHash = "resend-without-base-digest"
 	inviteID := s.insertOpenInvite(accountID, owner.id, "held@example.com", models.AccountRoleUser, storedHash)
 	resent := s.postResend(owner.token, accountID, inviteID)
-	s.AssertError(resent, 500, "internal", "failed to create invite")
+	s.AssertError(resent, 500, "internal", "failed to resend invite")
 	resentBody, err := resent.Content()
 	s.Require().NoError(err)
 	s.Contains(resentBody, "failed to resend invite")
@@ -408,6 +409,25 @@ func (s *AccountMembersTestSuite) TestCreate_Invite_AcceptsNewAndExistingEmailsW
 	s.NotContains(listedBody, "invite_link")
 }
 
+// A member who accepts an invite to the account they are on already gets 409,
+// not the 500 of a duplicate row; the invite stays open and nothing is written.
+func (s *AccountMembersTestSuite) TestAccept_Invite_ByAMemberIsAConflict() {
+	accountID := s.createAccount()
+	owner := s.loginUser(models.AccountRoleOwner, models.MembershipStatusActive, accountID)
+	member := s.loginUser(models.AccountRoleUser, models.MembershipStatusActive, accountID)
+	email := models.AccountRoleUser + "-" + member.id.String()[:8] + "@example.com"
+	rawToken := "accept-twice-" + uuid.NewString()
+	inviteID := s.insertOpenInvite(accountID, owner.id, email, models.AccountRoleAdmin, accountsvc.HashInviteToken(rawToken))
+
+	resp := s.Post("/v1/auth/invites/accept", support.Session{AccessToken: member.token}, fmt.Sprintf(`{"token":%q}`, rawToken))
+
+	s.AssertError(resp, 409, "conflict", "user is already a member of this account")
+	s.Equal(int64(1), s.countRows(&models.AccountUser{}, "account_id = ? AND user_id = ?", accountID, member.id))
+	role, _ := s.storedRole(accountID, member.id)
+	s.Equal(models.AccountRoleUser, role)
+	s.Equal(int64(1), s.countRows(&models.AccountInvite{}, "id = ? AND accepted_at IS NULL", inviteID))
+}
+
 func (s *AccountMembersTestSuite) TestCreate_Invite_RefusesAuditorAndUser() {
 	accountID := s.createAccount()
 	auditor := s.loginUser("auditor", models.MembershipStatusActive, accountID)
@@ -425,7 +445,7 @@ func (s *AccountMembersTestSuite) TestCreate_Invite_RefusesARoleAboveTheCaller()
 	s.loginUser("owner", models.MembershipStatusActive, accountID)
 
 	resp := s.postInvite(admin.token, accountID, `{"email":"would-be-owner@example.com","role":"owner"}`)
-	s.assertForbidden(resp, "cannot grant a role above your own")
+	s.assertForbidden(resp, "forbidden")
 	s.Equal(int64(0), s.countRows(&models.AccountInvite{}, "account_id = ? AND email = ?", accountID, "would-be-owner@example.com"))
 }
 

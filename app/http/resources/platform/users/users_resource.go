@@ -33,6 +33,18 @@ func UserFrom(user models.User) User {
 	}
 }
 
+// Suspension is the answer of suspend and reactivate: the user and when the
+// suspension began, null once reactivated.
+type Suspension struct {
+	ID          uuid.UUID `json:"id"`
+	SuspendedAt *string   `json:"suspended_at"`
+}
+
+// NewSuspension projects a user's suspension state.
+func NewSuspension(id uuid.UUID, suspendedAt *time.Time) Suspension {
+	return Suspension{ID: id, SuspendedAt: formatSuspendedAt(suspendedAt)}
+}
+
 // UsersFrom projects a page. A nil slice becomes an empty list.
 func UsersFrom(rows []models.User) []User {
 	views := make([]User, 0, len(rows))

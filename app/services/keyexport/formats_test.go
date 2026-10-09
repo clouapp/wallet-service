@@ -15,8 +15,8 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/mr-tron/base58"
 
-	bitcoinchain "github.com/macrowallets/waas/app/adapters/chain/bitcoin"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/addressing"
 )
 
 func randomSecp256k1Key(t *testing.T) []byte {
@@ -149,7 +149,7 @@ func TestUTXOWIF_EncodesLitecoinCoreVectors(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want, err := btcutil.NewAddressWitnessPubKeyHash(btcutil.Hash160(decoded.SerializePubKey()), bitcoinchain.BitcoinFamilyParams(models.ChainLTC, tc.testnet))
+		want, err := btcutil.NewAddressWitnessPubKeyHash(btcutil.Hash160(decoded.SerializePubKey()), addressing.BitcoinFamilyParams(models.ChainLTC, tc.testnet))
 		if err != nil {
 			t.Fatal(err)
 		}

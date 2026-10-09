@@ -2,9 +2,9 @@ package routes
 
 import (
 	"github.com/goravel/framework/contracts/route"
-	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
+	"github.com/macrowallets/waas/app/facades"
 	dashaccounts "github.com/macrowallets/waas/app/http/controllers/dashboard/accounts"
 	dashactivity "github.com/macrowallets/waas/app/http/controllers/dashboard/activity"
 	dashaddresses "github.com/macrowallets/waas/app/http/controllers/dashboard/addresses"
@@ -18,6 +18,13 @@ import (
 	dashsweep "github.com/macrowallets/waas/app/http/controllers/dashboard/sweep"
 	dashusers "github.com/macrowallets/waas/app/http/controllers/dashboard/users"
 	dashwallets "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets"
+	dashwalletbalances "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets/balances"
+	dashwalletsettings "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets/settings"
+	dashwallettransactions "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets/transactions"
+	dashwalletunspents "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets/unspents"
+	dashwalletusers "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets/users"
+	dashwalletwebhooks "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets/webhooks"
+	dashwalletwhitelist "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets/whitelist"
 	dashwithdrawals "github.com/macrowallets/waas/app/http/controllers/dashboard/withdrawals"
 	platformaccounts "github.com/macrowallets/waas/app/http/controllers/platform/accounts"
 	platformchains "github.com/macrowallets/waas/app/http/controllers/platform/chains"
@@ -27,23 +34,24 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	activitysvc "github.com/macrowallets/waas/app/services/activity"
+	"github.com/macrowallets/waas/app/services/apitoken"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
-	"github.com/macrowallets/waas/app/services/credentialmail"
 	"github.com/macrowallets/waas/app/services/currencies"
 	"github.com/macrowallets/waas/app/services/deposit"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/price"
-	"github.com/macrowallets/waas/app/services/sessions"
 	settingssvc "github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/sweep"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 	walletsvc "github.com/macrowallets/waas/app/services/wallet"
+	"github.com/macrowallets/waas/app/services/walletops"
 	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/app/services/walletsettings"
+	"github.com/macrowallets/waas/app/services/walletview"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/withdraw"
-	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/app/services/withdrawalrecords"
 )
 
@@ -52,24 +60,42 @@ func RegisterAdminRoutes() {
 	noCache := middleware.CacheControl(0)
 	accounts := container.MustMake[*accountsvc.Service]()
 	accountHeader := middleware.AccountHeader(accounts)
-	inviteCtrl := newDashboardInvitesController()
+	whitelist := container.MustMake[*walletrecords.Whitelist]()
+	walletWebhooks := container.MustMake[*walletrecords.Webhooks]()
+	requireTOTP := middleware.RequireEnabledTOTP(
+		container.MustMake[*usersvc.Service](),
+		container.MustMake[*authsvc.SecondFactorVerifier](),
+		whitelist,
+		walletWebhooks,
+	)
+	inviteCtrl := newDashboardInviteController()
 	totpEnrollment := middleware.TOTPEnrollment(
 		container.MustMake[*featuressvc.Service](),
 		container.MustMake[*settingssvc.Service](),
 	)
+	withdrawalsEnabled := middleware.FeatureEnabled(container.MustMake[*featuressvc.Service](),
+		featuressvc.FlagWithdrawalsEnabled, featuressvc.CodeWithdrawalsPaused, "create_wallet_withdrawal")
+	sweepEnabled := middleware.FeatureEnabled(container.MustMake[*featuressvc.Service](),
+		featuressvc.FlagSweepEnabled, featuressvc.CodeSweepPaused, "consolidate")
 	chainCtrl := newDashboardChainsController()
 	currencyCtrl := newDashboardCurrenciesController()
 	preferencesCtrl := newDashboardPreferencesController()
 	authCtrl := newDashboardAuthController()
-	usersCtrl := newDashboardUsersController()
-	accountsCtrl := newDashboardAccountsController()
+	passwordResetCtrl := newDashboardPasswordResetController()
+	totpCtrl := newDashboardTotpController()
+	userAccountCtrl := newDashboardUserAccountController()
+	profileCtrl := newDashboardProfileController()
+	passwordCtrl := newDashboardPasswordController()
+	accountCtrl := newDashboardAccountController()
+	tokenCtrl := newDashboardTokenController()
+	memberCtrl := newDashboardMemberController()
 	accountSettingsCtrl := newDashboardAccountSettingsController()
 	accountActivityCtrl := newDashboardAccountActivityController()
 	accountFeaturesCtrl := newDashboardAccountFeaturesController()
 	accountRolesCtrl := newDashboardAccountRolesController()
+	accountPermissionsCtrl := newDashboardAccountPermissionsController()
 	platformFeaturesCtrl := newPlatformFeaturesController()
 	platformAccountsCtrl := newPlatformAccountsController()
-	platformAccountListCtrl := newPlatformAccountListController()
 	platformAccountUsersCtrl := newPlatformAccountUsersController()
 	platformAccountOwnersCtrl := newPlatformAccountOwnersController()
 	platformChainsCtrl := newPlatformChainsController()
@@ -89,62 +115,62 @@ func RegisterAdminRoutes() {
 	feeEstimateCtrl := newFeeEstimateController()
 
 	facades.Route().Prefix("/v1/auth").Middleware(noCache).Group(func(router route.Router) {
-		router.Post("/register", authCtrl.Register)
-		router.Post("/login", authCtrl.Login)
-		router.Post("/2fa/verify", authCtrl.VerifyTwoFactor)
-		router.Post("/refresh", authCtrl.RefreshToken)
-		router.Post("/recover", authCtrl.ForgotPassword)
-		router.Post("/recover/confirm", authCtrl.ResetPassword)
+		router.Middleware(middleware.Throttle(middleware.ThrottleAuth)).Post("/register", authCtrl.Register)
+		router.Middleware(middleware.Throttle(middleware.ThrottleLogin)).Post("/login", authCtrl.Login)
+		router.Middleware(middleware.Throttle(middleware.ThrottleAuth)).Post("/2fa/verify", authCtrl.Verify)
+		router.Middleware(middleware.Throttle(middleware.ThrottleAuth)).Post("/refresh", authCtrl.Refresh)
+		router.Middleware(middleware.Throttle(middleware.ThrottleRecover)).Post("/recover", passwordResetCtrl.Forgot)
+		router.Middleware(middleware.Throttle(middleware.ThrottleAuth)).Post("/recover/confirm", passwordResetCtrl.Reset)
 		router.Get("/invites/{token}", inviteCtrl.Preview)
-		router.Post("/invites/accept", inviteCtrl.Accept)
+		router.Middleware(middleware.Throttle(middleware.ThrottleAuth)).Post("/invites/accept", inviteCtrl.Accept)
 	})
 	facades.Route().Prefix("/v1/auth").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
 		router.Post("/logout", authCtrl.Logout)
 	})
 
 	facades.Route().Prefix("/v1/users").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
-		router.Get("/me", usersCtrl.GetMe)
-		router.Patch("/me", usersCtrl.UpdateMe)
-		router.Post("/me/password", usersCtrl.ChangePassword)
-		router.Get("/me/accounts", usersCtrl.ListMyAccounts)
-		router.Patch("/me/default-account", usersCtrl.UpdateDefaultAccount)
-		router.Post("/me/totp/setup", usersCtrl.SetupTOTP)
-		router.Post("/me/totp/verify", usersCtrl.ConfirmTOTP)
-		router.Delete("/me/totp", usersCtrl.DisableTOTP)
+		router.Get("/me", profileCtrl.Show)
+		router.Patch("/me", profileCtrl.Update)
+		router.Post("/me/password", passwordCtrl.Update)
+		router.Get("/me/accounts", userAccountCtrl.Index)
+		router.Patch("/me/default-account", userAccountCtrl.UpdateDefault)
+		router.Post("/me/totp/setup", totpCtrl.Setup)
+		router.Post("/me/totp/verify", totpCtrl.Confirm)
+		router.Delete("/me/totp", totpCtrl.Destroy)
 	})
 
 	facades.Route().Prefix("/v1/accounts").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
-		router.Post("", accountsCtrl.CreateAccount)
+		router.Post("", accountCtrl.Store)
 		router.Prefix("/{accountId}").Middleware(middleware.AccountContext(accounts), totpEnrollment).Group(func(r route.Router) {
-			r.Get("", accountsCtrl.GetAccount)
-			r.Middleware(middleware.Can(middleware.PermAccountWrite)).Patch("", accountsCtrl.UpdateAccount)
-			r.Middleware(middleware.Can(middleware.PermAccountLifecycle)).Post("/archive", accountsCtrl.ArchiveAccount)
-			r.Middleware(middleware.Can(middleware.PermAccountLifecycle)).Post("/freeze", accountsCtrl.FreezeAccount)
+			r.Get("", accountCtrl.Show)
+			r.Middleware(middleware.Can(accounts, middleware.PermAccountWrite)).Patch("", accountCtrl.Update)
+			r.Middleware(middleware.Can(accounts, middleware.PermAccountLifecycle)).Post("/archive", accountCtrl.Archive)
+			r.Middleware(middleware.Can(accounts, middleware.PermAccountLifecycle)).Post("/freeze", accountCtrl.Freeze)
 
-			r.Middleware(middleware.Can(middleware.PermUsersRead)).Get("/users", accountsCtrl.ListAccountUsers)
-			r.Middleware(middleware.Can(middleware.PermUsersWrite)).Post("/users", accountsCtrl.AddAccountUser)
-			r.Middleware(middleware.AccountUpdateMember()).Patch("/users/{userId}", accountsCtrl.UpdateAccountUser)
-			r.Middleware(middleware.Can(middleware.PermUsersWrite)).Delete("/users/{userId}", accountsCtrl.RemoveAccountUser)
-			r.Middleware(middleware.Can(middleware.PermUsersRead)).Get("/invites", inviteCtrl.List)
-			r.Middleware(middleware.Can(middleware.PermUsersWrite)).Post("/invites", inviteCtrl.Create)
-			r.Middleware(middleware.Can(middleware.PermUsersWrite)).Post("/invites/{id}/resend", inviteCtrl.Resend)
-			r.Middleware(middleware.Can(middleware.PermUsersWrite)).Delete("/invites/{id}", inviteCtrl.Delete)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersRead)).Get("/users", memberCtrl.Index)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/users", memberCtrl.Store)
+			r.Middleware(middleware.AccountUpdateMember(accounts)).Patch("/users/{userId}", memberCtrl.Update)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Delete("/users/{userId}", memberCtrl.Destroy)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersRead)).Get("/invites", inviteCtrl.Index)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/invites", inviteCtrl.Store)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/invites/{id}/resend", inviteCtrl.Resend)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Delete("/invites/{id}", inviteCtrl.Destroy)
 
 			// S3.4.2: GET /v1/accounts/{accountId}/roles roles.read.
 			// Effective grants are the code catalog. There is no
 			// account_role_permissions row and no write on this path.
-			r.Middleware(middleware.Can(middleware.PermRolesRead)).Get("/roles", accountRolesCtrl.Index)
+			r.Middleware(middleware.Can(accounts, middleware.PermRolesRead)).Get("/roles", accountRolesCtrl.Index)
 			// S3.4.2: GET /v1/accounts/{accountId}/permissions roles.read.
 			// The catalog is the same code. There is no permissions table
 			// and no write on this path.
-			r.Middleware(middleware.Can(middleware.PermRolesRead)).Get("/permissions", accountRolesCtrl.Permissions)
+			r.Middleware(middleware.Can(accounts, middleware.PermRolesRead)).Get("/permissions", accountPermissionsCtrl.Index)
 
-			r.Middleware(middleware.Can(middleware.PermTokensRead)).Get("/tokens", accountsCtrl.ListAccountTokens)
-			r.Middleware(middleware.Can(middleware.PermTokensWrite), middleware.MintAPITokenPermissions()).Post("/tokens", accountsCtrl.CreateAccountToken)
-			r.Middleware(middleware.Can(middleware.PermTokensWrite)).Delete("/tokens/{tokenId}", accountsCtrl.RevokeAccountToken)
+			r.Middleware(middleware.Can(accounts, middleware.PermTokensRead)).Get("/tokens", tokenCtrl.Index)
+			r.Middleware(middleware.Can(accounts, middleware.PermTokensWrite), middleware.MintAPITokenPermissions()).Post("/tokens", tokenCtrl.Store)
+			r.Middleware(middleware.Can(accounts, middleware.PermTokensWrite)).Delete("/tokens/{tokenId}", tokenCtrl.Destroy)
 
 			// S1.4.7: GET /v1/accounts/{accountId}/settings settings.read (policies.MayViewSettings).
-			r.Middleware(middleware.MayViewSettings()).Get("/settings", accountSettingsCtrl.Show)
+			r.Middleware(middleware.MayViewSettings()).Get("/settings", accountSettingsCtrl.Index)
 			// S1.4.7: POST /v1/accounts/{accountId}/settings/sections/{section}/cache settings.write (policies.MayUpdateSettings).
 			// Owner and admin may flush an account-managed section. Auditor and user may not.
 			r.Middleware(middleware.MayUpdateSettings()).Post("/settings/sections/{section}/cache", accountSettingsCtrl.Flush)
@@ -153,7 +179,7 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.MayUpdateSettings()).Post("/settings/sections/{section}/reset", accountSettingsCtrl.Reset)
 			// S1.4.7: GET /v1/accounts/{accountId}/settings/{group} settings.read (policies.MayViewSettings).
 			// Platform-managed groups stay readable for owner, admin, and auditor.
-			r.Middleware(middleware.MayViewSettings()).Get("/settings/{group}", accountSettingsCtrl.ShowGroup)
+			r.Middleware(middleware.MayViewSettings()).Get("/settings/{group}", accountSettingsCtrl.Show)
 			// S1.4.7: PATCH and PUT /v1/accounts/{accountId}/settings/{group} settings.write (policies.MayUpdateSettings).
 			// Owner and admin may write an account-managed group. Auditor and user may not.
 			r.Middleware(middleware.MayUpdateSettings()).Patch("/settings/{group}", accountSettingsCtrl.Update)
@@ -175,7 +201,11 @@ func RegisterAdminRoutes() {
 		})
 	})
 
-	facades.Route().Prefix("/v1/platform").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
+	facades.Route().Prefix("/v1/platform").Middleware(
+		middleware.SessionAuth(),
+		middleware.PlatformAdmin(container.MustMake[*usersvc.Service](), platformRefusal),
+		noCache,
+	).Group(func(router route.Router) {
 		router.Get("/features", platformFeaturesCtrl.Index)
 		router.Patch("/features/{key}", platformFeaturesCtrl.Update)
 		// S2.4: GET /v1/platform/features/{scope}/{id} features.view.
@@ -188,7 +218,7 @@ func RegisterAdminRoutes() {
 		// Neither name is a permission row. A platform_admins row is the gate
 		// and stands in for both. The pair is not a second gate.
 		// Scope account is the only target this catalog stores. global is refused.
-		// user and chain are 404 before the admin check.
+		// user and chain are 404 for an admin. PlatformAdmin refuses a member first.
 		router.Put("/features/{scope}/{id}/{feature}", platformFeaturesCtrl.UpdateScopeFeature)
 		router.Put("/features/{scope}/{id}", platformFeaturesCtrl.UpdateScope)
 		// S1.4.7: chains.view and chains.update. A platform_admins row is the gate.
@@ -196,13 +226,13 @@ func RegisterAdminRoutes() {
 		router.Patch("/chains/{chainId}", platformChainsCtrl.Update)
 		// Declared before {group} so the literal path mail/test is not a group name.
 		// S1.4.6: POST /v1/platform/settings/mail/test settings.update + mail.update (declared before {group}).
-		router.Post("/settings/mail/test", platformSettingsCtrl.TestMail)
+		router.Post("/settings/mail/test", platformSettingsCtrl.Test)
 		router.Get("/settings", platformSettingsCtrl.Index)
 		router.Get("/settings/{group}", platformSettingsCtrl.Show)
 		// S3.4.1: GET /v1/platform/accounts accounts.view.
 		// A platform_admins row is the gate. The plan does not name fields,
 		// pagination, or sort, so this list matches GET /v1/platform/users.
-		router.Get("/accounts", platformAccountListCtrl.Index)
+		router.Get("/accounts", platformAccountsCtrl.Index)
 		// S3.4.1: POST /v1/platform/accounts/{id}/freeze|unfreeze|archive accounts.lifecycle.
 		// A platform_admins row is the gate. These posts are not behind AccountContext,
 		// so a frozen or archived account can still be changed.
@@ -234,74 +264,78 @@ func RegisterAdminRoutes() {
 	})
 
 	facades.Route().Prefix("/v1/chains").Middleware(middleware.SessionAuth(), accountHeader, totpEnrollment, noCache).Group(func(router route.Router) {
-		router.Get("", chainCtrl.ListChains)
-		router.Get("/{chainId}", chainCtrl.GetChain)
-		router.Get("/{chainId}/tokens", chainCtrl.ListChainTokens)
-		router.Get("/{chainId}/resources", chainCtrl.ListChainResources)
+		router.Get("", chainCtrl.Index)
+		router.Get("/{chainId}", chainCtrl.Show)
+		router.Get("/{chainId}/tokens", chainCtrl.Tokens)
+		router.Get("/{chainId}/resources", chainCtrl.Resources)
 	})
 
 	facades.Route().Prefix("/v1/currencies").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
-		router.Get("", currencyCtrl.ListCurrencies)
-		router.Get("/{code}", currencyCtrl.GetCurrency)
+		router.Get("", currencyCtrl.Index)
+		router.Get("/{code}", currencyCtrl.Show)
 	})
 
 	facades.Route().Prefix("/v1/me").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
-		router.Get("/preferences", preferencesCtrl.GetPreferences)
-		router.Put("/preferences", preferencesCtrl.UpdatePreferences)
+		router.Get("/preferences", preferencesCtrl.Show)
+		router.Put("/preferences", preferencesCtrl.Update)
 	})
 
 	facades.Route().Prefix("/v1/convert").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
-		router.Get("", currencyCtrl.ConvertCurrency)
+		router.Get("", currencyCtrl.Convert)
 	})
 
 	facades.Route().Prefix("/v1/wallets").Middleware(middleware.SessionAuth(), accountHeader, totpEnrollment, noCache).Group(func(router route.Router) {
-		router.Get("", walletCtrl.ListWallets)
-		router.Middleware(middleware.RequireFundAction(middleware.FundCreateWallet)).Post("", walletCtrl.CreateWalletAdmin)
-		router.Get("/{walletId}", walletCtrl.GetWallet)
-		router.Prefix("/{walletId}").Middleware(middleware.WalletContext()).Group(func(r route.Router) {
-			r.Post("/activate", walletCtrl.ActivateWallet)
+		router.Get("", walletCtrl.Index)
+		router.Middleware(middleware.RequireFundAction(middleware.FundCreateWallet)).Post("", walletCtrl.Store)
+		router.Get("/{walletId}", walletCtrl.Show)
+		router.Prefix("/{walletId}").Middleware(middleware.WalletContext(middleware.WalletContextDeps{
+			Wallets:  container.MustMake[*walletrecords.Wallets](),
+			Accounts: accounts,
+			Members:  container.MustMake[*walletrecords.Members](),
+		})).Group(func(r route.Router) {
+			r.Post("/activate", walletCtrl.Activate)
 
-			r.Get("/addresses", addressCtrl.ListWalletAddresses)
-			r.Middleware(middleware.Can(middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.GenerateAddress)
-			r.Patch("/addresses/{addressId}", addressCtrl.UpdateAddress)
+			r.Get("/addresses", addressCtrl.Index)
+			r.Middleware(middleware.Can(accounts, middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.Store)
+			r.Patch("/addresses/{addressId}", addressCtrl.Update)
 
-			r.Get("/users", walletUsersCtrl.ListWalletUsers)
-			r.Middleware(middleware.WalletAddUser(walletPolicyMemberships())).Post("/users", walletUsersCtrl.AddWalletUser)
-			r.Middleware(middleware.WalletRemoveUser(walletPolicyMemberships())).Delete("/users/{userId}", walletUsersCtrl.RemoveWalletUser)
+			r.Get("/users", walletUsersCtrl.Index)
+			r.Middleware(middleware.WalletAddUser(walletPolicyMemberships())).Post("/users", walletUsersCtrl.Store)
+			r.Middleware(middleware.WalletRemoveUser(walletPolicyMemberships())).Delete("/users/{userId}", walletUsersCtrl.Destroy)
 
-			r.Get("/whitelist", whitelistCtrl.ListWhitelistEntries)
-			r.Middleware(middleware.WalletWhitelist(walletPolicyMemberships()), middleware.RequireEnabledTOTP()).Post("/whitelist", whitelistCtrl.AddWhitelistEntry)
-			r.Middleware(middleware.WalletWhitelist(walletPolicyMemberships()), middleware.RequireEnabledTOTP()).Delete("/whitelist/{entryId}", whitelistCtrl.DeleteWhitelistEntry)
+			r.Get("/whitelist", whitelistCtrl.Index)
+			r.Middleware(middleware.WalletWhitelist(walletPolicyMemberships(), whitelist), requireTOTP).Post("/whitelist", whitelistCtrl.Store)
+			r.Middleware(middleware.WalletWhitelist(walletPolicyMemberships(), whitelist), requireTOTP).Delete("/whitelist/{entryId}", whitelistCtrl.Destroy)
 
-			r.Get("/webhooks", walletWebhooksCtrl.ListWalletWebhooks)
-			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships()), middleware.RequireEnabledTOTP()).Post("/webhooks", walletWebhooksCtrl.CreateWalletWebhook)
-			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships())).Post("/webhooks/{webhookId}/test", walletWebhooksCtrl.TestWalletWebhook)
-			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships()), middleware.RequireEnabledTOTP()).Delete("/webhooks/{webhookId}", walletWebhooksCtrl.DeleteWalletWebhook)
+			r.Get("/webhooks", walletWebhooksCtrl.Index)
+			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships(), walletWebhooks), requireTOTP).Post("/webhooks", walletWebhooksCtrl.Store)
+			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships(), walletWebhooks)).Post("/webhooks/{webhookId}/test", walletWebhooksCtrl.Test)
+			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships(), walletWebhooks), requireTOTP).Delete("/webhooks/{webhookId}", walletWebhooksCtrl.Destroy)
 
-			r.Get("/settings", walletSettingsCtrl.GetWalletSettings)
-			r.Patch("/settings", walletSettingsCtrl.UpdateWalletSettings)
-			r.Middleware(middleware.WalletFreeze(walletPolicyMemberships())).Post("/freeze", walletSettingsCtrl.FreezeWallet)
-			r.Middleware(middleware.WalletArchive(walletPolicyMemberships())).Post("/archive", walletSettingsCtrl.ArchiveWallet)
+			r.Get("/settings", walletSettingsCtrl.Show)
+			r.Middleware(middleware.WalletUpdate(walletPolicyMemberships())).Patch("/settings", walletSettingsCtrl.Update)
+			r.Middleware(middleware.WalletFreeze(walletPolicyMemberships())).Post("/freeze", walletSettingsCtrl.Freeze)
+			r.Middleware(middleware.WalletArchive(walletPolicyMemberships())).Post("/archive", walletSettingsCtrl.Archive)
 
-			r.Get("/balances", balancesCtrl.ListWalletBalances)
+			r.Get("/balances", balancesCtrl.Index)
 
-			r.Get("/transactions", walletTxCtrl.ListWalletTransactions)
-			r.Get("/transactions/{txId}", walletTxCtrl.GetWalletTransaction)
+			r.Get("/transactions", walletTxCtrl.Index)
+			r.Get("/transactions/{txId}", walletTxCtrl.Show)
 
-			r.Get("/withdrawals", withdrawalCtrl.ListWalletWithdrawals)
-			r.Middleware(middleware.RequireFundAction(middleware.FundWithdraw)).Post("/withdrawals", withdrawalCtrl.CreateWalletWithdrawal)
-			r.Post("/withdrawals/estimate", withdrawalCtrl.EstimateWithdrawalFee)
-			r.Get("/fee-estimate", feeEstimateCtrl.GetWalletFeeEstimate)
-			r.Get("/withdrawals/{withdrawalId}", withdrawalCtrl.GetWalletWithdrawal)
-			r.Middleware(middleware.WalletCancelWithdrawal(walletPolicyMemberships(), container.MustMake[*withdrawalrecords.Records]())).Post("/withdrawals/{withdrawalId}/cancel", withdrawalCtrl.CancelWalletWithdrawal)
+			r.Get("/withdrawals", withdrawalCtrl.Index)
+			r.Middleware(middleware.RequireFundAction(middleware.FundWithdraw), withdrawalsEnabled).Post("/withdrawals", withdrawalCtrl.Store)
+			r.Post("/withdrawals/estimate", withdrawalCtrl.Estimate)
+			r.Get("/fee-estimate", feeEstimateCtrl.Show)
+			r.Get("/withdrawals/{withdrawalId}", withdrawalCtrl.Show)
+			r.Middleware(middleware.WalletCancelWithdrawal(walletPolicyMemberships(), container.MustMake[*withdrawalrecords.Records]())).Post("/withdrawals/{withdrawalId}/cancel", withdrawalCtrl.Cancel)
 
-			r.Middleware(middleware.RequireFundAction(middleware.FundSweep)).Post("/consolidate", sweepCtrl.ConsolidateWallet)
-			r.Get("/gas-status", sweepCtrl.GetGasStatus)
-			r.Post("/gas-check", sweepCtrl.ForceGasCheck)
-			r.Post("/withdraw/preview", sweepCtrl.PreviewWithdraw)
+			r.Middleware(middleware.RequireFundAction(middleware.FundSweep), sweepEnabled).Post("/consolidate", sweepCtrl.Consolidate)
+			r.Get("/gas-status", sweepCtrl.GasStatus)
+			r.Middleware(middleware.Throttle(middleware.ThrottleGasCheck)).Post("/gas-check", sweepCtrl.GasCheck)
+			r.Post("/withdraw/preview", sweepCtrl.Preview)
 
-			r.Prefix("/unspents").Middleware(middleware.UTXOOnly()).Group(func(ur route.Router) {
-				ur.Get("", unspentsCtrl.ListUnspentOutputs)
+			r.Prefix("/unspents").Middleware(middleware.UTXOOnly(container.MustMake[*walletrecords.Wallets]())).Group(func(ur route.Router) {
+				ur.Get("", unspentsCtrl.Index)
 			})
 		})
 	})
@@ -309,47 +343,54 @@ func RegisterAdminRoutes() {
 	// Dashboard withdrawal detail. Same session and account-header auth as
 	// GET /v1/wallets/{walletId}/withdrawals; the id is not scoped by a wallet path.
 	facades.Route().Prefix("/v1/withdrawals").Middleware(middleware.SessionAuth(), accountHeader, totpEnrollment, noCache).Group(func(router route.Router) {
-		router.Get("/{withdrawalId}", withdrawalCtrl.GetDashboardWithdrawal)
+		router.Get("/{withdrawalId}", withdrawalCtrl.ShowInAccount)
 	})
 }
 
 func newDashboardAuthController() *dashauth.AuthController {
-	return dashauth.NewAuthController(dashauth.AuthControllerDeps{
-		Users:          container.MustMake[*usersvc.Service](),
-		Accounts:       container.MustMake[*accountsvc.Service](),
-		RefreshTokens:  container.MustMake[*sessions.RefreshTokens](),
-		PasswordResets: container.MustMake[*sessions.PasswordResets](),
-		Passwords:      container.MustMake[*authsvc.Service](),
-		TwoFactor:      container.MustMake[*authsvc.TwoFactorLogin](),
-		Revoker:        container.MustMake[*authsvc.SessionRevoker](),
-		CredentialMail: container.MustMake[*credentialmail.Service](),
-	})
+	return dashauth.NewAuthController(container.MustMake[*authsvc.SignIn]())
 }
 
-func newDashboardUsersController() *dashusers.UsersController {
-	return dashusers.NewUsersController(dashusers.UsersControllerDeps{
-		Users:        container.MustMake[*usersvc.Service](),
-		Accounts:     container.MustMake[*accountsvc.Service](),
-		Passwords:    container.MustMake[*authsvc.Service](),
-		Refresh:      container.MustMake[*sessions.RefreshTokens](),
-		SecondFactor: container.MustMake[*authsvc.SecondFactorVerifier](),
-		Revoker:      container.MustMake[*authsvc.SessionRevoker](),
-		Features:     container.MustMake[*featuressvc.Service](),
-		Limits:       container.MustMake[*settingssvc.Service](),
-	})
+func newDashboardPasswordResetController() *dashauth.PasswordController {
+	return dashauth.NewPasswordController(
+		container.MustMake[*usersvc.Service](),
+		container.MustMake[*authsvc.Credentials](),
+	)
 }
 
-// currentWalletService reads the wallet service on each call.
-func currentWalletService() *walletsvc.Service {
-	return container.Get().WalletService
+func newDashboardPasswordController() *dashusers.PasswordController {
+	return dashusers.NewPasswordController(container.MustMake[*authsvc.Credentials]())
 }
 
-func newDashboardWalletsController() *dashwallets.WalletsController {
-	return dashwallets.NewWalletsController(dashwallets.WalletsControllerDeps{
-		Wallets:       container.MustMake[*walletrecords.Wallets](),
-		Members:       container.MustMake[*walletrecords.Members](),
-		Chains:        container.MustMake[*chainsvc.Service](),
-		WalletService: currentWalletService,
+func newDashboardProfileController() *dashusers.ProfileController {
+	return dashusers.NewProfileController(
+		container.MustMake[*usersvc.Service](),
+		container.MustMake[*featuressvc.Service](),
+	)
+}
+
+func newDashboardTotpController() *dashusers.TotpController {
+	return dashusers.NewTotpController(container.MustMake[*authsvc.TOTPEnrollment]())
+}
+
+func newDashboardUserAccountController() *dashusers.AccountController {
+	return dashusers.NewAccountController(container.MustMake[*accountsvc.Service]())
+}
+
+func newDashboardWalletsController() *dashwallets.WalletController {
+	return dashwallets.NewWalletController(newWalletView(), newWalletOps())
+}
+
+// newWalletView composes the wallet reads both surfaces serve. The encryption
+// key is read on each use, so it may be bound after the routes are built.
+func newWalletView() *walletview.Service {
+	return walletview.NewService(walletview.Deps{
+		Wallets:      container.MustMake[*walletrecords.Wallets](),
+		Members:      container.MustMake[*walletrecords.Members](),
+		Balances:     container.MustMake[*walletrecords.Balances](),
+		Transactions: container.MustMake[*walletrecords.Transactions](),
+		Chains:       container.MustMake[*chainsvc.Service](),
+		Cipher:       func() settingssvc.Cipher { return facades.Crypt() },
 	})
 }
 
@@ -361,104 +402,85 @@ func walletPolicyMemberships() *walletrecords.Memberships {
 	})
 }
 
-func newDashboardWalletUsersController() *dashwallets.UsersController {
-	return dashwallets.NewUsersController(dashwallets.WalletUsersControllerDeps{
-		Members:     container.MustMake[*walletrecords.Members](),
-		Accounts:    container.MustMake[*accountsvc.Service](),
-		Memberships: walletPolicyMemberships(),
-	})
-}
-
-func newDashboardWhitelistController() *dashwallets.WhitelistController {
-	return dashwallets.NewWhitelistController(dashwallets.WhitelistControllerDeps{
-		Entries:     container.MustMake[*walletrecords.Whitelist](),
-		Memberships: walletPolicyMemberships(),
-	})
-}
-
-func newDashboardWalletWebhooksController() *dashwallets.WebhooksController {
-	return dashwallets.NewWebhooksController(dashwallets.WebhooksControllerDeps{
-		Configs:     container.MustMake[*walletrecords.Webhooks](),
-		Delivery:    container.MustMake[*webhook.Service](),
-		Memberships: walletPolicyMemberships(),
-	})
-}
-
-func newDashboardWalletSettingsController() *dashwallets.SettingsController {
-	return dashwallets.NewSettingsController(dashwallets.WalletSettingsControllerDeps{
-		Wallets:     container.MustMake[*walletrecords.Wallets](),
-		Memberships: walletPolicyMemberships(),
-		Chains:      container.MustMake[*chainsvc.Service](),
-	})
-}
-
-func newDashboardBalancesController() *dashwallets.BalancesController {
-	return dashwallets.NewBalancesController(dashwallets.BalancesControllerDeps{
-		Balances: container.MustMake[*walletrecords.Balances](),
-		Tokens:   container.MustMake[*chainsvc.Service](),
-	})
-}
-
-func newDashboardWalletTransactionsController() *dashwallets.TransactionsController {
-	return dashwallets.NewTransactionsController(
-		container.MustMake[*walletrecords.Transactions](),
+func newDashboardWalletUsersController() *dashwalletusers.UserController {
+	return dashwalletusers.NewUserController(
+		container.MustMake[*walletrecords.Members](),
+		walletPolicyMemberships(),
 	)
 }
 
-func newDashboardChainsController() *dashchains.ChainsController {
-	return dashchains.NewChainsController(
+func newDashboardWhitelistController() *dashwalletwhitelist.WhitelistController {
+	return dashwalletwhitelist.NewWhitelistController(container.MustMake[*walletrecords.Whitelist]())
+}
+
+func newDashboardWalletWebhooksController() *dashwalletwebhooks.WebhookController {
+	return dashwalletwebhooks.NewWebhookController(
+		container.MustMake[*walletrecords.Webhooks](),
+		container.MustMake[*webhook.Service](),
+	)
+}
+
+func newDashboardWalletSettingsController() *dashwalletsettings.SettingsController {
+	return dashwalletsettings.NewSettingsController(walletsettings.NewService(walletsettings.Deps{
+		Wallets:  container.MustMake[*walletrecords.Wallets](),
+		Chains:   container.MustMake[*chainsvc.Service](),
+		Networks: newWalletView(),
+	}))
+}
+
+func newDashboardBalancesController() *dashwalletbalances.BalanceController {
+	return dashwalletbalances.NewBalanceController(newWalletView())
+}
+
+func newDashboardWalletTransactionsController() *dashwallettransactions.TransactionController {
+	return dashwallettransactions.NewTransactionController(newWalletView())
+}
+
+func newDashboardChainsController() *dashchains.ChainController {
+	return dashchains.NewChainController(
 		container.MustMake[*chainsvc.Service](),
 	)
 }
 
-func newDashboardCurrenciesController() *dashcurrencies.CurrenciesController {
-	return dashcurrencies.NewCurrenciesController(dashcurrencies.CurrenciesControllerDeps{
-		Currencies: container.MustMake[*currencies.Service](),
-		Prices:     container.MustMake[*price.Service](),
-	})
+func newDashboardCurrenciesController() *dashcurrencies.CurrencyController {
+	return dashcurrencies.NewCurrencyController(
+		container.MustMake[*currencies.Service](),
+		container.MustMake[*price.Service](),
+	)
 }
 
 func newDashboardPreferencesController() *dashpreferences.PreferencesController {
-	return dashpreferences.NewPreferencesController(dashpreferences.PreferencesControllerDeps{
-		Users:      container.MustMake[*usersvc.Service](),
-		Currencies: container.MustMake[*currencies.Service](),
+	return dashpreferences.NewPreferencesController(container.MustMake[*usersvc.Service]())
+}
+
+func newDashboardAddressesController() *dashaddresses.AddressController {
+	return dashaddresses.NewAddressController(newWalletOps())
+}
+
+// newWalletOps composes the wallet and address operations both surfaces serve.
+func newWalletOps() *walletops.Service {
+	return walletops.NewService(walletops.Deps{
+		Wallets:   container.MustMake[*walletsvc.Service](),
+		Addresses: container.MustMake[*walletrecords.Addresses](),
+		Chains:    container.MustMake[*chainsvc.Service](),
+		Cache:     container.MustMake[*deposit.Service](),
+		Registry:  container.MustMake[*chainpkg.Registry](),
 	})
 }
 
-func newDashboardAddressesController() *dashaddresses.AddressesController {
-	return dashaddresses.NewAddressesController(dashaddresses.AddressesControllerDeps{
-		Addresses:     container.MustMake[*walletrecords.Addresses](),
-		WalletService: currentWalletService,
-		Deposits:      container.MustMake[*deposit.Service](),
-	})
-}
-
-func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalsController {
-	return dashwithdrawals.NewWithdrawalsController(dashwithdrawals.WithdrawalsControllerDeps{
-		Withdrawals:       container.MustMake[*withdrawalrecords.Records](),
-		Chains:            container.MustMake[*chainsvc.Service](),
-		Users:             container.MustMake[*usersvc.Service](),
-		Registry:          container.MustMake[*chainpkg.Registry](),
-		WithdrawalService: container.MustMake[*withdraw.Service](),
-		Passwords:         container.MustMake[*authsvc.Service](),
-		Flags:             container.MustMake[*featuressvc.Service](),
-		Events:            container.MustMake[*withdrawalevents.Publisher](),
-		Redis:             container.MustMake[*container.SharedRedis]().Client,
-		Wallets:           container.MustMake[*walletrecords.Wallets](),
-		SecondFactor:      container.MustMake[*authsvc.SecondFactorVerifier](),
-	})
+func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalController {
+	return dashwithdrawals.NewWithdrawalController(
+		container.MustMake[*withdrawalrecords.Records](),
+		container.MustMake[*withdraw.Service](),
+	)
 }
 
 func newDashboardSweepController() *dashsweep.SweepController {
-	return dashsweep.NewSweepController(dashsweep.SweepControllerDeps{
-		Sweeps: container.MustMake[*sweep.Box]().Service,
-		Redis:  container.MustMake[*container.SharedRedis]().Client,
-		Flags:  container.MustMake[*featuressvc.Service](),
-	})
+	return dashsweep.NewSweepController(container.MustMake[*sweep.Box]().Service)
 }
 
-func newDashboardUnspentsController() *dashwallets.UnspentsController {
-	return dashwallets.NewUnspentsController(
+func newDashboardUnspentsController() *dashwalletunspents.UnspentController {
+	return dashwalletunspents.NewUnspentController(
 		container.MustMake[*walletrecords.UTXOs](),
 	)
 }
@@ -475,78 +497,79 @@ func newDashboardAccountSettingsController() *dashsettings.SettingsController {
 	)
 }
 
-func newDashboardAccountRolesController() *dashroles.Controller {
-	return dashroles.NewController()
+func newDashboardAccountRolesController() *dashroles.RoleController {
+	return dashroles.NewRoleController()
 }
 
-func newDashboardAccountFeaturesController() *dashfeatures.FeaturesController {
-	return dashfeatures.NewFeaturesController(
+func newDashboardAccountPermissionsController() *dashroles.PermissionController {
+	return dashroles.NewPermissionController()
+}
+
+func newDashboardAccountFeaturesController() *dashfeatures.FeatureController {
+	return dashfeatures.NewFeatureController(
 		container.MustMake[*featuressvc.Service](),
 	)
 }
 
-func newPlatformAccountsController() *platformaccounts.LifecycleController {
-	return platformaccounts.NewLifecycleController(
+func newPlatformAccountsController() *platformaccounts.AccountController {
+	return platformaccounts.NewAccountController(
 		container.MustMake[*accountsvc.Service](),
 	)
 }
 
-func newPlatformAccountUsersController() *platformaccounts.UsersController {
-	return platformaccounts.NewUsersController(
+func newPlatformAccountUsersController() *platformaccounts.UserController {
+	return platformaccounts.NewUserController(
 		container.MustMake[*accountsvc.Service](),
 	)
 }
 
-func newPlatformAccountOwnersController() *platformaccounts.OwnersController {
-	return platformaccounts.NewOwnersController(
+func newPlatformAccountOwnersController() *platformaccounts.OwnerController {
+	return platformaccounts.NewOwnerController(
 		container.MustMake[*accountsvc.Service](),
 	)
 }
 
-func newPlatformAccountListController() *platformaccounts.ListController {
-	return platformaccounts.NewListController(
-		container.MustMake[*accountsvc.Service](),
-	)
-}
-
-func newPlatformUsersController() *platformusers.UsersController {
-	return platformusers.NewUsersController(
+func newPlatformUsersController() *platformusers.UserController {
+	return platformusers.NewUserController(
 		container.MustMake[*usersvc.Service](),
 	)
 }
 
-func newPlatformSettingsController() *platformsettings.SettingsController {
-	return platformsettings.NewSettingsController(
+func newPlatformSettingsController() *platformsettings.SettingController {
+	return platformsettings.NewSettingController(
 		container.MustMake[*settingssvc.Service](),
 	)
 }
 
-func newPlatformChainsController() *platformchains.ChainsController {
-	return platformchains.NewChainsController(platformchains.ChainsControllerDeps{
-		Thresholds: container.MustMake[*chainsvc.Thresholds](),
-		RPC:        container.MustMake[*chainsvc.RPC](),
-	})
+func newPlatformChainsController() *platformchains.ChainController {
+	return platformchains.NewChainController(
+		container.MustMake[*chainsvc.Thresholds](),
+		container.MustMake[*chainsvc.RPC](),
+	)
 }
 
-func newPlatformFeaturesController() *platformfeatures.FeaturesController {
-	return platformfeatures.NewFeaturesController(platformfeatures.FeaturesControllerDeps{
-		Features: container.MustMake[*featuressvc.Service](),
-		Accounts: container.MustMake[*accountsvc.Service](),
-	})
+func newPlatformFeaturesController() *platformfeatures.FeatureController {
+	return platformfeatures.NewFeatureController(
+		container.MustMake[*featuressvc.Service](),
+		container.MustMake[*accountsvc.Service](),
+	)
 }
 
-func newDashboardAccountsController() *dashaccounts.AccountsController {
-	return dashaccounts.NewAccountsController(dashaccounts.AccountsControllerDeps{
-		AccountService: container.MustMake[*accountsvc.Service](),
-		Passwords:      container.MustMake[*authsvc.Service](),
-		Limits:         container.MustMake[*settingssvc.Service](),
-		Features:       container.MustMake[*featuressvc.Service](),
-	})
+func newDashboardAccountController() *dashaccounts.AccountController {
+	return dashaccounts.NewAccountController(container.MustMake[*accountsvc.Service]())
 }
 
-func newDashboardInvitesController() *dashaccounts.InvitesController {
-	return dashaccounts.NewInvitesController(dashaccounts.InvitesControllerDeps{
-		Accounts: container.MustMake[*accountsvc.Service](),
-		Users:    container.MustMake[*usersvc.Service](),
-	})
+func newDashboardMemberController() *dashaccounts.MemberController {
+	return dashaccounts.NewMemberController(container.MustMake[*accountsvc.Service]())
+}
+
+func newDashboardTokenController() *dashaccounts.TokenController {
+	return dashaccounts.NewTokenController(
+		container.MustMake[*accountsvc.Service](),
+		container.MustMake[*apitoken.Service](),
+	)
+}
+
+func newDashboardInviteController() *dashaccounts.InviteController {
+	return dashaccounts.NewInviteController(container.MustMake[*accountsvc.Service]())
 }

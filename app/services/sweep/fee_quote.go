@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
-	tronchain "github.com/macrowallets/waas/app/adapters/chain/tron"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
@@ -114,7 +113,7 @@ type TronFeeDetails struct {
 }
 
 type tronFeeQuoter interface {
-	QuoteTransferFee(ctx context.Context, req types.TransferRequest) (tronchain.TronFeeQuote, error)
+	QuoteTransferFee(ctx context.Context, req types.TransferRequest) (chain.TronFeeQuote, error)
 }
 
 type bitcoinFeeQuoter interface {
@@ -204,7 +203,7 @@ func quoteRecipient(adapterType, toAddress string) string {
 	case models.AdapterTypeEVM:
 		return chain.EVMFeeProbeRecipient()
 	case models.AdapterTypeTron:
-		return tronchain.TronFeeProbeRecipient()
+		return chain.TronFeeProbeRecipient()
 	default:
 		return toAddress
 	}
@@ -419,7 +418,7 @@ func (s *service) quoteTronFee(ctx context.Context, adapter types.Chain, plan *P
 	return nil
 }
 
-func addTronFeeDetails(details *TronFeeDetails, transfer tronchain.TronFeeQuote) {
+func addTronFeeDetails(details *TronFeeDetails, transfer chain.TronFeeQuote) {
 	details.BandwidthBytes += transfer.BandwidthBytes
 	details.SunPerBandwidthByte = transfer.SunPerBandwidthByte
 	details.SunPerEnergy = transfer.SunPerEnergy

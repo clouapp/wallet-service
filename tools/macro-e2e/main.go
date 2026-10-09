@@ -29,7 +29,7 @@ import (
 	"time"
 
 	"github.com/macrowallets/waas/pkg/e2evault"
-	"github.com/macrowallets/waas/pkg/pyjson"
+	"github.com/macrowallets/waas/tools/internal/pyjson"
 	"github.com/macrowallets/waas/tools/macro-e2e/e2e"
 )
 

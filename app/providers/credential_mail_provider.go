@@ -7,7 +7,7 @@ import (
 	"github.com/goravel/framework/contracts/foundation"
 
 	appfacades "github.com/macrowallets/waas/app/facades"
-	"github.com/macrowallets/waas/app/listeners"
+	"github.com/macrowallets/waas/app/jobs"
 	"github.com/macrowallets/waas/app/mails"
 	"github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
@@ -38,7 +38,7 @@ func (p *CredentialMailServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		dispatcher := listeners.NewCredentialMailDispatcher()
+		dispatcher := newCredentialMailDispatcher(app)
 		return credentialmail.NewService(credentialmail.Deps{
 			Users:          users,
 			Tokens:         tokens,
@@ -49,6 +49,16 @@ func (p *CredentialMailServiceProvider) Register(app foundation.Application) {
 			DispatchInvite: dispatcher.DispatchAccountInvite,
 		}), nil
 	})
+}
+
+// newCredentialMailDispatcher enqueues reset and invite jobs with the process
+// queue. The mail service is resolved when a mail is dispatched: it depends
+// on the user and account services, which take this dispatcher.
+func newCredentialMailDispatcher(app foundation.Application) *jobs.CredentialMailDispatcher {
+	return jobs.NewCredentialMailDispatcher(
+		func() jobs.Enqueuer { return appfacades.Queue() },
+		func() (*credentialmail.Service, error) { return resolve[*credentialmail.Service](app) },
+	)
 }
 
 func (p *CredentialMailServiceProvider) Boot(foundation.Application) {}

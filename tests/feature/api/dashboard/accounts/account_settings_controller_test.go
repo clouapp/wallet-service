@@ -12,6 +12,7 @@ import (
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/container"
+	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/settings"
@@ -71,12 +72,10 @@ func (s *accountSettingsSuite) TestStored_Sweep_LimitIsAppliedWhenSweepLoadsLimi
 }
 
 func (s *accountSettingsSuite) sweepService() sweep.Service {
-	raw, err := facades.App().Make(container.ContainerKey)
+	box, err := container.Make[*sweep.Box]()
 	s.Require().NoError(err)
-	vault, ok := raw.(*container.Container)
-	s.Require().True(ok)
-	s.Require().NotNil(vault.SweepService)
-	return vault.SweepService
+	s.Require().NotNil(box.Service)
+	return box.Service
 }
 
 func (s *accountSettingsSuite) TestGet_Hides_SecretAndShowsIsSet() {
@@ -995,7 +994,7 @@ func (s *accountSettingsSuite) member(accountID uuid.UUID, role string) string {
 
 func (s *accountSettingsSuite) user(role string) (uuid.UUID, string) {
 	s.T().Helper()
-	hash, err := authsvc.NewService().HashPassword(accountSettingsPassword)
+	hash, err := authsvc.NewService(appfacades.Hash()).HashPassword(accountSettingsPassword)
 	s.Require().NoError(err)
 	userID := uuid.New()
 	email := role + "-" + userID.String()[:8] + "@example.com"

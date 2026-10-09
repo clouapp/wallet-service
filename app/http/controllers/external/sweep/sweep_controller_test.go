@@ -6,9 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 
-	"github.com/macrowallets/waas/app/services/features"
 	sweepsvc "github.com/macrowallets/waas/app/services/sweep"
 )
 
@@ -34,74 +32,22 @@ func (*sweepServiceStub) LoadLimits(context.Context, uuid.UUID) (*sweepsvc.Limit
 	return nil, nil
 }
 
-func sweepControllerDeps() SweepControllerDeps {
-	return SweepControllerDeps{
-		Sweeps: &sweepServiceStub{},
-		Redis:  &redis.Client{},
-		Flags:  &features.Service{},
-	}
-}
-
-func TestNew_Sweep_ControllerKeepsItsDependencies(t *testing.T) {
-	deps := sweepControllerDeps()
-	ctrl := NewSweepController(deps)
-	if ctrl == nil {
-		t.Fatal("NewSweepController returned nil")
-	}
-	if ctrl.sweeps != deps.Sweeps {
-		t.Fatal("sweep controller did not keep the sweep service")
-	}
-	if ctrl.redis != deps.Redis {
-		t.Fatal("sweep controller did not keep the redis client")
-	}
-	if ctrl.flags != deps.Flags {
-		t.Fatal("sweep controller did not keep the feature flags")
-	}
-}
-
-func TestNew_Sweep_ControllerAllowsNilRedis(t *testing.T) {
-	deps := sweepControllerDeps()
-	deps.Redis = nil
-	ctrl := NewSweepController(deps)
-	if ctrl == nil {
-		t.Fatal("NewSweepController returned nil")
-	}
-	if ctrl.redis != nil {
-		t.Fatal("sweep controller did not keep a nil redis client")
-	}
-	if ctrl.sweeps != deps.Sweeps || ctrl.flags != deps.Flags {
-		t.Fatal("sweep controller dropped a required dependency")
-	}
-}
-
-func TestNew_Sweep_ControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_SweepController_RequiresEveryDependency(t *testing.T) {
 	cases := []struct {
-		name  string
-		clear func(*SweepControllerDeps)
-		panic string
+		name   string
+		sweeps sweepsvc.Service
+		panic  string
 	}{
-		{
-			name:  "sweep service",
-			clear: func(deps *SweepControllerDeps) { deps.Sweeps = nil },
-			panic: "external sweep controller: sweep service is required",
-		},
-		{
-			name:  "feature flags",
-			clear: func(deps *SweepControllerDeps) { deps.Flags = nil },
-			panic: "external sweep controller: feature flags are required",
-		},
+		{"sweep service", nil, "external sweep controller: sweep service is required"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			deps := sweepControllerDeps()
-			tc.clear(&deps)
 			defer func() {
-				got := recover()
-				if got != tc.panic {
+				if got := recover(); got != tc.panic {
 					t.Fatalf("panic = %v", got)
 				}
 			}()
-			NewSweepController(deps)
+			NewSweepController(tc.sweeps)
 			t.Fatal("expected a panic")
 		})
 	}

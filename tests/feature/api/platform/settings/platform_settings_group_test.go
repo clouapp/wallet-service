@@ -189,14 +189,16 @@ func (s *PlatformSettingsGroupTestSuite) TestA_Secret_SettingRecordsKeyAndValueS
 	s.True(sawHost)
 }
 
-func (s *PlatformSettingsGroupTestSuite) TestA_Non_AdminOnAnUnknownGroupIsNotFoundBeforeForbidden() {
+func (s *PlatformSettingsGroupTestSuite) TestA_Non_AdminIsForbiddenWhetherOrNotTheGroupExists() {
 	member := s.seedUser(false)
 	session := s.signIn(member.Email)
 
+	// An unknown or account-only group is not a 404 for a member: the group
+	// guard answers before the handler looks the group up.
 	unknown := s.getRaw(session.AccessToken, "/v1/platform/settings/no-such-group")
-	s.AssertError(unknown, 404, "not_found", "settings group not found")
+	s.AssertError(unknown, 403, responses.CodeForbidden, "you do not have permission to view settings")
 	accountOnly := s.getRaw(session.AccessToken, "/v1/platform/settings/account_security")
-	s.AssertError(accountOnly, 404, "not_found", "settings group not found")
+	s.AssertError(accountOnly, 403, responses.CodeForbidden, "you do not have permission to view settings")
 
 	known := s.getRaw(session.AccessToken, "/v1/platform/settings/mail_smtp")
 	known.AssertForbidden()
