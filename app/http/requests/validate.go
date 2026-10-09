@@ -17,12 +17,34 @@ func (Open) Authorize(http.Context) error {
 	return nil
 }
 
+// FormRequestWithAfter is a form request with checks that need the bound
+// request: a CIDR list, a JSON object whose fields a rule cannot reach. Like
+// Laravel's FormRequest::after, but After runs only once every rule passed and
+// the body bound, so a request with a failing rule answers that rule's errors
+// alone. A non-empty map is answered with the same 422 a rule failure gets.
+type FormRequestWithAfter interface {
+	After(ctx http.Context) map[string][]string
+}
+
 // Validate runs a form request and writes the branch's 422 on rule failure.
 // An empty rule map still binds the body; a missing body is not an error.
+// A request that implements FormRequestWithAfter is checked last.
 func Validate(ctx http.Context, req http.FormRequest) http.Response {
 	if ctx == nil || req == nil {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid request body")
 	}
+	if response := validateRules(ctx, req); response != nil {
+		return response
+	}
+	if after, ok := req.(FormRequestWithAfter); ok {
+		if fields := after.After(ctx); len(fields) > 0 {
+			return responses.FieldsFailed(ctx, fields)
+		}
+	}
+	return nil
+}
+
+func validateRules(ctx http.Context, req http.FormRequest) http.Response {
 	if len(req.Rules(ctx)) == 0 {
 		return bindRulelessRequest(ctx, req)
 	}

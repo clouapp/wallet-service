@@ -140,7 +140,11 @@ Rules:
   passes. They are a courtesy: a write is still settled by the database
   constraint in the repository (SQLSTATE 23505 → 409).
 - **A route parameter wins over a body or query field of the same name.**
-- A check made after the form request passed answers with `responses.FieldError`.
+- A check that needs the bound request (a CIDR list, a JSON object no rule
+  reaches) is the request's `After` (`requests.FormRequestWithAfter`): `Validate`
+  asks it once every rule passed and the body bound, and a field it names
+  answers the same 422 a rule failure does. A check the handler makes after the
+  form request passed answers with `responses.FieldError`.
 
 ## Rendering
 
