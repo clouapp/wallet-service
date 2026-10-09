@@ -63,7 +63,7 @@ Each of these crossed the line in the WaaS. All have moved except the one marked
 | It looked like | It was | Belongs in |
 |---|---|---|
 | `Register` creating a user, two accounts, two memberships, the default account, then mail, login and a refresh token — no transaction | onboarding | `account.Service.Onboard`: ONE transaction for the rows; mail and session after commit |
-| `CreateWalletWithdrawal` (195 lines) verifying TOTP and the passphrase, resolving the amount, estimating the fee, creating/updating an idempotent row and publishing events | a withdrawal | `withdraw.Service.Create` (TOTP and passphrase as ports; idempotency by constraint) |
+| `CreateWalletWithdrawal` (195 lines) verifying TOTP and the passphrase, resolving the amount, estimating the fee, creating/updating an idempotent row and publishing events | a withdrawal | `withdraw.Service.Create` and `Submit` (TOTP and passphrase as ports; idempotency by constraint; the outcome written on the row and published) |
 | `ctx.Value("account_environment")` vs `chain.IsTestnet` in five handlers | an environment rule | `chains.Service` (the chain environment filter) |
 | `strings.Contains(err.Error(), "unknown chain")`, `err.Error() == "wallet not found"` | a missing sentinel | `chainregistry.ErrUnknownChain` and the wallet and price sentinels, matched with `errors.Is` |
 | listing memberships, loading each account, sorting and picking the default at login | an account read model | `account.Service.SignInAccounts` |
@@ -120,7 +120,7 @@ func mapError(ctx contractshttp.Context, err error) contractshttp.Response {
 ```
 
 The mappers several controllers share are `controllers.MapSweepError`,
-`MapWithdrawalCreateError` and `MapSpendingLimitError`. They match sentinels with
+`MapWithdrawalError` and `MapSpendingLimitError`. They match sentinels with
 `errors.Is` and nothing else: a refusal's sentence is chosen by the service
 (`withdraw.CreateRefusal`), and the controller writes it as it is.
 

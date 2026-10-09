@@ -117,8 +117,10 @@ Rules:
   "walletId")` for a UUID, `ctx.Request().Route("id")` / `Query("limit")` for the
   rest, the documented Goravel way. A form request exists only where there are
   rules to run: no request that copies a parameter into a struct.
-- Form requests live flat in `app/http/requests/<name>_request.go`, one per
-  operation (`create_wallet_request.go`). They implement `Authorize`, `Rules` and,
+- Form requests live in `app/http/requests/<surface>/<resource>/<action>_request.go`
+  (`requests/platform/chains/update_request.go`), or `requests/<resource>/` when
+  both surfaces use one (`requests/withdrawals/store_request.go`); the older flat
+  `<name>_request.go` files move as their controllers do. They implement `Authorize`, `Rules` and,
   when the messages matter, `Messages`/`Filters`; permission is route middleware,
   so `Authorize` allows (`requests.Open` embeds that).
 - **Every exported field carries `form:"<name>"` beside `json:"<name>"`, spelled
@@ -187,7 +189,7 @@ document). Regenerate in the same change that edits an annotation.
 - Errors a controller maps to a status are matched with `errors.Is` against the
   service's sentinels. The helpers shared by several controllers live in
   `app/http/controllers/errors.go` (`MapInternalError`, `MapSweepError`,
-  `MapWithdrawalCreateError`, `MapSpendingLimitError`) and `address_errors.go`;
+  `MapWithdrawalError`, `MapSpendingLimitError`) and `address_errors.go`;
   a controller package keeps a `mapError` of its own for its service's sentinels.
 - Controllers hold no helpers for reading input, authorizing or writing a body of
   their own: `requests` reads, `responses` writes, `middleware` says who is

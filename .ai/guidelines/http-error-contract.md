@@ -103,7 +103,7 @@ front and Markets. `internal_error` is also the persisted withdrawal
 backend moves the 25 `internal_error` sites to `internal`.
 
 Domain codes that exist today and must survive the migration (inventory them
-from `controllers/errors.go`, `withdrawal_failure.go` and the handlers before
+from `controllers/errors.go`, `controllers/withdrawal_errors.go`, `withdraw/failure.go` and the handlers before
 changing anything): `sweep_limit_exceeded`, `wallet_not_gas_ready`,
 `insufficient_funds`, `unsupported_chain`, `gas_estimate_failed`,
 `FEE_ESTIMATE_FAILED` (rename to snake_case only if decided), and the persisted
@@ -136,7 +136,7 @@ outage behind a message about the caller.
   fixed sentinel's text (`settings.ErrViewForbidden.Error()`) is a sentence
   like any other and may be the message. Known exception: a withdrawal create
   refusal for an invalid amount or a spending-limit read carries the cause's
-  text (`withdraw/create.go`, through `MapWithdrawalCreateError`).
+  text (`withdraw/create.go`, through `MapWithdrawalError`).
 - **Never a provider's raw text** — `responses.ProviderError` answers the
   endpoint's own message and logs the cause.
 - A secret field never comes back on a read: `"<field>Set": true|false`.

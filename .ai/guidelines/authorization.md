@@ -204,7 +204,7 @@ ability goes into `gateAbilities` in `app/policies/gates.go`, with its pair in
 
 | Handler | Surface(s) | Permission to add (TARGET) | Decided by |
 |---|---|---|---|
-| `CreateWalletWithdrawal` | dashboard + external | `wallet.withdraw` | **product decision** |
+| `Store` (withdrawals) | dashboard + external | `wallet.withdraw` | **product decision** |
 | `ConsolidateWallet` | dashboard + external | `wallet.sweep` | **product decision** |
 | `GenerateAddress` | dashboard + external | `wallet.addresses.write` | **product decision** |
 | `UpdateAddress` | dashboard + external | `wallet.addresses.write` | **product decision** |
