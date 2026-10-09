@@ -53,7 +53,7 @@ var swaggerCSP = func() string {
 
 // RegisterDocs exposes health, the Swagger UI and the generated spec.
 func RegisterDocs() {
-	facades.Route().Get("/health", health.NewController(container.MustMake[*deposit.Service]()).Show)
+	facades.Route().Get("/health", health.NewHealthController(container.MustMake[*deposit.Service]()).Show)
 
 	facades.Route().Get("/swagger/index.html", func(ctx http.Context) http.Response {
 		return ctx.Response().

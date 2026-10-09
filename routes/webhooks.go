@@ -14,11 +14,11 @@ import (
 // signature before the body is parsed; a second copy here would only be skipped.
 // There is no dashboard or API token auth on this route.
 func RegisterInboundWebhooks() {
-	ingestCtrl := ingest.NewIngestController(ingest.IngestControllerDeps{
-		Ingest: container.MustMake[*ingestsvc.Service](),
-		Lookup: container.MustMake[*ingestsvc.Catalog]().Lookup,
-	})
+	ingestCtrl := ingest.NewIngestController(ingestsvc.NewInbound(
+		container.MustMake[*ingestsvc.Service](),
+		container.MustMake[*ingestsvc.Catalog]().Lookup,
+	))
 	facades.Route().Prefix("/v1/webhooks/ingest").Group(func(router route.Router) {
-		router.Post("/{provider}/{chainID}", ingestCtrl.HandleWebhookIngest)
+		router.Post("/{provider}/{chainID}", ingestCtrl.Store)
 	})
 }
