@@ -5,6 +5,7 @@ import (
 	"github.com/goravel/framework/support/carbon"
 
 	"github.com/macrowallets/waas/app/models"
+	accountsvc "github.com/macrowallets/waas/app/services/account"
 )
 
 // Account is the account row the dashboard reads. Field order and tags
@@ -45,4 +46,25 @@ func AccountPtr(account *models.Account) *Account {
 	}
 	view := AccountFrom(*account)
 	return &view
+}
+
+// NewAccount shapes an account view: the row and its sweep limits.
+func NewAccount(view accountsvc.View) Account {
+	account := AccountFrom(view.Account)
+	account.SweepLimits = view.SweepLimits
+	return account
+}
+
+// AccountDetail is GET /v1/accounts/{accountId}. Existing account fields stay.
+// Features is the account's active flag keys in catalog order. A missing
+// account row uses the catalog default. Global rows are not included. Create
+// and update do not carry this field.
+type AccountDetail struct {
+	Account
+	Features []string `json:"features"`
+}
+
+// NewAccountDetail shapes the account detail.
+func NewAccountDetail(detail accountsvc.Detail) AccountDetail {
+	return AccountDetail{Account: NewAccount(detail.View), Features: detail.Features}
 }

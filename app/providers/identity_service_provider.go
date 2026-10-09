@@ -8,7 +8,9 @@ import (
 	"github.com/macrowallets/waas/app/services/account"
 	"github.com/macrowallets/waas/app/services/apitoken"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/sessions"
+	"github.com/macrowallets/waas/app/services/settings"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
@@ -131,6 +133,14 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
+		limits, err := resolve[*settings.Service](app)
+		if err != nil {
+			return nil, err
+		}
+		flags, err := resolve[*features.Service](app)
+		if err != nil {
+			return nil, err
+		}
 		return account.NewService(account.Deps{
 			Accounts:    accounts,
 			Memberships: memberships,
@@ -140,6 +150,8 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 			Invites:     invites,
 			InviteMail:  newCredentialMailDispatcher(app),
 			Passwords:   passwords,
+			SweepLimits: limits,
+			Features:    flags,
 		}).WithPlatformAdmins(admins), nil
 	})
 	app.Singleton((*apitoken.Service)(nil), func(app foundation.Application) (any, error) {

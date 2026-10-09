@@ -2,7 +2,9 @@ package account
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 
@@ -12,55 +14,137 @@ import (
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 )
 
-// UpdateAccount applies a name and/or view_all_wallets change on the account
-// the caller already loaded. A blank name is left as stored. Each column is
-// written on its own, matching the previous handler: a later failure leaves
-// the earlier column committed and the in-memory account updated only for
-// the writes that succeeded.
-func (s *Service) UpdateAccount(ctx context.Context, account *models.Account, name string, viewAllWallets *bool) error {
-	if ctx == nil {
-		return fmt.Errorf("update account: context is required")
-	}
-	if account == nil {
-		return fmt.Errorf("update account: account is required")
-	}
-	if err := s.requireAccounts(); err != nil {
-		return err
-	}
-	if name != "" {
-		if err := s.accounts.SetName(ctx, account.ID, name); err != nil {
-			return err
-		}
-		account.Name = name
-	}
-	if viewAllWallets != nil {
-		if err := s.accounts.SetViewAllWallets(ctx, account.ID, *viewAllWallets); err != nil {
-			return err
-		}
-		account.ViewAllWallets = *viewAllWallets
-	}
-	return nil
+// ErrAccountNotCreated is an account, or its owner membership, that could not
+// be inserted.
+var ErrAccountNotCreated = errors.New("create the account")
+
+// View is an account as the dashboard serves it: the row and its sweep
+// limits, which live in settings. A failed limits read fails the view; it is
+// never served without them.
+type View struct {
+	Account     models.Account
+	SweepLimits *string
 }
 
-// SetStatus sets accounts.status and the same field on the loaded account.
-func (s *Service) SetStatus(ctx context.Context, account *models.Account, status string) error {
+// Detail is GET /v1/accounts/{accountId}: the view and the account's active
+// feature keys in catalog order.
+type Detail struct {
+	View
+	Features []string
+}
+
+// CreateAccountInput is POST /v1/accounts: the account's name and the user who
+// becomes its owner.
+type CreateAccountInput struct {
+	Name    string
+	OwnerID uuid.UUID
+}
+
+// UpdateAccountInput is PATCH /v1/accounts/{accountId}. A blank Name and a
+// nil ViewAllWallets are left as stored.
+type UpdateAccountInput struct {
+	Name           string
+	ViewAllWallets *bool
+}
+
+// CreateForOwner creates an active account with the caller as its owner and
+// returns its view. A failed insert is ErrAccountNotCreated.
+func (s *Service) CreateForOwner(ctx context.Context, in CreateAccountInput) (View, error) {
+	account, err := s.Create(ctx, in.Name, in.OwnerID)
+	if err != nil {
+		return View{}, fmt.Errorf("%w: %w", ErrAccountNotCreated, err)
+	}
+	return s.view(ctx, *account)
+}
+
+// Detail returns the view of the account the caller already loaded and its
+// active feature keys. A failed feature read is logged and returned.
+func (s *Service) Detail(ctx context.Context, account *models.Account) (Detail, error) {
+	view, err := s.view(ctx, *account)
+	if err != nil {
+		return Detail{}, err
+	}
+	if s.features == nil {
+		return Detail{}, fmt.Errorf("account service: features are required")
+	}
+	names, err := s.features.ActiveForAccount(ctx, account.ID)
+	if err != nil {
+		slog.Error(fmt.Sprintf("account: active features: %v", err))
+		return Detail{}, err
+	}
+	return Detail{View: view, Features: names}, nil
+}
+
+// UpdateAccount applies a name and/or view_all_wallets change on the account
+// the caller already loaded and returns its view. Each column is written on
+// its own, matching the previous handler: a later failure leaves the earlier
+// column committed and the in-memory account updated only for the writes that
+// succeeded.
+func (s *Service) UpdateAccount(ctx context.Context, account *models.Account, in UpdateAccountInput) (View, error) {
 	if ctx == nil {
-		return fmt.Errorf("set account status: context is required")
+		return View{}, fmt.Errorf("update account: context is required")
 	}
 	if account == nil {
-		return fmt.Errorf("set account status: account is required")
-	}
-	if status == "" {
-		return fmt.Errorf("set account status: status is required")
+		return View{}, fmt.Errorf("update account: account is required")
 	}
 	if err := s.requireAccounts(); err != nil {
-		return err
+		return View{}, err
+	}
+	if in.Name != "" {
+		if err := s.accounts.SetName(ctx, account.ID, in.Name); err != nil {
+			return View{}, err
+		}
+		account.Name = in.Name
+	}
+	if in.ViewAllWallets != nil {
+		if err := s.accounts.SetViewAllWallets(ctx, account.ID, *in.ViewAllWallets); err != nil {
+			return View{}, err
+		}
+		account.ViewAllWallets = *in.ViewAllWallets
+	}
+	return s.view(ctx, *account)
+}
+
+// Archive sets the account the caller already loaded to archived and returns
+// its view.
+func (s *Service) Archive(ctx context.Context, account *models.Account) (View, error) {
+	return s.changeStatus(ctx, account, models.AccountStatusArchived)
+}
+
+// Freeze sets the account the caller already loaded to frozen and returns its
+// view.
+func (s *Service) Freeze(ctx context.Context, account *models.Account) (View, error) {
+	return s.changeStatus(ctx, account, models.AccountStatusFrozen)
+}
+
+// changeStatus sets accounts.status and the same field on the loaded account.
+func (s *Service) changeStatus(ctx context.Context, account *models.Account, status string) (View, error) {
+	if ctx == nil {
+		return View{}, fmt.Errorf("set account status: context is required")
+	}
+	if account == nil {
+		return View{}, fmt.Errorf("set account status: account is required")
+	}
+	if err := s.requireAccounts(); err != nil {
+		return View{}, err
 	}
 	if err := s.accounts.SetStatus(ctx, account.ID, status); err != nil {
-		return err
+		return View{}, err
 	}
 	account.Status = status
-	return nil
+	return s.view(ctx, *account)
+}
+
+// view reads the account's sweep limits for its dashboard view.
+func (s *Service) view(ctx context.Context, account models.Account) (View, error) {
+	if s.sweepLimits == nil {
+		return View{}, fmt.Errorf("account service: sweep limits are required")
+	}
+	document, err := s.sweepLimits.AccountSweepLimitsWire(ctx, account.ID)
+	if err != nil {
+		return View{}, err
+	}
+	return View{Account: account, SweepLimits: document}, nil
 }
 
 // ListMembers pages the account's active memberships.

@@ -34,6 +34,8 @@ func mapError(ctx http.Context, err error, failure string) http.Response {
 		}
 	}
 	switch {
+	case errors.Is(err, accountsvc.ErrAccountNotCreated):
+		return responses.InternalError(ctx, err)
 	case errors.Is(err, accountsvc.ErrMemberNotFound):
 		return responses.FailMessage(ctx, http.StatusNotFound, accountsvc.ErrMemberNotFound.Error())
 	case errors.Is(err, accountsvc.ErrMemberRole):

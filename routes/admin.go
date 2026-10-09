@@ -80,7 +80,7 @@ func RegisterAdminRoutes() {
 	preferencesCtrl := newDashboardPreferencesController()
 	authCtrl := newDashboardAuthController()
 	usersCtrl := newDashboardUsersController()
-	accountsCtrl := newDashboardAccountsController()
+	accountCtrl := newDashboardAccountController()
 	tokenCtrl := newDashboardTokenController()
 	memberCtrl := newDashboardMemberController()
 	accountSettingsCtrl := newDashboardAccountSettingsController()
@@ -133,12 +133,12 @@ func RegisterAdminRoutes() {
 	})
 
 	facades.Route().Prefix("/v1/accounts").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
-		router.Post("", accountsCtrl.CreateAccount)
+		router.Post("", accountCtrl.Store)
 		router.Prefix("/{accountId}").Middleware(middleware.AccountContext(accounts), totpEnrollment).Group(func(r route.Router) {
-			r.Get("", accountsCtrl.GetAccount)
-			r.Middleware(middleware.Can(accounts, middleware.PermAccountWrite)).Patch("", accountsCtrl.UpdateAccount)
-			r.Middleware(middleware.Can(accounts, middleware.PermAccountLifecycle)).Post("/archive", accountsCtrl.ArchiveAccount)
-			r.Middleware(middleware.Can(accounts, middleware.PermAccountLifecycle)).Post("/freeze", accountsCtrl.FreezeAccount)
+			r.Get("", accountCtrl.Show)
+			r.Middleware(middleware.Can(accounts, middleware.PermAccountWrite)).Patch("", accountCtrl.Update)
+			r.Middleware(middleware.Can(accounts, middleware.PermAccountLifecycle)).Post("/archive", accountCtrl.Archive)
+			r.Middleware(middleware.Can(accounts, middleware.PermAccountLifecycle)).Post("/freeze", accountCtrl.Freeze)
 
 			r.Middleware(middleware.Can(accounts, middleware.PermUsersRead)).Get("/users", memberCtrl.Index)
 			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/users", memberCtrl.Store)
@@ -550,12 +550,8 @@ func newPlatformFeaturesController() *platformfeatures.FeatureController {
 	)
 }
 
-func newDashboardAccountsController() *dashaccounts.AccountsController {
-	return dashaccounts.NewAccountsController(dashaccounts.AccountsControllerDeps{
-		AccountService: container.MustMake[*accountsvc.Service](),
-		Limits:         container.MustMake[*settingssvc.Service](),
-		Features:       container.MustMake[*featuressvc.Service](),
-	})
+func newDashboardAccountController() *dashaccounts.AccountController {
+	return dashaccounts.NewAccountController(container.MustMake[*accountsvc.Service]())
 }
 
 func newDashboardMemberController() *dashaccounts.MemberController {

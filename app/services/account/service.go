@@ -93,6 +93,17 @@ type InviteMailDispatcher interface {
 	DispatchAccountInvite(inviteID uuid.UUID) (string, error)
 }
 
+// SweepLimitsReader reads the account_sweep_limits document an account view
+// carries (settings.Service).
+type SweepLimitsReader interface {
+	AccountSweepLimitsWire(ctx context.Context, accountID uuid.UUID) (*string, error)
+}
+
+// FeatureReader lists an account's active feature keys (features.Service).
+type FeatureReader interface {
+	ActiveForAccount(ctx context.Context, accountID uuid.UUID) ([]string, error)
+}
+
 // PasswordHasher hashes the password of a user an invite creates.
 type PasswordHasher interface {
 	HashPassword(password string) (string, error)
@@ -112,6 +123,9 @@ type Deps struct {
 	InviteMail  InviteMailDispatcher
 	// Passwords is required by AcceptInvite, which creates a user.
 	Passwords PasswordHasher
+	// SweepLimits and Features are required by the dashboard account views.
+	SweepLimits SweepLimitsReader
+	Features    FeatureReader
 }
 
 // MemberChange is a PATCH of one membership. A nil field is left as stored.
@@ -131,6 +145,8 @@ type Service struct {
 	admins      PlatformAdmins
 	inviteMail  InviteMailDispatcher
 	passwords   PasswordHasher
+	sweepLimits SweepLimitsReader
+	features    FeatureReader
 }
 
 // NewService builds an account service from Deps.
@@ -144,6 +160,8 @@ func NewService(deps Deps) *Service {
 		invites:     deps.Invites,
 		inviteMail:  deps.InviteMail,
 		passwords:   deps.Passwords,
+		sweepLimits: deps.SweepLimits,
+		features:    deps.Features,
 	}
 }
 

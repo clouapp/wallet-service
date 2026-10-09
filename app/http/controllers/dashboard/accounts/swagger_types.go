@@ -9,6 +9,15 @@ import (
 // The types below document request and response bodies in the swagger
 // annotations of this package. Handlers do not use them.
 
+type CreateAccountSwagger struct {
+	Name string `json:"name" example:"Acme Corp"`
+}
+
+type UpdateAccountSwagger struct {
+	Name           string `json:"name,omitempty" example:"New Name"`
+	ViewAllWallets *bool  `json:"view_all_wallets,omitempty" example:"true"`
+}
+
 type CreateAccountTokenSwagger struct {
 	Name             string     `json:"name" example:"CI Token"`
 	ValidUntil       *time.Time `json:"valid_until,omitempty"`
