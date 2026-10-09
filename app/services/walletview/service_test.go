@@ -152,7 +152,7 @@ func TestNew_Service_RequiresEveryDependency(t *testing.T) {
 	}
 }
 
-func TestList_ReturnsEveryWalletOfTheAccountForAnUnrestrictedViewer(t *testing.T) {
+func TestList_ReturnsEveryWalletOfTheAccountToACallerWithoutAMembership(t *testing.T) {
 	f := newFixture()
 	f.wallets.page, f.wallets.total = []models.Wallet{{ID: uuid.New(), Chain: models.ChainETH}}, 41
 
@@ -165,31 +165,70 @@ func TestList_ReturnsEveryWalletOfTheAccountForAnUnrestrictedViewer(t *testing.T
 	assert.Equal(t, "eth", f.wallets.chain)
 }
 
-func TestList_LimitsAMemberOnlyViewerToTheirWallets(t *testing.T) {
+func TestList_LimitsAMemberOnlyCallerToTheirWallets(t *testing.T) {
 	f := newFixture()
+	account := &models.Account{ID: uuid.New()}
 	user := uuid.New()
 
-	_, err := f.service().List(context.Background(), walletview.ListInput{AccountID: uuid.New(), Viewer: walletview.Viewer{MemberOnly: true, UserID: user}})
+	_, err := f.service().List(context.Background(), walletview.ListInput{
+		AccountID: account.ID,
+		Caller:    &walletview.Caller{Account: account, Role: models.AccountRoleUser, UserID: user},
+	})
 
 	require.NoError(t, err)
 	assert.True(t, f.wallets.memberPage)
 	assert.Equal(t, user, f.wallets.pagedUser)
 }
 
+// TestList_SeesEveryWalletAsTheAccountRoleAllows pins who lists the whole
+// account: owner and admin always, user and auditor (and the retired viewer)
+// only on an account that shows every wallet, and an unknown role never.
+func TestList_SeesEveryWalletAsTheAccountRoleAllows(t *testing.T) {
+	cases := []struct {
+		role      string
+		viewAll   bool
+		everyRole bool
+	}{
+		{models.AccountRoleOwner, false, true},
+		{models.AccountRoleAdmin, false, true},
+		{models.AccountRoleAuditor, false, false},
+		{models.AccountRoleAuditor, true, true},
+		{models.AccountRoleUser, false, false},
+		{models.AccountRoleUser, true, true},
+		{models.RetiredAccountRoleViewer, true, true},
+		{"superuser", true, false},
+	}
+	for _, tc := range cases {
+		f := newFixture()
+		account := &models.Account{ID: uuid.New(), ViewAllWallets: tc.viewAll}
+
+		_, err := f.service().List(context.Background(), walletview.ListInput{
+			AccountID: account.ID,
+			Caller:    &walletview.Caller{Account: account, Role: tc.role, UserID: uuid.New()},
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, !tc.everyRole, f.wallets.memberPage, "%s view_all=%t", tc.role, tc.viewAll)
+	}
+}
+
 func TestList_RefusesACallerItCannotPlace(t *testing.T) {
+	accountID := uuid.New()
+	account := &models.Account{ID: accountID}
 	cases := map[string]struct {
-		viewer walletview.Viewer
+		caller *walletview.Caller
 		want   error
 	}{
-		"no account":                          {walletview.Viewer{AccountMissing: true}, walletview.ErrAccountRequired},
-		"a member-only caller without a user": {walletview.Viewer{MemberOnly: true}, walletview.ErrViewerRequired},
-		"no account wins over no user":        {walletview.Viewer{AccountMissing: true, MemberOnly: true}, walletview.ErrAccountRequired},
+		"no account":                          {&walletview.Caller{Role: models.AccountRoleOwner, UserID: uuid.New()}, walletview.ErrAccountRequired},
+		"another account":                     {&walletview.Caller{Account: &models.Account{ID: uuid.New()}, Role: models.AccountRoleOwner, UserID: uuid.New()}, walletview.ErrAccountRequired},
+		"a member-only caller without a user": {&walletview.Caller{Account: account, Role: models.AccountRoleUser}, walletview.ErrViewerRequired},
+		"no account wins over no user":        {&walletview.Caller{Role: models.AccountRoleUser}, walletview.ErrAccountRequired},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			f := newFixture()
 
-			_, err := f.service().List(context.Background(), walletview.ListInput{Viewer: tc.viewer})
+			_, err := f.service().List(context.Background(), walletview.ListInput{AccountID: accountID, Caller: tc.caller})
 
 			require.ErrorIs(t, err, tc.want)
 			assert.Nil(t, f.wallets.page)
@@ -286,15 +325,16 @@ func TestList_ItemWithoutBalancesHasAnEmptyAssetList(t *testing.T) {
 
 func TestGet(t *testing.T) {
 	wallet := &models.Wallet{ID: uuid.New(), Chain: models.ChainPolygon}
-	in := func(viewer walletview.Viewer) walletview.GetInput {
-		return walletview.GetInput{AccountID: uuid.New(), WalletID: wallet.ID, Viewer: viewer}
+	account := &models.Account{ID: uuid.New()}
+	in := func(caller *walletview.Caller) walletview.GetInput {
+		return walletview.GetInput{AccountID: account.ID, WalletID: wallet.ID, Caller: caller}
 	}
 
 	t.Run("returns the wallet with its network", func(t *testing.T) {
 		f := newFixture()
 		f.wallets.owned = wallet
 
-		detail, err := f.service().Get(context.Background(), in(walletview.Viewer{}))
+		detail, err := f.service().Get(context.Background(), in(nil))
 
 		require.NoError(t, err)
 		assert.Same(t, wallet, detail.Wallet)
@@ -310,30 +350,34 @@ func TestGet(t *testing.T) {
 			f := newFixture()
 			f.wallets = store
 
-			_, err := f.service().Get(context.Background(), in(walletview.Viewer{}))
+			_, err := f.service().Get(context.Background(), in(nil))
 
 			assert.ErrorIs(t, err, walletview.ErrWalletNotFound, name)
 		}
 	})
 
 	t.Run("a member-only caller needs the membership", func(t *testing.T) {
-		member := walletview.Viewer{MemberOnly: true, UserID: uuid.New()}
+		member := &walletview.Caller{Account: account, Role: models.AccountRoleUser, UserID: uuid.New()}
 		cases := map[string]struct {
 			members fakeMemberStore
-			viewer  walletview.Viewer
+			caller  *walletview.Caller
 			want    error
 		}{
 			"member":              {fakeMemberStore{}, member, nil},
 			"not a member":        {fakeMemberStore{err: models.ErrRepositoryNotFound}, member, walletview.ErrWalletNotFound},
-			"unidentified":        {fakeMemberStore{}, walletview.Viewer{MemberOnly: true}, walletview.ErrViewerRequired},
-			"account not carried": {fakeMemberStore{}, walletview.Viewer{AccountMissing: true}, walletview.ErrAccountRequired},
+			"unidentified":        {fakeMemberStore{}, &walletview.Caller{Account: account, Role: models.AccountRoleUser}, walletview.ErrViewerRequired},
+			"account not carried": {fakeMemberStore{}, &walletview.Caller{Role: models.AccountRoleOwner, UserID: uuid.New()}, walletview.ErrAccountRequired},
+			"an owner skips the membership": {
+				fakeMemberStore{err: models.ErrRepositoryNotFound},
+				&walletview.Caller{Account: account, Role: models.AccountRoleOwner, UserID: uuid.New()}, nil,
+			},
 		}
 		for name, tc := range cases {
 			f := newFixture()
 			f.wallets.owned = wallet
 			f.members = tc.members
 
-			_, err := f.service().Get(context.Background(), in(tc.viewer))
+			_, err := f.service().Get(context.Background(), in(tc.caller))
 
 			if tc.want == nil {
 				assert.NoError(t, err, name)
@@ -348,7 +392,7 @@ func TestGet(t *testing.T) {
 		f.wallets.owned = wallet
 		f.members = fakeMemberStore{err: errors.New("pq: down")}
 
-		_, err := f.service().Get(context.Background(), in(walletview.Viewer{MemberOnly: true, UserID: uuid.New()}))
+		_, err := f.service().Get(context.Background(), in(&walletview.Caller{Account: account, Role: models.AccountRoleUser, UserID: uuid.New()}))
 
 		var failed *walletview.FetchError
 		require.ErrorAs(t, err, &failed)

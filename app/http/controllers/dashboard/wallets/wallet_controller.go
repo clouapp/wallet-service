@@ -13,7 +13,6 @@ import (
 	walletresource "github.com/macrowallets/waas/app/http/resources/dashboard/wallets"
 	walletsresources "github.com/macrowallets/waas/app/http/resources/wallets"
 	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/policies"
 	"github.com/macrowallets/waas/app/services/walletops"
 	"github.com/macrowallets/waas/app/services/walletview"
 )
@@ -52,7 +51,6 @@ func (c *WalletController) Index(ctx http.Context) http.Response {
 	if !ok || accountID == uuid.Nil {
 		return mapError(ctx, walletview.ErrAccountRequired, "fetch wallets")
 	}
-	viewer := viewerOf(ctx, accountID)
 	limit, offset := pagination.ParseParams(ctx, 20)
 
 	page, err := c.view.List(ctx.Context(), walletview.ListInput{
@@ -60,7 +58,7 @@ func (c *WalletController) Index(ctx http.Context) http.Response {
 		Chain:     ctx.Request().Query("chain"),
 		Limit:     limit,
 		Offset:    offset,
-		Viewer:    viewer,
+		Caller:    callerOf(ctx),
 	})
 	if err != nil {
 		return mapError(ctx, err, "fetch wallets")
@@ -95,7 +93,7 @@ func (c *WalletController) Show(ctx http.Context) http.Response {
 	detail, err := c.view.Get(ctx.Context(), walletview.GetInput{
 		AccountID: accountID,
 		WalletID:  walletID,
-		Viewer:    viewerOf(ctx, accountID),
+		Caller:    callerOf(ctx),
 	})
 	if err != nil {
 		return mapError(ctx, err, "fetch wallet")
@@ -150,19 +148,11 @@ func (c *WalletController) Activate(ctx http.Context) http.Response {
 	return ctx.Response().Success().Json(http.Json{"status": "active"})
 }
 
-// viewerOf says which wallets the caller may see: all of them for an owner,
-// an admin or an account that shows every wallet, otherwise the ones they are a
-// member of.
-func viewerOf(ctx http.Context, accountID uuid.UUID) walletview.Viewer {
-	account, hasAccount := requestctx.Account(ctx)
+// callerOf is the member asking, as the scope middleware stored them; the
+// wallet view decides which wallets they see.
+func callerOf(ctx http.Context) *walletview.Caller {
+	account, _ := requestctx.Account(ctx)
 	role, _ := requestctx.AccountRole(ctx)
 	userID, _ := requestctx.UserID(ctx)
-
-	if !hasAccount || account == nil || account.ID != accountID {
-		return walletview.Viewer{AccountMissing: true}
-	}
-	return walletview.Viewer{
-		MemberOnly: !policies.SeesEveryAccountWallet(role, account.ViewAllWallets),
-		UserID:     userID,
-	}
+	return &walletview.Caller{Account: account, Role: role, UserID: userID}
 }

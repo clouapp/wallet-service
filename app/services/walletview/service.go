@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/policies"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/walletrecords"
@@ -39,13 +40,39 @@ func (e *FetchError) Unwrap() error { return e.Err }
 
 func fetchFailed(what string, err error) error { return &FetchError{What: what, Err: err} }
 
-// Viewer is who asks. The zero value sees every wallet of the account.
-type Viewer struct {
-	// MemberOnly limits the wallets to those the user is a member of.
-	MemberOnly bool
-	UserID     uuid.UUID
-	// AccountMissing marks a caller whose account the request did not carry.
-	AccountMissing bool
+// Caller is the dashboard member who asks: the account the request carried,
+// their role on it and their user id. A nil Caller is an API token, which sees
+// every wallet of its account.
+type Caller struct {
+	Account *models.Account
+	Role    string
+	UserID  uuid.UUID
+}
+
+// viewer is which wallets of the account a caller may see. The zero value
+// sees every wallet of the account.
+type viewer struct {
+	// memberOnly limits the wallets to those the user is a member of.
+	memberOnly bool
+	userID     uuid.UUID
+	// accountMissing marks a caller whose account the request did not carry.
+	accountMissing bool
+}
+
+// viewerOf places the caller on the account: an owner, an admin or an account
+// that shows every wallet sees all of them, anyone else the ones they are a
+// member of. A caller whose account is not the one asked about is not placed.
+func viewerOf(accountID uuid.UUID, caller *Caller) viewer {
+	if caller == nil {
+		return viewer{}
+	}
+	if caller.Account == nil || caller.Account.ID != accountID {
+		return viewer{accountMissing: true}
+	}
+	return viewer{
+		memberOnly: !policies.SeesEveryAccountWallet(caller.Role, caller.Account.ViewAllWallets),
+		userID:     caller.UserID,
+	}
 }
 
 // Deps is everything the reads need. Every field is required.
@@ -117,13 +144,15 @@ type ListInput struct {
 	Chain     string
 	Limit     int
 	Offset    int
-	Viewer    Viewer
+	// Caller is the dashboard member who asks; nil sees every wallet.
+	Caller *Caller
 }
 
 // List returns a page of wallets with their networks and balances, reading each
 // chain and its tokens once.
 func (s *Service) List(ctx context.Context, in ListInput) (Page, error) {
-	if err := checkViewer(in.Viewer); err != nil {
+	v := viewerOf(in.AccountID, in.Caller)
+	if err := checkViewer(v); err != nil {
 		return Page{}, err
 	}
 
@@ -132,8 +161,8 @@ func (s *Service) List(ctx context.Context, in ListInput) (Page, error) {
 		total   int64
 		err     error
 	)
-	if in.Viewer.MemberOnly {
-		wallets, total, err = s.wallets.PaginateByAccountAndMember(ctx, in.AccountID, in.Viewer.UserID, in.Chain, in.Limit, in.Offset)
+	if v.memberOnly {
+		wallets, total, err = s.wallets.PaginateByAccountAndMember(ctx, in.AccountID, v.userID, in.Chain, in.Limit, in.Offset)
 	} else {
 		wallets, total, err = s.wallets.PaginateByAccount(ctx, in.AccountID, in.Chain, in.Limit, in.Offset)
 	}
@@ -152,11 +181,11 @@ func (s *Service) List(ctx context.Context, in ListInput) (Page, error) {
 
 // checkViewer refuses a caller who cannot be placed: the account must be known,
 // and a member-only caller must be identified.
-func checkViewer(viewer Viewer) error {
-	if viewer.AccountMissing {
+func checkViewer(v viewer) error {
+	if v.accountMissing {
 		return ErrAccountRequired
 	}
-	if viewer.MemberOnly && viewer.UserID == uuid.Nil {
+	if v.memberOnly && v.userID == uuid.Nil {
 		return ErrViewerRequired
 	}
 	return nil
@@ -166,7 +195,8 @@ func checkViewer(viewer Viewer) error {
 type GetInput struct {
 	AccountID uuid.UUID
 	WalletID  uuid.UUID
-	Viewer    Viewer
+	// Caller is the dashboard member who asks; nil may see any wallet of the account.
+	Caller *Caller
 }
 
 // Detail is a wallet with the network its chain points at.
@@ -185,21 +215,21 @@ func (s *Service) Get(ctx context.Context, in GetInput) (Detail, error) {
 		}
 		return Detail{}, ErrWalletNotFound
 	}
-	if err := s.requireVisible(ctx, wallet.ID, in.Viewer); err != nil {
+	if err := s.requireVisible(ctx, wallet.ID, viewerOf(in.AccountID, in.Caller)); err != nil {
 		return Detail{}, err
 	}
 	return Detail{Wallet: wallet, Network: s.Network(ctx, wallet.Chain)}, nil
 }
 
 // requireVisible refuses a wallet a member-only caller does not belong to.
-func (s *Service) requireVisible(ctx context.Context, walletID uuid.UUID, viewer Viewer) error {
-	if err := checkViewer(viewer); err != nil {
+func (s *Service) requireVisible(ctx context.Context, walletID uuid.UUID, v viewer) error {
+	if err := checkViewer(v); err != nil {
 		return err
 	}
-	if !viewer.MemberOnly {
+	if !v.memberOnly {
 		return nil
 	}
-	_, err := s.members.FindByWalletAndUser(ctx, walletID, viewer.UserID)
+	_, err := s.members.FindByWalletAndUser(ctx, walletID, v.userID)
 	switch {
 	case err == nil:
 		return nil
