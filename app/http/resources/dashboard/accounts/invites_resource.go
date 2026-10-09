@@ -73,3 +73,37 @@ func NewInviteLink(issued *accountsvc.IssuedInvite) InviteLink {
 		Role:       issued.Invite.Role,
 	}
 }
+
+// InvitePreview is GET /v1/auth/invites/{token}: the public facts of a pending
+// invite. The keys keep the order the answer has always had.
+type InvitePreview struct {
+	AccountName   string `json:"account_name"`
+	Email         string `json:"email"`
+	Inviter       string `json:"inviter"`
+	NeedsPassword bool   `json:"needs_password"`
+	Role          string `json:"role"`
+}
+
+// NewInvitePreview shapes the preview the account service read.
+func NewInvitePreview(preview accountsvc.InvitePreview) InvitePreview {
+	return InvitePreview{
+		AccountName:   preview.AccountName,
+		Email:         preview.Email,
+		Inviter:       preview.Inviter,
+		NeedsPassword: preview.NeedsPassword,
+		Role:          preview.Role,
+	}
+}
+
+// AcceptedInvite is POST /v1/auth/invites/accept: the user who is now a
+// member. The keys keep the order the answer has always had.
+type AcceptedInvite struct {
+	Email  string    `json:"email"`
+	Status string    `json:"status"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+// NewAcceptedInvite shapes the user an accepted invite belongs to.
+func NewAcceptedInvite(user *models.User) AcceptedInvite {
+	return AcceptedInvite{Email: user.Email, Status: user.Status, UserID: user.ID}
+}

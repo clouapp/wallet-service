@@ -52,6 +52,12 @@ func mapError(ctx http.Context, err error, failure string) http.Response {
 	case errors.Is(err, accountsvc.ErrFrontendURLRequired):
 		appfacades.Log().WithContext(ctx).Errorf("account: invite link base is not configured")
 		return responses.FailMessage(ctx, http.StatusInternalServerError, failure)
+	case errors.Is(err, accountsvc.ErrInviteInvalid):
+		return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, accountsvc.ErrInviteInvalid.Error())
+	case errors.Is(err, accountsvc.ErrInviteLoginRequired):
+		return responses.Error(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, accountsvc.ErrInviteLoginRequired.Error())
+	case errors.Is(err, accountsvc.ErrInvitePassword):
+		return responses.Error(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, accountsvc.ErrInvitePassword.Error())
 	case errors.Is(err, accountsvc.ErrAccessTokenNotFound):
 		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "token not found")
 	case errors.Is(err, apitoken.ErrSign):
@@ -71,6 +77,26 @@ func mapInviteError(ctx http.Context, err error, failure string) http.Response {
 		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, "forbidden")
 	}
 	return mapError(ctx, err, failure)
+}
+
+// mapAcceptError is mapError for accepting an invite: a role the inviter can
+// no longer grant is 422 with the sentinel's sentence, because the caller is
+// not the one granting it.
+func mapAcceptError(ctx http.Context, err error) http.Response {
+	if errors.Is(err, accountsvc.ErrGrantRole) {
+		return responses.Error(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, accountsvc.ErrGrantRole.Error())
+	}
+	return mapError(ctx, err, "failed to accept invite")
+}
+
+// mapPreviewError answers every failure of an invite preview with the same
+// 404, so the answer says nothing about why the token cannot be used. A
+// failure other than an invalid invite is logged.
+func mapPreviewError(ctx http.Context, err error) http.Response {
+	if !errors.Is(err, accountsvc.ErrInviteInvalid) {
+		slog.Error("controller internal error", "endpoint", "preview invite", "error", err)
+	}
+	return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, accountsvc.ErrInviteInvalid.Error())
 }
 
 // internalError logs err and answers 500 with failure. A sentence gets the

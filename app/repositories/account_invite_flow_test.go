@@ -142,11 +142,11 @@ func TestResend_Invite_RotatesTheOpenToken(t *testing.T) {
 	assert.Equal(t, expiresBefore, scalar[int64](t, `SELECT EXTRACT(EPOCH FROM expires_at)::bigint FROM account_invites WHERE id = ?`, issued.Invite.ID))
 	assert.Equal(t, invited, scalar[int64](t, `SELECT count(*) FROM account_activity WHERE action = 'member.invited' AND account_id = ?`, account.ID))
 
-	_, _, err = svc.PreviewInvite(context.Background(), issued.RawToken)
+	_, err = svc.PreviewInvite(context.Background(), issued.RawToken)
 	assert.ErrorIs(t, err, accountsvc.ErrInviteInvalid)
-	preview, needsPassword, err := svc.PreviewInvite(context.Background(), resent.RawToken)
+	preview, err := svc.PreviewInvite(context.Background(), resent.RawToken)
 	require.NoError(t, err)
-	assert.True(t, needsPassword)
+	assert.True(t, preview.NeedsPassword)
 	assert.Equal(t, "resend-me@example.com", preview.Email)
 	assert.Equal(t, models.AccountRoleAuditor, preview.Role)
 
@@ -198,7 +198,7 @@ func TestRevoke_Invite_StampsRevokedAtAndLeavesTheToken(t *testing.T) {
 	assert.Equal(t, int64(0), scalar[int64](t, `SELECT count(*) FROM account_invites WHERE id = ? AND revoked_at IS NULL`, issued.Invite.ID))
 	revokedAt := scalar[int64](t, `SELECT EXTRACT(EPOCH FROM revoked_at)::bigint FROM account_invites WHERE id = ?`, issued.Invite.ID)
 	assert.NotZero(t, revokedAt)
-	_, _, err = svc.PreviewInvite(context.Background(), issued.RawToken)
+	_, err = svc.PreviewInvite(context.Background(), issued.RawToken)
 	assert.ErrorIs(t, err, accountsvc.ErrInviteInvalid)
 	assert.Equal(t, invited, scalar[int64](t, `SELECT count(*) FROM account_activity WHERE action = 'member.invited' AND account_id = ?`, account.ID))
 

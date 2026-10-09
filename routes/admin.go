@@ -70,7 +70,7 @@ func RegisterAdminRoutes() {
 		whitelist,
 		walletWebhooks,
 	)
-	inviteCtrl := newDashboardInvitesController()
+	inviteCtrl := newDashboardInviteController()
 	totpEnrollment := middleware.TOTPEnrollment(
 		container.MustMake[*featuressvc.Service](),
 		container.MustMake[*settingssvc.Service](),
@@ -144,10 +144,10 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/users", memberCtrl.Store)
 			r.Middleware(middleware.AccountUpdateMember(accounts)).Patch("/users/{userId}", memberCtrl.Update)
 			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Delete("/users/{userId}", memberCtrl.Destroy)
-			r.Middleware(middleware.Can(accounts, middleware.PermUsersRead)).Get("/invites", inviteCtrl.List)
-			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/invites", inviteCtrl.Create)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersRead)).Get("/invites", inviteCtrl.Index)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/invites", inviteCtrl.Store)
 			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/invites/{id}/resend", inviteCtrl.Resend)
-			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Delete("/invites/{id}", inviteCtrl.Delete)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Delete("/invites/{id}", inviteCtrl.Destroy)
 
 			// S3.4.2: GET /v1/accounts/{accountId}/roles roles.read.
 			// Effective grants are the code catalog. There is no
@@ -569,9 +569,6 @@ func newDashboardTokenController() *dashaccounts.TokenController {
 	)
 }
 
-func newDashboardInvitesController() *dashaccounts.InvitesController {
-	return dashaccounts.NewInvitesController(dashaccounts.InvitesControllerDeps{
-		Accounts: container.MustMake[*accountsvc.Service](),
-		Users:    container.MustMake[*usersvc.Service](),
-	})
+func newDashboardInviteController() *dashaccounts.InviteController {
+	return dashaccounts.NewInviteController(container.MustMake[*accountsvc.Service]())
 }

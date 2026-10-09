@@ -74,3 +74,39 @@ func TestInvite_View_KeepsTheListWire(t *testing.T) {
 		t.Fatalf("an empty page is %s, want []", empty)
 	}
 }
+
+func TestInvite_Preview_AndAcceptKeepTheMapWire(t *testing.T) {
+	t.Parallel()
+
+	preview := accountsvc.InvitePreview{AccountName: "Acme", Inviter: "Ada", Role: "user", Email: "new@example.com", NeedsPassword: true}
+	want, err := json.Marshal(map[string]any{
+		"account_name":   preview.AccountName,
+		"inviter":        preview.Inviter,
+		"role":           preview.Role,
+		"email":          preview.Email,
+		"needs_password": preview.NeedsPassword,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := json.Marshal(accounts.NewInvitePreview(preview))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("preview wire changed\n got %s\nwant %s", got, want)
+	}
+
+	user := &models.User{ID: uuid.MustParse("11111111-1111-4111-8111-111111111111"), Email: "new@example.com", Status: "active", PasswordHash: "hidden"}
+	want, err = json.Marshal(map[string]any{"user_id": user.ID, "email": user.Email, "status": user.Status})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = json.Marshal(accounts.NewAcceptedInvite(user))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("accept wire changed\n got %s\nwant %s", got, want)
+	}
+}

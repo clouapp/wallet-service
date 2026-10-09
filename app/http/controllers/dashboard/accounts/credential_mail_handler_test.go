@@ -12,8 +12,8 @@ func TestHandlers_Leave_CredentialDispatchToTheDecidingService(t *testing.T) {
 		signature string
 	}{
 		{"member_controller.go", "func (c *MemberController) Store"},
-		{"invites_controller.go", "func (ctrl *InvitesController) Create"},
-		{"invites_controller.go", "func (ctrl *InvitesController) Resend"},
+		{"invite_controller.go", "func (c *InviteController) Store"},
+		{"invite_controller.go", "func (c *InviteController) Resend"},
 		{"../auth/auth_controller.go", "func (ctrl *AuthController) ForgotPassword"},
 	}
 	for _, check := range checks {
