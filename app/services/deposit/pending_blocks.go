@@ -158,3 +158,32 @@ func (s *Service) PendingCounts(ctx context.Context) (map[string]int, error) {
 	}
 	return counts, errors.Join(failures...)
 }
+
+// pendingHealthTimeout bounds the health check's read of the pending store.
+const pendingHealthTimeout = 2 * time.Second
+
+// PendingHealth is the pending-block counts the health check reports. Err
+// is set when the store, or a chain's list, could not be read; Counts keeps
+// what could.
+type PendingHealth struct {
+	Counts map[string]int
+	Total  int
+	Err    error
+}
+
+// PendingHealth reads PendingCounts with a short deadline and sums them. It
+// never fails: pending blocks are recovered by the reprocessor, so they are
+// reported, not treated as the API being down.
+func (s *Service) PendingHealth(parent context.Context) PendingHealth {
+	ctx, cancel := context.WithTimeout(parent, pendingHealthTimeout)
+	defer cancel()
+	counts, err := s.PendingCounts(ctx)
+	health := PendingHealth{Counts: counts, Err: err}
+	for _, count := range counts {
+		health.Total += count
+	}
+	if err != nil {
+		slog.Error("deposit scanner pending counts", "error_type", fmt.Sprintf("%T", err))
+	}
+	return health
+}
