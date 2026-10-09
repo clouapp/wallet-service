@@ -423,6 +423,21 @@ func (s *Service) SetScopedForPlatform(ctx context.Context, actorID uuid.UUID, s
 	return List{Features: flags}, nil
 }
 
+// SetScopedFlagForPlatform is PUT /v1/platform/features/{scope}/{id}/{feature}:
+// SetScopedForPlatform for one flag, returning the stored flag. It refuses and
+// stores the same way. A write that reads back anything but that one flag is
+// ErrNotStored.
+func (s *Service) SetScopedFlagForPlatform(ctx context.Context, actorID uuid.UUID, scope, rawID, key string, enabled bool, accounts Accounts) (Flag, error) {
+	view, err := s.SetScopedForPlatform(ctx, actorID, scope, rawID, []ScopedWrite{{Key: key, Enabled: enabled}}, accounts)
+	if err != nil {
+		return Flag{}, err
+	}
+	if len(view.Features) != 1 {
+		return Flag{}, ErrNotStored
+	}
+	return view.Features[0], nil
+}
+
 // appendFeatureAudit stores one account_activity row for the flags whose
 // boolean changed. An unchanged flag is not a change. A write that changes
 // nothing stores the rows and writes no activity. Platform rows pass a nil

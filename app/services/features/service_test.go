@@ -875,3 +875,32 @@ func activityNames(rows []models.AccountActivity, names ...string) int {
 	}
 	return count
 }
+
+func TestSet_ScopedFlag_ForPlatformReturnsTheOneStoredFlag(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	adminID := uuid.New()
+	accountID := uuid.New()
+	accounts := &scopeAccounts{found: map[uuid.UUID]struct{}{accountID: {}}}
+	service := NewService(Deps{Store: store, Admins: &scopeAdmins{allow: adminID}, Activity: &recordingFeatureActivity{}})
+	ctx := context.Background()
+
+	flag, err := service.SetScopedFlagForPlatform(ctx, adminID, ScopeAccount, accountID.String(), FlagSweepEnabled, false, accounts)
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if flag != (Flag{Key: FlagSweepEnabled, Enabled: false}) {
+		t.Fatalf("flag = %+v", flag)
+	}
+	if value, ok := store.written(accountID, FlagSweepEnabled); !ok || value {
+		t.Fatal("account row was not stored false")
+	}
+
+	if _, err := service.SetScopedFlagForPlatform(ctx, adminID, ScopeAccount, accountID.String(), "not-a-flag", true, accounts); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown key error = %v", err)
+	}
+	if _, err := service.SetScopedFlagForPlatform(ctx, uuid.New(), ScopeAccount, accountID.String(), FlagSweepEnabled, true, accounts); !errors.Is(err, ErrPlatformForbidden) {
+		t.Fatalf("non-admin error = %v", err)
+	}
+}
