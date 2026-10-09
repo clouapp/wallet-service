@@ -19,6 +19,9 @@ var (
 	ErrActOnMember = errors.New("cannot change a member above your rank")
 	// ErrLastOwner is a suspend, demotion or removal that would leave the account with no owner.
 	ErrLastOwner = errors.New("cannot remove or suspend the last owner")
+	// ErrAlreadyMember is AddUser's refusal of a user whose membership is on the
+	// account already (active or suspended); a removed one is restored instead.
+	ErrAlreadyMember = errors.New("user is already a member of this account")
 	// ErrMemberRole is a role outside owner, admin, auditor and user.
 	ErrMemberRole = errors.New("invalid member role")
 	// ErrMemberStatus is a status outside active and suspended.

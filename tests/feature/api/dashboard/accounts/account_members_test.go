@@ -409,6 +409,25 @@ func (s *AccountMembersTestSuite) TestCreate_Invite_AcceptsNewAndExistingEmailsW
 	s.NotContains(listedBody, "invite_link")
 }
 
+// A member who accepts an invite to the account they are on already gets 409,
+// not the 500 of a duplicate row; the invite stays open and nothing is written.
+func (s *AccountMembersTestSuite) TestAccept_Invite_ByAMemberIsAConflict() {
+	accountID := s.createAccount()
+	owner := s.loginUser(models.AccountRoleOwner, models.MembershipStatusActive, accountID)
+	member := s.loginUser(models.AccountRoleUser, models.MembershipStatusActive, accountID)
+	email := models.AccountRoleUser + "-" + member.id.String()[:8] + "@example.com"
+	rawToken := "accept-twice-" + uuid.NewString()
+	inviteID := s.insertOpenInvite(accountID, owner.id, email, models.AccountRoleAdmin, accountsvc.HashInviteToken(rawToken))
+
+	resp := s.Post("/v1/auth/invites/accept", support.Session{AccessToken: member.token}, fmt.Sprintf(`{"token":%q}`, rawToken))
+
+	s.AssertError(resp, 409, "conflict", "user is already a member of this account")
+	s.Equal(int64(1), s.countRows(&models.AccountUser{}, "account_id = ? AND user_id = ?", accountID, member.id))
+	role, _ := s.storedRole(accountID, member.id)
+	s.Equal(models.AccountRoleUser, role)
+	s.Equal(int64(1), s.countRows(&models.AccountInvite{}, "id = ? AND accepted_at IS NULL", inviteID))
+}
+
 func (s *AccountMembersTestSuite) TestCreate_Invite_RefusesAuditorAndUser() {
 	accountID := s.createAccount()
 	auditor := s.loginUser("auditor", models.MembershipStatusActive, accountID)

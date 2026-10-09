@@ -44,6 +44,8 @@ func mapError(ctx http.Context, err error, failure string) http.Response {
 		return responses.FieldsFailed(ctx, map[string][]string{"status": {"status must be active or suspended"}})
 	case errors.Is(err, accountsvc.ErrMemberChangeEmpty):
 		return responses.FieldsFailed(ctx, map[string][]string{"role": {accountsvc.ErrMemberChangeEmpty.Error()}})
+	case errors.Is(err, accountsvc.ErrAlreadyMember):
+		return responses.Fail(ctx, http.StatusConflict, responses.CodeConflict, accountsvc.ErrAlreadyMember.Error())
 	case errors.Is(err, accountsvc.ErrUserLookup):
 		return internalError(ctx, err, "failed to look up user")
 	case errors.Is(err, accountsvc.ErrMemberNotAdded):

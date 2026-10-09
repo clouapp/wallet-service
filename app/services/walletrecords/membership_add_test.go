@@ -130,6 +130,18 @@ func TestMemberships_AddMember(t *testing.T) {
 		assert.Nil(t, members.created)
 	})
 
+	t.Run("a membership on the wallet already is refused and left as it is", func(t *testing.T) {
+		current := &models.WalletUser{ID: uuid.New(), Roles: "viewer"}
+		members := &addMembers{existing: current}
+
+		_, err := newMemberships(members, active).AddMember(context.Background(), wallet, user, "approver")
+
+		assert.ErrorIs(t, err, walletrecords.ErrAlreadyWalletMember)
+		assert.Nil(t, members.created)
+		assert.Equal(t, uuid.Nil, members.restored)
+		assert.Empty(t, members.rolesSet)
+	})
+
 	t.Run("a removed membership is restored with the new roles", func(t *testing.T) {
 		removedAt := time.Now()
 		removed := &models.WalletUser{ID: uuid.New(), Roles: "viewer", DeletedAt: &removedAt}

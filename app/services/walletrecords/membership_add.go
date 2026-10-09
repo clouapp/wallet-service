@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/pgerr"
 )
 
 var (
@@ -18,6 +19,9 @@ var (
 	// ErrMembershipLookup wraps a failed read of the user's existing wallet
 	// membership. The cause stays on the error chain.
 	ErrMembershipLookup = errors.New("failed to load membership")
+	// ErrAlreadyWalletMember is AddMember's refusal of a user whose membership is
+	// on the wallet already; a removed one is restored instead.
+	ErrAlreadyWalletMember = errors.New("user is already a member of this wallet")
 	// ErrMembershipRestore wraps a failed restore of a removed membership.
 	ErrMembershipRestore = errors.New("failed to restore wallet user")
 )
@@ -45,7 +49,10 @@ func (m *Memberships) AddMember(ctx context.Context, wallet *models.Wallet, user
 		slog.Error("wallet-users: lookup existing", "wallet", wallet.ID, "error", err)
 		return nil, fmt.Errorf("%w: %w", ErrMembershipLookup, err)
 	}
-	if existing != nil && existing.DeletedAt != nil {
+	if existing != nil && existing.DeletedAt == nil {
+		return nil, ErrAlreadyWalletMember
+	}
+	if existing != nil {
 		if err := m.members.Restore(ctx, existing.ID); err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrMembershipRestore, err)
 		}
@@ -65,6 +72,9 @@ func (m *Memberships) AddMember(ctx context.Context, wallet *models.Wallet, user
 		Status:   memberStatusActive,
 	}
 	if err := m.members.Create(ctx, member); err != nil {
+		if pgerr.IsUniqueViolation(err) {
+			return nil, ErrAlreadyWalletMember
+		}
 		return nil, fmt.Errorf("add wallet user: %w", err)
 	}
 	return member, nil

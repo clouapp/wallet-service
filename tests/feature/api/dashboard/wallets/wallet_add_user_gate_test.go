@@ -82,6 +82,24 @@ func (s *WalletAddUserGateTestSuite) TestWallet_Add_UserFollowsTheLoadedRoles() 
 	}
 }
 
+// Adding a user who is on the wallet already is 409, not the 500 of a
+// duplicate row, and the roles they hold stay.
+func (s *WalletAddUserGateTestSuite) TestAdd_Wallet_UserTwiceIsAConflict() {
+	account := fixtures.InsertAccount(s.T(), "wallet add user twice")
+	s.seedChain()
+	wallet := fixtures.InsertWalletWithAccount(s.T(), models.ChainETH, &account.ID)
+	owner := s.member(models.AccountRoleOwner, account.ID)
+	target := s.insertUser("twice-" + uuid.NewString()[:8] + "@example.com")
+	s.accountMember(account.ID, target, models.AccountRoleUser)
+	s.addUser(owner.token, account.ID, wallet.ID, target, models.WalletRoleViewer).AssertStatus(201)
+
+	resp := s.addUser(owner.token, account.ID, wallet.ID, target, models.WalletRoleSpender)
+
+	s.AssertError(resp, 409, "conflict", "user is already a member of this wallet")
+	s.Equal(int64(1), s.walletMembershipCount(wallet.ID, target))
+	s.Equal(models.WalletRoleViewer, s.storedWalletRoles(wallet.ID, target))
+}
+
 func (s *WalletAddUserGateTestSuite) TestAdd_Wallet_UserValidationStaysUnprocessable() {
 	account := fixtures.InsertAccount(s.T(), "wallet add user validation")
 	s.seedChain()

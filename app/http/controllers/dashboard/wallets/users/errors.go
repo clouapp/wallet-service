@@ -13,8 +13,9 @@ import (
 )
 
 // mapError answers a wallet membership failure. Roles outside the wallet
-// vocabulary and a user who is not an active member of the account are 422, and
-// a failed read of the existing membership is 503. Any other failure is 500
+// vocabulary and a user who is not an active member of the account are 422, a
+// user who is on the wallet already is 409, and a failed read of the existing
+// membership is 503. Any other failure is 500
 // "failed to <action>", with the cause logged and kept out of the body.
 func mapError(ctx http.Context, err error, action string) http.Response {
 	switch {
@@ -22,6 +23,8 @@ func mapError(ctx http.Context, err error, action string) http.Response {
 		return responses.Error(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, models.ErrInvalidWalletRoles.Error())
 	case errors.Is(err, walletrecords.ErrNotAccountMember):
 		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, walletrecords.ErrNotAccountMember.Error())
+	case errors.Is(err, walletrecords.ErrAlreadyWalletMember):
+		return responses.Fail(ctx, http.StatusConflict, responses.CodeConflict, walletrecords.ErrAlreadyWalletMember.Error())
 	case errors.Is(err, walletrecords.ErrMembershipLookup):
 		return responses.Fail(ctx, http.StatusServiceUnavailable, responses.CodeUnavailable, walletrecords.ErrMembershipLookup.Error())
 	case errors.Is(err, walletrecords.ErrMembershipRestore):

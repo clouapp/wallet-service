@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/policies"
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 	audit "github.com/macrowallets/waas/packages/activitylog"
+	"github.com/macrowallets/waas/pkg/pgerr"
 )
 
 // AccountStore is the account writes this service performs.
@@ -219,7 +220,10 @@ func (s *Service) AddUser(ctx context.Context, accountID, userID uuid.UUID, role
 	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		return err
 	}
-	if err == nil && existing != nil && existing.DeletedAt != nil {
+	if err == nil && existing != nil && existing.DeletedAt == nil {
+		return ErrAlreadyMember
+	}
+	if err == nil && existing != nil {
 		if err := s.memberships.Restore(ctx, existing.ID); err != nil {
 			return err
 		}
@@ -236,7 +240,13 @@ func (s *Service) AddUser(ctx context.Context, accountID, userID uuid.UUID, role
 		Status:    models.MembershipStatusActive,
 		AddedBy:   &addedBy,
 	}
-	return s.memberships.Create(ctx, au)
+	if err := s.memberships.Create(ctx, au); err != nil {
+		if pgerr.IsUniqueViolation(err) {
+			return ErrAlreadyMember
+		}
+		return err
+	}
+	return nil
 }
 
 // RemoveUser soft-deletes the active membership. It does not check rank or

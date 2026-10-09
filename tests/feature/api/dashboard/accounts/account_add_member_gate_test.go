@@ -70,6 +70,24 @@ func (s *AccountAddMemberGateTestSuite) TestAdd_Member_ValidationStaysUnprocessa
 	s.Equal(before, s.accountMembershipCount(accountID))
 }
 
+// Adding a member who is on the account already is 409, not the 500 of a
+// duplicate row, and the membership stays as it was.
+func (s *AccountAddMemberGateTestSuite) TestAdd_Member_TwiceIsAConflict() {
+	accountID := uuid.New()
+	s.Require().NoError(facades.Orm().Query().Create(&models.Account{
+		ID: accountID, Name: "Account " + accountID.String()[:8], Status: models.StatusActive, Environment: "prod",
+	}))
+	token := s.login(models.AccountRoleOwner, accountID)
+	targetID := s.insertUser("twice-target-" + uuid.New().String()[:8] + "@example.com")
+	s.addMember(token, accountID, targetID).AssertStatus(201)
+
+	resp := s.addMember(token, accountID, targetID)
+
+	s.AssertError(resp, 409, "conflict", "user is already a member of this account")
+	s.Equal(int64(1), s.membershipCount(accountID, targetID))
+	s.Equal(models.AccountRoleUser, s.storedRole(accountID, targetID))
+}
+
 func (s *AccountAddMemberGateTestSuite) login(role string, accountID uuid.UUID) string {
 	userID := uuid.New()
 	email := role + "-" + userID.String()[:8] + "@example.com"
