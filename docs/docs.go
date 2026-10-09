@@ -4055,6 +4055,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
                     "404": {
                         "description": "Transaction not found",
                         "schema": {
@@ -4063,6 +4069,12 @@ const docTemplate = `{
                     },
                     "429": {
                         "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/responses.ErrorBody"
                         }

@@ -125,6 +125,18 @@ public withdrawal failure codes (`too_many_attempts`, …).
 | 503 | not configured, or a store we fail closed on is unreachable | retry later |
 | 504 | the request outlived its deadline | retry later |
 
+**A lookup answers 404 only for a row that is missing or is not the caller's.**
+`GET /api/v1/transactions/{id}` reads the transaction through
+`withdraw.Service.GetTransactionForAccount`, so the id of another account is a
+404 `transaction not found`, the same bytes as an id that does not exist (the
+`APIScope` middleware answers it first; the handler does not rely on that). A
+failed repository read is a 500 `internal_error` there, and in the withdrawal
+lookups (`withdrawalrecords.FindInWallet` / `FindInAccount` return only
+`ErrNotFound` for a missing row and the wrapped error for anything else). The
+contract scenario cannot put a transaction on a second account's wallet, so
+`TestGet_Transaction_OfAnotherAccount_IsNotFound` (feature suite) is the guard
+for the cross-account case.
+
 **A 4xx must be something the caller can act on.** Mapping every error of a call
 to one 4xx (today: any wallet-creation error → 409 with `err.Error()`) hides an
 outage behind a message about the caller.
@@ -199,3 +211,4 @@ two bugfixes that landed in the commits before it.
 | `POST /v1/auth/2fa/verify` | body names `challenge_token`, 2026-10-05, second-factor token rename | 422, `partial_token` required | 401 `unauthorized`, `invalid or expired partial token` |
 | any route in the table above | 2026-10-08, rate limiting (H1) | no limit, never 429 | 429 `too_many_requests` over the limit (contract steps 69 and 70) |
 | `POST /v1/auth/logout` | 2026-10-08, logout goes through the session watermark | the presented token only was refused afterwards (the other devices' access tokens lived until they expired) | every access and refresh token of the user is refused: 401 `unauthorized`, `session revoked`; activity `user.sessions_revoked` |
+| `GET /api/v1/transactions/{id}`, withdrawal lookups | 2026-10-08, the store fails (V29) | 404 `transaction not found` / `withdrawal not found` | 500 `internal_error` (external transactions), the dashboard and external withdrawal 500 |
