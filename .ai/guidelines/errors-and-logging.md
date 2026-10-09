@@ -1,11 +1,13 @@
 # Errors & Logging Guideline
 
 > Status: errors HOLD (`%w`, package sentinels, no text matching in controllers).
-> Logging: the redacting sink is installed at boot for `facades.Log()`
-> (`providers.InstallLogRedaction` from `bootstrap.bootConfig`). TARGET: the plain
-> `log/slog` calls (about 240) still use Go's default handler and bypass it, so
-> until `slog` is routed through the same handler a `slog` call must never carry
-> a URL, a token or a secret.
+> Logging HOLDS: the redacting sink is installed at boot
+> (`providers.InstallLogRedaction` from `bootstrap.bootConfig`) for `facades.Log()`,
+> and the same handler becomes `slog`'s default (`bindDefaultSlog`), so plain
+> `log/slog` calls are redacted too — guarded by
+> `TestInstall_Log_RedactionRoutesSlogThroughTheSameHandler`. New code in a request
+> path uses `facades.Log().WithContext(ctx)` (the Goravel idiom); existing `slog`
+> calls are converted when their file is touched.
 
 ## Errors
 
@@ -55,8 +57,8 @@ installed from `app/providers` (`InstallLogRedaction`, called from
 `bootstrap.bootConfig` before the providers run). Every message and field passes
 through `RedactText` / `RedactError`, which strip URL userinfo and query strings
 — **RPC URLs embed API keys in the path or query**, so the redactor also masks the
-configured RPC hosts' secrets — including the framework's SQL log. A second path
-(plain `slog`) is the TARGET gap named in the status line.
+configured RPC hosts' secrets — including the framework's SQL log. Plain `slog`
+reaches the same handler: `bindDefaultSlog` makes it `slog`'s default at boot.
 
 - Identifiers in the message, not in `With(...)`.
 - Debug / Info / Warning / Error with their usual meaning; never `fmt.Println`.
