@@ -79,16 +79,23 @@ func (c *TransactionController) Index(ctx http.Context) http.Response {
 //	@Param			id	path		string	true	"Transaction UUID"	format(uuid)
 //	@Success		200	{object}	resources.Transaction
 //	@Failure		400	{object}	responses.ErrorBody	"Invalid UUID"
+//	@Failure		401	{object}	responses.ErrorBody
 //	@Failure		404	{object}	responses.ErrorBody	"Transaction not found"
+//	@Failure		500	{object}	responses.ErrorBody
 //	@Failure		429	{object}	responses.ErrorBody	"Rate limit exceeded (too_many_requests, Retry-After header)"
 //	@Router			/v1/transactions/{id} [get]
 func (c *TransactionController) Show(ctx http.Context) http.Response {
+	accountID, ok := requestctx.AccountID(ctx)
+	if !ok {
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
+	}
+
 	id, err := requests.RouteUUID(ctx, "id")
 	if err != nil {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid tx id")
 	}
 
-	tx, err := c.withdrawals.GetTransaction(ctx.Context(), id)
+	tx, err := c.withdrawals.GetTransactionForAccount(ctx.Context(), accountID, id)
 	if err != nil {
 		return mapError(ctx, err, actionShow)
 	}

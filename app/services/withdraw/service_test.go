@@ -225,28 +225,59 @@ func TestRequest_Wallet_NotFound(t *testing.T) {
 	}
 }
 
-func TestService_Get_Transaction(t *testing.T) {
-	svc, _, txs := setupWithdrawService(t)
+func TestService_GetTransactionForAccount(t *testing.T) {
 	ctx := context.Background()
+	owner, other := uuid.New(), uuid.New()
+	walletID := uuid.New()
+	inserted := &models.Transaction{ID: uuid.New(), WalletID: walletID, Chain: "eth", TxType: "withdrawal", Status: "pending", Asset: "eth", Amount: "100"}
 
-	inserted := &models.Transaction{ID: uuid.New(), WalletID: uuid.New(), Chain: "eth", TxType: "withdrawal", Status: "pending", Asset: "eth", Amount: "100"}
-	txs.add(inserted)
+	t.Run("returns the transaction of a wallet of the account", func(t *testing.T) {
+		svc, _, txs := setupWithdrawService(t)
+		txs.add(inserted)
+		txs.ownWallet(walletID, owner)
 
-	got, err := svc.GetTransaction(ctx, inserted.ID)
-	if err != nil {
-		t.Fatalf("GetTransaction: %v", err)
-	}
-	if got.ID != inserted.ID {
-		t.Error("ID mismatch")
-	}
-}
+		got, err := svc.GetTransactionForAccount(ctx, owner, inserted.ID)
+		if err != nil {
+			t.Fatalf("GetTransactionForAccount: %v", err)
+		}
+		if got.ID != inserted.ID {
+			t.Error("ID mismatch")
+		}
+	})
 
-func TestGet_Transaction_NotFound(t *testing.T) {
-	svc, _, _ := setupWithdrawService(t)
-	_, err := svc.GetTransaction(context.Background(), uuid.New())
-	if err == nil {
-		t.Fatal("expected error")
-	}
+	t.Run("a transaction of another account is not found", func(t *testing.T) {
+		svc, _, txs := setupWithdrawService(t)
+		txs.add(inserted)
+		txs.ownWallet(walletID, owner)
+
+		_, err := svc.GetTransactionForAccount(ctx, other, inserted.ID)
+		if !errors.Is(err, ErrTransactionNotFound) {
+			t.Fatalf("err = %v, want ErrTransactionNotFound", err)
+		}
+	})
+
+	t.Run("a missing transaction is not found", func(t *testing.T) {
+		svc, _, _ := setupWithdrawService(t)
+
+		_, err := svc.GetTransactionForAccount(ctx, owner, uuid.New())
+		if !errors.Is(err, ErrTransactionNotFound) {
+			t.Fatalf("err = %v, want ErrTransactionNotFound", err)
+		}
+	})
+
+	t.Run("a failed read is returned, not hidden as not found", func(t *testing.T) {
+		svc, _, txs := setupWithdrawService(t)
+		boom := errors.New("connection reset")
+		txs.failWith(boom)
+
+		_, err := svc.GetTransactionForAccount(ctx, owner, inserted.ID)
+		if !errors.Is(err, boom) {
+			t.Fatalf("err = %v, want it to wrap the store error", err)
+		}
+		if errors.Is(err, ErrTransactionNotFound) {
+			t.Fatal("a store failure must not read as not found")
+		}
+	})
 }
 
 func TestList_Transactions_Filters(t *testing.T) {

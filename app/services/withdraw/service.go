@@ -53,7 +53,7 @@ type walletReader interface {
 type transactionStore interface {
 	FindByIdempotencyKey(ctx context.Context, key string) (*models.Transaction, error)
 	SetIdempotencyKey(ctx context.Context, id uuid.UUID, key string) error
-	FindByID(ctx context.Context, id uuid.UUID) (*models.Transaction, error)
+	FindByIDForAccount(ctx context.Context, id, accountID uuid.UUID) (*models.Transaction, error)
 	List(ctx context.Context, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error)
 	ListForAccount(ctx context.Context, accountID uuid.UUID, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error)
 }
@@ -375,13 +375,16 @@ func zeroShare(b []byte) {
 // Query helpers (used by API controllers)
 // ---------------------------------------------------------------------------
 
-func (s *Service) GetTransaction(ctx context.Context, id uuid.UUID) (*models.Transaction, error) {
-	tx, err := s.transactionRepo.FindByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if tx == nil {
+// GetTransactionForAccount returns the transaction when it belongs to a wallet
+// of the account. A missing row and a transaction of another account are both
+// ErrTransactionNotFound, so the id of another account is never confirmed.
+func (s *Service) GetTransactionForAccount(ctx context.Context, accountID, id uuid.UUID) (*models.Transaction, error) {
+	tx, err := s.transactionRepo.FindByIDForAccount(ctx, id, accountID)
+	if errors.Is(err, models.ErrRepositoryNotFound) {
 		return nil, ErrTransactionNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get transaction: %w", err)
 	}
 	return tx, nil
 }

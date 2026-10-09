@@ -11,9 +11,19 @@ import (
 
 type memTransactions struct {
 	rows []*models.Transaction
+	// wallets maps a wallet to the account that owns it.
+	wallets map[uuid.UUID]uuid.UUID
+	// err, when set, fails FindByIDForAccount.
+	err error
 }
 
-func newMemTransactions() *memTransactions { return &memTransactions{} }
+func newMemTransactions() *memTransactions {
+	return &memTransactions{wallets: map[uuid.UUID]uuid.UUID{}}
+}
+
+func (m *memTransactions) ownWallet(walletID, accountID uuid.UUID) { m.wallets[walletID] = accountID }
+
+func (m *memTransactions) failWith(err error) { m.err = err }
 
 func (m *memTransactions) add(tx *models.Transaction) {
 	m.rows = append(m.rows, tx)
@@ -34,6 +44,18 @@ func (m *memTransactions) FindByID(_ context.Context, id uuid.UUID) (*models.Tra
 		}
 	}
 	return nil, fmt.Errorf("transaction not found")
+}
+
+func (m *memTransactions) FindByIDForAccount(_ context.Context, id, accountID uuid.UUID) (*models.Transaction, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	for _, tx := range m.rows {
+		if tx.ID == id && m.wallets[tx.WalletID] == accountID {
+			return tx, nil
+		}
+	}
+	return nil, models.ErrRepositoryNotFound
 }
 
 func (m *memTransactions) List(_ context.Context, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
