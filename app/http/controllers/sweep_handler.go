@@ -53,9 +53,9 @@ func NewSweepHandler(surface string, deps SweepHandlerDeps) *SweepHandler {
 // @Param        walletId  path      string                       true  "Wallet UUID"  format(uuid)
 // @Param        body      body      ConsolidateRequestSwagger    true  "Consolidation request"
 // @Success      200       {object}  ConsolidateResponse
-// @Failure      400       {object}  ErrorResponse
-// @Failure      422       {object}  ErrorResponse
-// @Failure      429       {object}  ErrorResponse
+// @Failure      400       {object}  responses.ErrorBody
+// @Failure      422       {object}  responses.ErrorBody
+// @Failure      429       {object}  responses.ErrorBody
 // @Router       /v1/wallets/{walletId}/consolidate [post]
 func (ctrl *SweepHandler) ConsolidateWallet(ctx http.Context) http.Response {
 	wallet, _ := requestctx.Wallet(ctx)
@@ -95,8 +95,9 @@ func (ctrl *SweepHandler) ConsolidateWallet(ctx http.Context) http.Response {
 // @Security     BearerAuth
 // @Param        walletId  path      string  true  "Wallet UUID"  format(uuid)
 // @Success      200       {object}  GasStatusResponse
-// @Failure      400       {object}  ErrorResponse
-// @Failure      422       {object}  ErrorResponse
+// @Failure      400       {object}  responses.ErrorBody
+// @Failure      422       {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /v1/wallets/{walletId}/gas-status [get]
 func (ctrl *SweepHandler) GetGasStatus(ctx http.Context) http.Response {
 	walletID, err := requests.RouteUUID(ctx, "walletId")
@@ -123,9 +124,9 @@ func (ctrl *SweepHandler) GetGasStatus(ctx http.Context) http.Response {
 // @Security     BearerAuth
 // @Param        walletId  path      string  true  "Wallet UUID"  format(uuid)
 // @Success      200       {object}  GasStatusResponse
-// @Failure      400       {object}  ErrorResponse
-// @Failure      422       {object}  ErrorResponse
-// @Failure      429       {object}  ErrorResponse
+// @Failure      400       {object}  responses.ErrorBody
+// @Failure      422       {object}  responses.ErrorBody
+// @Failure      429       {object}  responses.ErrorBody
 // @Router       /v1/wallets/{walletId}/gas-check [post]
 func (ctrl *SweepHandler) ForceGasCheck(ctx http.Context) http.Response {
 	// The per-wallet rate limit is middleware.Throttle(ThrottleGasCheck) on the route.
@@ -143,8 +144,9 @@ func (ctrl *SweepHandler) ForceGasCheck(ctx http.Context) http.Response {
 // @Param        walletId  path      string                            true  "Wallet UUID"  format(uuid)
 // @Param        body      body      WithdrawPreviewRequestSwagger     true  "Preview request"
 // @Success      200       {object}  WithdrawPreviewResponse
-// @Failure      400       {object}  ErrorResponse
-// @Failure      422       {object}  ErrorResponse
+// @Failure      400       {object}  responses.ErrorBody
+// @Failure      422       {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /v1/wallets/{walletId}/withdraw/preview [post]
 func (ctrl *SweepHandler) PreviewWithdraw(ctx http.Context) http.Response {
 	walletID, err := requests.RouteUUID(ctx, "walletId")

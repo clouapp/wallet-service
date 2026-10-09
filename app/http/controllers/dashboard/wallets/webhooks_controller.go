@@ -53,9 +53,9 @@ func NewWebhooksController(deps WebhooksControllerDeps) *WebhooksController {
 // @Security     BearerAuth
 // @Produce      json
 // @Param        walletId  path  string  true  "Wallet UUID"
-// @Success      200  {object}  WebhookConfigListResponse
-// @Failure      403  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
+// @Success      200  {object}  controllers.WebhookConfigListResponse
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
 // @Router       /wallets/{walletId}/webhooks [get]
 func (ctrl *WebhooksController) ListWalletWebhooks(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
@@ -77,8 +77,8 @@ func (ctrl *WebhooksController) ListWalletWebhooks(ctx http.Context) http.Respon
 // @Param        walletId  path      string                    true  "Wallet UUID"
 // @Param        request   body      CreateWalletWebhookSwagger  true  "Webhook configuration"
 // @Success      201  {object}  webhooks.WebhookConfig
-// @Failure      400  {object}  ErrorResponse
-// @Failure      403  {object}  ErrorResponse
+// @Failure      400  {object}  responses.ErrorBody
+// @Failure      403  {object}  responses.ErrorBody
 // @Router       /wallets/{walletId}/webhooks [post]
 func (ctrl *WebhooksController) CreateWalletWebhook(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
@@ -111,8 +111,8 @@ func (ctrl *WebhooksController) CreateWalletWebhook(ctx http.Context) http.Respo
 // @Param        walletId   path  string  true  "Wallet UUID"
 // @Param        webhookId  path  string  true  "Webhook UUID"
 // @Success      204  "No content"
-// @Failure      403  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
 // @Router       /wallets/{walletId}/webhooks/{webhookId} [delete]
 func (ctrl *WebhooksController) DeleteWalletWebhook(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
@@ -142,9 +142,9 @@ func (ctrl *WebhooksController) DeleteWalletWebhook(ctx http.Context) http.Respo
 // @Param        walletId   path  string  true  "Wallet UUID"
 // @Param        webhookId  path  string  true  "Webhook UUID"
 // @Success      200  {object}  WebhookTestResponse
-// @Failure      403  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
-// @Failure      502  {object}  ErrorResponse
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
+// @Failure      502  {object}  responses.ErrorBody
 // @Router       /wallets/{walletId}/webhooks/{webhookId}/test [post]
 func (ctrl *WebhooksController) TestWalletWebhook(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)

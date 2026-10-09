@@ -54,8 +54,8 @@ func (ctrl *ChainsController) findChain(ctx http.Context, chainID string) (*mode
 // @Produce      json
 // @Security     ApiKeyAuth
 // @Security     SignatureAuth
-// @Success      200  {object}  ChainListResponse
-// @Failure      500  {object}  ErrorResponse
+// @Success      200  {object}  controllers.ChainListResponse
+// @Failure      500  {object}  responses.ErrorBody
 // @Router       /v1/chains [get]
 func (ctrl *ChainsController) ListChains(ctx http.Context) http.Response {
 	env, _ := requestctx.AccountEnvironment(ctx)

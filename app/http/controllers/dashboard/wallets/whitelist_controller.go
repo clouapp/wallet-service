@@ -48,8 +48,8 @@ func NewWhitelistController(deps WhitelistControllerDeps) *WhitelistController {
 // @Produce      json
 // @Param        walletId  path  string  true  "Wallet UUID"
 // @Success      200  {object}  WhitelistEntryListResponse
-// @Failure      403  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
 // @Router       /wallets/{walletId}/whitelist [get]
 func (ctrl *WhitelistController) ListWhitelistEntries(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
@@ -72,8 +72,8 @@ func (ctrl *WhitelistController) ListWhitelistEntries(ctx http.Context) http.Res
 // @Param        walletId  path      string                  true  "Wallet UUID"
 // @Param        request   body      AddWhitelistEntrySwagger  true  "Entry payload"
 // @Success      201  {object}  whitelist.WhitelistEntry
-// @Failure      400  {object}  ErrorResponse
-// @Failure      403  {object}  ErrorResponse
+// @Failure      400  {object}  responses.ErrorBody
+// @Failure      403  {object}  responses.ErrorBody
 // @Router       /wallets/{walletId}/whitelist [post]
 func (ctrl *WhitelistController) AddWhitelistEntry(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
@@ -104,8 +104,8 @@ func (ctrl *WhitelistController) AddWhitelistEntry(ctx http.Context) http.Respon
 // @Param        walletId  path  string  true  "Wallet UUID"
 // @Param        entryId   path  string  true  "Whitelist entry UUID"
 // @Success      204  "No content"
-// @Failure      403  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
 // @Router       /wallets/{walletId}/whitelist/{entryId} [delete]
 func (ctrl *WhitelistController) DeleteWhitelistEntry(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)

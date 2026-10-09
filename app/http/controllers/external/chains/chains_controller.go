@@ -30,8 +30,9 @@ func NewChainsController(chains *chainsvc.Service) *ChainsController {
 // @Produce      json
 // @Security     ApiKeyAuth
 // @Security     SignatureAuth
-// @Success      200  {object}  ChainListResponse
-// @Failure      500  {object}  ErrorResponse
+// @Success      200  {object}  controllers.ChainListResponse
+// @Failure      500  {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /v1/chains [get]
 func (ctrl *ChainsController) ListChains(ctx http.Context) http.Response {
 	env, _ := requestctx.AccountEnvironment(ctx)

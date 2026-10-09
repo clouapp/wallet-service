@@ -42,7 +42,7 @@ func NewChainsController(deps ChainsControllerDeps) *ChainsController {
 
 // Update godoc
 // @Summary      Update chain sweep thresholds
-// @Description  Writes gas_readiness_threshold_raw, dust_threshold_native_raw, and dust_threshold_usd. An omitted field is left unchanged. An unknown chain is 404 before the platform-admin check. A negative amount is 422 and is not stored. The RPC URL is not accepted and is not returned.
+// @Description  Writes gas_readiness_threshold_raw, dust_threshold_native_raw, and dust_threshold_usd. An omitted field is left unchanged. An unknown chain is 404 for a platform admin. A negative amount is 422 and is not stored. The RPC URL is not accepted and is not returned.
 // @Tags         Platform Chains
 // @Security     BearerAuth
 // @Accept       json
@@ -76,7 +76,7 @@ func (ctrl *ChainsController) Update(ctx http.Context) http.Response {
 
 // UpdateRPC godoc
 // @Summary      Replace a chain RPC endpoint
-// @Description  Seals a new rpc_url. The answer is rpcUrlSet. The URL is not returned. An unknown chain is 404 before the platform-admin check. An empty URL is 422 and is not stored.
+// @Description  Seals a new rpc_url. The answer is rpcUrlSet. The URL is not returned. An unknown chain is 404 for a platform admin. An empty URL is 422 and is not stored.
 // @Tags         Platform Chains
 // @Security     BearerAuth
 // @Accept       json

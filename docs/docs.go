@@ -49,7 +49,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.CreateAccountSwagger"
+                            "$ref": "#/definitions/accounts.CreateAccountSwagger"
                         }
                     }
                 ],
@@ -57,19 +57,19 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/models.Account"
+                            "$ref": "#/definitions/github_com_macrowallets_waas_app_http_resources_dashboard_accounts.Account"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -82,7 +82,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns account details. Requires account membership (injected by AccountContext middleware).",
+                "description": "Returns account details and the account's active feature keys. Requires account membership (injected by AccountContext middleware).",
                 "produces": [
                     "application/json"
                 ],
@@ -103,19 +103,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/models.Account"
+                            "$ref": "#/definitions/accounts.AccountDetail"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -151,7 +151,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.UpdateAccountSwagger"
+                            "$ref": "#/definitions/accounts.UpdateAccountSwagger"
                         }
                     }
                 ],
@@ -159,19 +159,137 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/models.Account"
+                            "$ref": "#/definitions/github_com_macrowallets_waas_app_http_resources_dashboard_accounts.Account"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/accounts/{accountId}/activity": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "GET /v1/accounts/{accountId}/activity applies policies.MayReadActivity (activity.read) before the handler. Owner, admin, and auditor may list. A user may not, and that refusal does not return the activity list. The refusal is 403 with the same message the service returns. Newest first. Page JSON is data, total, limit, and offset. Metadata never includes a secret value.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Account Activity"
+                ],
+                "summary": "Account activity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rows to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/accounts/{accountId}/activity/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "GET /v1/accounts/{accountId}/activity/{id} resolves the row before activity.read. Another account, a platform row, or an unknown id is 404, including for a user. Owner, admin, and auditor may read a row that is there. A user may not, and that refusal is 403 with the same message the list route returns. The body is one element of the list. Metadata never includes a secret value.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Account Activity"
+                ],
+                "summary": "One account activity row",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Activity UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/activity.AccountActivity"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -205,19 +323,65 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/models.Account"
+                            "$ref": "#/definitions/github_com_macrowallets_waas_app_http_resources_dashboard_accounts.Account"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/accounts/{accountId}/features": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "GET /v1/accounts/{accountId}/features applies policies.MayViewSettings (settings.read) before the handler. Owner, admin, and auditor may list. A user may not, and that refusal does not return the feature list. The refusal is 403 with the message the service returns. A missing row uses the catalog default. There is no account-side write.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Account Features"
+                ],
+                "summary": "Account feature flags",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/features.List"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -251,13 +415,436 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/models.Account"
+                            "$ref": "#/definitions/github_com_macrowallets_waas_app_http_resources_dashboard_accounts.Account"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/accounts/{accountId}/permissions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Every permission the account code catalog assigns. Owner, admin and auditor may read. User receives 403. There is no permissions table and no write.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Account Roles"
+                ],
+                "summary": "Account permission catalog",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/roles.permissionCatalog"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/accounts/{accountId}/roles": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Effective permissions of each stored account role. Owner, admin and auditor may read. User receives 403. There is no per-account override.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Account Roles"
+                ],
+                "summary": "Account role grants",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/roles.roleList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/accounts/{accountId}/settings": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sections, blocks and groups for one account. A secret is never returned; the field carries is_set.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Account Settings"
+                ],
+                "summary": "Account settings registry",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/settings.RegistryView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/accounts/{accountId}/settings/sections/{section}/cache": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "POST /v1/accounts/{accountId}/settings/sections/{section}/cache applies policies.MayUpdateSettings (settings.write) before the handler. Owner and admin may flush an account-managed section. Auditor and user may not, and that refusal does not flush the section. The refusal is 403 with the same message this handler returns. Drops the cached rows of every account-managed group on the page. Stored values stay. An unknown section is 404 for a role that may flush. A platform-managed group is 403 and the cache is left in place.",
+                "tags": [
+                    "Account Settings"
+                ],
+                "summary": "Flush one account settings section cache",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Settings section",
+                        "name": "section",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/accounts/{accountId}/settings/sections/{section}/reset": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "POST /v1/accounts/{accountId}/settings/sections/{section}/reset applies policies.MayUpdateSettings (settings.write) before the handler. Owner and admin may reset an account-managed section. Auditor and user may not, and that refusal does not reset the section. The refusal is 403 with the same message the flush route returns. Deletes stored rows of every account-managed group on the page. Secrets are not returned. An unknown section is 404 for a role that may reset. A platform-managed group is 403 and is left unchanged.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Account Settings"
+                ],
+                "summary": "Reset one account settings section",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Settings section",
+                        "name": "section",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/settings.SectionView"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/accounts/{accountId}/settings/{group}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "GET /v1/accounts/{accountId}/settings/{group} settings.read. The route applies policies.MayViewSettings before the handler. Owner, admin, and auditor may read, including a platform-managed group. A user may not, and that refusal does not return the group. A member who may read still gets 404 for an unknown group and a platform-only group. The account guard is not a second gate. A secret is never returned. The read writes no activity and does not return another account's rows.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Account Settings"
+                ],
+                "summary": "Read one account settings group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Settings group",
+                        "name": "group",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/settings.GroupView"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "PATCH and PUT share this handler. Both routes apply policies.MayUpdateSettings (settings.write) before the handler. Owner and admin may write an account-managed group. Auditor and user may not, and that refusal does not save the group. A member who may write still gets 404 for an unknown group and 403 for a platform-managed group. One group per request. A blank or omitted secret keeps the stored value. Decimals are strings. A negative amount is not stored. Validation is HTTP 422. The account guard is not a second gate.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Account Settings"
+                ],
+                "summary": "Save one account settings group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Settings group",
+                        "name": "group",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/settings.GroupView"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "PATCH and PUT share this handler. Both routes apply policies.MayUpdateSettings (settings.write) before the handler. Owner and admin may write an account-managed group. Auditor and user may not, and that refusal does not save the group. A member who may write still gets 404 for an unknown group and 403 for a platform-managed group. One group per request. A blank or omitted secret keeps the stored value. Decimals are strings. A negative amount is not stored. Validation is HTTP 422. The account guard is not a second gate.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Account Settings"
+                ],
+                "summary": "Save one account settings group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Settings group",
+                        "name": "group",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/settings.GroupView"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -270,7 +857,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns all non-expired access tokens for the account. Requires owner or admin.",
+                "description": "Returns the account's API tokens. Requires tokens.read.",
                 "produces": [
                     "application/json"
                 ],
@@ -291,13 +878,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.AccessTokenListResponse"
+                            "$ref": "#/definitions/accounts.AccessTokenListResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -308,7 +895,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Creates a named access token. The raw token is returned once — store it safely. Requires owner or admin.",
+                "description": "Creates a named access token. The raw token is returned once — store it safely. Requires tokens.write.",
                 "consumes": [
                     "application/json"
                 ],
@@ -333,7 +920,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.CreateAccountTokenSwagger"
+                            "$ref": "#/definitions/accounts.CreateAccountTokenSwagger"
                         }
                     }
                 ],
@@ -341,19 +928,19 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/controllers.CreateAccountTokenResponse"
+                            "$ref": "#/definitions/accounts.CreateAccountTokenResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -366,7 +953,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Deletes an access token by ID. Requires owner or admin.",
+                "description": "Soft-revokes an access token by ID. The row stays for audit. Requires tokens.write.",
                 "produces": [
                     "application/json"
                 ],
@@ -397,13 +984,13 @@ const docTemplate = `{
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -437,13 +1024,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.AccountUserListResponse"
+                            "$ref": "#/definitions/accounts.AccountUserListResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -479,7 +1066,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.AddAccountUserSwagger"
+                            "$ref": "#/definitions/accounts.AddAccountUserSwagger"
                         }
                     }
                 ],
@@ -487,19 +1074,19 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/models.AccountUser"
+                            "$ref": "#/definitions/github_com_macrowallets_waas_app_http_resources_dashboard_accounts.AccountUser"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -543,13 +1130,82 @@ const docTemplate = `{
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Changes role and/or status. Owner and admin only. Suspending leaves the API tokens that member minted for this account.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Accounts"
+                ],
+                "summary": "Update an account member",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "User UUID",
+                        "name": "userId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Role and/or status",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/accounts.UpdateAccountUserSwagger"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_macrowallets_waas_app_http_resources_dashboard_accounts.AccountUser"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -581,15 +1237,13 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "example": "USDC",
                         "description": "Asset symbol; the chain's native coin when omitted",
                         "name": "asset",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "example": "0.001",
-                        "description": "Decimal amount, as sent to POST /withdrawals; the smallest transfer when omitted",
+                        "description": "Decimal amount, as sent to POST /withdrawals",
                         "name": "amount",
                         "in": "query"
                     },
@@ -608,33 +1262,33 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "invalid_amount",
+                        "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.FeeEstimateErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
-                        "description": "wallet not found (or owned by another account)",
+                        "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "422": {
-                        "description": "unknown_asset, invalid_address, amount_below_minimum, token_balance_required, unsupported_chain",
+                        "description": "Unprocessable Entity",
                         "schema": {
-                            "$ref": "#/definitions/controllers.FeeEstimateErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "429": {
-                        "description": "sweep_limit_exceeded",
+                        "description": "Too Many Requests",
                         "schema": {
-                            "$ref": "#/definitions/controllers.FeeEstimateErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "503": {
-                        "description": "fee_estimate_unavailable, gas_estimate_failed",
+                        "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/controllers.FeeEstimateErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -681,19 +1335,25 @@ const docTemplate = `{
                     "400": {
                         "description": "idempotency_key must be a UUID",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "wallet not found / withdrawal not found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -727,13 +1387,19 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -765,7 +1431,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.CreateWebhookRequest"
+                            "$ref": "#/definitions/webhooks.CreateWebhookRequest"
                         }
                     }
                 ],
@@ -773,19 +1439,25 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/models.WebhookConfig"
+                            "$ref": "#/definitions/webhooks.WebhookConfig"
                         }
                     },
                     "400": {
                         "description": "Missing required fields",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -826,7 +1498,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.UpdateWebhookRequest"
+                            "$ref": "#/definitions/webhooks.UpdateWebhookRequest"
                         }
                     }
                 ],
@@ -834,31 +1506,37 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/models.WebhookConfig"
+                            "$ref": "#/definitions/webhooks.WebhookConfig"
                         }
                     },
                     "400": {
                         "description": "Invalid id, empty update or unknown event",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "403": {
                         "description": "Secret does not match a legacy webhook",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "webhook not found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -884,7 +1562,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.TwoFactorSwagger"
+                            "$ref": "#/definitions/auth.TwoFactorSwagger"
                         }
                     }
                 ],
@@ -892,62 +1570,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.AuthResponse"
+                            "$ref": "#/definitions/auth.AuthResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/auth/forgot-password": {
-            "post": {
-                "description": "Sends a password reset link to the user's email if the address is registered",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Auth"
-                ],
-                "summary": "Request password reset email",
-                "parameters": [
-                    {
-                        "description": "Email address",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/controllers.ForgotPasswordSwagger"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
-                    "400": {
-                        "description": "Bad Request",
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -973,7 +1614,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.LoginSwagger"
+                            "$ref": "#/definitions/auth.LoginSwagger"
                         }
                     }
                 ],
@@ -981,19 +1622,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.AuthResponse"
+                            "$ref": "#/definitions/auth.AuthResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1021,7 +1668,117 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/recover": {
+            "post": {
+                "description": "Sends a password reset link to the user's email if the address is registered",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Request password reset email",
+                "parameters": [
+                    {
+                        "description": "Email address",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/auth.ForgotPasswordSwagger"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/recover/confirm": {
+            "post": {
+                "description": "Validates the reset token and updates the user's password",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Reset password using token",
+                "parameters": [
+                    {
+                        "description": "Token and new password",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/auth.ResetPasswordSwagger"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1047,7 +1804,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.RefreshTokenSwagger"
+                            "$ref": "#/definitions/auth.RefreshTokenSwagger"
                         }
                     }
                 ],
@@ -1055,19 +1812,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.AuthResponse"
+                            "$ref": "#/definitions/auth.AuthResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1093,7 +1856,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.RegisterSwagger"
+                            "$ref": "#/definitions/auth.RegisterSwagger"
                         }
                     }
                 ],
@@ -1101,68 +1864,25 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/controllers.AuthResponse"
+                            "$ref": "#/definitions/auth.AuthResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/auth/reset-password": {
-            "post": {
-                "description": "Validates the reset token and updates the user's password",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Auth"
-                ],
-                "summary": "Reset password using token",
-                "parameters": [
-                    {
-                        "description": "Token and new password",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/controllers.ResetPasswordSwagger"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
-                    "400": {
-                        "description": "Bad Request",
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1182,7 +1902,1541 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.HealthResponse"
+                            "$ref": "#/definitions/health.HealthResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/accounts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Newest created_at first. Permission accounts.view; a platform admin may call it. The row is id, name, and status.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Accounts"
+                ],
+                "summary": "List platform accounts",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rows to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/accounts/{accountId}/archive": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets accounts.status to archived. Only a platform admin may call it. An unknown account is 404 for a platform admin. The same status again does not write. The route is not behind AccountContext.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Accounts"
+                ],
+                "summary": "Archive an account",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/accounts.lifecycleBody"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/accounts/{accountId}/freeze": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets accounts.status to frozen. Only a platform admin may call it. An unknown account is 404 for a platform admin. The same status again does not write. The route is not behind AccountContext.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Accounts"
+                ],
+                "summary": "Freeze an account",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/accounts.lifecycleBody"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/accounts/{accountId}/owners": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Links an existing user as an active owner. The body is email, matching account member add. Only a platform admin may call it. An unknown account is 404 for a platform admin. An unknown user is 404 for a platform admin. The same active owner again does not write and answers 204. A new or restored membership answers 201 with the membership row. The route is not behind AccountContext, so a frozen account can still be recovered. Password hashes, TOTP secrets, recovery codes, and token material are omitted.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Accounts"
+                ],
+                "summary": "Attach an account owner",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Existing user email",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/requests.AttachPlatformOwnerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_macrowallets_waas_app_http_resources_platform_accounts.AccountUser"
+                        }
+                    },
+                    "204": {
+                        "description": "Already the active owner"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/accounts/{accountId}/settings/{group}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "GET /v1/platform/accounts/{accountId}/settings/{group} settings.view (platform-managed account groups). settings.view is not in a platform catalog, so a platform_admins row is the gate. An unknown group, a platform-only group, and an account-managed group are 404 for a platform admin, before the account lookup. An unknown account is 404 for a platform admin. A known group with no stored row is 200 with registry defaults and is_set false. A secret is never returned. The read writes no activity and does not read another account's rows.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Settings"
+                ],
+                "summary": "Read one platform-managed account settings group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Settings group",
+                        "name": "group",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/settings.GroupView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "PUT /v1/platform/accounts/{accountId}/settings/{group} settings.update + sweep.update for account_sweep_limits. Those names are not in a platform catalog, so a platform_admins row is the gate. Any other group name is 404 for a platform admin, before the account lookup. An unknown account is 404 for a platform admin. A non-admin is 403 whatever the account or group. Counts must be positive integers. Zero or negative counts, and a negative daily cap, are 422 validation_failed and are not stored. A blank daily_withdraw_cap_usd is stored empty and stays unlimited. The write is this account's row. Activity is settings.updated with the account id, the group, and the field names, never the values. The account cache key for the group is forgotten.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Settings"
+                ],
+                "summary": "Save one account sweep-limits override",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Settings group",
+                        "name": "group",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/settings.GroupView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/accounts/{accountId}/unfreeze": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets accounts.status to active. Only a platform admin may call it. An unknown account is 404 for a platform admin. The same status again does not write. The route is not behind AccountContext, so a frozen account can be unfrozen.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Accounts"
+                ],
+                "summary": "Unfreeze an account",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/accounts.lifecycleBody"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/accounts/{accountId}/users": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Newest user created_at first, then user id descending. A platform admin may call it. The row is the account member list plus the platform user fields id, email, full_name, status, suspended_at, and totp_enabled. Password hashes, TOTP secrets, recovery codes, and token material are omitted. An unknown account is 404 for a platform admin.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Accounts"
+                ],
+                "summary": "List an account's users",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rows to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/activity": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Newest first. Only a platform admin may read. Rows have a null account id and never appear on an account activity list. Metadata never includes a secret.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Activity"
+                ],
+                "summary": "Platform activity",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rows to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/chains/{chainId}": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Writes gas_readiness_threshold_raw, dust_threshold_native_raw, and dust_threshold_usd. An omitted field is left unchanged. An unknown chain is 404 for a platform admin. A negative amount is 422 and is not stored. The RPC URL is not accepted and is not returned.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Chains"
+                ],
+                "summary": "Update chain sweep thresholds",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Chain id",
+                        "name": "chainId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/chains.ThresholdView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/chains/{chainId}/rpc": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Seals a new rpc_url. The answer is rpcUrlSet. The URL is not returned. An unknown chain is 404 for a platform admin. An empty URL is 422 and is not stored.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Chains"
+                ],
+                "summary": "Replace a chain RPC endpoint",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Chain id",
+                        "name": "chainId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/chains.RPCView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/features": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Every named flag for the platform. A missing row uses the catalog default (withdrawals and sweep on). Only a platform admin may read.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Features"
+                ],
+                "summary": "Platform feature flags",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/features.List"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/features/{key}": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Writes one boolean and returns the stored row. Only a platform admin may write. An unknown key is 404. The next gate reads the row; nothing is cached.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Features"
+                ],
+                "summary": "Set one platform feature flag",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Feature key",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/features.Flag"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/features/{scope}/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "S2.4 GET /v1/platform/features/{scope}/{id}. features.view is not a permission row, so a platform_admins row is the gate. Scope account returns that account's stored booleans. A missing row is the catalog default and is not inserted. Global rows are not applied. global, user, and chain are 404 for a platform admin. An unknown account is 404 for a platform admin.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Features"
+                ],
+                "summary": "One account's feature flags",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Feature scope",
+                        "name": "scope",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/features.List"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "S2.4 PUT /v1/platform/features/{scope}/{id}. FeaturePolicy names features.update for any scope and features.account.update for the account scope. Neither is a permission row, so a platform_admins row is the gate and stands in for both. The pair is not a second gate. The body is {\"features\":[{\"key\",\"enabled\"}]}. Every key is checked before the first write. An unknown key stores nothing. global, user, and chain are 404 for a platform admin. An unknown account is 404 for a platform admin. A closed global row is not applied and is not written. Omitted flags are not inserted.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Features"
+                ],
+                "summary": "Set account feature flags",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Feature scope",
+                        "name": "scope",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/features.List"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/features/{scope}/{id}/{feature}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "S2.4 PUT /v1/platform/features/{scope}/{id}/{feature}. FeaturePolicy names features.update for any scope and features.account.update for the account scope. Neither is a permission row, so a platform_admins row is the gate and stands in for both. The pair is not a second gate. The body is {\"enabled\":bool}. An unknown key stores nothing. global, user, and chain are 404 for a platform admin. An unknown account is 404 for a platform admin. A closed global row is not applied and is not written.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Features"
+                ],
+                "summary": "Set one account feature flag",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Feature scope",
+                        "name": "scope",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Feature key",
+                        "name": "feature",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/features.Flag"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/settings": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sections, blocks, and platform groups. S1.4.6 names settings.view and filters by each group's ViewPermission. This branch has no platform permission catalog, so a platform_admins row is the gate and stands in for a group ViewPermission that is not in that catalog. Account groups are omitted. A secret is never returned; the field carries is_set. The read writes no activity.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Settings"
+                ],
+                "summary": "List platform settings",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/settings.RegistryView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/settings/mail/test": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "POST /v1/platform/settings/mail/test. S1.4.6: settings.update + mail.update, declared before {group}. Neither permission is in the platform catalog, so a platform_admins row is the gate. A non-admin is 403 before the body is read. The body field is to. An invalid address is 422 validation_failed and nothing is sent. One message goes through facades.Mail, which reads mail_smtp and mail_delivery at send time. The answer is {\"sent\": true}. A mailer failure is 502 {\"error\":{\"code\",\"message\"}} and the message does not include the password or the SMTP host credentials. The test is not audited.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Settings"
+                ],
+                "summary": "Send one platform mail test",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/settings/sections/{section}/cache": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Drops the settings:platform cache key of every platform group on the page. Stored rows stay. No activity row. An unknown section, including an account-only page, is 404 for a platform admin. S1.4.6 names settings.update for every group on the page. This branch has no platform permission catalog, so a platform_admins row is the gate.",
+                "tags": [
+                    "Platform Settings"
+                ],
+                "summary": "Flush one platform settings section cache",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Settings section",
+                        "name": "section",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/settings/sections/{section}/reset": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes the stored rows of every platform group on the page and drops their settings:platform cache keys. The next read uses registry defaults. Account rows and account cache keys stay. Activity is settings.section_reset with a null account id and names each group and its field names, never the values. An unknown section, including an account-only page, is 404 for a platform admin. S1.4.6 names settings.update. This branch has no platform permission catalog, so a platform_admins row is the gate.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Settings"
+                ],
+                "summary": "Reset one platform settings section",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Settings section",
+                        "name": "section",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/settings.SectionView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/settings/{group}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "One platform group. S1.4.6 names settings.view plus the group's ViewPermission. A non-admin is 403 on every platform route, whatever the group. An unknown group, including an account-only group, is 404 for a platform admin. This branch has no platform permission catalog, so a platform_admins row is the gate and stands in for a group ViewPermission that is not in that catalog. A group with no stored row is 200 with registry defaults; a secret is never returned and the field carries is_set. The read writes no activity.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Settings"
+                ],
+                "summary": "Read one platform settings group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Settings group",
+                        "name": "group",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/settings.GroupView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Writes one platform group. webhook_delivery stores max_attempts and timeout_seconds. sweep_limits stores positive address and consolidate counts; a blank daily_withdraw_cap_usd means unlimited. mail_smtp stores host, port, encryption, and username; the password is sealed and omitted from the response (is_set reports whether one is stored). A blank password keeps the stored one. mail_delivery stores driver, from_address, and from_name in the clear. An invalid address, an empty name, and driver log in production are 422 and are not stored. mail_ses, mail_mailgun, mail_resend, and mail_postmark store their provider fields; each secret is sealed and omitted, a blank secret keeps the stored one, and mail_ses key and secret must be set together. price_lookup stores provider_order. price_coingecko, price_coinmarketcap, and price_coinapi store enabled and a sealed key that is omitted from the response; a blank key keeps the stored one. An unknown provider name is 422 and is not stored. provider_alchemy stores enabled and a sealed auth_token that is omitted from the response; a blank auth_token keeps the stored one. provider_helius and provider_quicknode store enabled and a sealed api_key that is omitted from the response; a blank api_key keeps the stored one. provider_etherscan stores enabled and a sealed api_key that is omitted from the response; a blank api_key keeps the stored one. Zero or negative counts, and a negative cap, are 422 and are not stored. An unknown group is 404 for a platform admin. Values are not written to the activity log.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Settings"
+                ],
+                "summary": "Save one platform settings group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Settings group",
+                        "name": "group",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/settings.GroupView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/users": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Newest created_at first. Permission users.view; a platform admin may call it. The row is id, email, full_name, status, suspended_at, and totp_enabled. Password hashes, TOTP secrets, recovery codes, and session material are omitted.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Users"
+                ],
+                "summary": "List platform users",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rows to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/users/{id}/mfa": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Disables TOTP and clears the secret and recovery codes. Permission users.mfa.reset; a platform admin may call it. The activity row is user.mfa_reset with a null account id. The user is not suspended. Their sessions are revoked.",
+                "tags": [
+                    "Platform Users"
+                ],
+                "summary": "Reset a platform user's TOTP",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/users/{id}/reactivate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Clears users.suspended_at. Only a platform admin may call it. Sessions revoked by the suspension stay revoked.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Users"
+                ],
+                "summary": "Reactivate a platform user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/users.suspensionBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/users/{id}/sessions/revoke": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Moves users.sessions_revoked_at and revokes refresh tokens. Only a platform admin may call it. The activity row is user.sessions_revoked with a null account id. The user is not suspended.",
+                "tags": [
+                    "Platform Users"
+                ],
+                "summary": "Revoke a platform user's sessions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/users/{id}/suspend": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets users.suspended_at. Only a platform admin may call it. The user's next request is refused. The activity row has a null account id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Users"
+                ],
+                "summary": "Suspend a platform user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/users.suspensionBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1207,13 +3461,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/models.User"
+                            "$ref": "#/definitions/users.MeProfile"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1242,7 +3496,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.UpdateMeSwagger"
+                            "$ref": "#/definitions/users.UpdateMeSwagger"
                         }
                     }
                 ],
@@ -1250,19 +3504,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/models.User"
+                            "$ref": "#/definitions/github_com_macrowallets_waas_app_http_resources_dashboard_users.User"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1319,19 +3573,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.AccountListResponse"
+                            "$ref": "#/definitions/users.AccountListResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1362,7 +3616,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.UpdateDefaultAccountSwagger"
+                            "$ref": "#/definitions/users.UpdateDefaultAccountSwagger"
                         }
                     }
                 ],
@@ -1377,13 +3631,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1414,7 +3668,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.ChangePasswordSwagger"
+                            "$ref": "#/definitions/users.ChangePasswordSwagger"
                         }
                     }
                 ],
@@ -1431,13 +3685,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1462,13 +3716,14 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/models.User"
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1493,13 +3748,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.TotpSetupSwagger"
+                            "$ref": "#/definitions/users.TotpSetupSwagger"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1530,7 +3785,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.ConfirmTotpSwagger"
+                            "$ref": "#/definitions/users.ConfirmTotpSwagger"
                         }
                     }
                 ],
@@ -1545,19 +3800,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1602,19 +3857,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/models.Address"
+                            "$ref": "#/definitions/addresses.Address"
                         }
                     },
                     "400": {
                         "description": "Missing chain parameter",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Address not found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1645,10 +3906,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/controllers.ChainListResponse"
                         }
                     },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1726,19 +3993,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.TransactionListResponse"
+                            "$ref": "#/definitions/transactions.TransactionListResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1776,19 +4049,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/models.Transaction"
+                            "$ref": "#/definitions/transactions.Transaction"
                         }
                     },
                     "400": {
                         "description": "Invalid UUID",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Transaction not found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1829,10 +4108,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/controllers.AddressListResponse"
                         }
                     },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1884,13 +4169,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.TransactionListResponse"
+                            "$ref": "#/definitions/transactions.TransactionListResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1906,7 +4197,7 @@ const docTemplate = `{
                         "SignatureAuth": []
                     }
                 ],
-                "description": "Returns all wallets across all supported chains",
+                "description": "Returns the account wallets with their network (testnet flag) and the native and configured token balances of the last refresh. Testnet wallets carry no USD value.",
                 "produces": [
                     "application/json"
                 ],
@@ -1921,10 +4212,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/controllers.WalletListResponse"
                         }
                     },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -1956,7 +4253,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.CreateWalletSwagger"
+                            "$ref": "#/definitions/wallets.CreateWalletSwagger"
                         }
                     }
                 ],
@@ -1964,25 +4261,37 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/controllers.CreateWalletResponse"
+                            "$ref": "#/definitions/wallets.CreateWalletResponse"
                         }
                     },
                     "400": {
-                        "description": "Missing or invalid fields",
+                        "description": "Missing account",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "409": {
-                        "description": "Wallet for this chain already exists or chain is unsupported",
+                        "description": "Chain is unsupported",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Passphrase is too short",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "500": {
-                        "description": "Wallet service returned no wallet",
+                        "description": "Wallet creation failed",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -2026,13 +4335,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid wallet UUID",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -2080,25 +4395,31 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/models.Address"
+                            "$ref": "#/definitions/addresses.Address"
                         }
                     },
                     "400": {
                         "description": "Invalid wallet ID or missing fields",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "422": {
                         "description": "Address generation not supported for MPC wallets",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -2136,19 +4457,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/models.Wallet"
+                            "$ref": "#/definitions/wallets.WithNetwork"
                         }
                     },
                     "400": {
                         "description": "Invalid UUID",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Wallet not found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -2203,25 +4530,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/models.Address"
+                            "$ref": "#/definitions/addresses.Address"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -2277,19 +4610,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "429": {
                         "description": "Too Many Requests",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -2333,19 +4666,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "429": {
                         "description": "Too Many Requests",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -2389,13 +4722,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -2451,13 +4790,65 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{walletId}/archive": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets wallet status to archived. Requires a wallet or account owner/admin. Archiving an archived wallet is rejected.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Settings"
+                ],
+                "summary": "Archive a wallet",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/wallets.Wallet"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -2470,7 +4861,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns the native balance and the balances of the tokens the wallet chain configures, as of the last balance refresh. Amounts come raw (base units) and for display, with the asset decimals.",
+                "description": "Returns the native balance and the balances of the tokens the wallet chain configures, as of the last balance refresh. Amounts come raw (base units) and for display, with the asset decimals. Testnet wallets carry no USD price or value.",
                 "produces": [
                     "application/json"
                 ],
@@ -2495,7 +4886,7 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "array",
                                 "items": {
-                                    "$ref": "#/definitions/models.WalletAssetBalance"
+                                    "$ref": "#/definitions/balances.Balance"
                                 }
                             }
                         }
@@ -2503,13 +4894,13 @@ const docTemplate = `{
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -2547,7 +4938,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.FreezeWalletSwagger"
+                            "$ref": "#/definitions/wallets.FreezeWalletSwagger"
                         }
                     }
                 ],
@@ -2555,13 +4946,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.WalletSettingsResponse"
+                            "$ref": "#/definitions/wallets.WalletSettingsResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -2595,19 +4986,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.WalletSettingsResponse"
+                            "$ref": "#/definitions/wallets.WalletSettingsResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -2618,7 +5009,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Updates fee rates, approval thresholds, and other wallet settings. Requires wallet or account owner/admin.",
+                "description": "Updates the wallet's name and fee settings. Requires wallet or account owner/admin. Only the listed fields are accepted; each may be omitted (unchanged) or null (reset to the network default). fee_multiplier (1.0000–5.0000, up to 4 decimals) scales the gas price on EVM chains and the fee rate on Bitcoin, in fee estimates and in the withdrawals themselves; it does not apply to Solana. fee_rate_min/fee_rate_max (1–10000 sat/vB, min ≤ max) clamp the Bitcoin fee rate. Freezing uses POST /freeze.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2643,7 +5034,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.UpdateWalletSettingsSwagger"
+                            "$ref": "#/definitions/wallets.UpdateWalletSettingsSwagger"
                         }
                     }
                 ],
@@ -2651,19 +5042,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.WalletSettingsResponse"
+                            "$ref": "#/definitions/wallets.WalletSettingsResponse"
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "no settings to update",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "invalid or unknown field",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -2732,19 +5129,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.TransactionListResponse"
+                            "$ref": "#/definitions/wallets.WalletTransactionListResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -2785,19 +5182,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.WalletTransactionView"
+                            "$ref": "#/definitions/wallets.Transaction"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -2831,25 +5228,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.UnspentOutputListResponse"
+                            "$ref": "#/definitions/wallets.UnspentOutputListResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "422": {
                         "description": "Only available for UTXO chains",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -2883,19 +5280,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.WalletUserListResponse"
+                            "$ref": "#/definitions/wallets.WalletUserListResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -2931,7 +5328,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.AddWalletUserSwagger"
+                            "$ref": "#/definitions/wallets.AddWalletUserSwagger"
                         }
                     }
                 ],
@@ -2939,19 +5336,19 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/models.WalletUser"
+                            "$ref": "#/definitions/users.WalletUser"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -2995,13 +5392,13 @@ const docTemplate = `{
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -3041,13 +5438,13 @@ const docTemplate = `{
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -3083,7 +5480,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.CreateWalletWebhookSwagger"
+                            "$ref": "#/definitions/wallets.CreateWalletWebhookSwagger"
                         }
                     }
                 ],
@@ -3091,19 +5488,19 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/models.WebhookConfig"
+                            "$ref": "#/definitions/webhooks.WebhookConfig"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -3147,13 +5544,72 @@ const docTemplate = `{
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{walletId}/webhooks/{webhookId}/test": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Posts one webhook.test body to the webhook URL, signed the same way as a normal delivery. A refused URL is an error, not a success.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Webhooks"
+                ],
+                "summary": "Send a signed test webhook",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet UUID",
+                        "name": "walletId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Webhook UUID",
+                        "name": "webhookId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/wallets.WebhookTestResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -3187,19 +5643,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/controllers.WhitelistEntryListResponse"
+                            "$ref": "#/definitions/wallets.WhitelistEntryListResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -3235,7 +5691,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/controllers.AddWhitelistEntrySwagger"
+                            "$ref": "#/definitions/wallets.AddWhitelistEntrySwagger"
                         }
                     }
                 ],
@@ -3243,19 +5699,19 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/models.WhitelistEntry"
+                            "$ref": "#/definitions/whitelist.WhitelistEntry"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -3299,13 +5755,13 @@ const docTemplate = `{
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -3371,13 +5827,13 @@ const docTemplate = `{
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -3421,19 +5877,25 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/models.Withdrawal"
+                            "$ref": "#/definitions/withdrawals.Withdrawal"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -3474,19 +5936,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/models.Withdrawal"
+                            "$ref": "#/definitions/withdrawals.Withdrawal"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -3527,25 +5989,78 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/models.Withdrawal"
+                            "$ref": "#/definitions/withdrawals.Withdrawal"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "422": {
                         "description": "Withdrawal cannot be cancelled in current state",
                         "schema": {
-                            "$ref": "#/definitions/controllers.ErrorResponse"
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/withdrawals/{withdrawalId}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns one withdrawal for the account in X-Account-Id. A missing id, or a withdrawal outside that account, is not found.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet Withdrawals"
+                ],
+                "summary": "Get a withdrawal by id",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Withdrawal UUID",
+                        "name": "withdrawalId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Account UUID",
+                        "name": "X-Account-Id",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/withdrawals.Withdrawal"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     }
                 }
@@ -3553,52 +6068,111 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "controllers.AccessTokenListResponse": {
+        "accounts.AccessToken": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ip_cidr": {
+                    "type": "string"
+                },
+                "last_used_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "permissions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "revoked_at": {
+                    "type": "string"
+                },
+                "spending_limit": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "valid_until": {
+                    "type": "string"
+                }
+            }
+        },
+        "accounts.AccessTokenListResponse": {
             "type": "object",
             "properties": {
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.AccessToken"
+                        "$ref": "#/definitions/accounts.AccessToken"
                     }
                 }
             }
         },
-        "controllers.AccountListResponse": {
+        "accounts.AccountDetail": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "environment": {
+                    "type": "string"
+                },
+                "features": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "linked_account_id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "sweep_limits": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "view_all_wallets": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "accounts.AccountUserListResponse": {
             "type": "object",
             "properties": {
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.Account"
-                    }
-                },
-                "limit": {
-                    "type": "integer",
-                    "example": 20
-                },
-                "offset": {
-                    "type": "integer",
-                    "example": 0
-                },
-                "total": {
-                    "type": "integer",
-                    "example": 64
-                }
-            }
-        },
-        "controllers.AccountUserListResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.AccountUser"
+                        "$ref": "#/definitions/github_com_macrowallets_waas_app_http_resources_dashboard_accounts.AccountUser"
                     }
                 }
             }
         },
-        "controllers.AddAccountUserSwagger": {
+        "accounts.AddAccountUserSwagger": {
             "type": "object",
             "properties": {
                 "email": {
@@ -3611,44 +6185,191 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.AddWalletUserSwagger": {
+        "accounts.CreateAccountSwagger": {
             "type": "object",
             "properties": {
-                "roles": {
+                "name": {
                     "type": "string",
-                    "example": "viewer"
-                },
-                "user_id": {
-                    "type": "string",
-                    "example": "00000000-0000-0000-0000-000000000001"
+                    "example": "Acme Corp"
                 }
             }
         },
-        "controllers.AddWhitelistEntrySwagger": {
+        "accounts.CreateAccountTokenResponse": {
+            "type": "object",
+            "properties": {
+                "metadata": {
+                    "$ref": "#/definitions/accounts.AccessToken"
+                },
+                "token": {
+                    "type": "string"
+                }
+            }
+        },
+        "accounts.CreateAccountTokenSwagger": {
+            "type": "object",
+            "properties": {
+                "ip_cidr": {
+                    "type": "string",
+                    "example": "192.0.2.0/24"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "CI Token"
+                },
+                "permissions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "require_signature": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "valid_until": {
+                    "type": "string"
+                }
+            }
+        },
+        "accounts.UpdateAccountSwagger": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "example": "New Name"
+                },
+                "view_all_wallets": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "accounts.UpdateAccountUserSwagger": {
+            "type": "object",
+            "properties": {
+                "role": {
+                    "type": "string",
+                    "example": "admin"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "suspended"
+                }
+            }
+        },
+        "accounts.accountMemberUser": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "full_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "suspended_at": {
+                    "type": "string"
+                },
+                "totp_enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "accounts.lifecycleBody": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "activity.AccountActivity": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "action": {
+                    "type": "string"
+                },
+                "actor_user_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/activity.Metadata"
+                },
+                "target_id": {
+                    "type": "string"
+                },
+                "target_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "activity.Metadata": {
+            "type": "object",
+            "additionalProperties": {}
+        },
+        "addresses.Address": {
             "type": "object",
             "properties": {
                 "address": {
-                    "type": "string",
-                    "example": "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
+                    "type": "string"
+                },
+                "chain": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "derivation_index": {
+                    "type": "integer"
+                },
+                "derivation_type": {
+                    "type": "string"
+                },
+                "external_user_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
                 },
                 "label": {
-                    "type": "string",
-                    "example": "Cold Storage"
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "wallet": {},
+                "wallet_id": {
+                    "type": "string"
                 }
             }
         },
-        "controllers.AddressListResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.Address"
-                    }
-                }
-            }
-        },
-        "controllers.AuthResponse": {
+        "auth.AuthResponse": {
             "type": "object",
             "properties": {
                 "access_token": {
@@ -3658,7 +6379,179 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "user": {
-                    "$ref": "#/definitions/models.User"
+                    "$ref": "#/definitions/github_com_macrowallets_waas_app_http_resources_dashboard_users.User"
+                }
+            }
+        },
+        "auth.ForgotPasswordSwagger": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                }
+            }
+        },
+        "auth.LoginSwagger": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
+                "password": {
+                    "type": "string",
+                    "example": "s3cr3t"
+                }
+            }
+        },
+        "auth.RefreshTokenSwagger": {
+            "type": "object",
+            "properties": {
+                "refresh_token": {
+                    "type": "string"
+                }
+            }
+        },
+        "auth.RegisterSwagger": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
+                "full_name": {
+                    "type": "string",
+                    "example": "Alice Smith"
+                },
+                "organization_name": {
+                    "type": "string",
+                    "example": "Acme Corp"
+                },
+                "password": {
+                    "type": "string",
+                    "example": "s3cr3t"
+                }
+            }
+        },
+        "auth.ResetPasswordSwagger": {
+            "type": "object",
+            "properties": {
+                "new_password": {
+                    "type": "string",
+                    "example": "newS3cr3t"
+                },
+                "token": {
+                    "type": "string"
+                }
+            }
+        },
+        "auth.TwoFactorSwagger": {
+            "type": "object",
+            "properties": {
+                "challenge_token": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string",
+                    "example": "123456"
+                },
+                "recovery_code": {
+                    "type": "string",
+                    "example": "ABCDEFGH12345678"
+                }
+            }
+        },
+        "balances.Balance": {
+            "type": "object",
+            "properties": {
+                "amount_display": {
+                    "type": "string"
+                },
+                "amount_raw": {
+                    "type": "string"
+                },
+                "asset_contract": {
+                    "type": "string"
+                },
+                "asset_key": {
+                    "type": "string"
+                },
+                "asset_name": {
+                    "type": "string"
+                },
+                "asset_symbol": {
+                    "type": "string"
+                },
+                "asset_type": {
+                    "type": "string"
+                },
+                "chain_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "decimals": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_synced_at": {
+                    "type": "string"
+                },
+                "price_usd": {
+                    "$ref": "#/definitions/numeric.NullDecimal"
+                },
+                "source_address": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "value_usd": {
+                    "$ref": "#/definitions/numeric.NullDecimal"
+                },
+                "wallet": {},
+                "wallet_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "chains.RPCView": {
+            "type": "object",
+            "properties": {
+                "rpcUrlSet": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "chains.ThresholdView": {
+            "type": "object",
+            "properties": {
+                "dust_threshold_native_raw": {
+                    "type": "string"
+                },
+                "dust_threshold_usd": {
+                    "type": "string"
+                },
+                "gas_readiness_threshold_raw": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                }
+            }
+        },
+        "controllers.AddressListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/addresses.Address"
+                    }
                 }
             }
         },
@@ -3694,32 +6587,16 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.ChangePasswordSwagger": {
-            "type": "object",
-            "properties": {
-                "current_password": {
-                    "type": "string"
-                },
-                "new_password": {
-                    "type": "string"
-                }
-            }
-        },
-        "controllers.ConfirmTotpSwagger": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string",
-                    "example": "123456"
-                }
-            }
-        },
         "controllers.ConsolidatePlanSummary": {
             "type": "object",
             "properties": {
                 "children_swept": {
                     "type": "integer",
                     "example": 3
+                },
+                "decimals": {
+                    "type": "integer",
+                    "example": 6
                 },
                 "dust_ignored": {
                     "type": "integer",
@@ -3731,7 +6608,7 @@ const docTemplate = `{
                 },
                 "total_amount": {
                     "type": "string",
-                    "example": "0"
+                    "example": "7000000"
                 }
             }
         },
@@ -3769,6 +6646,10 @@ const docTemplate = `{
         "controllers.ConsolidateTransaction": {
             "type": "object",
             "properties": {
+                "amount": {
+                    "type": "string",
+                    "example": "7000000"
+                },
                 "from": {
                     "type": "string"
                 },
@@ -3782,159 +6663,6 @@ const docTemplate = `{
                 },
                 "tx_hash": {
                     "type": "string"
-                }
-            }
-        },
-        "controllers.CreateAccountSwagger": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "example": "Acme Corp"
-                }
-            }
-        },
-        "controllers.CreateAccountTokenResponse": {
-            "type": "object",
-            "properties": {
-                "metadata": {
-                    "$ref": "#/definitions/models.AccessToken"
-                },
-                "token": {
-                    "type": "string"
-                }
-            }
-        },
-        "controllers.CreateAccountTokenSwagger": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "example": "CI Token"
-                },
-                "require_signature": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "valid_until": {
-                    "type": "string"
-                }
-            }
-        },
-        "controllers.CreateWalletResponse": {
-            "type": "object",
-            "properties": {
-                "account_id": {
-                    "description": "Account and admin fields",
-                    "type": "string"
-                },
-                "address_index": {
-                    "type": "integer"
-                },
-                "balance": {
-                    "type": "string"
-                },
-                "balance_asset": {
-                    "type": "string"
-                },
-                "balance_last_synced_at": {
-                    "type": "string"
-                },
-                "balance_raw": {
-                    "type": "string"
-                },
-                "balance_usd": {
-                    "type": "number"
-                },
-                "chain": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
-                },
-                "deposit_address": {
-                    "$ref": "#/definitions/models.Address"
-                },
-                "deposit_address_id": {
-                    "type": "string"
-                },
-                "fee_multiplier": {
-                    "type": "number"
-                },
-                "fee_rate_max": {
-                    "type": "integer"
-                },
-                "fee_rate_min": {
-                    "type": "integer"
-                },
-                "frozen_until": {
-                    "type": "string"
-                },
-                "gas_last_checked_at": {
-                    "type": "string"
-                },
-                "gas_status": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "label": {
-                    "type": "string"
-                },
-                "read_model_status": {
-                    "type": "string"
-                },
-                "required_approvals": {
-                    "type": "integer"
-                },
-                "service_public_key": {
-                    "description": "Hex of the combined MPC public key.",
-                    "type": "string",
-                    "example": "02a1b2c3..."
-                },
-                "status": {
-                    "type": "string"
-                },
-                "sweep_policy_version": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
-                }
-            }
-        },
-        "controllers.CreateWalletSwagger": {
-            "type": "object",
-            "properties": {
-                "chain": {
-                    "type": "string",
-                    "example": "eth"
-                },
-                "label": {
-                    "type": "string",
-                    "example": "My Ethereum Wallet"
-                },
-                "passphrase": {
-                    "type": "string",
-                    "example": "my-secret-passphrase-12chars"
-                }
-            }
-        },
-        "controllers.CreateWalletWebhookSwagger": {
-            "type": "object",
-            "properties": {
-                "events": {
-                    "type": "string",
-                    "example": "deposit.confirmed,withdrawal.confirmed"
-                },
-                "secret": {
-                    "type": "string",
-                    "example": "wh_secret_123"
-                },
-                "url": {
-                    "type": "string",
-                    "example": "https://example.com/hook"
                 }
             }
         },
@@ -3964,57 +6692,6 @@ const docTemplate = `{
                 "totp_code": {
                     "type": "string",
                     "example": "123456"
-                }
-            }
-        },
-        "controllers.CreateWebhookRequest": {
-            "type": "object",
-            "properties": {
-                "events": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "deposit.confirmed",
-                        "withdrawal.broadcast",
-                        "withdrawal.confirmed",
-                        "withdrawal.failed"
-                    ]
-                },
-                "secret": {
-                    "type": "string",
-                    "example": "my-webhook-secret"
-                },
-                "url": {
-                    "type": "string",
-                    "example": "https://example.com/webhook"
-                }
-            }
-        },
-        "controllers.ErrorResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string",
-                    "example": "something went wrong"
-                }
-            }
-        },
-        "controllers.ForgotPasswordSwagger": {
-            "type": "object",
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "example": "user@example.com"
-                }
-            }
-        },
-        "controllers.FreezeWalletSwagger": {
-            "type": "object",
-            "properties": {
-                "frozen_until": {
-                    "type": "string"
                 }
             }
         },
@@ -4068,246 +6745,94 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.DepositScannerHealth": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string"
-                },
-                "pending": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "integer"
-                    }
-                },
-                "pending_total": {
-                    "type": "integer",
-                    "example": 0
-                },
-                "status": {
-                    "type": "string",
-                    "example": "ok"
-                }
-            }
-        },
-        "controllers.HealthResponse": {
-            "type": "object",
-            "properties": {
-                "deposit_scanner": {
-                    "$ref": "#/definitions/controllers.DepositScannerHealth"
-                },
-                "status": {
-                    "type": "string",
-                    "example": "ok"
-                },
-                "version": {
-                    "type": "string",
-                    "example": "0.1.0"
-                }
-            }
-        },
-        "controllers.LoginSwagger": {
-            "type": "object",
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "example": "user@example.com"
-                },
-                "password": {
-                    "type": "string",
-                    "example": "s3cr3t"
-                }
-            }
-        },
-        "controllers.RefreshTokenSwagger": {
-            "type": "object",
-            "properties": {
-                "refresh_token": {
-                    "type": "string"
-                }
-            }
-        },
-        "controllers.RegisterSwagger": {
-            "type": "object",
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "example": "user@example.com"
-                },
-                "full_name": {
-                    "type": "string",
-                    "example": "Alice Smith"
-                },
-                "organization_name": {
-                    "type": "string",
-                    "example": "Acme Corp"
-                },
-                "password": {
-                    "type": "string",
-                    "example": "s3cr3t"
-                }
-            }
-        },
-        "controllers.ResetPasswordSwagger": {
-            "type": "object",
-            "properties": {
-                "new_password": {
-                    "type": "string",
-                    "example": "newS3cr3t"
-                },
-                "token": {
-                    "type": "string"
-                }
-            }
-        },
-        "controllers.TotpSetupSwagger": {
-            "type": "object",
-            "properties": {
-                "qr_url": {
-                    "type": "string",
-                    "example": "otpauth://totp/..."
-                },
-                "secret": {
-                    "type": "string",
-                    "example": "JBSWY3DPEHPK3PXP"
-                }
-            }
-        },
-        "controllers.TransactionListResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.Transaction"
-                    }
-                }
-            }
-        },
-        "controllers.TwoFactorSwagger": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string",
-                    "example": "123456"
-                },
-                "challenge_token": {
-                    "type": "string"
-                },
-                "recovery_code": {
-                    "type": "string",
-                    "example": "ABCDEFGH12345678"
-                }
-            }
-        },
-        "controllers.UnspentOutput": {
-            "type": "object",
-            "properties": {
-                "address": {
-                    "type": "string"
-                },
-                "height": {
-                    "type": "integer"
-                },
-                "tx_hash": {
-                    "type": "string"
-                },
-                "value": {
-                    "type": "integer"
-                },
-                "vout": {
-                    "type": "integer"
-                }
-            }
-        },
-        "controllers.UnspentOutputListResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/controllers.UnspentOutput"
-                    }
-                }
-            }
-        },
-        "controllers.UpdateAccountSwagger": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "example": "New Name"
-                },
-                "view_all_wallets": {
-                    "type": "boolean",
-                    "example": true
-                }
-            }
-        },
-        "controllers.UpdateDefaultAccountSwagger": {
+        "controllers.WalletListItem": {
             "type": "object",
             "properties": {
                 "account_id": {
-                    "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440000"
-                }
-            }
-        },
-        "controllers.UpdateMeSwagger": {
-            "type": "object",
-            "properties": {
-                "full_name": {
-                    "type": "string",
-                    "example": "Alice Smith"
-                }
-            }
-        },
-        "controllers.UpdateWalletSettingsSwagger": {
-            "type": "object",
-            "properties": {
+                    "type": "string"
+                },
+                "address_index": {
+                    "type": "integer"
+                },
+                "assets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/balances.Balance"
+                    }
+                },
+                "balance": {
+                    "type": "string"
+                },
+                "balance_asset": {
+                    "type": "string"
+                },
+                "balance_last_synced_at": {
+                    "type": "string"
+                },
+                "balance_raw": {
+                    "type": "string"
+                },
+                "balance_usd": {
+                    "$ref": "#/definitions/numeric.NullDecimal"
+                },
+                "chain": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "deposit_address": {
+                    "$ref": "#/definitions/addresses.Address"
+                },
+                "deposit_address_id": {
+                    "type": "string"
+                },
                 "fee_multiplier": {
-                    "type": "number",
-                    "example": 1.25
+                    "$ref": "#/definitions/numeric.NullDecimal"
                 },
                 "fee_rate_max": {
-                    "type": "integer",
-                    "example": 100
+                    "type": "integer"
                 },
                 "fee_rate_min": {
-                    "type": "integer",
-                    "example": 1
+                    "type": "integer"
                 },
                 "frozen_until": {
                     "type": "string"
                 },
-                "required_approvals": {
-                    "type": "integer",
-                    "example": 2
-                }
-            }
-        },
-        "controllers.UpdateWebhookRequest": {
-            "type": "object",
-            "properties": {
-                "events": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "deposit.confirmed",
-                        "withdrawal.broadcast",
-                        "withdrawal.confirmed",
-                        "withdrawal.failed"
-                    ]
+                "gas_last_checked_at": {
+                    "type": "string"
                 },
-                "is_active": {
+                "gas_status": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "network": {
+                    "type": "string",
+                    "example": "polygon-amoy"
+                },
+                "read_model_status": {
+                    "type": "string"
+                },
+                "required_approvals": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "sweep_policy_version": {
+                    "type": "integer"
+                },
+                "testnet": {
                     "type": "boolean",
                     "example": true
                 },
-                "secret": {
-                    "type": "string",
-                    "example": "my-webhook-secret"
+                "updated_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 }
             }
         },
@@ -4317,147 +6842,7 @@ const docTemplate = `{
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.Wallet"
-                    }
-                }
-            }
-        },
-        "controllers.WalletSettingsResponse": {
-            "type": "object",
-            "properties": {
-                "fee_multiplier": {
-                    "type": "number"
-                },
-                "fee_rate_max": {
-                    "type": "integer"
-                },
-                "fee_rate_min": {
-                    "type": "integer"
-                },
-                "frozen_until": {
-                    "type": "string"
-                },
-                "required_approvals": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "controllers.WalletTransactionView": {
-            "type": "object",
-            "properties": {
-                "address": {
-                    "description": "Relationships",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.Address"
-                        }
-                    ]
-                },
-                "address_id": {
-                    "type": "string"
-                },
-                "amount": {
-                    "type": "string"
-                },
-                "asset": {
-                    "type": "string"
-                },
-                "block_hash": {
-                    "type": "string"
-                },
-                "block_number": {
-                    "type": "integer"
-                },
-                "chain": {
-                    "type": "string"
-                },
-                "confirmations": {
-                    "type": "integer"
-                },
-                "confirmed_at": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
-                },
-                "decimals": {
-                    "type": "integer"
-                },
-                "direction": {
-                    "type": "string"
-                },
-                "error_message": {
-                    "type": "string"
-                },
-                "external_user_id": {
-                    "type": "string"
-                },
-                "fee": {
-                    "type": "string"
-                },
-                "from_address": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "idempotency_key": {
-                    "type": "string"
-                },
-                "log_index": {
-                    "type": "integer"
-                },
-                "origin": {
-                    "type": "string"
-                },
-                "parent_transaction_id": {
-                    "type": "string"
-                },
-                "required_confs": {
-                    "type": "integer"
-                },
-                "source": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "synced_at": {
-                    "type": "string"
-                },
-                "to_address": {
-                    "type": "string"
-                },
-                "token_contract": {
-                    "type": "string"
-                },
-                "tx_hash": {
-                    "type": "string"
-                },
-                "tx_type": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
-                },
-                "wallet": {
-                    "$ref": "#/definitions/models.Wallet"
-                },
-                "wallet_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "controllers.WalletUserListResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.WalletUser"
+                        "$ref": "#/definitions/controllers.WalletListItem"
                     }
                 }
             }
@@ -4468,18 +6853,7 @@ const docTemplate = `{
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.WebhookConfig"
-                    }
-                }
-            }
-        },
-        "controllers.WhitelistEntryListResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.WhitelistEntry"
+                        "$ref": "#/definitions/webhooks.WebhookConfig"
                     }
                 }
             }
@@ -4548,7 +6922,7 @@ const docTemplate = `{
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.Withdrawal"
+                        "$ref": "#/definitions/withdrawals.Withdrawal"
                     }
                 }
             }
@@ -4597,58 +6971,25 @@ const docTemplate = `{
                 }
             }
         },
-        "controllers.WithdrawalResponse": {
+        "features.Flag": {
             "type": "object",
             "properties": {
-                "failed_step": {
-                    "$ref": "#/definitions/controllers.WithdrawalFailedStep"
+                "enabled": {
+                    "type": "boolean"
                 },
-                "origin": {
-                    "type": "string",
-                    "example": "user_request"
-                },
-                "status": {
-                    "type": "string",
-                    "example": "confirming"
-                },
-                "strategy": {
-                    "type": "string",
-                    "example": "direct_from_base"
-                },
-                "sweeps": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/controllers.WithdrawalSweepItem"
-                    }
-                },
-                "transaction_id": {
-                    "type": "string",
-                    "example": "8c5e3b3a-4a8f-4c0b-9e8a-2d1e8f0b7c4d"
-                },
-                "tx_hash": {
-                    "type": "string",
-                    "example": "0xaaa..."
+                "key": {
+                    "type": "string"
                 }
             }
         },
-        "controllers.WithdrawalSweepItem": {
+        "features.List": {
             "type": "object",
             "properties": {
-                "from": {
-                    "type": "string",
-                    "example": "0xChildAddress"
-                },
-                "origin": {
-                    "type": "string",
-                    "example": "sweep"
-                },
-                "tx_hash": {
-                    "type": "string",
-                    "example": "0xbbb..."
-                },
-                "tx_id": {
-                    "type": "string",
-                    "example": "1f2d3c4b-5a6b-7c8d-9e0f-112233445566"
+                "features": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/features.Flag"
+                    }
                 }
             }
         },
@@ -4873,42 +7214,7 @@ const docTemplate = `{
                 "error": {}
             }
         },
-        "models.AccessToken": {
-            "type": "object",
-            "properties": {
-                "account_id": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
-                },
-                "created_by": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "ip_cidr": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "permissions": {
-                    "type": "string"
-                },
-                "spending_limit": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
-                },
-                "valid_until": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.Account": {
+        "github_com_macrowallets_waas_app_http_resources_dashboard_accounts.Account": {
             "type": "object",
             "properties": {
                 "created_at": {
@@ -4940,7 +7246,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.AccountUser": {
+        "github_com_macrowallets_waas_app_http_resources_dashboard_accounts.AccountUser": {
             "type": "object",
             "properties": {
                 "account_id": {
@@ -4959,7 +7265,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "role": {
-                    "description": "owner|admin|auditor|user",
                     "type": "string"
                 },
                 "status": {
@@ -4969,75 +7274,372 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
                 "user": {
-                    "$ref": "#/definitions/models.User"
+                    "$ref": "#/definitions/github_com_macrowallets_waas_app_http_resources_dashboard_users.User"
                 },
                 "user_id": {
                     "type": "string"
                 }
             }
         },
-        "models.Address": {
+        "github_com_macrowallets_waas_app_http_resources_dashboard_users.User": {
             "type": "object",
             "properties": {
-                "address": {
-                    "type": "string"
-                },
-                "chain": {
-                    "type": "string"
-                },
                 "created_at": {
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
-                "created_by": {
+                "default_account_id": {
                     "type": "string"
                 },
-                "derivation_index": {
-                    "type": "integer"
-                },
-                "derivation_type": {
+                "email": {
                     "type": "string"
                 },
-                "external_user_id": {
+                "full_name": {
                     "type": "string"
                 },
                 "id": {
                     "type": "string"
                 },
-                "is_active": {
-                    "type": "boolean"
+                "preferences": {
+                    "$ref": "#/definitions/users.Preferences"
                 },
-                "label": {
+                "status": {
                     "type": "string"
                 },
-                "metadata": {
+                "totp_enabled": {
+                    "type": "boolean"
+                },
+                "updated_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                }
+            }
+        },
+        "github_com_macrowallets_waas_app_http_resources_platform_accounts.AccountUser": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "added_by": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "deleted_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 },
                 "updated_at": {
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
-                "wallet": {
-                    "description": "Relationship",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.Wallet"
-                        }
-                    ]
+                "user": {
+                    "$ref": "#/definitions/accounts.accountMemberUser"
                 },
-                "wallet_id": {
+                "user_id": {
                     "type": "string"
                 }
             }
         },
-        "models.Transaction": {
+        "health.DepositScannerHealth": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "pending": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "pending_total": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "status": {
+                    "type": "string",
+                    "example": "ok"
+                }
+            }
+        },
+        "health.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "deposit_scanner": {
+                    "$ref": "#/definitions/health.DepositScannerHealth"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "ok"
+                },
+                "version": {
+                    "type": "string",
+                    "example": "0.1.0"
+                }
+            }
+        },
+        "numeric.NullDecimal": {
+            "type": "object",
+            "properties": {
+                "decimal": {
+                    "type": "number"
+                },
+                "valid": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "policies.RoleGrant": {
+            "type": "object",
+            "properties": {
+                "permissions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "requests.AttachPlatformOwnerRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                }
+            }
+        },
+        "requests.UpdateAddressRequest": {
+            "type": "object",
+            "properties": {
+                "external_user_id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                }
+            }
+        },
+        "responses.ErrorBody": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "object",
+                    "properties": {
+                        "code": {
+                            "type": "string",
+                            "example": "not_found"
+                        },
+                        "message": {
+                            "type": "string",
+                            "example": "not found"
+                        }
+                    }
+                },
+                "errors": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "roles.permissionCatalog": {
+            "type": "object",
+            "properties": {
+                "permissions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "roles.roleList": {
+            "type": "object",
+            "properties": {
+                "roles": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/policies.RoleGrant"
+                    }
+                }
+            }
+        },
+        "settings.BlockView": {
+            "type": "object",
+            "properties": {
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/settings.GroupView"
+                    }
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "settings.Field": {
+            "type": "object",
+            "properties": {
+                "help": {
+                    "type": "string"
+                },
+                "isSet": {
+                    "type": "boolean"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "secret": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "$ref": "#/definitions/settings.Type"
+                },
+                "value": {}
+            }
+        },
+        "settings.GroupView": {
+            "type": "object",
+            "properties": {
+                "block": {
+                    "type": "string"
+                },
+                "can_update": {
+                    "type": "boolean"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/settings.Field"
+                    }
+                },
+                "managed_by": {
+                    "$ref": "#/definitions/settings.ManagedBy"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "scope": {
+                    "$ref": "#/definitions/settings.Scope"
+                },
+                "section": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "settings.ManagedBy": {
+            "type": "string",
+            "enum": [
+                "account",
+                "platform"
+            ],
+            "x-enum-varnames": [
+                "ManagedByAccount",
+                "ManagedByPlatform"
+            ]
+        },
+        "settings.Permissions": {
+            "type": "object",
+            "properties": {
+                "update": {
+                    "type": "string"
+                },
+                "view": {
+                    "type": "string"
+                }
+            }
+        },
+        "settings.RegistryView": {
+            "type": "object",
+            "properties": {
+                "permissions": {
+                    "$ref": "#/definitions/settings.Permissions"
+                },
+                "sections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/settings.SectionView"
+                    }
+                }
+            }
+        },
+        "settings.Scope": {
+            "type": "string",
+            "enum": [
+                "account",
+                "platform"
+            ],
+            "x-enum-varnames": [
+                "ScopeAccount",
+                "ScopePlatform"
+            ]
+        },
+        "settings.SectionView": {
+            "type": "object",
+            "properties": {
+                "blocks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/settings.BlockView"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "settings.Type": {
+            "type": "string",
+            "enum": [
+                "string",
+                "int",
+                "bool",
+                "decimal",
+                "string_list",
+                "bigint"
+            ],
+            "x-enum-varnames": [
+                "TypeString",
+                "TypeInt",
+                "TypeBool",
+                "TypeDecimal",
+                "TypeStringList",
+                "TypeBigInt"
+            ]
+        },
+        "transactions.Transaction": {
             "type": "object",
             "properties": {
                 "address": {
-                    "description": "Relationships",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.Address"
-                        }
-                    ]
+                    "$ref": "#/definitions/addresses.Address"
                 },
                 "address_id": {
                     "type": "string"
@@ -5057,6 +7659,15 @@ const docTemplate = `{
                 "chain": {
                     "type": "string"
                 },
+                "chain_direction": {
+                    "type": "string",
+                    "enum": [
+                        "inbound",
+                        "outbound",
+                        "self",
+                        "unknown"
+                    ]
+                },
                 "confirmations": {
                     "type": "integer"
                 },
@@ -5067,7 +7678,13 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
                 "direction": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "incoming",
+                        "outgoing",
+                        "internal",
+                        "unknown"
+                    ]
                 },
                 "error_message": {
                     "type": "string"
@@ -5120,18 +7737,85 @@ const docTemplate = `{
                 "tx_type": {
                     "type": "string"
                 },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "deposit",
+                        "withdrawal",
+                        "sweep",
+                        "consolidation",
+                        "gas_funding",
+                        "transfer",
+                        "fee",
+                        "unknown"
+                    ]
+                },
                 "updated_at": {
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
                 "wallet": {
-                    "$ref": "#/definitions/models.Wallet"
+                    "$ref": "#/definitions/wallets.Wallet"
                 },
                 "wallet_id": {
                     "type": "string"
                 }
             }
         },
-        "models.User": {
+        "transactions.TransactionListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/transactions.Transaction"
+                    }
+                }
+            }
+        },
+        "users.AccountListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/users.myAccount"
+                    }
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "offset": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 64
+                }
+            }
+        },
+        "users.ChangePasswordSwagger": {
+            "type": "object",
+            "properties": {
+                "current_password": {
+                    "type": "string"
+                },
+                "new_password": {
+                    "type": "string"
+                }
+            }
+        },
+        "users.ConfirmTotpSwagger": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "123456"
+                }
+            }
+        },
+        "users.MeProfile": {
             "type": "object",
             "properties": {
                 "created_at": {
@@ -5143,6 +7827,12 @@ const docTemplate = `{
                 "email": {
                     "type": "string"
                 },
+                "features": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "full_name": {
                     "type": "string"
                 },
@@ -5150,7 +7840,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "preferences": {
-                    "$ref": "#/definitions/models.UserPreferences"
+                    "$ref": "#/definitions/users.Preferences"
                 },
                 "status": {
                     "type": "string"
@@ -5163,7 +7853,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.UserPreferences": {
+        "users.Preferences": {
             "type": "object",
             "properties": {
                 "display_in_fiat": {
@@ -5174,11 +7864,146 @@ const docTemplate = `{
                 }
             }
         },
-        "models.Wallet": {
+        "users.TotpSetupSwagger": {
+            "type": "object",
+            "properties": {
+                "qr_url": {
+                    "type": "string",
+                    "example": "otpauth://totp/..."
+                },
+                "secret": {
+                    "type": "string",
+                    "example": "JBSWY3DPEHPK3PXP"
+                }
+            }
+        },
+        "users.UpdateDefaultAccountSwagger": {
             "type": "object",
             "properties": {
                 "account_id": {
-                    "description": "Account and admin fields",
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "users.UpdateMeSwagger": {
+            "type": "object",
+            "properties": {
+                "full_name": {
+                    "type": "string",
+                    "example": "Alice Smith"
+                }
+            }
+        },
+        "users.WalletUser": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "deleted_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "roles": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "user": {
+                    "$ref": "#/definitions/github_com_macrowallets_waas_app_http_resources_dashboard_users.User"
+                },
+                "user_id": {
+                    "type": "string"
+                },
+                "wallet_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "users.myAccount": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "environment": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "linked_account_id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string",
+                    "example": "owner"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "sweep_limits": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "view_all_wallets": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "users.suspensionBody": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "suspended_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "wallets.AddWalletUserSwagger": {
+            "type": "object",
+            "properties": {
+                "roles": {
+                    "type": "string",
+                    "example": "viewer"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "00000000-0000-0000-0000-000000000001"
+                }
+            }
+        },
+        "wallets.AddWhitelistEntrySwagger": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string",
+                    "example": "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
+                },
+                "label": {
+                    "type": "string",
+                    "example": "Cold Storage"
+                }
+            }
+        },
+        "wallets.CreateWalletResponse": {
+            "type": "object",
+            "properties": {
+                "account_id": {
                     "type": "string"
                 },
                 "address_index": {
@@ -5197,7 +8022,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "balance_usd": {
-                    "type": "number"
+                    "$ref": "#/definitions/numeric.NullDecimal"
                 },
                 "chain": {
                     "type": "string"
@@ -5206,13 +8031,331 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
                 "deposit_address": {
-                    "$ref": "#/definitions/models.Address"
+                    "$ref": "#/definitions/addresses.Address"
                 },
                 "deposit_address_id": {
                     "type": "string"
                 },
                 "fee_multiplier": {
-                    "type": "number"
+                    "$ref": "#/definitions/numeric.NullDecimal"
+                },
+                "fee_rate_max": {
+                    "type": "integer"
+                },
+                "fee_rate_min": {
+                    "type": "integer"
+                },
+                "frozen_until": {
+                    "type": "string"
+                },
+                "gas_last_checked_at": {
+                    "type": "string"
+                },
+                "gas_status": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "read_model_status": {
+                    "type": "string"
+                },
+                "required_approvals": {
+                    "type": "integer"
+                },
+                "service_public_key": {
+                    "description": "Hex of the combined MPC public key.",
+                    "type": "string",
+                    "example": "02a1b2c3..."
+                },
+                "status": {
+                    "type": "string"
+                },
+                "sweep_policy_version": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                }
+            }
+        },
+        "wallets.CreateWalletSwagger": {
+            "type": "object",
+            "properties": {
+                "chain": {
+                    "type": "string",
+                    "example": "eth"
+                },
+                "label": {
+                    "type": "string",
+                    "example": "My Ethereum Wallet"
+                },
+                "passphrase": {
+                    "type": "string",
+                    "example": "my-secret-passphrase-12chars"
+                }
+            }
+        },
+        "wallets.CreateWalletWebhookSwagger": {
+            "type": "object",
+            "properties": {
+                "events": {
+                    "type": "string",
+                    "example": "deposit.confirmed,withdrawal.confirmed"
+                },
+                "secret": {
+                    "type": "string",
+                    "example": "wh_secret_123"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "https://example.com/hook"
+                }
+            }
+        },
+        "wallets.FreezeWalletSwagger": {
+            "type": "object",
+            "properties": {
+                "frozen_until": {
+                    "type": "string"
+                }
+            }
+        },
+        "wallets.Transaction": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "$ref": "#/definitions/addresses.Address"
+                },
+                "address_id": {
+                    "type": "string"
+                },
+                "amount": {
+                    "type": "string"
+                },
+                "asset": {
+                    "type": "string"
+                },
+                "block_hash": {
+                    "type": "string"
+                },
+                "block_number": {
+                    "type": "integer"
+                },
+                "chain": {
+                    "type": "string"
+                },
+                "chain_direction": {
+                    "type": "string",
+                    "enum": [
+                        "inbound",
+                        "outbound",
+                        "self",
+                        "unknown"
+                    ]
+                },
+                "confirmations": {
+                    "type": "integer"
+                },
+                "confirmed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "decimals": {
+                    "type": "integer"
+                },
+                "direction": {
+                    "type": "string",
+                    "enum": [
+                        "incoming",
+                        "outgoing",
+                        "internal",
+                        "unknown"
+                    ]
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "external_user_id": {
+                    "type": "string"
+                },
+                "fee": {
+                    "type": "string"
+                },
+                "fee_asset": {
+                    "description": "FeeAsset and FeeDecimals describe fee, which is always in base units of the\nchain's native asset (a token transfer pays its fee in TRX, ETH, ...). Omitted\nwhile the fee is unknown.",
+                    "type": "string"
+                },
+                "fee_decimals": {
+                    "type": "integer"
+                },
+                "from_address": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "idempotency_key": {
+                    "type": "string"
+                },
+                "log_index": {
+                    "type": "integer"
+                },
+                "origin": {
+                    "type": "string"
+                },
+                "parent_transaction_id": {
+                    "type": "string"
+                },
+                "required_confs": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "synced_at": {
+                    "type": "string"
+                },
+                "to_address": {
+                    "type": "string"
+                },
+                "token_contract": {
+                    "type": "string"
+                },
+                "tx_hash": {
+                    "type": "string"
+                },
+                "tx_type": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "deposit",
+                        "withdrawal",
+                        "sweep",
+                        "consolidation",
+                        "gas_funding",
+                        "transfer",
+                        "fee",
+                        "unknown"
+                    ]
+                },
+                "updated_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "wallet": {
+                    "$ref": "#/definitions/wallets.Wallet"
+                },
+                "wallet_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "wallets.UnspentOutput": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "tx_hash": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "integer"
+                },
+                "vout": {
+                    "type": "integer"
+                }
+            }
+        },
+        "wallets.UnspentOutputListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/wallets.UnspentOutput"
+                    }
+                }
+            }
+        },
+        "wallets.UpdateWalletSettingsSwagger": {
+            "type": "object",
+            "properties": {
+                "fee_multiplier": {
+                    "type": "number",
+                    "example": 1.25
+                },
+                "fee_rate_max": {
+                    "type": "integer",
+                    "example": 50
+                },
+                "fee_rate_min": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "label": {
+                    "type": "string",
+                    "example": "Treasury"
+                },
+                "required_approvals": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
+        "wallets.Wallet": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "address_index": {
+                    "type": "integer"
+                },
+                "balance": {
+                    "type": "string"
+                },
+                "balance_asset": {
+                    "type": "string"
+                },
+                "balance_last_synced_at": {
+                    "type": "string"
+                },
+                "balance_raw": {
+                    "type": "string"
+                },
+                "balance_usd": {
+                    "$ref": "#/definitions/numeric.NullDecimal"
+                },
+                "chain": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "deposit_address": {
+                    "$ref": "#/definitions/addresses.Address"
+                },
+                "deposit_address_id": {
+                    "type": "string"
+                },
+                "fee_multiplier": {
+                    "$ref": "#/definitions/numeric.NullDecimal"
                 },
                 "fee_rate_max": {
                     "type": "integer"
@@ -5252,98 +8395,212 @@ const docTemplate = `{
                 }
             }
         },
-        "models.WalletAssetBalance": {
+        "wallets.WalletSettingsResponse": {
             "type": "object",
             "properties": {
-                "amount_display": {
-                    "type": "string"
+                "fee_multiplier": {
+                    "$ref": "#/definitions/numeric.NullDecimal"
                 },
-                "amount_raw": {
-                    "type": "string"
-                },
-                "asset_contract": {
-                    "type": "string"
-                },
-                "asset_key": {
-                    "type": "string"
-                },
-                "asset_name": {
-                    "type": "string"
-                },
-                "asset_symbol": {
-                    "type": "string"
-                },
-                "asset_type": {
-                    "type": "string"
-                },
-                "chain_id": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
-                },
-                "decimals": {
+                "fee_rate_max": {
                     "type": "integer"
                 },
-                "id": {
+                "fee_rate_min": {
+                    "type": "integer"
+                },
+                "frozen_until": {
                     "type": "string"
                 },
-                "last_synced_at": {
+                "label": {
                     "type": "string"
                 },
-                "price_usd": {
-                    "type": "number"
+                "required_approvals": {
+                    "type": "integer"
                 },
-                "source_address": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
-                },
-                "value_usd": {
-                    "type": "number"
-                },
-                "wallet": {
-                    "$ref": "#/definitions/models.Wallet"
-                },
-                "wallet_id": {
+                "status": {
                     "type": "string"
                 }
             }
         },
-        "models.WalletUser": {
+        "wallets.WalletTransactionListResponse": {
             "type": "object",
             "properties": {
-                "created_at": {
-                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/wallets.Transaction"
+                    }
+                }
+            }
+        },
+        "wallets.WalletUserListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/users.WalletUser"
+                    }
+                }
+            }
+        },
+        "wallets.WebhookTestResponse": {
+            "type": "object",
+            "properties": {
+                "delivered": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "wallets.WhitelistEntryListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/whitelist.WhitelistEntry"
+                    }
+                }
+            }
+        },
+        "wallets.WithNetwork": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string"
                 },
-                "deleted_at": {
+                "address_index": {
+                    "type": "integer"
+                },
+                "balance": {
+                    "type": "string"
+                },
+                "balance_asset": {
+                    "type": "string"
+                },
+                "balance_last_synced_at": {
+                    "type": "string"
+                },
+                "balance_raw": {
+                    "type": "string"
+                },
+                "balance_usd": {
+                    "$ref": "#/definitions/numeric.NullDecimal"
+                },
+                "chain": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "deposit_address": {
+                    "$ref": "#/definitions/addresses.Address"
+                },
+                "deposit_address_id": {
+                    "type": "string"
+                },
+                "fee_multiplier": {
+                    "$ref": "#/definitions/numeric.NullDecimal"
+                },
+                "fee_rate_max": {
+                    "type": "integer"
+                },
+                "fee_rate_min": {
+                    "type": "integer"
+                },
+                "frozen_until": {
+                    "type": "string"
+                },
+                "gas_last_checked_at": {
+                    "type": "string"
+                },
+                "gas_status": {
                     "type": "string"
                 },
                 "id": {
                     "type": "string"
                 },
-                "roles": {
+                "label": {
                     "type": "string"
+                },
+                "network": {
+                    "type": "string",
+                    "example": "polygon-amoy"
+                },
+                "read_model_status": {
+                    "type": "string"
+                },
+                "required_approvals": {
+                    "type": "integer"
                 },
                 "status": {
                     "type": "string"
                 },
+                "sweep_policy_version": {
+                    "type": "integer"
+                },
+                "testnet": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "updated_at": {
-                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
-                },
-                "user": {
-                    "$ref": "#/definitions/models.User"
-                },
-                "user_id": {
-                    "type": "string"
-                },
-                "wallet_id": {
-                    "type": "string"
+                    "type": "string",
+                    "format": "date-time"
                 }
             }
         },
-        "models.WebhookConfig": {
+        "webhooks.CreateWebhookRequest": {
+            "type": "object",
+            "properties": {
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "deposit.confirmed",
+                        "withdrawal.broadcast",
+                        "withdrawal.confirmed",
+                        "withdrawal.failed"
+                    ]
+                },
+                "secret": {
+                    "type": "string",
+                    "example": "my-webhook-secret"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "https://example.com/webhook"
+                }
+            }
+        },
+        "webhooks.UpdateWebhookRequest": {
+            "type": "object",
+            "properties": {
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "deposit.confirmed",
+                        "withdrawal.broadcast",
+                        "withdrawal.confirmed",
+                        "withdrawal.failed"
+                    ]
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "secret": {
+                    "type": "string",
+                    "example": "my-webhook-secret"
+                }
+            }
+        },
+        "webhooks.WebhookConfig": {
             "type": "object",
             "properties": {
                 "account_id": {
@@ -5353,7 +8610,6 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
                 "events": {
-                    "description": "comma-separated event types",
                     "type": "string"
                 },
                 "id": {
@@ -5376,7 +8632,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.WhitelistEntry": {
+        "whitelist.WhitelistEntry": {
             "type": "object",
             "properties": {
                 "address": {
@@ -5399,7 +8655,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.Withdrawal": {
+        "withdrawals.Withdrawal": {
             "type": "object",
             "properties": {
                 "account_id": {
@@ -5418,7 +8674,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "failure_reason": {
-                    "description": "FailureReason holds the public error code returned to the caller, never internal details.",
                     "type": "string"
                 },
                 "fee_estimate": {
@@ -5443,17 +8698,6 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
                 "wallet_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "requests.UpdateAddressRequest": {
-            "type": "object",
-            "properties": {
-                "external_user_id": {
-                    "type": "string"
-                },
-                "label": {
                     "type": "string"
                 }
             }

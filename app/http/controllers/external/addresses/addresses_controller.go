@@ -58,8 +58,9 @@ func NewAddressesController(deps AddressesControllerDeps) *AddressesController {
 // @Param        address  path      string  true   "On-chain address"  example("0xABCDEF1234567890")
 // @Param        chain    query     string  false  "Chain ID filter"   example("eth")
 // @Success      200      {object}  addressresource.Address
-// @Failure      400      {object}  ErrorResponse  "Missing chain parameter"
-// @Failure      404      {object}  ErrorResponse  "Address not found"
+// @Failure      400      {object}  responses.ErrorBody  "Missing chain parameter"
+// @Failure      404      {object}  responses.ErrorBody  "Address not found"
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /v1/addresses/{address} [get]
 func (ctrl *AddressesController) LookupAddress(ctx http.Context) http.Response {
 	accountID, ok := requestctx.AccountID(ctx)
@@ -97,8 +98,9 @@ func (ctrl *AddressesController) LookupAddress(ctx http.Context) http.Response {
 // @Security     ApiKeyAuth
 // @Security     SignatureAuth
 // @Param        external_id  path      string  true  "External user identifier"  example("user_123")
-// @Success      200          {object}  AddressListResponse
-// @Failure      500          {object}  ErrorResponse
+// @Success      200          {object}  controllers.AddressListResponse
+// @Failure      500          {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /v1/users/{external_id}/addresses [get]
 func (ctrl *AddressesController) ListUserAddresses(ctx http.Context) http.Response {
 	accountID, ok := requestctx.AccountID(ctx)

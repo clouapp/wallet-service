@@ -34,9 +34,9 @@ func NewUnspentsController(
 // @Produce      json
 // @Param        walletId  path    string  true   "Wallet UUID"
 // @Success      200  {object}  UnspentOutputListResponse
-// @Failure      403  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
-// @Failure      422  {object}  ErrorResponse  "Only available for UTXO chains"
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
+// @Failure      422  {object}  responses.ErrorBody  "Only available for UTXO chains"
 // @Router       /wallets/{walletId}/unspents [get]
 func (ctrl *UnspentsController) ListUnspentOutputs(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)

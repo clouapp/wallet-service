@@ -42,8 +42,9 @@ func NewTransactionsController(
 // @Param        limit    query     int     false  "Max results (default 50)"  example(50)
 // @Param        offset   query     int     false  "Pagination offset"         example(0)
 // @Success      200      {object}  TransactionListResponse
-// @Failure      401      {object}  ErrorResponse
-// @Failure      500      {object}  ErrorResponse
+// @Failure      401      {object}  responses.ErrorBody
+// @Failure      500      {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /v1/transactions [get]
 func (ctrl *TransactionsController) ListTransactions(ctx http.Context) http.Response {
 	accountID, ok := requestctx.AccountID(ctx)
@@ -78,8 +79,9 @@ func (ctrl *TransactionsController) ListTransactions(ctx http.Context) http.Resp
 // @Security     SignatureAuth
 // @Param        id   path      string  true  "Transaction UUID"  format(uuid)
 // @Success      200  {object}  exttransactions.Transaction
-// @Failure      400  {object}  ErrorResponse  "Invalid UUID"
-// @Failure      404  {object}  ErrorResponse  "Transaction not found"
+// @Failure      400  {object}  responses.ErrorBody  "Invalid UUID"
+// @Failure      404  {object}  responses.ErrorBody  "Transaction not found"
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /v1/transactions/{id} [get]
 func (ctrl *TransactionsController) GetTransaction(ctx http.Context) http.Response {
 	id, err := requests.RouteUUID(ctx, "id")
@@ -104,7 +106,8 @@ func (ctrl *TransactionsController) GetTransaction(ctx http.Context) http.Respon
 // @Param        limit        query     int     false  "Max results (default 50)"   example(50)
 // @Param        offset       query     int     false  "Pagination offset"           example(0)
 // @Success      200          {object}  TransactionListResponse
-// @Failure      500          {object}  ErrorResponse
+// @Failure      500          {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /v1/users/{external_id}/transactions [get]
 func (ctrl *TransactionsController) ListUserTransactions(ctx http.Context) http.Response {
 	accountID, ok := requestctx.AccountID(ctx)

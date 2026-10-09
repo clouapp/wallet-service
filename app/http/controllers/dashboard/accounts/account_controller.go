@@ -82,8 +82,8 @@ func (ctrl *AccountsController) accountView(ctx http.Context, account models.Acc
 // @Produce      json
 // @Param        request  body      CreateAccountSwagger  true  "Account payload"
 // @Success      201      {object}  tokenresource.Account
-// @Failure      400      {object}  ErrorResponse
-// @Failure      401      {object}  ErrorResponse
+// @Failure      400      {object}  responses.ErrorBody
+// @Failure      401      {object}  responses.ErrorBody
 // @Router       /accounts [post]
 func (ctrl *AccountsController) CreateAccount(ctx http.Context) http.Response {
 	userID := requestctx.MustUserID(ctx)
@@ -112,8 +112,8 @@ func (ctrl *AccountsController) CreateAccount(ctx http.Context) http.Response {
 // @Produce      json
 // @Param        accountId  path      string         true  "Account UUID"
 // @Success      200        {object}  AccountDetail
-// @Failure      403        {object}  ErrorResponse
-// @Failure      404        {object}  ErrorResponse
+// @Failure      403        {object}  responses.ErrorBody
+// @Failure      404        {object}  responses.ErrorBody
 // @Router       /accounts/{accountId} [get]
 func (ctrl *AccountsController) GetAccount(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
@@ -155,8 +155,8 @@ type AccountDetail struct {
 // @Param        accountId  path      string                      true  "Account UUID"
 // @Param        request    body      UpdateAccountSwagger        true  "Update payload"
 // @Success      200        {object}  tokenresource.Account
-// @Failure      400        {object}  ErrorResponse
-// @Failure      403        {object}  ErrorResponse
+// @Failure      400        {object}  responses.ErrorBody
+// @Failure      403        {object}  responses.ErrorBody
 // @Router       /accounts/{accountId} [patch]
 func (ctrl *AccountsController) UpdateAccount(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
@@ -185,8 +185,8 @@ func (ctrl *AccountsController) UpdateAccount(ctx http.Context) http.Response {
 // @Produce      json
 // @Param        accountId  path  string  true  "Account UUID"
 // @Success      200        {object}  tokenresource.Account
-// @Failure      403        {object}  ErrorResponse
-// @Failure      404        {object}  ErrorResponse
+// @Failure      403        {object}  responses.ErrorBody
+// @Failure      404        {object}  responses.ErrorBody
 // @Router       /accounts/{accountId}/archive [post]
 func (ctrl *AccountsController) ArchiveAccount(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
@@ -209,7 +209,7 @@ func (ctrl *AccountsController) ArchiveAccount(ctx http.Context) http.Response {
 // @Produce      json
 // @Param        accountId  path  string  true  "Account UUID"
 // @Success      200        {object}  tokenresource.Account
-// @Failure      403        {object}  ErrorResponse
+// @Failure      403        {object}  responses.ErrorBody
 // @Router       /accounts/{accountId}/freeze [post]
 func (ctrl *AccountsController) FreezeAccount(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
@@ -232,7 +232,7 @@ func (ctrl *AccountsController) FreezeAccount(ctx http.Context) http.Response {
 // @Produce      json
 // @Param        accountId  path  string  true  "Account UUID"
 // @Success      200        {object}  AccountUserListResponse
-// @Failure      403        {object}  ErrorResponse
+// @Failure      403        {object}  responses.ErrorBody
 // @Router       /accounts/{accountId}/users [get]
 func (ctrl *AccountsController) ListAccountUsers(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
@@ -255,8 +255,8 @@ func (ctrl *AccountsController) ListAccountUsers(ctx http.Context) http.Response
 // @Param        accountId  path      string                     true  "Account UUID"
 // @Param        request    body      AddAccountUserSwagger      true  "User and role payload"
 // @Success      201        {object}  tokenresource.AccountUser
-// @Failure      400        {object}  ErrorResponse
-// @Failure      403        {object}  ErrorResponse
+// @Failure      400        {object}  responses.ErrorBody
+// @Failure      403        {object}  responses.ErrorBody
 // @Router       /accounts/{accountId}/users [post]
 func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
@@ -328,9 +328,9 @@ func inviteGrantForbidden(ctx http.Context, err error) http.Response {
 // @Param        userId     path      string                     true  "User UUID"
 // @Param        request    body      UpdateAccountUserSwagger   true  "Role and/or status"
 // @Success      200        {object}  tokenresource.AccountUser
-// @Failure      403        {object}  ErrorResponse
-// @Failure      404        {object}  ErrorResponse
-// @Failure      422        {object}  ErrorResponse
+// @Failure      403        {object}  responses.ErrorBody
+// @Failure      404        {object}  responses.ErrorBody
+// @Failure      422        {object}  responses.ErrorBody
 // @Router       /accounts/{accountId}/users/{userId} [patch]
 func (ctrl *AccountsController) UpdateAccountUser(ctx http.Context) http.Response {
 	account := middleware.AccountFrom(ctx)
@@ -381,8 +381,8 @@ func memberChange(req requests.UpdateAccountUserRequest) accountsvc.MemberChange
 // @Param        accountId  path  string  true  "Account UUID"
 // @Param        userId     path  string  true  "User UUID to remove"
 // @Success      204  "No content"
-// @Failure      403  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
 // @Router       /accounts/{accountId}/users/{userId} [delete]
 func (ctrl *AccountsController) RemoveAccountUser(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
@@ -409,7 +409,7 @@ func (ctrl *AccountsController) RemoveAccountUser(ctx http.Context) http.Respons
 // @Produce      json
 // @Param        accountId  path  string  true  "Account UUID"
 // @Success      200  {object}  AccessTokenListResponse
-// @Failure      403  {object}  ErrorResponse
+// @Failure      403  {object}  responses.ErrorBody
 // @Router       /accounts/{accountId}/tokens [get]
 func (ctrl *AccountsController) ListAccountTokens(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
@@ -432,8 +432,8 @@ func (ctrl *AccountsController) ListAccountTokens(ctx http.Context) http.Respons
 // @Param        accountId  path      string                          true  "Account UUID"
 // @Param        request    body      CreateAccountTokenSwagger       true  "Token payload"
 // @Success      201        {object}  CreateAccountTokenResponse
-// @Failure      400        {object}  ErrorResponse
-// @Failure      403        {object}  ErrorResponse
+// @Failure      400        {object}  responses.ErrorBody
+// @Failure      403        {object}  responses.ErrorBody
 // @Router       /accounts/{accountId}/tokens [post]
 func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
@@ -506,8 +506,8 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 // @Param        accountId  path  string  true  "Account UUID"
 // @Param        tokenId    path  string  true  "Token UUID"
 // @Success      204  "No content"
-// @Failure      403  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
 // @Router       /accounts/{accountId}/tokens/{tokenId} [delete]
 func (ctrl *AccountsController) RevokeAccountToken(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)

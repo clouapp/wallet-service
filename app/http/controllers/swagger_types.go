@@ -14,10 +14,6 @@ type ChainInfo struct {
 	RequiredConfirmations uint64 `json:"required_confirmations" example:"12"`
 }
 
-type ErrorResponse struct {
-	Error string `json:"error" example:"something went wrong"`
-}
-
 type HealthResponse struct {
 	Status         string               `json:"status" example:"ok"`
 	Version        string               `json:"version" example:"0.1.0"`

@@ -100,7 +100,7 @@ func (ctrl *UsersController) sessions() controllers.SessionIssuer {
 // @Security     BearerAuth
 // @Produce      json
 // @Success      200  {object}  MeProfile
-// @Failure      401  {object}  ErrorResponse
+// @Failure      401  {object}  responses.ErrorBody
 // @Router       /users/me [get]
 func (ctrl *UsersController) GetMe(ctx http.Context) http.Response {
 	user := requestctx.MustUser(ctx)
@@ -133,8 +133,8 @@ type MeProfile struct {
 // @Produce      json
 // @Param        request  body      UpdateMeSwagger  true  "Update payload"
 // @Success      200      {object}  userresource.User
-// @Failure      400      {object}  ErrorResponse
-// @Failure      401      {object}  ErrorResponse
+// @Failure      400      {object}  responses.ErrorBody
+// @Failure      401      {object}  responses.ErrorBody
 // @Router       /users/me [patch]
 func (ctrl *UsersController) UpdateMe(ctx http.Context) http.Response {
 	user := requestctx.MustUser(ctx)
@@ -163,8 +163,8 @@ func (ctrl *UsersController) UpdateMe(ctx http.Context) http.Response {
 // @Produce      json
 // @Param        request  body      ChangePasswordSwagger  true  "Password change payload"
 // @Success      200      {object}  map[string]string
-// @Failure      400      {object}  ErrorResponse
-// @Failure      401      {object}  ErrorResponse
+// @Failure      400      {object}  responses.ErrorBody
+// @Failure      401      {object}  responses.ErrorBody
 // @Router       /users/me/password [post]
 func (ctrl *UsersController) ChangePassword(ctx http.Context) http.Response {
 	user := requestctx.MustUser(ctx)
@@ -218,8 +218,8 @@ var myAccountsBounds = pagination.Bounds{DefaultLimit: myAccountsDefaultLimit, M
 // @Param        search       query   string  false  "Case-insensitive match on name or id (max 100 chars)"
 // @Param        environment  query   string  false  "Only accounts in this environment"             Enums(prod, test)
 // @Success      200  {object}  AccountListResponse
-// @Failure      400  {object}  ErrorResponse
-// @Failure      401  {object}  ErrorResponse
+// @Failure      400  {object}  responses.ErrorBody
+// @Failure      401  {object}  responses.ErrorBody
 // @Router       /users/me/accounts [get]
 func (ctrl *UsersController) ListMyAccounts(ctx http.Context) http.Response {
 	userID := requestctx.MustUserID(ctx)
@@ -289,8 +289,8 @@ func parseMyAccountsFilter(search, environment string) (string, string, string) 
 // @Produce      json
 // @Param        request  body      UpdateDefaultAccountSwagger  true  "Default account payload"
 // @Success      200      {object}  map[string]interface{}
-// @Failure      400      {object}  ErrorResponse
-// @Failure      403      {object}  ErrorResponse
+// @Failure      400      {object}  responses.ErrorBody
+// @Failure      403      {object}  responses.ErrorBody
 // @Router       /users/me/default-account [patch]
 func (ctrl *UsersController) UpdateDefaultAccount(ctx http.Context) http.Response {
 	userID := requestctx.MustUserID(ctx)
@@ -334,7 +334,7 @@ func (ctrl *UsersController) UpdateDefaultAccount(ctx http.Context) http.Respons
 // @Security     BearerAuth
 // @Produce      json
 // @Success      200  {object}  TotpSetupSwagger
-// @Failure      500  {object}  ErrorResponse
+// @Failure      500  {object}  responses.ErrorBody
 // @Router       /users/me/totp/setup [post]
 func (ctrl *UsersController) SetupTOTP(ctx http.Context) http.Response {
 	user := requestctx.MustUser(ctx)
@@ -373,9 +373,9 @@ func (ctrl *UsersController) SetupTOTP(ctx http.Context) http.Response {
 // @Produce      json
 // @Param        request  body      ConfirmTotpSwagger  true  "TOTP verification code"
 // @Success      200      {object}  map[string]interface{}
-// @Failure      400      {object}  ErrorResponse
-// @Failure      401      {object}  ErrorResponse
-// @Failure      500      {object}  ErrorResponse
+// @Failure      400      {object}  responses.ErrorBody
+// @Failure      401      {object}  responses.ErrorBody
+// @Failure      500      {object}  responses.ErrorBody
 // @Router       /users/me/totp/verify [post]
 func (ctrl *UsersController) ConfirmTOTP(ctx http.Context) http.Response {
 	user := requestctx.MustUser(ctx)
@@ -440,7 +440,7 @@ func (ctrl *UsersController) ConfirmTOTP(ctx http.Context) http.Response {
 // @Security     BearerAuth
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}
-// @Failure      500  {object}  ErrorResponse
+// @Failure      500  {object}  responses.ErrorBody
 // @Router       /users/me/totp [delete]
 func (ctrl *UsersController) DisableTOTP(ctx http.Context) http.Response {
 	sessionUser := requestctx.MustUser(ctx)

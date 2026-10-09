@@ -71,10 +71,10 @@ var everything = []string{
 	LayerPackages, LayerDocs,
 }
 
-// allowed is the TARGET table of .ai/guidelines/controllers-and-services.md and
-// the alignment plan §3.1: which layers a production file of each layer may
-// import. packages/* (today pkg/*) is installable outside the project, so every
-// layer may import it and it imports nothing of the module.
+// allowed is the layer table of .ai/guidelines/controllers-and-services.md:
+// which layers a production file of each layer may import. packages/* (today
+// pkg/*) is installable outside the project, so every layer may import it and it
+// imports nothing of the module.
 var allowed = map[string][]string{
 	LayerMain:         everything,
 	LayerBootstrap:    everything,

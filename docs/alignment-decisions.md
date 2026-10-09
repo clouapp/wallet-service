@@ -1,3 +1,7 @@
+> **Historical.** A dated record of the choices taken while the alignment work was open. It is not
+> maintained: the current invariants are in `CLAUDE.md` and the shape of the code is in
+> `.ai/guidelines/`; where this file and those disagree, they win.
+
 # Alignment decisions for review
 
 Record of choices taken where the alignment prompt left the decision open.

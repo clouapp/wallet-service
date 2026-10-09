@@ -109,9 +109,9 @@ func NewWithdrawalsController(deps WithdrawalsControllerDeps) *WithdrawalsContro
 // @Param        status    query   string  false  "Status filter"  Enums(pending,approved,rejected,broadcast,confirmed,failed)
 // @Param        limit     query   int     false  "Max results (default 50)"
 // @Param        offset    query   int     false  "Pagination offset"
-// @Success      200  {object}  WithdrawalListResponse
-// @Failure      403  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
+// @Success      200  {object}  controllers.WithdrawalListResponse
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
 // @Router       /wallets/{walletId}/withdrawals [get]
 func (ctrl *WithdrawalsController) ListWalletWithdrawals(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
@@ -158,10 +158,10 @@ func (ctrl *WithdrawalsController) EstimateWithdrawalFee(ctx http.Context) http.
 // @Accept       json
 // @Produce      json
 // @Param        walletId  path      string                    true  "Wallet UUID"
-// @Param        request   body      CreateWalletWithdrawalSwagger  true  "Withdrawal payload"
+// @Param        request   body      controllers.CreateWalletWithdrawalSwagger  true  "Withdrawal payload"
 // @Success      201  {object}  withdrawalresource.Withdrawal
-// @Failure      400  {object}  ErrorResponse
-// @Failure      403  {object}  ErrorResponse
+// @Failure      400  {object}  responses.ErrorBody
+// @Failure      403  {object}  responses.ErrorBody
 // @Router       /wallets/{walletId}/withdrawals [post]
 // CreateWalletWithdrawal serves both auth surfaces:
 //
@@ -301,8 +301,8 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 // @Param        walletId      path  string  true  "Wallet UUID"
 // @Param        withdrawalId  path  string  true  "Withdrawal UUID"
 // @Success      200  {object}  withdrawalresource.Withdrawal
-// @Failure      403  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
 // @Router       /wallets/{walletId}/withdrawals/{withdrawalId} [get]
 func (ctrl *WithdrawalsController) GetWalletWithdrawal(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
@@ -328,8 +328,8 @@ func (ctrl *WithdrawalsController) GetWalletWithdrawal(ctx http.Context) http.Re
 // @Param        withdrawalId  path  string  true  "Withdrawal UUID"
 // @Param        X-Account-Id  header  string  true  "Account UUID"
 // @Success      200  {object}  withdrawalresource.Withdrawal
-// @Failure      401  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
+// @Failure      401  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
 // @Router       /withdrawals/{withdrawalId} [get]
 func (ctrl *WithdrawalsController) GetDashboardWithdrawal(ctx http.Context) http.Response {
 	accountID, ok := requestctx.AccountID(ctx)
@@ -363,9 +363,9 @@ func (ctrl *WithdrawalsController) GetDashboardWithdrawal(ctx http.Context) http
 // @Param        walletId      path  string  true  "Wallet UUID"
 // @Param        withdrawalId  path  string  true  "Withdrawal UUID"
 // @Success      200  {object}  withdrawalresource.Withdrawal
-// @Failure      403  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
-// @Failure      422  {object}  ErrorResponse  "Withdrawal cannot be cancelled in current state"
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
+// @Failure      422  {object}  responses.ErrorBody  "Withdrawal cannot be cancelled in current state"
 // @Router       /wallets/{walletId}/withdrawals/{withdrawalId}/cancel [post]
 func (ctrl *WithdrawalsController) CancelWalletWithdrawal(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)

@@ -70,8 +70,8 @@ func (ctrl *TransactionsController) assetCatalog(ctx context.Context, chainID st
 // @Param        limit     query   int     false  "Max results (default 50)"  example(50)
 // @Param        offset    query   int     false  "Pagination offset"         example(0)
 // @Success      200  {object}  WalletTransactionListResponse
-// @Failure      403  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
 // @Router       /wallets/{walletId}/transactions [get]
 func (ctrl *TransactionsController) ListWalletTransactions(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
@@ -98,8 +98,8 @@ func (ctrl *TransactionsController) ListWalletTransactions(ctx http.Context) htt
 // @Param        walletId  path  string  true  "Wallet UUID"
 // @Param        txId      path  string  true  "Transaction UUID"
 // @Success      200  {object}  walletresources.Transaction
-// @Failure      403  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
 // @Router       /wallets/{walletId}/transactions/{txId} [get]
 func (ctrl *TransactionsController) GetWalletTransaction(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)

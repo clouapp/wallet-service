@@ -85,10 +85,11 @@ func NewWalletsController(deps WalletsControllerDeps) *WalletsController {
 // @Security     SignatureAuth
 // @Param        body  body      CreateWalletSwagger  true  "Wallet creation request"
 // @Success      201   {object}  CreateWalletResponse
-// @Failure      400   {object}  ErrorResponse  "Missing account"
-// @Failure      409   {object}  ErrorResponse  "Chain is unsupported"
-// @Failure      422   {object}  ErrorResponse  "Passphrase is too short"
-// @Failure      500   {object}  ErrorResponse  "Wallet creation failed"
+// @Failure      400   {object}  responses.ErrorBody  "Missing account"
+// @Failure      409   {object}  responses.ErrorBody  "Chain is unsupported"
+// @Failure      422   {object}  responses.ErrorBody  "Passphrase is too short"
+// @Failure      500   {object}  responses.ErrorBody  "Wallet creation failed"
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /v1/wallets [post]
 func (ctrl *WalletsController) CreateWallet(ctx http.Context) http.Response {
 	var req requests.CreateWalletRequest
@@ -132,8 +133,9 @@ func mapCreateWalletError(ctx http.Context, err error) http.Response {
 // @Produce      json
 // @Security     ApiKeyAuth
 // @Security     SignatureAuth
-// @Success      200  {object}  WalletListResponse
-// @Failure      500  {object}  ErrorResponse
+// @Success      200  {object}  controllers.WalletListResponse
+// @Failure      500  {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /v1/wallets [get]
 func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 	accountID, ok := requestctx.AccountID(ctx)
@@ -165,8 +167,9 @@ func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 // @Security     SignatureAuth
 // @Param        walletId   path      string  true  "Wallet UUID"  format(uuid)
 // @Success      200  {object}  walletresource.WithNetwork
-// @Failure      400  {object}  ErrorResponse  "Invalid UUID"
-// @Failure      404  {object}  ErrorResponse  "Wallet not found"
+// @Failure      400  {object}  responses.ErrorBody  "Invalid UUID"
+// @Failure      404  {object}  responses.ErrorBody  "Wallet not found"
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /v1/wallets/{walletId} [get]
 func (ctrl *WalletsController) GetWallet(ctx http.Context) http.Response {
 	id, err := requests.RouteUUID(ctx, "walletId")

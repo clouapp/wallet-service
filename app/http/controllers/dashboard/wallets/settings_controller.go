@@ -67,8 +67,8 @@ func NewSettingsController(deps WalletSettingsControllerDeps) *SettingsControlle
 // @Produce      json
 // @Param        walletId  path  string  true  "Wallet UUID"
 // @Success      200  {object}  WalletSettingsResponse
-// @Failure      403  {object}  controllers.ErrorResponse
-// @Failure      404  {object}  controllers.ErrorResponse
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
 // @Router       /wallets/{walletId}/settings [get]
 func (ctrl *SettingsController) GetWalletSettings(ctx http.Context) http.Response {
 	return walletSettingsJSON(ctx, requestctx.MustWallet(ctx))
@@ -84,9 +84,9 @@ func (ctrl *SettingsController) GetWalletSettings(ctx http.Context) http.Respons
 // @Param        walletId  path      string                       true  "Wallet UUID"
 // @Param        request   body      UpdateWalletSettingsSwagger  true  "Settings payload"
 // @Success      200  {object}  WalletSettingsResponse
-// @Failure      400  {object}  controllers.ErrorResponse  "no settings to update"
-// @Failure      403  {object}  controllers.ErrorResponse
-// @Failure      422  {object}  controllers.ErrorResponse  "invalid or unknown field"
+// @Failure      400  {object}  responses.ErrorBody  "no settings to update"
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      422  {object}  responses.ErrorBody  "invalid or unknown field"
 // @Router       /wallets/{walletId}/settings [patch]
 func (ctrl *SettingsController) UpdateWalletSettings(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
@@ -231,8 +231,8 @@ var _ walletresource.Wallet
 // @Produce      json
 // @Param        walletId  path  string  true  "Wallet UUID"
 // @Success      200  {object}  walletresource.Wallet
-// @Failure      403  {object}  controllers.ErrorResponse
-// @Failure      409  {object}  controllers.ErrorResponse
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      409  {object}  responses.ErrorBody
 // @Router       /wallets/{walletId}/archive [post]
 func (ctrl *SettingsController) ArchiveWallet(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
@@ -256,7 +256,7 @@ func (ctrl *SettingsController) ArchiveWallet(ctx http.Context) http.Response {
 // @Param        walletId  path      string                true  "Wallet UUID"
 // @Param        request   body      FreezeWalletSwagger   true  "Freeze payload"
 // @Success      200  {object}  WalletSettingsResponse
-// @Failure      403  {object}  controllers.ErrorResponse
+// @Failure      403  {object}  responses.ErrorBody
 // @Router       /wallets/{walletId}/freeze [post]
 func (ctrl *SettingsController) FreezeWallet(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)

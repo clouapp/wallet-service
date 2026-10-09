@@ -55,11 +55,11 @@ func feeEstimateStatus(kind feeestimate.Kind) int {
 // @Param        amount    query  string  false  "Decimal amount, as sent to POST /withdrawals"
 // @Param        to        query  string  false  "Destination address; a probe recipient when omitted"
 // @Success      200  {object}  feeestimate.Estimate
-// @Failure      400  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
-// @Failure      422  {object}  ErrorResponse
-// @Failure      429  {object}  ErrorResponse
-// @Failure      503  {object}  ErrorResponse
+// @Failure      400  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
+// @Failure      422  {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody
+// @Failure      503  {object}  responses.ErrorBody
 // @Router       /api/v1/wallets/{walletId}/fee-estimate [get]
 func (ctrl *FeeEstimateController) GetWalletFeeEstimate(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)

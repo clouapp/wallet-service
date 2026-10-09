@@ -91,7 +91,7 @@ func (ctrl *FeaturesController) Update(ctx http.Context) http.Response {
 
 // ShowScope godoc
 // @Summary      One account's feature flags
-// @Description  S2.4 GET /v1/platform/features/{scope}/{id}. features.view is not a permission row, so a platform_admins row is the gate. Scope account returns that account's stored booleans. A missing row is the catalog default and is not inserted. Global rows are not applied. global, user, and chain are 404 before the admin check. An unknown account is 404 before the admin check.
+// @Description  S2.4 GET /v1/platform/features/{scope}/{id}. features.view is not a permission row, so a platform_admins row is the gate. Scope account returns that account's stored booleans. A missing row is the catalog default and is not inserted. Global rows are not applied. global, user, and chain are 404 for a platform admin. An unknown account is 404 for a platform admin.
 // @Tags         Platform Features
 // @Security     BearerAuth
 // @Produce      json
@@ -117,7 +117,7 @@ func (ctrl *FeaturesController) ShowScope(ctx http.Context) http.Response {
 
 // UpdateScope godoc
 // @Summary      Set account feature flags
-// @Description  S2.4 PUT /v1/platform/features/{scope}/{id}. FeaturePolicy names features.update for any scope and features.account.update for the account scope. Neither is a permission row, so a platform_admins row is the gate and stands in for both. The pair is not a second gate. The body is {"features":[{"key","enabled"}]}. Every key is checked before the first write. An unknown key stores nothing. global, user, and chain are 404 before the admin check. An unknown account is 404 before the admin check. A closed global row is not applied and is not written. Omitted flags are not inserted.
+// @Description  S2.4 PUT /v1/platform/features/{scope}/{id}. FeaturePolicy names features.update for any scope and features.account.update for the account scope. Neither is a permission row, so a platform_admins row is the gate and stands in for both. The pair is not a second gate. The body is {"features":[{"key","enabled"}]}. Every key is checked before the first write. An unknown key stores nothing. global, user, and chain are 404 for a platform admin. An unknown account is 404 for a platform admin. A closed global row is not applied and is not written. Omitted flags are not inserted.
 // @Tags         Platform Features
 // @Security     BearerAuth
 // @Accept       json
@@ -137,7 +137,7 @@ func (ctrl *FeaturesController) UpdateScope(ctx http.Context) http.Response {
 
 // UpdateScopeFeature godoc
 // @Summary      Set one account feature flag
-// @Description  S2.4 PUT /v1/platform/features/{scope}/{id}/{feature}. FeaturePolicy names features.update for any scope and features.account.update for the account scope. Neither is a permission row, so a platform_admins row is the gate and stands in for both. The pair is not a second gate. The body is {"enabled":bool}. An unknown key stores nothing. global, user, and chain are 404 before the admin check. An unknown account is 404 before the admin check. A closed global row is not applied and is not written.
+// @Description  S2.4 PUT /v1/platform/features/{scope}/{id}/{feature}. FeaturePolicy names features.update for any scope and features.account.update for the account scope. Neither is a permission row, so a platform_admins row is the gate and stands in for both. The pair is not a second gate. The body is {"enabled":bool}. An unknown key stores nothing. global, user, and chain are 404 for a platform admin. An unknown account is 404 for a platform admin. A closed global row is not applied and is not written.
 // @Tags         Platform Features
 // @Security     BearerAuth
 // @Accept       json

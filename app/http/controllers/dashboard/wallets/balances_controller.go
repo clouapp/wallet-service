@@ -47,8 +47,8 @@ func NewBalancesController(deps BalancesControllerDeps) *BalancesController {
 // @Produce      json
 // @Param        walletId  path  string  true  "Wallet UUID"
 // @Success      200  {object}  map[string][]walletbalances.Balance
-// @Failure      403  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
 // @Router       /wallets/{walletId}/balances [get]
 func (ctrl *BalancesController) ListWalletBalances(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)

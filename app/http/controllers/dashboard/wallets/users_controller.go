@@ -59,8 +59,8 @@ func NewUsersController(deps WalletUsersControllerDeps) *UsersController {
 // @Produce      json
 // @Param        walletId  path  string  true  "Wallet UUID"
 // @Success      200  {object}  WalletUserListResponse
-// @Failure      403  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
 // @Router       /wallets/{walletId}/users [get]
 func (ctrl *UsersController) ListWalletUsers(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
@@ -82,8 +82,8 @@ func (ctrl *UsersController) ListWalletUsers(ctx http.Context) http.Response {
 // @Param        walletId  path      string              true  "Wallet UUID"
 // @Param        request   body      AddWalletUserSwagger  true  "User and role payload"
 // @Success      201  {object}  walletusers.WalletUser
-// @Failure      400  {object}  ErrorResponse
-// @Failure      403  {object}  ErrorResponse
+// @Failure      400  {object}  responses.ErrorBody
+// @Failure      403  {object}  responses.ErrorBody
 // @Router       /wallets/{walletId}/users [post]
 func (ctrl *UsersController) AddWalletUser(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
@@ -164,8 +164,8 @@ func (ctrl *UsersController) requireActiveAccountMember(ctx http.Context, wallet
 // @Param        walletId  path  string  true  "Wallet UUID"
 // @Param        userId    path  string  true  "User UUID to remove"
 // @Success      204  "No content"
-// @Failure      403  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody
 // @Router       /wallets/{walletId}/users/{userId} [delete]
 func (ctrl *UsersController) RemoveWalletUser(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)

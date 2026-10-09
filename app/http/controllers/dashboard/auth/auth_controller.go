@@ -97,8 +97,9 @@ func (ctrl *AuthController) sessions() controllers.SessionIssuer {
 // @Produce      json
 // @Param        request  body      RegisterSwagger  true  "Registration payload"
 // @Success      201      {object}  AuthResponse
-// @Failure      400      {object}  ErrorResponse
-// @Failure      422      {object}  ErrorResponse
+// @Failure      400      {object}  responses.ErrorBody
+// @Failure      422      {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /auth/register [post]
 func (ctrl *AuthController) Register(ctx http.Context) http.Response {
 	var req requests.RegisterRequest
@@ -157,8 +158,9 @@ func (ctrl *AuthController) Register(ctx http.Context) http.Response {
 // @Produce      json
 // @Param        request  body      LoginSwagger  true  "Login credentials"
 // @Success      200      {object}  AuthResponse
-// @Failure      400      {object}  ErrorResponse
-// @Failure      401      {object}  ErrorResponse
+// @Failure      400      {object}  responses.ErrorBody
+// @Failure      401      {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /auth/login [post]
 func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 	var req requests.LoginRequest
@@ -227,8 +229,9 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 // @Produce      json
 // @Param        request  body      TwoFactorSwagger  true  "2FA verification payload"
 // @Success      200      {object}  AuthResponse
-// @Failure      400      {object}  ErrorResponse
-// @Failure      401      {object}  ErrorResponse
+// @Failure      400      {object}  responses.ErrorBody
+// @Failure      401      {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /auth/2fa/verify [post]
 func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
 	var req requests.VerifyTwoFactorRequest
@@ -272,8 +275,9 @@ func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
 // @Produce      json
 // @Param        request  body      RefreshTokenSwagger  true  "Refresh token"
 // @Success      200      {object}  AuthResponse
-// @Failure      400      {object}  ErrorResponse
-// @Failure      401      {object}  ErrorResponse
+// @Failure      400      {object}  responses.ErrorBody
+// @Failure      401      {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /auth/refresh [post]
 func (ctrl *AuthController) RefreshToken(ctx http.Context) http.Response {
 	var req requests.RefreshTokenRequest
@@ -339,7 +343,8 @@ func (ctrl *AuthController) RefreshToken(ctx http.Context) http.Response {
 // @Security     BearerAuth
 // @Produce      json
 // @Success      204  "No content"
-// @Failure      401  {object}  ErrorResponse
+// @Failure      401  {object}  responses.ErrorBody
+// @Failure      500  {object}  responses.ErrorBody
 // @Router       /auth/logout [post]
 func (ctrl *AuthController) Logout(ctx http.Context) http.Response {
 	// The session watermark, not the guard's per-token blacklist: a JWT carries
@@ -362,8 +367,9 @@ func (ctrl *AuthController) Logout(ctx http.Context) http.Response {
 // @Produce      json
 // @Param        request  body      ForgotPasswordSwagger  true  "Email address"
 // @Success      200      {object}  map[string]string
-// @Failure      400      {object}  ErrorResponse
-// @Router       /auth/forgot-password [post]
+// @Failure      400      {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
+// @Router       /auth/recover [post]
 func (ctrl *AuthController) ForgotPassword(ctx http.Context) http.Response {
 	var req requests.ForgotPasswordRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
@@ -385,9 +391,10 @@ func (ctrl *AuthController) ForgotPassword(ctx http.Context) http.Response {
 // @Produce      json
 // @Param        request  body      ResetPasswordSwagger  true  "Token and new password"
 // @Success      200      {object}  map[string]string
-// @Failure      400      {object}  ErrorResponse
-// @Failure      401      {object}  ErrorResponse
-// @Router       /auth/reset-password [post]
+// @Failure      400      {object}  responses.ErrorBody
+// @Failure      401      {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
+// @Router       /auth/recover/confirm [post]
 func (ctrl *AuthController) ResetPassword(ctx http.Context) http.Response {
 	var req requests.ResetPasswordRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {

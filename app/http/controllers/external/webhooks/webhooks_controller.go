@@ -42,8 +42,9 @@ func NewWebhooksController(
 // @Security     SignatureAuth
 // @Param        body  body      CreateWebhookRequest  true  "Webhook configuration"
 // @Success      201   {object}  webhookresource.WebhookConfig
-// @Failure      400   {object}  ErrorResponse  "Missing required fields"
-// @Failure      500   {object}  ErrorResponse
+// @Failure      400   {object}  responses.ErrorBody  "Missing required fields"
+// @Failure      500   {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /api/v1/webhooks [post]
 func (ctrl *WebhooksController) CreateWebhook(ctx http.Context) http.Response {
 	var req requests.CreateWebhookRequest
@@ -71,9 +72,10 @@ func (ctrl *WebhooksController) CreateWebhook(ctx http.Context) http.Response {
 // @Produce      json
 // @Security     ApiKeyAuth
 // @Security     SignatureAuth
-// @Success      200  {object}  WebhookConfigListResponse
-// @Failure      401  {object}  ErrorResponse
-// @Failure      500  {object}  ErrorResponse
+// @Success      200  {object}  controllers.WebhookConfigListResponse
+// @Failure      401  {object}  responses.ErrorBody
+// @Failure      500  {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /api/v1/webhooks [get]
 func (ctrl *WebhooksController) ListWebhooks(ctx http.Context) http.Response {
 	accountID, ok := requestctx.AccountID(ctx)
@@ -102,10 +104,11 @@ func (ctrl *WebhooksController) ListWebhooks(ctx http.Context) http.Response {
 // @Param        webhookId  path      string                true  "Webhook UUID"
 // @Param        body       body      UpdateWebhookRequest  true  "Fields to change"
 // @Success      200        {object}  webhookresource.WebhookConfig
-// @Failure      400        {object}  ErrorResponse  "Invalid id, empty update or unknown event"
-// @Failure      401        {object}  ErrorResponse
-// @Failure      403        {object}  ErrorResponse  "Secret does not match a legacy webhook"
-// @Failure      404        {object}  ErrorResponse  "webhook not found"
+// @Failure      400        {object}  responses.ErrorBody  "Invalid id, empty update or unknown event"
+// @Failure      401        {object}  responses.ErrorBody
+// @Failure      403        {object}  responses.ErrorBody  "Secret does not match a legacy webhook"
+// @Failure      404        {object}  responses.ErrorBody  "webhook not found"
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /api/v1/webhooks/{webhookId} [patch]
 func (ctrl *WebhooksController) UpdateWebhook(ctx http.Context) http.Response {
 	accountID, ok := requestctx.AccountID(ctx)

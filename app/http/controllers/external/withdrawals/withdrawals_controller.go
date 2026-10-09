@@ -104,10 +104,11 @@ func NewWithdrawalsController(deps WithdrawalsControllerDeps) *WithdrawalsContro
 // @Accept       json
 // @Produce      json
 // @Param        walletId  path      string                    true  "Wallet UUID"
-// @Param        request   body      CreateWalletWithdrawalSwagger  true  "Withdrawal payload"
+// @Param        request   body      controllers.CreateWalletWithdrawalSwagger  true  "Withdrawal payload"
 // @Success      201  {object}  withdrawalresource.Withdrawal
-// @Failure      400  {object}  ErrorResponse
-// @Failure      403  {object}  ErrorResponse
+// @Failure      400  {object}  responses.ErrorBody
+// @Failure      403  {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /wallets/{walletId}/withdrawals [post]
 // CreateWalletWithdrawal serves both auth surfaces:
 //
@@ -248,10 +249,11 @@ func (ctrl *WithdrawalsController) CreateWalletWithdrawal(ctx http.Context) http
 // @Produce      json
 // @Param        walletId        path  string  true  "Wallet UUID"
 // @Param        idempotencyKey  path  string  true  "Idempotency key (UUID) sent when the withdrawal was created"
-// @Success      200  {object}  WithdrawalLookupResponse
-// @Failure      400  {object}  ErrorResponse  "idempotency_key must be a UUID"
-// @Failure      401  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse  "wallet not found / withdrawal not found"
+// @Success      200  {object}  controllers.WithdrawalLookupResponse
+// @Failure      400  {object}  responses.ErrorBody  "idempotency_key must be a UUID"
+// @Failure      401  {object}  responses.ErrorBody
+// @Failure      404  {object}  responses.ErrorBody  "wallet not found / withdrawal not found"
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /api/v1/wallets/{walletId}/withdrawals/{idempotencyKey} [get]
 func (ctrl *WithdrawalsController) GetWalletWithdrawalByIdempotencyKey(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)

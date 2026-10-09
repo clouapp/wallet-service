@@ -59,9 +59,10 @@ func NewAddressesHandler(surface string, deps AddressesHandlerDeps) *AddressesHa
 // @Param        id    path      string                  true  "Wallet UUID"  format(uuid)
 // @Param        body  body      GenerateAddressRequest  true  "Address generation request"
 // @Success      201   {object}  addressresource.Address
-// @Failure      400   {object}  ErrorResponse  "Invalid wallet ID or missing fields"
-// @Failure      422   {object}  ErrorResponse  "Address generation not supported for MPC wallets"
-// @Failure      500   {object}  ErrorResponse
+// @Failure      400   {object}  responses.ErrorBody  "Invalid wallet ID or missing fields"
+// @Failure      422   {object}  responses.ErrorBody  "Address generation not supported for MPC wallets"
+// @Failure      500   {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /v1/wallets/{id}/addresses [post]
 func (ctrl *AddressesHandler) GenerateAddress(ctx http.Context) http.Response {
 	walletID, err := requests.RouteUUID(ctx, "walletId")
@@ -99,9 +100,10 @@ func (ctrl *AddressesHandler) GenerateAddress(ctx http.Context) http.Response {
 // @Param        addressId  path      string                  true  "Address UUID" format(uuid)
 // @Param        body       body      requests.UpdateAddressRequest    true  "Fields to update"
 // @Success      200        {object}  addressresource.Address
-// @Failure      400        {object}  ErrorResponse
-// @Failure      404        {object}  ErrorResponse
-// @Failure      500        {object}  ErrorResponse
+// @Failure      400        {object}  responses.ErrorBody
+// @Failure      404        {object}  responses.ErrorBody
+// @Failure      500        {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /v1/wallets/{walletId}/addresses/{addressId} [patch]
 func (ctrl *AddressesHandler) UpdateAddress(ctx http.Context) http.Response {
 	addressID, err := requests.RouteUUID(ctx, "addressId")
@@ -143,8 +145,9 @@ func (ctrl *AddressesHandler) UpdateAddress(ctx http.Context) http.Response {
 // @Security     SignatureAuth
 // @Param        id  path      string  true  "Wallet UUID"  format(uuid)
 // @Success      200  {object}  AddressListResponse
-// @Failure      400  {object}  ErrorResponse  "Invalid wallet UUID"
-// @Failure      500  {object}  ErrorResponse
+// @Failure      400  {object}  responses.ErrorBody  "Invalid wallet UUID"
+// @Failure      500  {object}  responses.ErrorBody
+// @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /v1/wallets/{id}/addresses [get]
 func (ctrl *AddressesHandler) ListWalletAddresses(ctx http.Context) http.Response {
 	walletID, err := requests.RouteUUID(ctx, "walletId")

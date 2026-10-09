@@ -36,7 +36,7 @@ type lifecycleBody struct {
 
 // Freeze godoc
 // @Summary      Freeze an account
-// @Description  Sets accounts.status to frozen. Only a platform admin may call it. An unknown account is 404 before that check. The same status again does not write. The route is not behind AccountContext.
+// @Description  Sets accounts.status to frozen. Only a platform admin may call it. An unknown account is 404 for a platform admin. The same status again does not write. The route is not behind AccountContext.
 // @Tags         Platform Accounts
 // @Security     BearerAuth
 // @Produce      json
@@ -53,7 +53,7 @@ func (ctrl *LifecycleController) Freeze(ctx http.Context) http.Response {
 
 // Unfreeze godoc
 // @Summary      Unfreeze an account
-// @Description  Sets accounts.status to active. Only a platform admin may call it. An unknown account is 404 before that check. The same status again does not write. The route is not behind AccountContext, so a frozen account can be unfrozen.
+// @Description  Sets accounts.status to active. Only a platform admin may call it. An unknown account is 404 for a platform admin. The same status again does not write. The route is not behind AccountContext, so a frozen account can be unfrozen.
 // @Tags         Platform Accounts
 // @Security     BearerAuth
 // @Produce      json
@@ -70,7 +70,7 @@ func (ctrl *LifecycleController) Unfreeze(ctx http.Context) http.Response {
 
 // Archive godoc
 // @Summary      Archive an account
-// @Description  Sets accounts.status to archived. Only a platform admin may call it. An unknown account is 404 before that check. The same status again does not write. The route is not behind AccountContext.
+// @Description  Sets accounts.status to archived. Only a platform admin may call it. An unknown account is 404 for a platform admin. The same status again does not write. The route is not behind AccountContext.
 // @Tags         Platform Accounts
 // @Security     BearerAuth
 // @Produce      json

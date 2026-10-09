@@ -74,8 +74,8 @@ func NewWalletsController(deps WalletsControllerDeps) *WalletsController {
 // @Produce      json
 // @Security     ApiKeyAuth
 // @Security     SignatureAuth
-// @Success      200  {object}  WalletListResponse
-// @Failure      500  {object}  ErrorResponse
+// @Success      200  {object}  controllers.WalletListResponse
+// @Failure      500  {object}  responses.ErrorBody
 // @Router       /v1/wallets [get]
 func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 	accountID, ok := requestctx.AccountID(ctx)
@@ -126,8 +126,8 @@ func (ctrl *WalletsController) ListWallets(ctx http.Context) http.Response {
 // @Security     SignatureAuth
 // @Param        walletId   path      string  true  "Wallet UUID"  format(uuid)
 // @Success      200  {object}  walletresource.WithNetwork
-// @Failure      400  {object}  ErrorResponse  "Invalid UUID"
-// @Failure      404  {object}  ErrorResponse  "Wallet not found"
+// @Failure      400  {object}  responses.ErrorBody  "Invalid UUID"
+// @Failure      404  {object}  responses.ErrorBody  "Wallet not found"
 // @Router       /v1/wallets/{walletId} [get]
 func (ctrl *WalletsController) GetWallet(ctx http.Context) http.Response {
 	id, err := requests.RouteUUID(ctx, "walletId")
