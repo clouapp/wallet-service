@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
+	"github.com/macrowallets/waas/app/services/sessions"
 	"github.com/macrowallets/waas/app/services/settings"
 )
 
@@ -162,4 +163,30 @@ func newAuthRepoBridge(app foundation.Application) (authRepoBridge, error) {
 		return authRepoBridge{}, err
 	}
 	return authRepoBridge{users: users, recovery: recovery, refresh: refresh}, nil
+}
+
+// newSessionIssuer mints the dashboard sessions with a stored refresh token,
+// after the revocation watermark the revoker keeps.
+func newSessionIssuer(app foundation.Application) (*authsvc.SessionIssuer, error) {
+	passwords, err := resolve[*authsvc.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	refresh, err := resolve[*sessions.RefreshTokens](app)
+	if err != nil {
+		return nil, err
+	}
+	revoker, err := resolve[*authsvc.SessionRevoker](app)
+	if err != nil {
+		return nil, err
+	}
+	issuer, err := authsvc.NewSessionIssuer(authsvc.IssuerDeps{
+		Passwords: passwords,
+		Refresh:   refresh,
+		Revoker:   revoker,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("vault: session issuer: %w", err)
+	}
+	return issuer, nil
 }

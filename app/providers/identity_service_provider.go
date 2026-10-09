@@ -56,6 +56,9 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 	app.Singleton((*authsvc.SessionRevoker)(nil), func(app foundation.Application) (any, error) {
 		return newSessionRevoker(app)
 	})
+	app.Singleton((*authsvc.SessionIssuer)(nil), func(app foundation.Application) (any, error) {
+		return newSessionIssuer(app)
+	})
 	app.Singleton((*usersvc.Service)(nil), func(app foundation.Application) (any, error) {
 		store, err := resolve[*repositories.UserRepository](app)
 		if err != nil {
