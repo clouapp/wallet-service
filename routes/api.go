@@ -81,14 +81,14 @@ func RegisterExternalAPI() {
 		})
 
 		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermTransactionsRead)).Group(func(r route.Router) {
-			r.Get("/transactions", transactionCtrl.ListTransactions)
-			r.Get("/transactions/{id}", transactionCtrl.GetTransaction)
-			r.Get("/users/{external_id}/transactions", transactionCtrl.ListUserTransactions)
+			r.Get("/transactions", transactionCtrl.Index)
+			r.Get("/transactions/{id}", transactionCtrl.Show)
+			r.Get("/users/{external_id}/transactions", transactionCtrl.IndexByUser)
 		})
 
-		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWebhooksWrite)).Post("/webhooks", webhookCtrl.CreateWebhook)
-		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWebhooksRead)).Get("/webhooks", webhookCtrl.ListWebhooks)
-		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWebhooksWrite)).Patch("/webhooks/{webhookId}", webhookCtrl.UpdateWebhook)
+		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWebhooksWrite)).Post("/webhooks", webhookCtrl.Store)
+		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWebhooksRead)).Get("/webhooks", webhookCtrl.Index)
+		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWebhooksWrite)).Patch("/webhooks/{webhookId}", webhookCtrl.Update)
 	})
 }
 
@@ -96,12 +96,12 @@ func newFeeEstimateController() *controllers.FeeEstimateController {
 	return controllers.NewFeeEstimateController(container.MustMake[*feeestimate.Service]())
 }
 
-func newExternalTransactionsController() *exttransactions.TransactionsController {
-	return exttransactions.NewTransactionsController(container.MustMake[*withdraw.Service]())
+func newExternalTransactionsController() *exttransactions.TransactionController {
+	return exttransactions.NewTransactionController(container.MustMake[*withdraw.Service]())
 }
 
-func newExternalWebhooksController() *extwebhooks.WebhooksController {
-	return extwebhooks.NewWebhooksController(container.MustMake[*webhook.Service]())
+func newExternalWebhooksController() *extwebhooks.WebhookController {
+	return extwebhooks.NewWebhookController(container.MustMake[*webhook.Service]())
 }
 
 func newExternalChainsController() *extchains.ChainsController {
