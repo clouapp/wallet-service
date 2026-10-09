@@ -1,20 +1,20 @@
 # Errors & Logging Guideline
 
-> Status: errors mostly HOLD (`%w`, package sentinels). Logging is TARGET: today
-> `log/slog` and `facades.Log()` coexist and there is no redacting sink.
-> Migration: alignment prompt (Part 1) §3.11.
+> Status: errors HOLD (`%w`, package sentinels, no text matching in controllers).
+> Logging: the redacting sink is installed at boot for `facades.Log()`
+> (`providers.InstallLogRedaction` from `bootstrap.bootConfig`). TARGET: the plain
+> `log/slog` calls (about 240) still use Go's default handler and bypass it, so
+> until `slog` is routed through the same handler a `slog` call must never carry
+> a URL, a token or a secret.
 
 ## Errors
 
 ```go
 // 1. The repository names the query. A miss is a sentinel.
-func (r *WalletRepository) FindByID(ctx context.Context, id uuid.UUID, lock bool) (*models.Wallet, error) {
+func (r *WalletRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.Wallet, error) {
 	var row models.Wallet
-	if err := r.Query(ctx)...First(&row); err != nil {
-		return nil, fmt.Errorf("find wallet: %w", err)
-	}
-	if row.ID == uuid.Nil { // First does not fail on a miss
-		return nil, models.ErrRepositoryNotFound
+	if err := r.Query(ctx).Where("id", id).FirstOrFail(&row); err != nil {
+		return nil, db.LookupError(err, "find wallet") // a miss is models.ErrRepositoryNotFound
 	}
 	return &row, nil
 }
@@ -30,11 +30,11 @@ return mapError(ctx, err, "activating wallet")
 
 ### Rules
 
-- **Errors live in the package that owns them**, in `errors.go`:
-  `app/services/errors.go`, `app/services/sweep/errors.go`,
-  `app/services/withdraw/errors.go`, `app/adapters/chain/errors.go`,
-  `app/http/middleware/errors.go`; vocabulary two layers share goes in
-  `app/models/errors.go`. **No central error package.**
+- **Errors live in the package that owns them**, in `errors.go` (or beside the code
+  that returns them): `app/services/account/errors.go`,
+  `app/services/chainregistry/errors.go`, the sweep and withdraw sentinels in their
+  packages; vocabulary two layers share goes in `app/models/errors.go`
+  (`ErrRepositoryNotFound`). **No central error package.**
 - `ErrX = errors.New("pkg: lowercase message")`, one-line comment.
 - Wrap with `%w`, and only to add what the caller cannot see. One layer owns
   each piece of context: the repository names the query, the controller names
@@ -50,13 +50,13 @@ return mapError(ctx, err, "activating wallet")
 
 ## Logging — one redacted sink
 
-One logger for every process: `facades.Log()` wrapped by a redacting handler
-installed from `app/providers` (port of slotkit's `log_redaction.go`). Every
-message and field passes through `RedactText` / `RedactError`, which strip URL
-userinfo and query strings — **RPC URLs embed API keys in the path or query**,
-so the redactor also masks the configured RPC hosts' secrets — including the
-framework's SQL log. If `slog` stays anywhere, it is the same redacting handler
-behind `slog`, not a second path.
+One sink for every process: the Goravel log channel wrapped by a redacting handler
+installed from `app/providers` (`InstallLogRedaction`, called from
+`bootstrap.bootConfig` before the providers run). Every message and field passes
+through `RedactText` / `RedactError`, which strip URL userinfo and query strings
+— **RPC URLs embed API keys in the path or query**, so the redactor also masks the
+configured RPC hosts' secrets — including the framework's SQL log. A second path
+(plain `slog`) is the TARGET gap named in the status line.
 
 - Identifiers in the message, not in `With(...)`.
 - Debug / Info / Warning / Error with their usual meaning; never `fmt.Println`.

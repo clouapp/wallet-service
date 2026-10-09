@@ -1,21 +1,23 @@
 # Chain and provider adapters
 
-> Status: TARGET. Today adapters live inside `app/services/` (`chain`,
-> `ingest/providers`, `price`, `blockheight`). The registry is bound by
-> `ChainServiceProvider` and filled from the chain catalog that
-> `AppServiceProvider.Boot` reads.
-> Migration: alignment prompt (Part 1) §3.1, §3.6, §3.8.
+> Status: PARTLY HOLDS. The adapters for ingest providers, price, block height,
+> AWS and the EVM, Bitcoin, Solana, TRON and XRP clients live in `app/adapters/`;
+> `tests/architecture` allows `adapters → services` and refuses `services →
+> adapters`. TARGET: the chain-family code that is still in `app/services/chain`
+> (the registry, JSON-RPC and fee helpers) and in `app/services/ingest` moves
+> behind ports as well. The registry is bound by `ChainServiceProvider` and
+> filled from the chain catalog that `AppServiceProvider.Boot` reads.
 
 ## Where things go
 
 | What | Where |
 |---|---|
-| one adapter per chain family (EVM, Bitcoin, Solana) | `app/adapters/chain/<family>/` |
+| one adapter per chain family (EVM, Bitcoin, Solana, TRON, XRP) | `app/adapters/chain/<family>/` (`rpc` is the shared JSON-RPC transport) |
 | inbound ingest providers (Alchemy, Helius, QuickNode) | `app/adapters/ingest/<provider>/` |
 | price providers (CoinGecko, CMC, CoinAPI, websocket) | `app/adapters/price/<provider>/` |
 | block height providers | `app/adapters/blockheight/<provider>/` |
-| AWS (SQS, Secrets Manager) | `app/adapters/<service>/` |
-| shared HTTP transport | `app/adapters/internal/httpclient` |
+| AWS (SQS, Secrets Manager), Redis stores, webhook delivery | `app/adapters/queue/sqs`, `app/adapters/secretsmanager`, `app/adapters/redis/*`, `app/adapters/webhook` |
+| shared HTTP transport | `pkg/httpclient` |
 
 The **contract an adapter satisfies is declared by its consumer** (a port in the
 service package, or `pkg/types.Chain` while it is shared by several services).
@@ -24,10 +26,10 @@ to service sentinels) and refuses `services → adapters`.
 
 ## The registry
 
-`chain.Registry` (chain id → adapter) is composition, not domain logic. It is
-built from the `chains` / `chain_networks` / RPC URL rows by a
-`ChainRegistryService` with a cache and an explicit refresh — **never by a
-database query inside a provider's `Register`**. A chain unknown to the
+`chain.Registry` (`app/services/chain`, chain id → adapter) is composition, not
+domain logic. It is built from the `chains` rows (with their sealed RPC URL) by
+`chainregistry.ChainRegistryService`, with a cache and an explicit refresh —
+**never by a database query inside a provider's `Register`**. A chain unknown to the
 registry is `chainregistry.ErrUnknownChain`, matched with `errors.Is`.
 
 ## Rules

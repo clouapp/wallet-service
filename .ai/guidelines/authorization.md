@@ -1,12 +1,15 @@
 # Authorization Guideline
 
-> Status: TARGET for the three layers below. This branch already runs the
-> middleware order and the rank rule in `app/policies`, `APIScope` on the
-> external token catalog, and `tokens.read` / `tokens.write` / `settings.view` /
-> `settings.update` / `activity.read`. Every user-permission route guard asks
-> the Gate through `middleware.authorize`. One handler check is left:
-> `UpdateWalletSettings` asks `policies.WalletUpdate` itself (wallet or
-> account owner/admin), after WalletContext and before it reads the body.
+> Status: HOLDS for the three layers below, guarded by
+> `TestPermission_Decisions_GoThroughThePolicy` and the route-security table. The
+> middleware order and the rank rule live in `app/policies`, `APIScope` enforces
+> the external token catalog, and `tokens.read` / `tokens.write` / `settings.view`
+> / `settings.update` / `activity.read` are route guards. Every user-permission
+> route guard asks the Gate through `middleware.authorize`. One handler check is
+> left: `UpdateWalletSettings` asks `policies.WalletUpdate` itself (through
+> `controllers.Deny`; wallet or account owner/admin), after WalletContext and
+> before it reads the body. The open items are the product decisions in the
+> inventory at the end.
 
 Every authorization decision belongs in exactly one of three places, and **what
 the decision depends on picks the place.**
@@ -189,7 +192,7 @@ platform route answers a member with anything but that 403.
   `gate.WithContext(ctx).Inspect(ability, arguments)`. A service asks the
   policy function (`policies.MayUpdateSettings(role)`), never the Gate.
 
-## Inventory (fill in during the migration — the TARGET column is the work list)
+## Inventory (open product decisions)
 
 ### Abilities
 
@@ -199,7 +202,7 @@ ability goes into `gateAbilities` in `app/policies/gates.go`, with its pair in
 
 ### Mutating handlers with NO permission check today
 
-| Handler | Surface(s) | Target permission | Decided by |
+| Handler | Surface(s) | Permission to add (TARGET) | Decided by |
 |---|---|---|---|
 | `CreateWalletWithdrawal` | dashboard + external | `wallet.withdraw` | **product decision** |
 | `ConsolidateWallet` | dashboard + external | `wallet.sweep` | **product decision** |

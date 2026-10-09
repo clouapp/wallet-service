@@ -29,7 +29,7 @@ job. A non-credential mail (welcome) may use the same job with its own purpose.
 - A send whose outcome is unknown (deadline hit mid-send) is **not retried**: a
   retry would mint a second credential and invalidate the one already in the
   inbox. Log at WARN; the user asks again.
-- `/forgot-password` answers the same whether or not the address exists.
+- `POST /v1/auth/recover` answers the same whether or not the address exists.
 
 ## Drivers and environments
 

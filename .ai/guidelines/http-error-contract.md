@@ -140,7 +140,7 @@ outage behind a message about the caller.
 - **Never a provider's raw text** — `responses.ProviderError` answers the
   endpoint's own message and logs the cause.
 - A secret field never comes back on a read: `"<field>Set": true|false`.
-- `/forgot-password` answers the same whether or not the address exists.
+- `POST /v1/auth/recover` answers the same whether or not the address exists.
 
 ## Proving a refactor kept the contract
 
@@ -198,3 +198,4 @@ two bugfixes that landed in the commits before it.
 | `GET /v1/users/me/accounts` | 2026-10-05, caller role | no `role` | `role` |
 | `POST /v1/auth/2fa/verify` | body names `challenge_token`, 2026-10-05, second-factor token rename | 422, `partial_token` required | 401 `unauthorized`, `invalid or expired partial token` |
 | any route in the table above | 2026-10-08, rate limiting (H1) | no limit, never 429 | 429 `too_many_requests` over the limit (contract steps 69 and 70) |
+| `POST /v1/auth/logout` | 2026-10-08, logout goes through the session watermark | the presented token only was refused afterwards (the other devices' access tokens lived until they expired) | every access and refresh token of the user is refused: 401 `unauthorized`, `session revoked`; activity `user.sessions_revoked` |

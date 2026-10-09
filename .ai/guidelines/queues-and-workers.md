@@ -1,14 +1,14 @@
 # Queues and workers
 
-> Status: PARTLY HOLDS (the split exists). TARGET: one consumer per queue,
-> thin jobs with typed payloads, no domain events, the split written down and
-> tested. Migration: alignment prompt (Part 1) §3.10.
+> Status: HOLDS. One consumer per queue, thin jobs with typed payloads and no
+> domain events are guarded by `tests/architecture` (`queue_runner_test.go`,
+> `thin_jobs_test.go`, `thin_commands_test.go`).
 
 ## What runs where
 
 | Mechanism | Used for | Consumer |
 |---|---|---|
-| Goravel queue (`sync` default) | credential mail (`SendCredentialMailJob`, always `DispatchSync`) | runs in the dispatching process |
+| Goravel queue (`QUEUE_CONNECTION`, default `sync`) | credential mail (`SendCredentialMailJob`, always `DispatchSync`) | runs in the dispatching process. A `database` connection (queue `blockchain`, `failed_jobs`) is configured, but nothing consumes it |
 | `localworkers` balance loop | the wallet balance read model (`WalletRefresher.RefreshAll`, every `vault.local_workers` interval) | started from `main.go` only in local; the deployed Lambdas have no balance refresher yet |
 | AWS SQS (`app/adapters/queue/sqs`) | outbound webhook delivery | the webhook worker (local: `localworkers`) |
 | `localworkers` | local stand-in for the deployed workers (goroutine tickers) | started from `main.go` only in local |
