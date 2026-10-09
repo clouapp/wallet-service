@@ -341,24 +341,17 @@ func (ctrl *AccountsController) UpdateAccountUser(ctx http.Context) http.Respons
 		return errResp
 	}
 
-	member, err := ctrl.accountService.UpdateMember(ctx.Context(), account.ID, callerID, targetID, memberChange(req))
+	member, err := ctrl.accountService.UpdateMember(ctx.Context(), accountsvc.UpdateMemberInput{
+		AccountID: account.ID,
+		ActorID:   callerID,
+		TargetID:  targetID,
+		Role:      req.Role,
+		Status:    req.Status,
+	})
 	if errResp := mapMemberError(ctx, err); errResp != nil {
 		return errResp
 	}
 	return ctx.Response().Success().Json(tokenresource.AccountUserPtr(member))
-}
-
-func memberChange(req accountsrequests.UpdateAccountUserRequest) accountsvc.MemberChange {
-	change := accountsvc.MemberChange{}
-	if req.Role != "" {
-		role := req.Role
-		change.Role = &role
-	}
-	if req.Status != "" {
-		status := req.Status
-		change.Status = &status
-	}
-	return change
 }
 
 // RemoveAccountUser godoc

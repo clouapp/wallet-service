@@ -227,11 +227,24 @@ func (s *Service) RemoveUser(ctx context.Context, accountID, userID uuid.UUID) e
 	return s.memberships.SoftDeleteByAccountAndUser(ctx, accountID, userID)
 }
 
+// UpdateMemberInput is PATCH /v1/accounts/{accountId}/users/{userId}: the
+// caller changes the target's role, status or both. A blank Role or Status is
+// left as stored.
+type UpdateMemberInput struct {
+	AccountID uuid.UUID
+	ActorID   uuid.UUID
+	TargetID  uuid.UUID
+	Role      string
+	Status    string
+}
+
 // UpdateMember changes role and/or status. Suspending a member leaves the
 // API tokens that member minted: they belong to the account. The caller
 // cannot change themselves, grant a role above their own, act on a higher
 // rank, or leave the account without an owner.
-func (s *Service) UpdateMember(ctx context.Context, accountID, actorID, targetID uuid.UUID, change MemberChange) (*models.AccountUser, error) {
+func (s *Service) UpdateMember(ctx context.Context, in UpdateMemberInput) (*models.AccountUser, error) {
+	accountID, actorID, targetID := in.AccountID, in.ActorID, in.TargetID
+	change := memberChangeOf(in.Role, in.Status)
 	if err := validateMemberIDs(accountID, actorID, targetID); err != nil {
 		return nil, err
 	}
@@ -452,6 +465,18 @@ func validateMemberIDs(accountID, actorID, targetID uuid.UUID) error {
 		return fmt.Errorf("member change: account, actor and target are required")
 	}
 	return nil
+}
+
+// memberChangeOf reads a blank field as one to leave as stored.
+func memberChangeOf(role, status string) MemberChange {
+	var change MemberChange
+	if role != "" {
+		change.Role = &role
+	}
+	if status != "" {
+		change.Status = &status
+	}
+	return change
 }
 
 func validateMemberChange(change MemberChange) error {
