@@ -56,6 +56,7 @@ func (m *Memberships) AddMember(ctx context.Context, wallet *models.Wallet, user
 		if err := m.members.Restore(ctx, existing.ID); err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrMembershipRestore, err)
 		}
+		existing.DeletedAt = nil
 		if err := m.members.SetRoles(ctx, existing.ID, roleList); err != nil {
 			slog.Error("wallet-users: update roles", "wallet", wallet.ID, "error", err)
 		} else {

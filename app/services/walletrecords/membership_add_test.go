@@ -154,6 +154,7 @@ func TestMemberships_AddMember(t *testing.T) {
 		assert.Equal(t, removed.ID, members.restored)
 		assert.Equal(t, "approver", members.rolesSet)
 		assert.Equal(t, "approver", member.Roles)
+		assert.Nil(t, member.DeletedAt, "the answer is the restored membership, not the removed one")
 		assert.Nil(t, members.created)
 	})
 
