@@ -103,6 +103,15 @@ func NewService(deps Deps) (*Service, error) {
 	return &Service{quoter: deps.Quoter, registry: deps.Registry, chains: deps.Chains, cache: deps.Cache, cacheTTL: deps.CacheTTL, now: now}, nil
 }
 
+// callerAccount is the account the estimate is priced for: the caller's, or the
+// wallet's own when the request names none.
+func callerAccount(req Request) uuid.UUID {
+	if req.CallerAccountID == uuid.Nil && req.Wallet != nil && req.Wallet.AccountID != nil {
+		return *req.Wallet.AccountID
+	}
+	return req.CallerAccountID
+}
+
 // resolvedRequest is a validated Request in base units.
 type resolvedRequest struct {
 	wallet      *models.Wallet
@@ -128,7 +137,7 @@ func (s *Service) Estimate(ctx context.Context, req Request) (*Estimate, error) 
 		Asset:           resolved.asset.WalletAsset,
 		Amount:          resolved.baseUnits,
 		ToAddress:       resolved.to,
-		CallerAccountID: req.CallerAccountID,
+		CallerAccountID: callerAccount(req),
 	})
 	if err != nil {
 		return nil, classifyQuoteError(err)

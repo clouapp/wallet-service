@@ -276,6 +276,32 @@ func TestEstimate_Invalid_InputsFailBeforeQuoting(t *testing.T) {
 	}
 }
 
+// A request without a caller account is priced for the wallet's own account.
+func TestEstimate_Caller_AccountDefaultsToTheWallets(t *testing.T) {
+	owner, caller := uuid.New(), uuid.New()
+	cases := []struct {
+		name   string
+		caller uuid.UUID
+		want   uuid.UUID
+	}{
+		{"no caller", uuid.Nil, owner},
+		{"a caller", caller, caller},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, DefaultCacheTTL)
+			wallet := *f.wallets[models.ChainETH]
+			wallet.AccountID = &owner
+
+			f.estimate(t, Request{Wallet: &wallet, Amount: "0.001", CallerAccountID: tc.caller})
+
+			if len(f.quoter.requests) != 1 || f.quoter.requests[0].CallerAccountID != tc.want {
+				t.Fatalf("quoted %+v, want caller %s", f.quoter.requests, tc.want)
+			}
+		})
+	}
+}
+
 // The message is the fixed sentence the client reads; the symbol and the chain
 // stay on the cause for the log.
 func TestEstimate_Unknown_AssetAnswersTheFixedSentence(t *testing.T) {

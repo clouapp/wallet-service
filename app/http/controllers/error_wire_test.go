@@ -113,9 +113,11 @@ func TestError_Mappers_KeepTheirBytes(t *testing.T) {
 			return MapSpendingLimitError(ctx, withdraw.ErrSpendingQuoteUnavailable)
 		},
 			503, legacyJSON, `{"error":{"code":"spending_limit_quote_unavailable","message":"spending_limit_quote_unavailable"}}`},
+		// feeestimate words an unknown asset as the fixed sentence (the symbol stays
+		// on the cause), so the controller passes code and message through.
 		{"a fee estimate refusal keeps its own code", func(ctx http.Context) http.Response {
-			return feeEstimateErrorResponse(ctx, &models.Wallet{}, &feeestimate.Error{
-				Kind: feeestimate.KindUnprocessable, Code: feeestimate.CodeUnknownAsset, Message: "unknown asset ZZZ",
+			return mapFeeEstimateError(ctx, &models.Wallet{}, &feeestimate.Error{
+				Kind: feeestimate.KindUnprocessable, Code: feeestimate.CodeUnknownAsset, Message: "unknown asset",
 			})
 		}, 422, legacyJSON, `{"error":{"code":"unknown_asset","message":"unknown asset"}}`},
 	}

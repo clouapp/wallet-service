@@ -315,7 +315,7 @@ func RegisterAdminRoutes() {
 			r.Get("/withdrawals", withdrawalCtrl.Index)
 			r.Middleware(middleware.RequireFundAction(middleware.FundWithdraw)).Post("/withdrawals", withdrawalCtrl.Store)
 			r.Post("/withdrawals/estimate", withdrawalCtrl.Estimate)
-			r.Get("/fee-estimate", feeEstimateCtrl.GetWalletFeeEstimate)
+			r.Get("/fee-estimate", feeEstimateCtrl.Show)
 			r.Get("/withdrawals/{withdrawalId}", withdrawalCtrl.Show)
 			r.Middleware(middleware.WalletCancelWithdrawal(walletPolicyMemberships(), container.MustMake[*withdrawalrecords.Records]())).Post("/withdrawals/{withdrawalId}/cancel", withdrawalCtrl.Cancel)
 

@@ -73,7 +73,7 @@ func RegisterExternalAPI() {
 			r.Get("/gas-status", sweepCtrl.GasStatus)
 			r.Middleware(middleware.Throttle(middleware.ThrottleGasCheck)).Post("/gas-check", sweepCtrl.GasCheck)
 			r.Post("/withdraw/preview", sweepCtrl.Preview)
-			r.Get("/fee-estimate", feeEstimateCtrl.GetWalletFeeEstimate)
+			r.Get("/fee-estimate", feeEstimateCtrl.Show)
 			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWithdrawalsCreate)).Post("/withdrawals", withdrawalCtrl.Store)
 			r.Get("/withdrawals/{idempotencyKey}", withdrawalCtrl.ShowByKey)
 		})
