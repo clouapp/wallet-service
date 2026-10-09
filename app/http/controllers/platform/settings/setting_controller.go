@@ -135,16 +135,9 @@ func (c *SettingController) UpdateAccount(ctx http.Context) http.Response {
 	}
 	// An id that is not a UUID is the nil account, which the service reports as not found.
 	accountID, _ := requests.RouteUUID(ctx, "accountId")
-	// The group and the account answer 403 and 404 before the body is read.
-	if err := c.settings.AuthorizePlatformAccountSweepWrite(ctx.Context(), actorID, accountID, group); err != nil {
-		return mapError(ctx, err, "save platform account sweep limits")
-	}
-	var req settingsrequests.UpdateRequest
-	if err := req.Decode(ctx); err != nil {
-		return mapError(ctx, err, "save platform account sweep limits")
-	}
 
-	view, err := c.settings.SavePlatformAccountSweepLimits(ctx.Context(), actorID, accountID, group, req.Document)
+	// The group and the account answer 404 and 403 before the service reads the body.
+	view, err := c.settings.SavePlatformAccountSweepLimits(ctx.Context(), actorID, accountID, group, settingsrequests.NewUpdateDocument(ctx))
 	if err != nil {
 		return mapError(ctx, err, "save platform account sweep limits")
 	}

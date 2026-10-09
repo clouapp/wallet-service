@@ -13,32 +13,36 @@ import (
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 )
 
-// AuthorizePlatformAccountSweepWrite is the gate for
-// PUT /v1/platform/accounts/{accountId}/settings/{group}
-// settings.update + sweep.update for account_sweep_limits.
-// Those names are not in a platform catalog, so a platform_admins row is the
-// gate. Any other group name is ErrGroupNotFound before the account lookup
-// and before that gate. An unknown account is ErrAccountNotFound before the
-// gate. The check does not read the body, the stored row, or another account.
-func (s *Service) AuthorizePlatformAccountSweepWrite(ctx context.Context, actorID, accountID uuid.UUID, groupName string) error {
-	_, err := s.authorizePlatformAccountSweepWrite(ctx, actorID, accountID, groupName)
-	return err
+// GroupDocument is the partial group a settings write stores. The write
+// reads it only once it is authorized, so a refused caller's body is never
+// read. Read's error is returned as it is.
+type GroupDocument interface {
+	Read() (map[string]any, error)
 }
 
 // SavePlatformAccountSweepLimits writes the account_sweep_limits row for one
 // account. S1.4.6: PUT /v1/platform/accounts/{accountId}/settings/{group}
 // settings.update + sweep.update for account_sweep_limits.
-// Any other group name is ErrGroupNotFound before the account lookup and
+// Those names are not in a platform catalog, so a platform_admins row is the
+// gate. Any other group name is ErrGroupNotFound before the account lookup and
 // before the platform-admin gate. An unknown account is ErrAccountNotFound
-// before that gate. Counts must be positive integers. A zero or negative
+// before that gate. The document is read after the gate, so those answers
+// come before a body that cannot be read. Counts must be positive integers. A zero or negative
 // count, and a negative daily cap, are a ValidationError and are not stored.
 // A blank daily_withdraw_cap_usd is stored empty, which stays unlimited.
 // The activity row is settings.updated on this account and names the group
 // and the field names, never the values. The account cache key for the group
 // is forgotten. The platform sweep_limits row is left in place, so a later
 // LoadLimits still prefers this account row.
-func (s *Service) SavePlatformAccountSweepLimits(ctx context.Context, actorID, accountID uuid.UUID, groupName string, body map[string]any) (GroupView, error) {
+func (s *Service) SavePlatformAccountSweepLimits(ctx context.Context, actorID, accountID uuid.UUID, groupName string, document GroupDocument) (GroupView, error) {
 	group, err := s.authorizePlatformAccountSweepWrite(ctx, actorID, accountID, groupName)
+	if err != nil {
+		return GroupView{}, err
+	}
+	if document == nil {
+		return GroupView{}, fmt.Errorf("platform settings: document is required")
+	}
+	body, err := document.Read()
 	if err != nil {
 		return GroupView{}, err
 	}
