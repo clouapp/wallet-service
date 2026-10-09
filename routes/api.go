@@ -56,7 +56,7 @@ func RegisterExternalAPI() {
 		// sweep.execute, webhooks.read/write, transactions.read.
 		// A route the plan does not name stays behind APITokenAuth only.
 		// Wallet routes resolve the wallet (404) before the scope check (403).
-		router.Get("/chains", chainCtrl.ListChains)
+		router.Get("/chains", chainCtrl.Index)
 
 		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWalletsCreate)).Post("/wallets", walletCtrl.CreateWallet)
 		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWalletsRead)).Get("/wallets", walletCtrl.ListWallets)
@@ -104,8 +104,8 @@ func newExternalWebhooksController() *extwebhooks.WebhookController {
 	return extwebhooks.NewWebhookController(container.MustMake[*webhook.Service]())
 }
 
-func newExternalChainsController() *extchains.ChainsController {
-	return extchains.NewChainsController(
+func newExternalChainsController() *extchains.ChainController {
+	return extchains.NewChainController(
 		container.MustMake[*chainsvc.Service](),
 	)
 }

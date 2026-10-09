@@ -89,10 +89,10 @@ func (l quietLog) WithContext(context.Context) contractslog.Log { return l }
 func (quietLog) Errorf(string, ...any)                          {}
 
 func TestChain_Lookup_DistinguishesNotFoundFromAnOutage(t *testing.T) {
-	handlers := map[string]func(*ChainsController, http.Context) http.Response{
-		"GetChain":           (*ChainsController).GetChain,
-		"ListChainTokens":    (*ChainsController).ListChainTokens,
-		"ListChainResources": (*ChainsController).ListChainResources,
+	handlers := map[string]func(*ChainController, http.Context) http.Response{
+		"Show":      (*ChainController).Show,
+		"Tokens":    (*ChainController).Tokens,
+		"Resources": (*ChainController).Resources,
 	}
 	cases := []struct {
 		name       string
@@ -111,7 +111,7 @@ func TestChain_Lookup_DistinguishesNotFoundFromAnOutage(t *testing.T) {
 	for handlerName, handler := range handlers {
 		for _, tc := range cases {
 			t.Run(handlerName+"/"+tc.name, func(t *testing.T) {
-				ctrl := NewChainsController(chainsvc.NewService(chainsvc.Deps{Chains: tc.catalog}))
+				ctrl := NewChainController(chainsvc.NewService(chainsvc.Deps{Chains: tc.catalog}))
 				response := &recordingResponse{}
 				handler(ctrl, &recordingContext{
 					base:     context.Background(),
@@ -138,14 +138,14 @@ func TestChain_Lookup_DistinguishesNotFoundFromAnOutage(t *testing.T) {
 }
 
 func TestChain_Lookup_RefusesAChainOfTheOtherNetworkKind(t *testing.T) {
-	handlers := map[string]func(*ChainsController, http.Context) http.Response{
-		"GetChain":           (*ChainsController).GetChain,
-		"ListChainTokens":    (*ChainsController).ListChainTokens,
-		"ListChainResources": (*ChainsController).ListChainResources,
+	handlers := map[string]func(*ChainController, http.Context) http.Response{
+		"Show":      (*ChainController).Show,
+		"Tokens":    (*ChainController).Tokens,
+		"Resources": (*ChainController).Resources,
 	}
 	for handlerName, handler := range handlers {
 		t.Run(handlerName, func(t *testing.T) {
-			ctrl := NewChainsController(chainsvc.NewService(chainsvc.Deps{Chains: lookupCatalog{chain: &models.Chain{ID: "sepolia", IsTestnet: true}}}))
+			ctrl := NewChainController(chainsvc.NewService(chainsvc.Deps{Chains: lookupCatalog{chain: &models.Chain{ID: "sepolia", IsTestnet: true}}}))
 			response := &recordingResponse{}
 			handler(ctrl, &recordingContext{
 				base:     context.WithValue(context.Background(), requestctx.KeyAccountEnvironment, models.EnvironmentProd),
@@ -181,13 +181,13 @@ func (failingResources) FindByChainID(context.Context, string) ([]models.ChainRe
 
 // A failed token or resource read leaves that list null in the chain view instead of failing it.
 func TestGet_Chain_ServesTheChainWhenTheSideReadsFail(t *testing.T) {
-	ctrl := NewChainsController(chainsvc.NewService(chainsvc.Deps{
+	ctrl := NewChainController(chainsvc.NewService(chainsvc.Deps{
 		Chains:    lookupCatalog{chain: &models.Chain{ID: "eth"}},
 		Tokens:    failingTokens{},
 		Resources: failingResources{},
 	}))
 	response := &recordingResponse{}
-	ctrl.GetChain(&recordingContext{
+	ctrl.Show(&recordingContext{
 		base:     context.Background(),
 		request:  &recordingRequest{chainID: "eth"},
 		response: response,
@@ -210,4 +210,43 @@ type successStatus struct {
 
 func (s successStatus) Json(obj any) http.AbortableResponse {
 	return s.response.Json(http.StatusOK, obj)
+}
+
+func TestTokens_And_Resources_AnswerTheirOwnMessageWhenTheirReadFails(t *testing.T) {
+	ctrl := NewChainController(chainsvc.NewService(chainsvc.Deps{
+		Chains:    lookupCatalog{chain: &models.Chain{ID: "eth"}},
+		Tokens:    failingTokens{},
+		Resources: failingResources{},
+	}))
+	cases := map[string]struct {
+		handler func(http.Context) http.Response
+		message string
+	}{
+		"Tokens":    {ctrl.Tokens, "failed to fetch tokens"},
+		"Resources": {ctrl.Resources, "failed to fetch resources"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			response := &recordingResponse{}
+			tc.handler(&recordingContext{
+				base:     context.Background(),
+				request:  &recordingRequest{chainID: "eth"},
+				response: response,
+			})
+
+			if response.status != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want 500", response.status)
+			}
+			var body resources.ErrorEnvelope
+			if err := json.Unmarshal(response.raw, &body); err != nil {
+				t.Fatalf("body is not the error envelope: %v", err)
+			}
+			if body.Error.Code != responses.CodeInternal || body.Error.Message != tc.message {
+				t.Fatalf("envelope = %+v", body.Error)
+			}
+			if strings.Contains(string(response.raw), "store down") {
+				t.Fatal("the body carries the cause")
+			}
+		})
+	}
 }

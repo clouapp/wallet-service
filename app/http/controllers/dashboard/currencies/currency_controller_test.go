@@ -7,55 +7,37 @@ import (
 	"github.com/macrowallets/waas/app/services/price"
 )
 
-func currenciesControllerDeps() CurrenciesControllerDeps {
-	return CurrenciesControllerDeps{
-		Currencies: &currencysvc.Service{},
-		Prices:     &price.Service{},
+func TestNew_CurrencyController_KeepsItsDependencies(t *testing.T) {
+	currencies, prices := &currencysvc.Service{}, &price.Service{}
+
+	ctrl := NewCurrencyController(currencies, prices)
+
+	if ctrl.currencies != currencies {
+		t.Fatal("currency controller did not keep the currencies service")
+	}
+	if ctrl.prices != prices {
+		t.Fatal("currency controller did not keep the price service")
 	}
 }
 
-func TestNew_Currencies_ControllerKeepsItsDependencies(t *testing.T) {
-	deps := currenciesControllerDeps()
-	ctrl := NewCurrenciesController(deps)
-	if ctrl == nil {
-		t.Fatal("NewCurrenciesController returned nil")
-	}
-	if ctrl.currencies != deps.Currencies {
-		t.Fatal("currencies controller did not keep the currencies service")
-	}
-	if ctrl.prices != deps.Prices {
-		t.Fatal("currencies controller did not keep the price service")
-	}
-}
-
-func TestNew_Currencies_ControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_CurrencyController_RequiresEveryDependency(t *testing.T) {
 	cases := []struct {
-		name  string
-		clear func(*CurrenciesControllerDeps)
-		panic string
+		name       string
+		currencies *currencysvc.Service
+		prices     *price.Service
+		panic      string
 	}{
-		{
-			name:  "currencies service",
-			clear: func(deps *CurrenciesControllerDeps) { deps.Currencies = nil },
-			panic: "dashboard currencies controller: currencies service is required",
-		},
-		{
-			name:  "price service",
-			clear: func(deps *CurrenciesControllerDeps) { deps.Prices = nil },
-			panic: "dashboard currencies controller: price service is required",
-		},
+		{"currencies service", nil, &price.Service{}, "dashboard currencies controller: currencies service is required"},
+		{"price service", &currencysvc.Service{}, nil, "dashboard currencies controller: price service is required"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			deps := currenciesControllerDeps()
-			tc.clear(&deps)
 			defer func() {
-				got := recover()
-				if got != tc.panic {
+				if got := recover(); got != tc.panic {
 					t.Fatalf("panic = %v", got)
 				}
 			}()
-			NewCurrenciesController(deps)
+			NewCurrencyController(tc.currencies, tc.prices)
 			t.Fatal("expected a panic")
 		})
 	}

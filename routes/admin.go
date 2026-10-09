@@ -243,15 +243,15 @@ func RegisterAdminRoutes() {
 	})
 
 	facades.Route().Prefix("/v1/chains").Middleware(middleware.SessionAuth(), accountHeader, totpEnrollment, noCache).Group(func(router route.Router) {
-		router.Get("", chainCtrl.ListChains)
-		router.Get("/{chainId}", chainCtrl.GetChain)
-		router.Get("/{chainId}/tokens", chainCtrl.ListChainTokens)
-		router.Get("/{chainId}/resources", chainCtrl.ListChainResources)
+		router.Get("", chainCtrl.Index)
+		router.Get("/{chainId}", chainCtrl.Show)
+		router.Get("/{chainId}/tokens", chainCtrl.Tokens)
+		router.Get("/{chainId}/resources", chainCtrl.Resources)
 	})
 
 	facades.Route().Prefix("/v1/currencies").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
-		router.Get("", currencyCtrl.ListCurrencies)
-		router.Get("/{code}", currencyCtrl.GetCurrency)
+		router.Get("", currencyCtrl.Index)
+		router.Get("/{code}", currencyCtrl.Show)
 	})
 
 	facades.Route().Prefix("/v1/me").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
@@ -260,7 +260,7 @@ func RegisterAdminRoutes() {
 	})
 
 	facades.Route().Prefix("/v1/convert").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
-		router.Get("", currencyCtrl.ConvertCurrency)
+		router.Get("", currencyCtrl.Convert)
 	})
 
 	facades.Route().Prefix("/v1/wallets").Middleware(middleware.SessionAuth(), accountHeader, totpEnrollment, noCache).Group(func(router route.Router) {
@@ -422,17 +422,17 @@ func newDashboardWalletTransactionsController() *dashwallets.TransactionsControl
 	)
 }
 
-func newDashboardChainsController() *dashchains.ChainsController {
-	return dashchains.NewChainsController(
+func newDashboardChainsController() *dashchains.ChainController {
+	return dashchains.NewChainController(
 		container.MustMake[*chainsvc.Service](),
 	)
 }
 
-func newDashboardCurrenciesController() *dashcurrencies.CurrenciesController {
-	return dashcurrencies.NewCurrenciesController(dashcurrencies.CurrenciesControllerDeps{
-		Currencies: container.MustMake[*currencies.Service](),
-		Prices:     container.MustMake[*price.Service](),
-	})
+func newDashboardCurrenciesController() *dashcurrencies.CurrencyController {
+	return dashcurrencies.NewCurrencyController(
+		container.MustMake[*currencies.Service](),
+		container.MustMake[*price.Service](),
+	)
 }
 
 func newDashboardPreferencesController() *dashpreferences.PreferencesController {
