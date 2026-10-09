@@ -1,29 +1,25 @@
+// Package activity lists the activity log of the account in scope, and the
+// platform's own log for a platform admin.
 package activity
 
 import (
-	"errors"
-	"strings"
-
-	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
-	activityresource "github.com/macrowallets/waas/app/http/resources/dashboard/activity"
-	"github.com/macrowallets/waas/app/http/responses"
-	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/http/requests"
+	resources "github.com/macrowallets/waas/app/http/resources/dashboard/activity"
 	activitysvc "github.com/macrowallets/waas/app/services/activity"
 )
 
 const activityPageSize = 20
 
-// ActivityController lists one account's activity log.
+// ActivityController lists and shows activity rows.
 type ActivityController struct {
 	activity *activitysvc.Service
 }
 
-// NewActivityController wires the dashboard activity handler.
+// NewActivityController wires the activity handlers to the activity service.
 func NewActivityController(activity *activitysvc.Service) *ActivityController {
 	if activity == nil {
 		panic("dashboard account activity controller: activity service is required")
@@ -32,109 +28,85 @@ func NewActivityController(activity *activitysvc.Service) *ActivityController {
 }
 
 // Index godoc
-// @Summary      Account activity
-// @Description  GET /v1/accounts/{accountId}/activity applies policies.MayReadActivity (activity.read) before the handler. Owner, admin, and auditor may list. A user may not, and that refusal does not return the activity list. The refusal is 403 with the same message the service returns. Newest first. Page JSON is data, total, limit, and offset. Metadata never includes a secret value.
-// @Tags         Account Activity
-// @Security     BearerAuth
-// @Produce      json
-// @Param        accountId  path   string  true   "Account UUID"
-// @Param        limit      query  int     false  "Page size"
-// @Param        offset     query  int     false  "Rows to skip"
-// @Success      200  {object}  map[string]any
-// @Failure      401  {object}  responses.ErrorBody
-// @Failure      403  {object}  responses.ErrorBody
-// @Router       /accounts/{accountId}/activity [get]
-func (ctrl *ActivityController) Index(ctx http.Context) http.Response {
-	account, role, errResp := accountCaller(ctx)
-	if errResp != nil {
-		return errResp
-	}
+//
+//	@Summary		Account activity
+//	@Description	GET /v1/accounts/{accountId}/activity applies policies.MayReadActivity (activity.read) before the handler. Owner, admin, and auditor may list. A user may not, and that refusal does not return the activity list. The refusal is 403 with the same message the service returns. Newest first. Page JSON is data, total, limit, and offset. Metadata never includes a secret value.
+//	@Tags			Account Activity
+//	@Security		BearerAuth
+//	@Produce		json
+//	@Param			accountId	path		string	true	"Account UUID"
+//	@Param			limit		query		int		false	"Page size"
+//	@Param			offset		query		int		false	"Rows to skip"
+//	@Success		200			{object}	map[string]any
+//	@Failure		401			{object}	responses.ErrorBody
+//	@Failure		403			{object}	responses.ErrorBody
+//	@Router			/accounts/{accountId}/activity [get]
+func (c *ActivityController) Index(ctx http.Context) http.Response {
+	account := requestctx.MustAccount(ctx)
+	role, _ := requestctx.AccountRole(ctx)
+
 	limit, offset := pagination.ParseParams(ctx, activityPageSize)
-	rows, total, err := ctrl.activity.List(ctx.Context(), account.ID, role, limit, offset)
-	if errResp := mapActivityError(ctx, err); errResp != nil {
-		return errResp
+
+	rows, total, err := c.activity.List(ctx.Context(), account.ID, role, limit, offset)
+	if err != nil {
+		return mapError(ctx, err, "internal_error")
 	}
-	return ctx.Response().Success().Json(pagination.Response(activityresource.AccountActivitiesFrom(rows), total, limit, offset))
+
+	return ctx.Response().Success().Json(pagination.Response(resources.AccountActivitiesFrom(rows), total, limit, offset))
 }
 
 // Show godoc
-// @Summary      One account activity row
-// @Description  GET /v1/accounts/{accountId}/activity/{id} resolves the row before activity.read. Another account, a platform row, or an unknown id is 404, including for a user. Owner, admin, and auditor may read a row that is there. A user may not, and that refusal is 403 with the same message the list route returns. The body is one element of the list. Metadata never includes a secret value.
-// @Tags         Account Activity
-// @Security     BearerAuth
-// @Produce      json
-// @Param        accountId  path  string  true  "Account UUID"
-// @Param        id         path  string  true  "Activity UUID"
-// @Success      200  {object}  activityresource.AccountActivity
-// @Failure      401  {object}  responses.ErrorBody
-// @Failure      403  {object}  responses.ErrorBody
-// @Failure      404  {object}  responses.ErrorBody
-// @Router       /accounts/{accountId}/activity/{id} [get]
-func (ctrl *ActivityController) Show(ctx http.Context) http.Response {
-	account, role, errResp := accountCaller(ctx)
-	if errResp != nil {
-		return errResp
+//
+//	@Summary		One account activity row
+//	@Description	GET /v1/accounts/{accountId}/activity/{id} resolves the row before activity.read. Another account, a platform row, or an unknown id is 404, including for a user. Owner, admin, and auditor may read a row that is there. A user may not, and that refusal is 403 with the same message the list route returns. The body is one element of the list. Metadata never includes a secret value.
+//	@Tags			Account Activity
+//	@Security		BearerAuth
+//	@Produce		json
+//	@Param			accountId	path		string	true	"Account UUID"
+//	@Param			id			path		string	true	"Activity UUID"
+//	@Success		200			{object}	resources.AccountActivity
+//	@Failure		401			{object}	responses.ErrorBody
+//	@Failure		403			{object}	responses.ErrorBody
+//	@Failure		404			{object}	responses.ErrorBody
+//	@Router			/accounts/{accountId}/activity/{id} [get]
+func (c *ActivityController) Show(ctx http.Context) http.Response {
+	account := requestctx.MustAccount(ctx)
+	role, _ := requestctx.AccountRole(ctx)
+
+	// An id that is not a UUID is the nil id, which no row has: the service
+	// answers it as the unknown row it is, before the permission check.
+	activityID, _ := requests.RouteUUID(ctx, "id")
+
+	row, err := c.activity.Get(ctx.Context(), account.ID, role, activityID)
+	if err != nil {
+		return mapError(ctx, err, "internal_error")
 	}
-	activityID := uuid.Nil
-	if ctx.Request() != nil {
-		parsed, err := uuid.Parse(strings.TrimSpace(ctx.Request().Route("id")))
-		if err == nil {
-			activityID = parsed
-		}
-	}
-	row, err := ctrl.activity.Get(ctx.Context(), account.ID, role, activityID)
-	if errResp := mapActivityError(ctx, err); errResp != nil {
-		return errResp
-	}
-	return ctx.Response().Success().Json(activityresource.AccountActivityFrom(row))
+
+	return ctx.Response().Success().Json(resources.AccountActivityFrom(row))
 }
 
 // Platform godoc
-// @Summary      Platform activity
-// @Description  Newest first. Only a platform admin may read. Rows have a null account id and never appear on an account activity list. Metadata never includes a secret.
-// @Tags         Platform Activity
-// @Security     BearerAuth
-// @Produce      json
-// @Param        limit   query  int  false  "Page size"
-// @Param        offset  query  int  false  "Rows to skip"
-// @Success      200  {object}  map[string]any
-// @Failure      401  {object}  responses.ErrorBody
-// @Failure      403  {object}  responses.ErrorBody
-// @Router       /platform/activity [get]
-func (ctrl *ActivityController) Platform(ctx http.Context) http.Response {
-	userID := middleware.SessionUserID(ctx)
-	if userID == uuid.Nil {
-		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
-	}
+//
+//	@Summary		Platform activity
+//	@Description	Newest first. Only a platform admin may read. Rows have a null account id and never appear on an account activity list. Metadata never includes a secret.
+//	@Tags			Platform Activity
+//	@Security		BearerAuth
+//	@Produce		json
+//	@Param			limit	query		int	false	"Page size"
+//	@Param			offset	query		int	false	"Rows to skip"
+//	@Success		200		{object}	map[string]any
+//	@Failure		401		{object}	responses.ErrorBody
+//	@Failure		403		{object}	responses.ErrorBody
+//	@Router			/platform/activity [get]
+func (c *ActivityController) Platform(ctx http.Context) http.Response {
+	userID := requestctx.MustUserID(ctx)
+
 	limit, offset := pagination.ParseParams(ctx, activityPageSize)
-	rows, total, err := ctrl.activity.ListPlatform(ctx.Context(), userID, limit, offset)
-	if errResp := mapActivityError(ctx, err); errResp != nil {
-		return errResp
-	}
-	return ctx.Response().Success().Json(pagination.Response(activityresource.AccountActivitiesFrom(rows), total, limit, offset))
-}
 
-func accountCaller(ctx http.Context) (*models.Account, string, http.Response) {
-	account, _ := requestctx.Account(ctx)
-	if account == nil {
-		return nil, "", responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
+	rows, total, err := c.activity.ListPlatform(ctx.Context(), userID, limit, offset)
+	if err != nil {
+		return mapError(ctx, err, "internal_error")
 	}
-	role, _ := requestctx.AccountRole(ctx)
-	return account, role, nil
-}
 
-func mapActivityError(ctx http.Context, err error) http.Response {
-	if err == nil {
-		return nil
-	}
-	if errors.Is(err, activitysvc.ErrNotFound) {
-		return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, activitysvc.ErrNotFound.Error())
-	}
-	if errors.Is(err, activitysvc.ErrReadForbidden) {
-		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, activitysvc.ErrReadForbidden.Error())
-	}
-	if errors.Is(err, activitysvc.ErrPlatformForbidden) {
-		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, activitysvc.ErrPlatformForbidden.Error())
-	}
-	return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
+	return ctx.Response().Success().Json(pagination.Response(resources.AccountActivitiesFrom(rows), total, limit, offset))
 }
