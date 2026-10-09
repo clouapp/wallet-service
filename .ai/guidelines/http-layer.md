@@ -15,7 +15,7 @@ errors and renders a resource. Everything it needs lives in a few packages under
 | `requests` | running a form request (`requests.Validate`), a UUID path parameter (`RouteUUID`) |
 | `responses` | every failure body: `Fail`, `FailWith`, `FailMessage`, `Error`, `InternalError`, `ProviderError`, `ValidationFailed`, `FieldsFailed`, `FieldError` (see `http-error-contract.md`) |
 | `resources` | the wire shape. **JSON tags exist only here** — a model carries none, not even `json:"-"` (`TestModels_Carry_NoWireTags`) |
-| `pagination` | the list window (`pagination.ParseParams`, `ParseStrict`); the list envelope is `resources.Page` |
+| `pagination` | the list window (`pagination.ParseParams`, `ParseStrict`) and the list envelope (`pagination.Response`) |
 | `middleware` | who is asking and what they may reach: auth, account/wallet scope, permission guards (`Can`, `WalletCan`, `May*`), `Throttle`, `PlatformAdmin`. `middleware/requestctx` reads what they stored |
 
 ## Surfaces
@@ -158,8 +158,9 @@ Rules:
 
 - Success goes through a resource in `app/http/resources/...`, never a model,
   never an ad-hoc `map`, never a view struct embedding a model.
-- Paginated lists keep the envelope `{data,total,limit,offset}` through
-  `resources.Page` and `pagination.ParseParams`.
+- Paginated lists keep the envelope `{"data","limit","offset","total"}` (keys in
+  that order: it is a map) through `pagination.ParseParams` and
+  `pagination.Response`; the rows inside `data` are resources.
 - **A success body is written with the Goravel idiom** (permanent rule, D1/D14):
   `ctx.Response().Success().Json(body)` for 200,
   `ctx.Response().Status(http.StatusCreated).Json(body)` (or `Json(status, body)`)
