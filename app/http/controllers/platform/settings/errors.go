@@ -17,12 +17,15 @@ import (
 const mailTestFailedMessage = "the test message was not sent"
 
 // mapError turns a body or settings service failure into the answer the
-// platform API has always given. A body over the limit is 413, any other
-// unreadable body is 400. A failed mail test is a 502 that carries no provider
+// platform API has always given. A body its form request refused is that
+// answer. A body over the limit is 413, any other unreadable body is 400. A failed mail test is a 502 that carries no provider
 // text. Anything unrecognised is the generic 500; action labels it in the log.
 func mapError(ctx http.Context, err error, action string) http.Response {
+	var refusal *requests.Refusal
 	var invalid *settingssvc.ValidationError
 	switch {
+	case errors.As(err, &refusal):
+		return refusal.Response
 	case errors.Is(err, requests.ErrAccountSettingsBodyTooLarge):
 		return responses.Fail(ctx, http.StatusRequestEntityTooLarge, responses.CodeRequestTooLarge, "request body is too large")
 	case errors.Is(err, requests.ErrAccountSettingsBodyInvalid):

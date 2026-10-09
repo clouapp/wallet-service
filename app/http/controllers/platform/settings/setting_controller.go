@@ -254,16 +254,8 @@ func (c *SettingController) Reset(ctx http.Context) http.Response {
 func (c *SettingController) Test(ctx http.Context) http.Response {
 	actorID := requestctx.MustUserID(ctx)
 
-	// A non-admin answers 403 before the body is read.
-	if err := c.settings.AuthorizePlatformMailTest(ctx.Context(), actorID); err != nil {
-		return mapError(ctx, err, "send platform mail test")
-	}
-	var req settingsrequests.MailTestRequest
-	if response := requests.Validate(ctx, &req); response != nil {
-		return response
-	}
-
-	if err := c.settings.SendPlatformMailTest(ctx.Context(), req.To); err != nil {
+	// A non-admin answers 403 before the service reads the body.
+	if err := c.settings.SendPlatformMailTest(ctx.Context(), actorID, settingsrequests.NewMailTestRecipient(ctx)); err != nil {
 		return mapError(ctx, err, "send platform mail test")
 	}
 

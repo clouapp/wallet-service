@@ -14,11 +14,44 @@ type PlatformTestMailer interface {
 	Send(ctx context.Context, to string) error
 }
 
-// AuthorizePlatformMailTest is the gate for POST /v1/platform/settings/mail/test.
-// S1.4.6 names settings.update and mail.update. Neither is in the platform
-// permission catalog, so a platform_admins row is the gate. The check writes
-// no activity and does not send mail.
-func (s *Service) AuthorizePlatformMailTest(ctx context.Context, actorID uuid.UUID) error {
+// MailTestRecipient is the address the platform mail test goes to. The test
+// reads it only once the caller is authorized, so a refused caller's body is
+// never read. Read's error is returned as it is.
+type MailTestRecipient interface {
+	Read() (string, error)
+}
+
+// SendPlatformMailTest is POST /v1/platform/settings/mail/test: it checks
+// the caller, then reads the recipient, then delivers the test. S1.4.6 names
+// settings.update and mail.update. Neither is in the platform permission
+// catalog, so a platform_admins row is the gate. The controller does not
+// call the mailer. A send failure is a static error: the transport error can
+// name the SMTP host and password, so it is not returned. Nothing is written
+// to the activity log.
+func (s *Service) SendPlatformMailTest(ctx context.Context, actorID uuid.UUID, recipient MailTestRecipient) error {
+	if err := s.authorizePlatformMailTest(ctx, actorID); err != nil {
+		return err
+	}
+	if recipient == nil {
+		return fmt.Errorf("platform settings: recipient is required")
+	}
+	to, err := recipient.Read()
+	if err != nil {
+		return err
+	}
+	if s.testMail == nil {
+		return fmt.Errorf("%w: test mail sender is required", ErrPlatformTestMail)
+	}
+	if to == "" {
+		return fmt.Errorf("platform settings: recipient is required")
+	}
+	if err := s.testMail.Send(ctx, to); err != nil {
+		return ErrPlatformTestMail
+	}
+	return nil
+}
+
+func (s *Service) authorizePlatformMailTest(ctx context.Context, actorID uuid.UUID) error {
 	if ctx == nil {
 		return fmt.Errorf("platform settings: context is required")
 	}
@@ -37,25 +70,6 @@ func (s *Service) AuthorizePlatformMailTest(ctx context.Context, actorID uuid.UU
 	}
 	if !admin {
 		return ErrPlatformForbidden
-	}
-	return nil
-}
-
-// SendPlatformMailTest delivers the platform mail test. The controller does
-// not call the mailer. A send failure is a static error: the transport
-// error can name the SMTP host and password, so it is not returned.
-func (s *Service) SendPlatformMailTest(ctx context.Context, to string) error {
-	if ctx == nil {
-		return fmt.Errorf("platform settings: context is required")
-	}
-	if s == nil || s.testMail == nil {
-		return fmt.Errorf("%w: test mail sender is required", ErrPlatformTestMail)
-	}
-	if to == "" {
-		return fmt.Errorf("platform settings: recipient is required")
-	}
-	if err := s.testMail.Send(ctx, to); err != nil {
-		return ErrPlatformTestMail
 	}
 	return nil
 }
