@@ -2,7 +2,9 @@ package repositories_test
 
 import (
 	"context"
+	"sort"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
@@ -252,4 +254,57 @@ func (s *AccountUserRepositoryTestSuite) TestSoft_Delete_ByAccountAndUser() {
 	found, err := s.repo.FindByAccountAndUser(context.Background(), accID, userID)
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(found)
+}
+
+// insertMembershipAt stores a membership whose created_at is at, in the order the
+// test inserts them, so neither the heap nor an index orders the rows by time.
+func (s *AccountUserRepositoryTestSuite) insertMembershipAt(accountID, userID uuid.UUID, at time.Time) uuid.UUID {
+	membership := &models.AccountUser{ID: uuid.New(), AccountID: accountID, UserID: userID, Role: "admin", Status: models.StatusActive}
+	s.Require().NoError(s.repo.Create(context.Background(), membership))
+	_, err := facades.Orm().Query().Exec(`UPDATE account_users SET created_at = ? WHERE id = ?`, at, membership.ID)
+	s.Require().NoError(err)
+	return membership.ID
+}
+
+// The pages are in the order the memberships were created, so offset and limit
+// walk every member exactly once.
+func (s *AccountUserRepositoryTestSuite) TestPaginate_Pages_FollowTheMembershipsCreationOrder() {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	ids := []uuid.UUID{s.createUser(), s.createUser(), s.createUser()}
+	sort.Slice(ids, func(i, j int) bool { return ids[i].String() > ids[j].String() })
+	oldest, middle, newest := ids[0], ids[1], ids[2]
+
+	accountID := s.createAccount()
+	created := map[uuid.UUID]uuid.UUID{}
+	created[middle] = s.insertMembershipAt(accountID, middle, base.Add(time.Hour))
+	created[newest] = s.insertMembershipAt(accountID, newest, base.Add(2*time.Hour))
+	created[oldest] = s.insertMembershipAt(accountID, oldest, base)
+
+	first, total, err := s.repo.PaginateByAccountID(context.Background(), accountID, 2, 0)
+	s.Require().NoError(err)
+	second, _, err := s.repo.PaginateByAccountID(context.Background(), accountID, 2, 2)
+	s.Require().NoError(err)
+	s.EqualValues(3, total)
+	s.Equal([]uuid.UUID{created[oldest], created[middle], created[newest]}, membershipIDs(append(first, second...)))
+
+	userID := s.createUser()
+	accounts := []uuid.UUID{s.createAccount(), s.createAccount(), s.createAccount()}
+	byUser := []uuid.UUID{
+		s.insertMembershipAt(accounts[0], userID, base.Add(2*time.Hour)),
+		s.insertMembershipAt(accounts[1], userID, base),
+		s.insertMembershipAt(accounts[2], userID, base.Add(time.Hour)),
+	}
+	page, _, err := s.repo.PaginateByUserID(context.Background(), userID, 2, 0)
+	s.Require().NoError(err)
+	rest, _, err := s.repo.PaginateByUserID(context.Background(), userID, 2, 2)
+	s.Require().NoError(err)
+	s.Equal([]uuid.UUID{byUser[1], byUser[2], byUser[0]}, membershipIDs(append(page, rest...)))
+}
+
+func membershipIDs(memberships []models.AccountUser) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(memberships))
+	for _, membership := range memberships {
+		ids = append(ids, membership.ID)
+	}
+	return ids
 }

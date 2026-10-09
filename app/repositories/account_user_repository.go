@@ -119,12 +119,12 @@ func (r *AccountUserRepository) RolesForUserAccounts(ctx context.Context, userID
 	return roles, nil
 }
 
-// PaginateByUserID pages the user's active memberships.
+// PaginateByUserID pages the user's active memberships, oldest first.
 func (r *AccountUserRepository) PaginateByUserID(ctx context.Context, userID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error) {
 	return r.paginate(ctx, "user_id = ? AND deleted_at IS NULL AND status = '"+models.StatusActive+"'", userID, limit, offset)
 }
 
-// PaginateByAccountID pages an account's active memberships.
+// PaginateByAccountID pages an account's active memberships, oldest first.
 func (r *AccountUserRepository) PaginateByAccountID(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error) {
 	return r.paginate(ctx, "account_id = ? AND deleted_at IS NULL", accountID, limit, offset)
 }
@@ -172,7 +172,8 @@ func (r *AccountUserRepository) paginate(ctx context.Context, where string, id u
 		return nil, 0, fmt.Errorf("count account users: %w", err)
 	}
 	var members []models.AccountUser
-	if err := r.Query(ctx).Where(where, id).Offset(offset).Limit(limit).Find(&members); err != nil {
+	// Creation order, then id: a stable order, so offset and limit page every row once.
+	if err := r.Query(ctx).Where(where, id).Order("created_at").Order("id").Offset(offset).Limit(limit).Find(&members); err != nil {
 		return nil, 0, fmt.Errorf("list account users: %w", err)
 	}
 	return members, total, nil
