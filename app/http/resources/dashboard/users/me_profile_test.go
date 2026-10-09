@@ -1,15 +1,15 @@
-package users
+package users_test
 
 import (
 	"bytes"
 	"encoding/json"
 	"testing"
 
-	userresource "github.com/macrowallets/waas/app/http/resources/dashboard/users"
+	"github.com/macrowallets/waas/app/http/resources/dashboard/users"
 	"github.com/macrowallets/waas/app/models"
 )
 
-func TestMeProfileKeepsTheUserWire(t *testing.T) {
+func TestMe_Profile_KeepsTheUserWire(t *testing.T) {
 	t.Parallel()
 
 	user := models.User{
@@ -21,7 +21,7 @@ func TestMeProfileKeepsTheUserWire(t *testing.T) {
 	}
 	features := []string{"sweep", "webhooks"}
 
-	got, err := json.Marshal(MeProfile{User: *userresource.UserFrom(&user), Features: features})
+	got, err := json.Marshal(users.NewMeProfile(&user, features))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,7 +15,6 @@ import (
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	featuressvc "github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/sessions"
 	"github.com/macrowallets/waas/app/services/settings"
 	usersvc "github.com/macrowallets/waas/app/services/users"
@@ -27,7 +26,6 @@ type UsersController struct {
 	refresh      *sessions.RefreshTokens
 	secondFactor *authsvc.SecondFactorVerifier
 	revoker      *authsvc.SessionRevoker
-	features     *featuressvc.Service
 }
 
 // UsersControllerDeps is everything the dashboard users controller needs.
@@ -38,7 +36,6 @@ type UsersControllerDeps struct {
 	Refresh      *sessions.RefreshTokens
 	SecondFactor *authsvc.SecondFactorVerifier
 	Revoker      *authsvc.SessionRevoker
-	Features     *featuressvc.Service
 }
 
 // NewUsersController wires the dashboard user handlers from UsersControllerDeps.
@@ -59,82 +56,17 @@ func NewUsersController(deps UsersControllerDeps) *UsersController {
 	if deps.Revoker == nil {
 		panic("dashboard users controller: session revoker is required")
 	}
-	if deps.Features == nil {
-		panic("dashboard users controller: feature flags are required")
-	}
 	return &UsersController{
 		users:        deps.Users,
 		passwords:    deps.Passwords,
 		refresh:      deps.Refresh,
 		secondFactor: deps.SecondFactor,
 		revoker:      deps.Revoker,
-		features:     deps.Features,
 	}
 }
 
 func (ctrl *UsersController) sessions() controllers.SessionIssuer {
 	return controllers.SessionIssuer{Passwords: ctrl.passwords, Refresh: ctrl.refresh, Revoker: ctrl.revoker}
-}
-
-// GetMe godoc
-// @Summary      Get current user profile
-// @Description  Returns the authenticated user's profile
-// @Tags         User
-// @Security     BearerAuth
-// @Produce      json
-// @Success      200  {object}  MeProfile
-// @Failure      401  {object}  responses.ErrorBody
-// @Router       /users/me [get]
-func (ctrl *UsersController) GetMe(ctx http.Context) http.Response {
-	user := requestctx.MustUser(ctx)
-	if user == nil {
-		return responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
-	}
-	names, err := ctrl.features.ActiveGlobal(ctx.Context())
-	if err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("user: active features: %v", err)
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
-	}
-	return ctx.Response().Success().Json(MeProfile{User: *userresource.UserFrom(user), Features: names})
-}
-
-// MeProfile is GET /v1/users/me. User fields stay as they are. Features is
-// the globally active flag keys in catalog order. A missing global row uses
-// the catalog default. Account rows are not included. Login and PATCH
-// /v1/users/me do not carry this field.
-type MeProfile struct {
-	userresource.User
-	Features []string `json:"features"`
-}
-
-// UpdateMe godoc
-// @Summary      Update current user profile
-// @Description  Updates the authenticated user's full name
-// @Tags         User
-// @Security     BearerAuth
-// @Accept       json
-// @Produce      json
-// @Param        request  body      UpdateMeSwagger  true  "Update payload"
-// @Success      200      {object}  userresource.User
-// @Failure      400      {object}  responses.ErrorBody
-// @Failure      401      {object}  responses.ErrorBody
-// @Router       /users/me [patch]
-func (ctrl *UsersController) UpdateMe(ctx http.Context) http.Response {
-	user := requestctx.MustUser(ctx)
-
-	var req usersrequests.UpdateMeRequest
-	if errResp := requests.Validate(ctx, &req); errResp != nil {
-		return errResp
-	}
-
-	if req.FullName != "" {
-		if err := ctrl.users.UpdateFullName(ctx.Context(), user.ID, req.FullName); err != nil {
-			return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to update profile")
-		}
-		user.FullName = req.FullName
-	}
-
-	return ctx.Response().Success().Json(userresource.UserFrom(user))
 }
 
 // ChangePassword godoc
@@ -343,10 +275,6 @@ func (ctrl *UsersController) requireLiveSecondFactor(ctx http.Context, user *mod
 }
 
 // ---- Swagger-only types ----
-
-type UpdateMeSwagger struct {
-	FullName string `json:"full_name" example:"Alice Smith"`
-}
 
 type ChangePasswordSwagger struct {
 	CurrentPassword string `json:"current_password"`

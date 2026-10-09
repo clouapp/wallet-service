@@ -57,3 +57,17 @@ func preferencesFrom(prefs *models.UserPreferences) *Preferences {
 		DisplayInFiat:     prefs.DisplayInFiat,
 	}
 }
+
+// MeProfile is GET /v1/users/me. User fields stay as they are. Features is
+// the globally active flag keys in catalog order. A missing global row uses
+// the catalog default. Account rows are not included. Login and PATCH
+// /v1/users/me do not carry this field.
+type MeProfile struct {
+	User
+	Features []string `json:"features"`
+}
+
+// NewMeProfile shapes the signed-in user's profile with the active features.
+func NewMeProfile(user *models.User, features []string) MeProfile {
+	return MeProfile{User: *UserFrom(user), Features: features}
+}

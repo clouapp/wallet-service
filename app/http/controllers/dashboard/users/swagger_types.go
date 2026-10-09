@@ -7,6 +7,10 @@ import (
 // The types below document request and response bodies in the swagger
 // annotations of this package. Handlers do not use them.
 
+type UpdateMeSwagger struct {
+	FullName string `json:"full_name" example:"Alice Smith"`
+}
+
 type UpdateDefaultAccountSwagger struct {
 	AccountID string `json:"account_id" example:"550e8400-e29b-41d4-a716-446655440000"`
 }

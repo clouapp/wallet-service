@@ -16,7 +16,6 @@ func usersControllerDeps() UsersControllerDeps {
 		Refresh:      &sessions.RefreshTokens{},
 		SecondFactor: &authsvc.SecondFactorVerifier{},
 		Revoker:      &authsvc.SessionRevoker{},
-		Features:     &featuressvc.Service{},
 	}
 }
 
@@ -40,9 +39,6 @@ func TestNew_Users_ControllerKeepsItsDependencies(t *testing.T) {
 	}
 	if ctrl.revoker != deps.Revoker {
 		t.Fatal("users controller did not keep the session revoker")
-	}
-	if ctrl.features != deps.Features {
-		t.Fatal("users controller did not keep feature flags")
 	}
 }
 
@@ -77,11 +73,6 @@ func TestNew_Users_ControllerRequiresEveryDependency(t *testing.T) {
 			clear: func(deps *UsersControllerDeps) { deps.Revoker = nil },
 			panic: "dashboard users controller: session revoker is required",
 		},
-		{
-			name:  "feature flags",
-			clear: func(deps *UsersControllerDeps) { deps.Features = nil },
-			panic: "dashboard users controller: feature flags are required",
-		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -107,4 +98,27 @@ func TestNew_Account_ControllerRequiresTheAccountService(t *testing.T) {
 	}()
 	NewAccountController(nil)
 	t.Fatal("expected a panic")
+}
+
+func TestNew_Profile_ControllerRequiresBothServices(t *testing.T) {
+	cases := []struct {
+		name     string
+		users    *usersvc.Service
+		features *featuressvc.Service
+		panic    string
+	}{
+		{name: "users service", features: &featuressvc.Service{}, panic: "dashboard profile controller: users service is required"},
+		{name: "feature flags", users: &usersvc.Service{}, panic: "dashboard profile controller: feature flags are required"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if got := recover(); got != tc.panic {
+					t.Fatalf("panic = %v", got)
+				}
+			}()
+			NewProfileController(tc.users, tc.features)
+			t.Fatal("expected a panic")
+		})
+	}
 }
