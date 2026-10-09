@@ -12,7 +12,7 @@ errors and renders a resource. Everything it needs lives in a few packages under
 
 | Package | Use it for |
 |---|---|
-| `requests` | running a form request (`requests.Validate`), a UUID path parameter (`RouteUUID`) |
+| `requests` | running a form request (`requests.Validate`), a path parameter (`RouteUUID`, `RouteParam`, `RouteString`) |
 | `responses` | every failure body: `Fail`, `FailWith`, `FailMessage`, `Error`, `InternalError`, `ProviderError`, `ValidationFailed`, `FieldsFailed`, `FieldError` (see `http-error-contract.md`) |
 | `resources` | the wire shape. **JSON tags exist only here** — a model carries none, not even `json:"-"` (`TestModels_Carry_NoWireTags`) |
 | `pagination` | the list window (`pagination.ParseParams`, `ParseStrict`) and the list envelope (`pagination.Response`) |
@@ -114,14 +114,16 @@ Rules:
   `TestHandlers_Read_TheirInputThroughAFormRequest`. The one exception is
   `requests.Bind`, for the webhook update that must keep a 400 on an empty body.
 - **A path or query parameter is read in the handler**: `requests.RouteUUID(ctx,
-  "walletId")` for a UUID, `ctx.Request().Route("id")` / `Query("limit")` for the
-  rest, the documented Goravel way. A form request exists only where there are
+  "walletId")` for a UUID, `requests.RouteParam(ctx, "chainId")` for a required
+  id read as it is (only an empty value is an error; `RouteString` also trims),
+  `ctx.Request().Route("id")` / `Query("limit")` for the rest, the documented
+  Goravel way. A form request exists only where there are
   rules to run: no request that copies a parameter into a struct.
 - Form requests mirror the controllers: `app/http/requests/<surface>/<resource>/<action>_request.go`,
   package `<resource>`, imported as `<resource>requests`
   (`requests/platform/chains/update_request.go`). A request both surfaces use sits in
   `app/http/requests/<resource>/` (`requests/withdrawals/store_request.go`); the shared pieces
-  (`Validate`, `RouteUUID`, `RouteString`, the document parsers) stay in
+  (`Validate`, `RouteUUID`, `RouteParam`, `RouteString`, the document parsers) stay in
   `app/http/requests`. A form request implements `Authorize`, `Rules` and,
   when the messages matter, `Messages`/`Filters`; permission is route middleware,
   so `Authorize` allows (`requests.Open` embeds that).

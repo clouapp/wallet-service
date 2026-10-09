@@ -4,6 +4,7 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
+	"github.com/macrowallets/waas/app/http/requests"
 	chainsrequests "github.com/macrowallets/waas/app/http/requests/platform/chains"
 	"github.com/macrowallets/waas/app/http/responses"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
@@ -49,8 +50,8 @@ func NewChainController(thresholds *chainsvc.Thresholds, rpc *chainsvc.RPC) *Cha
 func (c *ChainController) Update(ctx http.Context) http.Response {
 	actorID := requestctx.MustUserID(ctx)
 
-	chainID := ctx.Request().Route("chainId")
-	if chainID == "" {
+	chainID, err := requests.RouteParam(ctx, "chainId")
+	if err != nil {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}
 	var req chainsrequests.UpdateRequest
@@ -84,8 +85,8 @@ func (c *ChainController) Update(ctx http.Context) http.Response {
 func (c *ChainController) UpdateRPC(ctx http.Context) http.Response {
 	actorID := requestctx.MustUserID(ctx)
 
-	chainID := ctx.Request().Route("chainId")
-	if chainID == "" {
+	chainID, err := requests.RouteParam(ctx, "chainId")
+	if err != nil {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}
 	var req chainsrequests.UpdateRPCRequest
