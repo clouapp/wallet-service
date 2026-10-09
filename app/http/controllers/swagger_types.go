@@ -2,6 +2,7 @@ package controllers
 
 import (
 	addressresource "github.com/macrowallets/waas/app/http/resources/addresses"
+	walletsresources "github.com/macrowallets/waas/app/http/resources/wallets"
 	webhookresource "github.com/macrowallets/waas/app/http/resources/webhooks"
 )
 
@@ -19,7 +20,7 @@ type ChainListResponse struct {
 }
 
 type WalletListResponse struct {
-	Data []WalletListItem `json:"data"`
+	Data []walletsresources.ListItem `json:"data"`
 }
 
 type AddressListResponse struct {

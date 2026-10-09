@@ -18,6 +18,9 @@ import (
 	dashsweep "github.com/macrowallets/waas/app/http/controllers/dashboard/sweep"
 	dashusers "github.com/macrowallets/waas/app/http/controllers/dashboard/users"
 	dashwallets "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets"
+	dashwalletbalances "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets/balances"
+	dashwalletsettings "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets/settings"
+	dashwallettransactions "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets/transactions"
 	dashwithdrawals "github.com/macrowallets/waas/app/http/controllers/dashboard/withdrawals"
 	platformaccounts "github.com/macrowallets/waas/app/http/controllers/platform/accounts"
 	platformchains "github.com/macrowallets/waas/app/http/controllers/platform/chains"
@@ -42,6 +45,8 @@ import (
 	walletsvc "github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/app/services/walletops"
 	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/app/services/walletsettings"
+	"github.com/macrowallets/waas/app/services/walletview"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalrecords"
@@ -266,15 +271,15 @@ func RegisterAdminRoutes() {
 	})
 
 	facades.Route().Prefix("/v1/wallets").Middleware(middleware.SessionAuth(), accountHeader, totpEnrollment, noCache).Group(func(router route.Router) {
-		router.Get("", walletCtrl.ListWallets)
-		router.Middleware(middleware.RequireFundAction(middleware.FundCreateWallet)).Post("", walletCtrl.CreateWalletAdmin)
-		router.Get("/{walletId}", walletCtrl.GetWallet)
+		router.Get("", walletCtrl.Index)
+		router.Middleware(middleware.RequireFundAction(middleware.FundCreateWallet)).Post("", walletCtrl.Store)
+		router.Get("/{walletId}", walletCtrl.Show)
 		router.Prefix("/{walletId}").Middleware(middleware.WalletContext(middleware.WalletContextDeps{
 			Wallets:  container.MustMake[*walletrecords.Wallets](),
 			Accounts: accounts,
 			Members:  container.MustMake[*walletrecords.Members](),
 		})).Group(func(r route.Router) {
-			r.Post("/activate", walletCtrl.ActivateWallet)
+			r.Post("/activate", walletCtrl.Activate)
 
 			r.Get("/addresses", addressCtrl.Index)
 			r.Middleware(middleware.Can(accounts, middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.Store)
@@ -293,15 +298,15 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships(), walletWebhooks)).Post("/webhooks/{webhookId}/test", walletWebhooksCtrl.TestWalletWebhook)
 			r.Middleware(middleware.WalletManageWebhooks(walletPolicyMemberships(), walletWebhooks), requireTOTP).Delete("/webhooks/{webhookId}", walletWebhooksCtrl.DeleteWalletWebhook)
 
-			r.Get("/settings", walletSettingsCtrl.GetWalletSettings)
-			r.Patch("/settings", walletSettingsCtrl.UpdateWalletSettings)
-			r.Middleware(middleware.WalletFreeze(walletPolicyMemberships())).Post("/freeze", walletSettingsCtrl.FreezeWallet)
-			r.Middleware(middleware.WalletArchive(walletPolicyMemberships())).Post("/archive", walletSettingsCtrl.ArchiveWallet)
+			r.Get("/settings", walletSettingsCtrl.Show)
+			r.Patch("/settings", walletSettingsCtrl.Update)
+			r.Middleware(middleware.WalletFreeze(walletPolicyMemberships())).Post("/freeze", walletSettingsCtrl.Freeze)
+			r.Middleware(middleware.WalletArchive(walletPolicyMemberships())).Post("/archive", walletSettingsCtrl.Archive)
 
-			r.Get("/balances", balancesCtrl.ListWalletBalances)
+			r.Get("/balances", balancesCtrl.Index)
 
-			r.Get("/transactions", walletTxCtrl.ListWalletTransactions)
-			r.Get("/transactions/{txId}", walletTxCtrl.GetWalletTransaction)
+			r.Get("/transactions", walletTxCtrl.Index)
+			r.Get("/transactions/{txId}", walletTxCtrl.Show)
 
 			r.Get("/withdrawals", withdrawalCtrl.Index)
 			r.Middleware(middleware.RequireFundAction(middleware.FundWithdraw)).Post("/withdrawals", withdrawalCtrl.Store)
@@ -354,20 +359,20 @@ func newDashboardUsersController() *dashusers.UsersController {
 	})
 }
 
-// boundWalletService hands a controller the wallet service WalletServiceProvider
-// binds.
-func boundWalletService() func() *walletsvc.Service {
-	service := container.MustMake[*walletsvc.Service]()
-	return func() *walletsvc.Service { return service }
+func newDashboardWalletsController() *dashwallets.WalletController {
+	return dashwallets.NewWalletController(newWalletView(), newWalletOps())
 }
 
-func newDashboardWalletsController() *dashwallets.WalletsController {
-	return dashwallets.NewWalletsController(dashwallets.WalletsControllerDeps{
-		Wallets:       container.MustMake[*walletrecords.Wallets](),
-		Members:       container.MustMake[*walletrecords.Members](),
-		Balances:      container.MustMake[*walletrecords.Balances](),
-		Chains:        container.MustMake[*chainsvc.Service](),
-		WalletService: boundWalletService(),
+// newWalletView composes the wallet reads both surfaces serve. The encryption
+// key is read on each use, so it may be bound after the routes are built.
+func newWalletView() *walletview.Service {
+	return walletview.NewService(walletview.Deps{
+		Wallets:      container.MustMake[*walletrecords.Wallets](),
+		Members:      container.MustMake[*walletrecords.Members](),
+		Balances:     container.MustMake[*walletrecords.Balances](),
+		Transactions: container.MustMake[*walletrecords.Transactions](),
+		Chains:       container.MustMake[*chainsvc.Service](),
+		Cipher:       func() settingssvc.Cipher { return facades.Crypt() },
 	})
 }
 
@@ -402,26 +407,23 @@ func newDashboardWalletWebhooksController() *dashwallets.WebhooksController {
 	})
 }
 
-func newDashboardWalletSettingsController() *dashwallets.SettingsController {
-	return dashwallets.NewSettingsController(dashwallets.WalletSettingsControllerDeps{
-		Wallets:     container.MustMake[*walletrecords.Wallets](),
-		Memberships: walletPolicyMemberships(),
-		Chains:      container.MustMake[*chainsvc.Service](),
-	})
-}
-
-func newDashboardBalancesController() *dashwallets.BalancesController {
-	return dashwallets.NewBalancesController(dashwallets.BalancesControllerDeps{
-		Balances: container.MustMake[*walletrecords.Balances](),
-		Tokens:   container.MustMake[*chainsvc.Service](),
-	})
-}
-
-func newDashboardWalletTransactionsController() *dashwallets.TransactionsController {
-	return dashwallets.NewTransactionsController(
-		container.MustMake[*walletrecords.Transactions](),
-		container.MustMake[*chainsvc.Service](),
+func newDashboardWalletSettingsController() *dashwalletsettings.SettingsController {
+	return dashwalletsettings.NewSettingsController(
+		walletsettings.NewService(walletsettings.Deps{
+			Wallets:  container.MustMake[*walletrecords.Wallets](),
+			Chains:   container.MustMake[*chainsvc.Service](),
+			Networks: newWalletView(),
+		}),
+		walletPolicyMemberships(),
 	)
+}
+
+func newDashboardBalancesController() *dashwalletbalances.BalanceController {
+	return dashwalletbalances.NewBalanceController(newWalletView())
+}
+
+func newDashboardWalletTransactionsController() *dashwallettransactions.TransactionController {
+	return dashwallettransactions.NewTransactionController(newWalletView())
 }
 
 func newDashboardChainsController() *dashchains.ChainController {

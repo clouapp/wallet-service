@@ -1,20 +1,21 @@
-package requests
+package wallets
 
 import (
 	"github.com/goravel/framework/contracts/http"
 )
 
-type CreateWalletRequest struct {
+// StoreRequest is the body of a wallet creation, on either HTTP surface.
+type StoreRequest struct {
 	Chain      string `form:"chain"      json:"chain"`
 	Label      string `form:"label"      json:"label"`
 	Passphrase string `form:"passphrase" json:"passphrase"`
 }
 
-func (r *CreateWalletRequest) Authorize(ctx http.Context) error {
+func (r *StoreRequest) Authorize(ctx http.Context) error {
 	return nil
 }
 
-func (r *CreateWalletRequest) Messages(ctx http.Context) map[string]string {
+func (r *StoreRequest) Messages(ctx http.Context) map[string]string {
 	return map[string]string{
 		"chain.required":      "Blockchain chain is required",
 		"chain.db_exists":     "The specified chain is not supported",
@@ -24,7 +25,7 @@ func (r *CreateWalletRequest) Messages(ctx http.Context) map[string]string {
 	}
 }
 
-func (r *CreateWalletRequest) Rules(ctx http.Context) map[string]string {
+func (r *StoreRequest) Rules(ctx http.Context) map[string]string {
 	return map[string]string{
 		"chain":      "required|db_exists:chains,id",
 		"label":      "required",

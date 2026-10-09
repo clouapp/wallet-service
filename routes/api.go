@@ -56,14 +56,14 @@ func RegisterExternalAPI() {
 		// Wallet routes resolve the wallet (404) before the scope check (403).
 		router.Get("/chains", chainCtrl.Index)
 
-		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWalletsCreate)).Post("/wallets", walletCtrl.CreateWallet)
-		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWalletsRead)).Get("/wallets", walletCtrl.ListWallets)
+		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWalletsCreate)).Post("/wallets", walletCtrl.Store)
+		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWalletsRead)).Get("/wallets", walletCtrl.Index)
 
 		router.Get("/addresses/{address}", addressCtrl.Show)
 		router.Get("/users/{external_id}/addresses", addressCtrl.ByUser)
 
 		router.Prefix("/wallets/{walletId}").Middleware(middleware.APIWalletContext(container.MustMake[*walletrecords.Wallets]())).Group(func(r route.Router) {
-			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWalletsRead)).Get("", walletCtrl.GetWallet)
+			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWalletsRead)).Get("", walletCtrl.Show)
 
 			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermAddressesCreate)).Post("/addresses", addressCtrl.Store)
 			r.Get("/addresses", addressCtrl.Index)
@@ -127,11 +127,6 @@ func newExternalWithdrawalsController() *extwithdrawals.WithdrawalController {
 	)
 }
 
-func newExternalWalletsController() *extwallets.WalletsController {
-	return extwallets.NewWalletsController(extwallets.WalletsControllerDeps{
-		Wallets:       container.MustMake[*walletrecords.Wallets](),
-		Balances:      container.MustMake[*walletrecords.Balances](),
-		Chains:        container.MustMake[*chainsvc.Service](),
-		WalletService: boundWalletService(),
-	})
+func newExternalWalletsController() *extwallets.WalletController {
+	return extwallets.NewWalletController(newWalletView(), newWalletOps())
 }

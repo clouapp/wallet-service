@@ -24,11 +24,14 @@ import (
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/chain"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
+	"github.com/macrowallets/waas/app/services/deposit"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	mpc "github.com/macrowallets/waas/app/services/mpc"
 	settingssvc "github.com/macrowallets/waas/app/services/settings"
 	wallet "github.com/macrowallets/waas/app/services/wallet"
+	"github.com/macrowallets/waas/app/services/walletops"
 	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/app/services/walletview"
 	ctltestutil "github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 	"github.com/macrowallets/waas/tests/mocks"
@@ -116,20 +119,23 @@ var recoveryRoutesOnce sync.Once
 
 func (s *WalletRecoveryMaterialTestSuite) registerCreateRoutes() {
 	recoveryRoutesOnce.Do(func() {
-		service := func() *wallet.Service { return s.walletService }
-		external := extwallets.NewWalletsController(extwallets.WalletsControllerDeps{
-			Wallets:       container.MustMake[*walletrecords.Wallets](),
-			Balances:      container.MustMake[*walletrecords.Balances](),
-			Chains:        container.MustMake[*chainsvc.Service](),
-			WalletService: service,
+		ops := walletops.NewService(walletops.Deps{
+			Wallets:   currentWalletService{suite: s},
+			Addresses: container.MustMake[*walletrecords.Addresses](),
+			Chains:    container.MustMake[*chainsvc.Service](),
+			Cache:     container.MustMake[*deposit.Service](),
+			Registry:  container.MustMake[*chain.Registry](),
 		})
-		dashboard := dashwallets.NewWalletsController(dashwallets.WalletsControllerDeps{
-			Wallets:       container.MustMake[*walletrecords.Wallets](),
-			Members:       container.MustMake[*walletrecords.Members](),
-			Balances:      container.MustMake[*walletrecords.Balances](),
-			Chains:        container.MustMake[*chainsvc.Service](),
-			WalletService: service,
+		view := walletview.NewService(walletview.Deps{
+			Wallets:      container.MustMake[*walletrecords.Wallets](),
+			Members:      container.MustMake[*walletrecords.Members](),
+			Balances:     container.MustMake[*walletrecords.Balances](),
+			Transactions: container.MustMake[*walletrecords.Transactions](),
+			Chains:       container.MustMake[*chainsvc.Service](),
+			Cipher:       func() settingssvc.Cipher { return appfacades.Crypt() },
 		})
+		external := extwallets.NewWalletController(view, ops)
+		dashboard := dashwallets.NewWalletController(view, ops)
 		accounts := container.MustMake[*accountsvc.Service]()
 		noCache := middleware.CacheControl(0)
 		facades.Route().Prefix("/api/v1/recovery-material").Middleware(
@@ -139,7 +145,7 @@ func (s *WalletRecoveryMaterialTestSuite) registerCreateRoutes() {
 				Transactions: container.MustMake[*walletrecords.Transactions](),
 				Webhooks:     container.MustMake[*walletrecords.Webhooks](),
 			}, middleware.PermWalletsCreate),
-		).Post("/wallets", external.CreateWallet)
+		).Post("/wallets", external.Store)
 		facades.Route().Prefix("/v1/recovery-material/wallets").Middleware(
 			middleware.SessionAuth(),
 			middleware.AccountHeader(accounts),
@@ -149,7 +155,7 @@ func (s *WalletRecoveryMaterialTestSuite) registerCreateRoutes() {
 			),
 			noCache,
 			middleware.RequireFundAction(middleware.FundCreateWallet),
-		).Post("", dashboard.CreateWalletAdmin)
+		).Post("", dashboard.Store)
 	})
 }
 
@@ -325,4 +331,38 @@ func mapKeys(payload map[string]any) []string {
 		keys = append(keys, key)
 	}
 	return keys
+}
+
+// currentWalletService forwards each call to the service the running test
+// built, so the routes registered once keep using the current one.
+type currentWalletService struct {
+	suite *WalletRecoveryMaterialTestSuite
+}
+
+func (c currentWalletService) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID, label, passphrase string) (*wallet.CreateWalletResult, error) {
+	return c.suite.walletService.CreateWallet(ctx, accountID, chainID, label, passphrase)
+}
+
+func (c currentWalletService) ActivateWallet(ctx context.Context, walletID uuid.UUID, code string) (*models.Wallet, error) {
+	return c.suite.walletService.ActivateWallet(ctx, walletID, code)
+}
+
+func (c currentWalletService) GetWallet(ctx context.Context, id uuid.UUID) (*models.Wallet, error) {
+	return c.suite.walletService.GetWallet(ctx, id)
+}
+
+func (c currentWalletService) GenerateAddress(ctx context.Context, walletID uuid.UUID, externalUserID, label, metadata, passphrase string) (*models.Address, error) {
+	return c.suite.walletService.GenerateAddress(ctx, walletID, externalUserID, label, metadata, passphrase)
+}
+
+func (c currentWalletService) UpdateAddress(ctx context.Context, addressID uuid.UUID, fields map[string]interface{}) (*models.Address, error) {
+	return c.suite.walletService.UpdateAddress(ctx, addressID, fields)
+}
+
+func (c currentWalletService) LookupAddressForAccount(ctx context.Context, chainID, address string, accountID uuid.UUID) (*models.Address, error) {
+	return c.suite.walletService.LookupAddressForAccount(ctx, chainID, address, accountID)
+}
+
+func (c currentWalletService) ListUserAddressesForAccount(ctx context.Context, externalUserID string, accountID uuid.UUID) ([]models.Address, error) {
+	return c.suite.walletService.ListUserAddressesForAccount(ctx, externalUserID, accountID)
 }

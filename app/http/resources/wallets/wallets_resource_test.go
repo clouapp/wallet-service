@@ -1,4 +1,4 @@
-package controllers
+package wallets_test
 
 import (
 	"encoding/json"
@@ -10,9 +10,11 @@ import (
 	"github.com/goravel/framework/support/carbon"
 	"github.com/shopspring/decimal"
 
+	"github.com/macrowallets/waas/app/http/resources/wallets"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/wallet"
+	"github.com/macrowallets/waas/app/services/walletview"
 	"github.com/macrowallets/waas/pkg/numeric"
-	"github.com/macrowallets/waas/pkg/types"
 )
 
 func marshalToMap(t *testing.T, value any) map[string]any {
@@ -28,11 +30,6 @@ func marshalToMap(t *testing.T, value any) map[string]any {
 	return body
 }
 
-func amoyPolygonRecord() *models.Chain {
-	amoy := models.EVMNetworkIDPolygonAmoy
-	return &models.Chain{ID: models.ChainPolygon, AdapterType: models.AdapterTypeEVM, NetworkID: &amoy}
-}
-
 func usdValue(t *testing.T, text string) numeric.NullDecimal {
 	t.Helper()
 	value, err := decimal.NewFromString(text)
@@ -42,39 +39,7 @@ func usdValue(t *testing.T, text string) numeric.NullDecimal {
 	return numeric.NewNullDecimal(value)
 }
 
-func TestWallet_List_ItemCarriesTokenBalancesUnpricedOnATestnet(t *testing.T) {
-	t.Parallel()
-
-	walletID := uuid.New()
-	usdcContract := "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582"
-	assets := []models.WalletAssetBalance{
-		{WalletID: walletID, ChainID: models.ChainPolygon, AssetType: "native", AssetSymbol: types.NativeSymbolPOL, Decimals: 18, AmountRaw: "0", AmountDisplay: "0"},
-		{WalletID: walletID, ChainID: models.ChainPolygon, AssetType: "token", AssetSymbol: "USDC", AssetContract: &usdcContract, Decimals: 6, AmountRaw: "6000000", AmountDisplay: "6", PriceUSD: usdValue(t, "1"), ValueUSD: usdValue(t, "6")},
-	}
-
-	item := newWalletListItem(models.Wallet{ID: walletID, Chain: models.ChainPolygon, Label: "polygon_deposit"}, amoyPolygonRecord().ResolveNetwork(""), assets)
-	body := marshalToMap(t, item)
-
-	listed, ok := body["assets"].([]any)
-	if !ok || len(listed) != len(assets) {
-		t.Fatalf("assets = %v, want the %d balances", body["assets"], len(assets))
-	}
-	usdc := listed[1].(map[string]any)
-	if usdc["asset_symbol"] != "USDC" || usdc["amount_display"] != "6" {
-		t.Fatalf("usdc = %v", usdc)
-	}
-	if _, priced := usdc["value_usd"]; priced {
-		t.Fatalf("value_usd = %v, want it omitted on a testnet", usdc["value_usd"])
-	}
-	if !assets[1].ValueUSD.Valid {
-		t.Fatal("the stored balance row lost its value_usd")
-	}
-	if body["testnet"] != true || body["label"] != "polygon_deposit" {
-		t.Fatalf("list item = %v", body)
-	}
-}
-
-func TestWallet_List_ItemKeepsTheModelWire(t *testing.T) {
+func TestNewListItem_KeepsTheModelWire(t *testing.T) {
 	t.Parallel()
 
 	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
@@ -129,7 +94,7 @@ func TestWallet_List_ItemKeepsTheModelWire(t *testing.T) {
 	}{
 		{
 			name:  "list",
-			value: newWalletListItem(wallet, models.ResolvedNetwork{Name: "ethereum-mainnet", Testnet: false}, nil),
+			value: wallets.NewListItem(walletview.Item{Wallet: wallet, Network: models.ResolvedNetwork{Name: "ethereum-mainnet", Testnet: false}}),
 			want:  `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10",` + bodyFields + `,"network":"ethereum-mainnet","testnet":false,"assets":[]}`,
 		},
 	}
@@ -149,13 +114,65 @@ func TestWallet_List_ItemKeepsTheModelWire(t *testing.T) {
 	}
 }
 
-func TestWallet_List_ItemListsNoAssetsAsAnEmptyArray(t *testing.T) {
+func TestNewListItem_ListsNoAssetsAsAnEmptyArray(t *testing.T) {
 	t.Parallel()
 
-	body := marshalToMap(t, newWalletListItem(models.Wallet{ID: uuid.New(), Chain: models.ChainBTC}, models.ResolvedNetwork{Name: models.NetworkBitcoinMainnet}, nil))
+	body := marshalToMap(t, wallets.NewListItem(walletview.Item{Wallet: models.Wallet{ID: uuid.New(), Chain: models.ChainBTC}, Network: models.ResolvedNetwork{Name: models.NetworkBitcoinMainnet}}))
 
 	listed, ok := body["assets"].([]any)
 	if !ok || len(listed) != 0 {
 		t.Fatalf("assets = %v, want []", body["assets"])
+	}
+}
+
+func TestCreate_Wallet_ResponseKeepsTheModelWire(t *testing.T) {
+	t.Parallel()
+
+	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
+	created := carbon.NewDateTime(carbon.Parse("2024-05-06 07:08:09"))
+	const share = "share-secret"
+	record := &models.Wallet{
+		ID: id, Chain: "eth", Label: "hot", Status: "active", RequiredApprovals: 1,
+		MPCCustomerShare: share, MPCShareIV: "iv-secret", MPCShareSalt: "salt-secret",
+		ActivationCode: stringPtr("123456"),
+	}
+	record.CreatedAt = created
+
+	raw, err := json.Marshal(wallets.NewCreated(&wallet.CreateWalletResult{
+		Wallet:           record,
+		ServicePublicKey: "pk",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{share, "iv-secret", "salt-secret", "123456"} {
+		if strings.Contains(string(raw), secret) {
+			t.Fatal("wallet key material is on the wire")
+		}
+	}
+	const want = `{"created_at":"2024-05-06 07:08:09","updated_at":null,"id":"11111111-1111-4111-8111-111111111111","chain":"eth","label":"hot","address_index":0,"status":"active","required_approvals":1,"read_model_status":"","gas_status":"","sweep_policy_version":0,"service_public_key":"pk"}`
+	if string(raw) != want {
+		t.Fatalf("wire changed\n got %s\nwant %s", raw, want)
+	}
+}
+
+func stringPtr(value string) *string { return &value }
+
+func TestNewCreation_KeepsTheKeysSortedAndCarriesTheActivationCode(t *testing.T) {
+	t.Parallel()
+
+	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
+	record := &models.Wallet{ID: id, Chain: "eth", Label: "hot", Status: "pending", RequiredApprovals: 1, MPCCustomerShare: "share-secret"}
+
+	raw, err := json.Marshal(wallets.NewCreation(&wallet.CreateWalletResult{Wallet: record, ServicePublicKey: "pk", ActivationCode: "123456"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "share-secret") {
+		t.Fatal("wallet key material is on the wire")
+	}
+	const want = `{"activation_code":"123456","service_public_key":"pk","wallet":{"created_at":null,"updated_at":null,"id":"11111111-1111-4111-8111-111111111111","chain":"eth","label":"hot","address_index":0,"status":"pending","required_approvals":1,"read_model_status":"","gas_status":"","sweep_policy_version":0}}`
+	if string(raw) != want {
+		t.Fatalf("wire changed\n got %s\nwant %s", raw, want)
 	}
 }

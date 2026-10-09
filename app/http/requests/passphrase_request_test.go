@@ -3,9 +3,9 @@ package requests_test
 import (
 	"testing"
 
-	"github.com/macrowallets/waas/app/http/requests"
 	addressesrequests "github.com/macrowallets/waas/app/http/requests/addresses"
 	sweeprequests "github.com/macrowallets/waas/app/http/requests/sweep"
+	walletsrequests "github.com/macrowallets/waas/app/http/requests/wallets"
 )
 
 func TestPassphrase_Forms_AcceptOnlyThePassphraseField(t *testing.T) {
@@ -13,7 +13,7 @@ func TestPassphrase_Forms_AcceptOnlyThePassphraseField(t *testing.T) {
 		name  string
 		rules map[string]string
 	}{
-		{name: "create wallet", rules: (&requests.CreateWalletRequest{}).Rules(nil)},
+		{name: "create wallet", rules: (&walletsrequests.StoreRequest{}).Rules(nil)},
 		{name: "generate address", rules: (&addressesrequests.StoreRequest{}).Rules(nil)},
 		{name: "consolidate", rules: (&sweeprequests.ConsolidateRequest{}).Rules(nil)},
 	}
