@@ -196,17 +196,33 @@ func (s *Records) Cancel(ctx context.Context, accountID, actorID, withdrawalID u
 	})
 }
 
-// FindInWallet loads one withdrawal of the wallet. A missing row, a row of
-// another wallet and a failed read are all ErrNotFound.
+// FindInWallet loads one withdrawal of the wallet. A missing row and a row of
+// another wallet are ErrNotFound; a failed read is returned as an error.
 func (s *Records) FindInWallet(ctx context.Context, walletID, withdrawalID uuid.UUID) (*models.Withdrawal, error) {
 	if err := s.ready(ctx, "find withdrawal"); err != nil {
 		return nil, err
 	}
 	withdrawal, err := s.store.FindByIDAndWallet(ctx, withdrawalID, walletID)
-	if err != nil || withdrawal == nil {
+	if err := missingOrFailed(err, "find withdrawal"); err != nil {
+		return nil, err
+	}
+	if withdrawal == nil {
 		return nil, ErrNotFound
 	}
 	return withdrawal, nil
+}
+
+// missingOrFailed maps a repository lookup error: a missing row is ErrNotFound,
+// any other error is returned wrapped so the caller answers a server failure.
+func missingOrFailed(err error, op string) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, models.ErrRepositoryNotFound):
+		return ErrNotFound
+	default:
+		return fmt.Errorf("%s: %w", op, err)
+	}
 }
 
 // LookupInWallet loads one withdrawal of the wallet with the transaction it
@@ -233,18 +249,24 @@ func (s *Records) LookupInWallet(ctx context.Context, walletID, withdrawalID uui
 }
 
 // FindInAccount loads one withdrawal whose wallet belongs to the account. A
-// missing row, a wallet of another account and a failed read are all
-// ErrNotFound.
+// missing row and a wallet of another account are ErrNotFound; a failed read
+// is returned as an error.
 func (s *Records) FindInAccount(ctx context.Context, accountID, withdrawalID uuid.UUID) (*models.Withdrawal, error) {
 	if err := s.ready(ctx, "find withdrawal"); err != nil {
 		return nil, err
 	}
 	withdrawal, err := s.store.FindByID(ctx, withdrawalID)
-	if err != nil || withdrawal == nil || s.wallets == nil {
+	if err := missingOrFailed(err, "find withdrawal"); err != nil {
+		return nil, err
+	}
+	if withdrawal == nil || s.wallets == nil {
 		return nil, ErrNotFound
 	}
 	wallet, err := s.wallets.FindByID(ctx, withdrawal.WalletID)
-	if err != nil || wallet == nil || wallet.AccountID == nil || *wallet.AccountID != accountID {
+	if err := missingOrFailed(err, "find withdrawal wallet"); err != nil {
+		return nil, err
+	}
+	if wallet == nil || wallet.AccountID == nil || *wallet.AccountID != accountID {
 		return nil, ErrNotFound
 	}
 	return withdrawal, nil

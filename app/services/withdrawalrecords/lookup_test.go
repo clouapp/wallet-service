@@ -36,7 +36,7 @@ func (w lookupWallets) FindByID(context.Context, uuid.UUID) (*models.Wallet, err
 	return w.wallet, w.err
 }
 
-func TestFindInWallet_Hides_ARowOfAnotherWalletAndALookupFailure(t *testing.T) {
+func TestFindInWallet_Hides_ARowOfAnotherWalletAndAMissingRow(t *testing.T) {
 	walletID := uuid.New()
 	row := &models.Withdrawal{ID: uuid.New(), WalletID: walletID}
 	records := NewRecords(Deps{Store: &lookupStore{row: row}})
@@ -48,9 +48,19 @@ func TestFindInWallet_Hides_ARowOfAnotherWalletAndALookupFailure(t *testing.T) {
 	if _, err := records.FindInWallet(context.Background(), uuid.New(), row.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("other wallet err = %v", err)
 	}
-	failing := NewRecords(Deps{Store: &lookupStore{findErr: errors.New("db down")}})
-	if _, err := failing.FindInWallet(context.Background(), walletID, row.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("lookup failure err = %v", err)
+	missing := NewRecords(Deps{Store: &lookupStore{findErr: models.ErrRepositoryNotFound}})
+	if _, err := missing.FindInWallet(context.Background(), walletID, row.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing row err = %v", err)
+	}
+}
+
+func TestFindInWallet_Returns_ALookupFailureNotAsMissing(t *testing.T) {
+	down := errors.New("db down")
+	failing := NewRecords(Deps{Store: &lookupStore{findErr: down}})
+
+	_, err := failing.FindInWallet(context.Background(), uuid.New(), uuid.New())
+	if !errors.Is(err, down) || errors.Is(err, ErrNotFound) {
+		t.Fatalf("lookup failure err = %v, want the store error and not ErrNotFound", err)
 	}
 }
 
@@ -71,9 +81,9 @@ func TestFindInAccount_Hides_AWithdrawalOutsideTheAccount(t *testing.T) {
 		"foreign wallet":   {&lookupStore{row: row}, lookupWallets{wallet: foreign}, false},
 		"wallet no owner":  {&lookupStore{row: row}, lookupWallets{wallet: orphan}, false},
 		"missing wallet":   {&lookupStore{row: row}, lookupWallets{}, false},
-		"wallet failure":   {&lookupStore{row: row}, lookupWallets{err: errors.New("db down")}, false},
+		"wallet row gone":  {&lookupStore{row: row}, lookupWallets{err: models.ErrRepositoryNotFound}, false},
 		"missing withdraw": {&lookupStore{}, lookupWallets{wallet: own}, false},
-		"withdraw failure": {&lookupStore{findErr: errors.New("db down")}, lookupWallets{wallet: own}, false},
+		"withdraw gone":    {&lookupStore{findErr: models.ErrRepositoryNotFound}, lookupWallets{wallet: own}, false},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -87,6 +97,29 @@ func TestFindInAccount_Hides_AWithdrawalOutsideTheAccount(t *testing.T) {
 			}
 			if !errors.Is(err, ErrNotFound) || got != nil {
 				t.Fatalf("got %v, %v", got, err)
+			}
+		})
+	}
+}
+
+func TestFindInAccount_Returns_ALookupFailureNotAsMissing(t *testing.T) {
+	accountID := uuid.New()
+	row := &models.Withdrawal{ID: uuid.New(), WalletID: uuid.New()}
+	down := errors.New("db down")
+	cases := map[string]struct {
+		store   *lookupStore
+		wallets lookupWallets
+	}{
+		"withdrawal read": {&lookupStore{findErr: down}, lookupWallets{}},
+		"wallet read":     {&lookupStore{row: row}, lookupWallets{err: down}},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			records := NewRecords(Deps{Store: tc.store, Wallets: tc.wallets})
+
+			_, err := records.FindInAccount(context.Background(), accountID, row.ID)
+			if !errors.Is(err, down) || errors.Is(err, ErrNotFound) {
+				t.Fatalf("err = %v, want the store error and not ErrNotFound", err)
 			}
 		})
 	}
