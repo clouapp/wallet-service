@@ -121,6 +121,30 @@ definitions:
       status:
         type: string
     type: object
+  accounts.MemberAccount:
+    properties:
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      environment:
+        type: string
+      id:
+        type: string
+      linked_account_id:
+        type: string
+      name:
+        type: string
+      role:
+        example: owner
+        type: string
+      status:
+        type: string
+      sweep_limits:
+        type: string
+      updated_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      view_all_wallets:
+        type: boolean
+    type: object
   accounts.UpdateAccountSwagger:
     properties:
       name:
@@ -850,14 +874,14 @@ definitions:
           type: array
         type: object
     type: object
-  roles.permissionCatalog:
+  roles.PermissionCatalog:
     properties:
       permissions:
         items:
           type: string
         type: array
     type: object
-  roles.roleList:
+  roles.RoleList:
     properties:
       roles:
         items:
@@ -1152,7 +1176,7 @@ definitions:
     properties:
       data:
         items:
-          $ref: '#/definitions/users.myAccount'
+          $ref: '#/definitions/accounts.MemberAccount'
         type: array
       limit:
         example: 20
@@ -1266,30 +1290,6 @@ definitions:
         items:
           $ref: '#/definitions/users.WalletUser'
         type: array
-    type: object
-  users.myAccount:
-    properties:
-      created_at:
-        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
-      environment:
-        type: string
-      id:
-        type: string
-      linked_account_id:
-        type: string
-      name:
-        type: string
-      role:
-        example: owner
-        type: string
-      status:
-        type: string
-      sweep_limits:
-        type: string
-      updated_at:
-        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
-      view_all_wallets:
-        type: boolean
     type: object
   wallets.CreateWalletSwagger:
     properties:
@@ -2127,7 +2127,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/roles.permissionCatalog'
+            $ref: '#/definitions/roles.PermissionCatalog'
         "401":
           description: Unauthorized
           schema:
@@ -2161,7 +2161,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/roles.roleList'
+            $ref: '#/definitions/roles.RoleList'
         "401":
           description: Unauthorized
           schema:

@@ -116,7 +116,8 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `0` turns one off) and the counters live in the Cache (Redis); a cache failure lets the request
   through. Limiters and defaults: `.ai/guidelines/http-error-contract.md`. — guarded by
   `app/http/middleware/throttle_test.go` and the contract steps 69 and 70.
-- **API token (external):** a JWT minted by `middleware.MintAPIToken` (`sub: api_token`,
+- **API token (external):** a JWT minted by `apitoken.Service.Mint` (claims and signing in
+  `apitoken.Sign`; test fixtures sign through `middleware.MintAPIToken`) (`sub: api_token`,
   `jti` = `access_tokens` row, `account_id` claim). The row must exist and be active. When
   the token carries `require_signature`, an `X-Signature` HMAC over the body is mandatory
   and checked before the body is read. — guarded by `TestAPI_Token_AuthHMACSuite`

@@ -455,7 +455,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/roles.permissionCatalog"
+                            "$ref": "#/definitions/roles.PermissionCatalog"
                         }
                     },
                     "401": {
@@ -507,7 +507,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/roles.roleList"
+                            "$ref": "#/definitions/roles.RoleList"
                         }
                     },
                     "401": {
@@ -6260,6 +6260,42 @@ const docTemplate = `{
                 }
             }
         },
+        "accounts.MemberAccount": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "environment": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "linked_account_id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string",
+                    "example": "owner"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "sweep_limits": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "view_all_wallets": {
+                    "type": "boolean"
+                }
+            }
+        },
         "accounts.UpdateAccountSwagger": {
             "type": "object",
             "properties": {
@@ -7328,7 +7364,7 @@ const docTemplate = `{
                 }
             }
         },
-        "roles.permissionCatalog": {
+        "roles.PermissionCatalog": {
             "type": "object",
             "properties": {
                 "permissions": {
@@ -7339,7 +7375,7 @@ const docTemplate = `{
                 }
             }
         },
-        "roles.roleList": {
+        "roles.RoleList": {
             "type": "object",
             "properties": {
                 "roles": {
@@ -7771,7 +7807,7 @@ const docTemplate = `{
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/users.myAccount"
+                        "$ref": "#/definitions/accounts.MemberAccount"
                     }
                 },
                 "limit": {
@@ -7941,42 +7977,6 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/users.WalletUser"
                     }
-                }
-            }
-        },
-        "users.myAccount": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
-                },
-                "environment": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "linked_account_id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "role": {
-                    "type": "string",
-                    "example": "owner"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "sweep_limits": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
-                },
-                "view_all_wallets": {
-                    "type": "boolean"
                 }
             }
         },

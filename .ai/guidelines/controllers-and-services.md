@@ -57,8 +57,8 @@ per call.
 
 ## Business logic that was in controllers
 
-Each of these crossed the line in the WaaS. All have moved except the one marked
-(open). Recognise the shape before writing it again:
+Each of these crossed the line in the WaaS. All have moved. Recognise the shape
+before writing it again:
 
 | It looked like | It was | Belongs in |
 |---|---|---|
@@ -68,7 +68,9 @@ Each of these crossed the line in the WaaS. All have moved except the one marked
 | `strings.Contains(err.Error(), "unknown chain")`, `err.Error() == "wallet not found"` | a missing sentinel | `chainregistry.ErrUnknownChain` and the wallet and price sentinels, matched with `errors.Is` |
 | listing memberships, loading each account, sorting and picking the default at login | an account read model | `account.Service.SignInAccounts` |
 | pairing every listed account with the caller's role and failing when one has none | a membership invariant | `account.Service.ListForMemberWithRoles` |
-| `MintAPIToken` living in middleware and called from a controller (open) | issuing a credential | a service (`middleware.MintAPIToken` is still the one issuer) |
+| the create-token handler making the secret, hashing it, building the row and signing the JWT with `middleware.MintAPITokenWithSecret` | issuing a credential | `apitoken.Service.Mint`; the claims and the signing are `apitoken.Claims`/`Sign` (`middleware.MintAPIToken` only signs test fixtures) |
+| the add-member handler looking the email up, then adding or inviting, with its 201/202 and four 500 sentences inline | a membership decision | `account.Service.AddMember`, returning `AddedMember` (member or invite) and a sentinel per failed step |
+| login, 2FA, refresh, password change and reset, TOTP setup/confirm/disable inline in the auth and user controllers (hashes, token loops, `facades.Crypt()`) | credential flows | `authsvc.SignIn`, `authsvc.Credentials`, `authsvc.TOTPEnrollment`; a session is `authsvc.SessionIssuer`, which takes the request's guard as a `SessionGuard` port |
 | `facades.Mail().To(...).Send(...)` in a controller | a notification | a job, see `mail-and-notifications.md` |
 
 A decision (`if status == ...`), a loop over domain objects, time arithmetic, or

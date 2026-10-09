@@ -145,6 +145,14 @@ Rules:
   asks it once every rule passed and the body bound, and a field it names
   answers the same 422 a rule failure does. A check the handler makes after the
   form request passed answers with `responses.FieldError`.
+- Input a service reads only when it needs it (the proof that turns 2FA off is
+  read only for a user who has 2FA) is a request type that runs
+  `requests.Validate` on demand and carries a refusal back as a
+  `*requests.Refusal`; the handler returns its `Response` as it is.
+- A query whose refusals are 400s, not a form request's 422 (the strict list
+  window of `/v1/users/me/accounts`), is parsed by a function of the request
+  package that returns sentinels, like the document parsers; the handler maps
+  them.
 
 ## Rendering
 
@@ -205,10 +213,11 @@ document). Regenerate in the same change that edits an annotation.
   `facades.Orm()` / `DB()` / `App()`** (`TestHTTP_Layer_DoesNotReachPersistence`).
   Services, providers and middleware own persistence, mail and gates. Facades
   come through `app/facades` (`TestFramework_Facades_ComeThroughAppFacades`).
-  Documented exceptions in controllers: `appfacades.Auth(ctx).LoginUsingID` mints
-  the access token of a new session (`session_issue.go`, `auth_controller.go`) and
-  reads the guard for the invite acceptance; `Crypt` is sealed in the TOTP setup
-  of `user_controller.go` and should move behind a service. The chain RPC URL a
+  A handler that opens a dashboard session passes the request's guard,
+  `appfacades.Auth(ctx)`, to the auth service as its `SessionGuard`; the service
+  signs the JWT with it. The optional session of the invite acceptance is read by
+  `middleware.OptionalSessionUser`, and the TOTP secret is sealed by
+  `authsvc.TOTPEnrollment` through `settings.CryptSealer`. The chain RPC URL a
   wallet's network is read from is opened by `walletview.Service`, which
   receives the cipher through its `Deps`.
 - Middleware aborts with a `responses` writer and `.Abort()`: a new refusal with
