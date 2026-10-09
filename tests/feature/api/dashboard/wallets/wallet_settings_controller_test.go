@@ -171,6 +171,17 @@ func (s *WalletSettingsTestSuite) TestViewers_Cannot_ChangeSettings() {
 	s.False(s.stored(wallet.ID).FeeMultiplier.Valid)
 }
 
+// TestViewers_Are_RefusedBeforeTheBodyIsRead pins the order: a caller who
+// may not update the wallet learns nothing about the body, so a body the
+// owner would get 400 or 422 for is the same 403 for them.
+func (s *WalletSettingsTestSuite) TestViewers_Are_RefusedBeforeTheBodyIsRead() {
+	wallet := s.wallet(models.ChainBase)
+	for _, body := range []string{`{}`, `{"status": "active"}`, `{"fee_multiplier": 0.5}`, `not json`} {
+		denied := s.patch(s.viewerToken, wallet.ID, body)
+		s.AssertError(denied, 403, "forbidden", "only wallet/account owners and admins may update wallet settings")
+	}
+}
+
 func (s *WalletSettingsTestSuite) TestOther_Accounts_WalletsAreNotReachable() {
 	other := fixtures.InsertAccount(s.T(), "other")
 	foreign := fixtures.InsertWalletWithAccount(s.T(), models.ChainBase, &other.ID)
