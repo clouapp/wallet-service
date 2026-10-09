@@ -122,3 +122,13 @@ func TestNew_Profile_ControllerRequiresBothServices(t *testing.T) {
 		})
 	}
 }
+
+func TestNew_Password_ControllerRequiresTheCredentials(t *testing.T) {
+	defer func() {
+		if got := recover(); got != "dashboard password controller: credentials are required" {
+			t.Fatalf("panic = %v", got)
+		}
+	}()
+	NewPasswordController(nil)
+	t.Fatal("expected a panic")
+}

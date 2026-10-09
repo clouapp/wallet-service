@@ -82,6 +82,7 @@ func RegisterAdminRoutes() {
 	usersCtrl := newDashboardUsersController()
 	userAccountCtrl := newDashboardUserAccountController()
 	profileCtrl := newDashboardProfileController()
+	passwordCtrl := newDashboardPasswordController()
 	accountCtrl := newDashboardAccountController()
 	tokenCtrl := newDashboardTokenController()
 	memberCtrl := newDashboardMemberController()
@@ -126,7 +127,7 @@ func RegisterAdminRoutes() {
 	facades.Route().Prefix("/v1/users").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
 		router.Get("/me", profileCtrl.Show)
 		router.Patch("/me", profileCtrl.Update)
-		router.Post("/me/password", usersCtrl.ChangePassword)
+		router.Post("/me/password", passwordCtrl.Update)
 		router.Get("/me/accounts", userAccountCtrl.Index)
 		router.Patch("/me/default-account", userAccountCtrl.UpdateDefault)
 		router.Post("/me/totp/setup", usersCtrl.SetupTOTP)
@@ -363,6 +364,10 @@ func newDashboardUsersController() *dashusers.UsersController {
 		SecondFactor: container.MustMake[*authsvc.SecondFactorVerifier](),
 		Revoker:      container.MustMake[*authsvc.SessionRevoker](),
 	})
+}
+
+func newDashboardPasswordController() *dashusers.PasswordController {
+	return dashusers.NewPasswordController(container.MustMake[*authsvc.Credentials]())
 }
 
 func newDashboardProfileController() *dashusers.ProfileController {

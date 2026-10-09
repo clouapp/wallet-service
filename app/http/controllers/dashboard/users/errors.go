@@ -10,6 +10,7 @@ import (
 	usersrequests "github.com/macrowallets/waas/app/http/requests/dashboard/users"
 	"github.com/macrowallets/waas/app/http/responses"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
+	authsvc "github.com/macrowallets/waas/app/services/auth"
 )
 
 // mapError answers an error on the caller's own routes (/v1/users/me). A
@@ -30,8 +31,30 @@ func mapError(ctx http.Context, err error, failure string) http.Response {
 		return responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, accountsvc.ErrNotMember.Error())
 	case errors.Is(err, accountsvc.ErrUserNotFound):
 		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, accountsvc.ErrUserNotFound.Error())
+	case errors.Is(err, authsvc.ErrWrongPassword):
+		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, authsvc.ErrWrongPassword.Error())
+	case errors.Is(err, authsvc.ErrPasswordNotHashed):
+		return internalError(ctx, err, "failed to hash password")
+	case errors.Is(err, authsvc.ErrPasswordNotSaved):
+		return internalError(ctx, err, "failed to update password")
 	default:
-		slog.Error("controller internal error", "endpoint", failure, "error", err)
-		return responses.FailMessage(ctx, http.StatusInternalServerError, failure)
+		return internalError(ctx, err, failure)
 	}
+}
+
+// mapPasswordError is mapError for a password change: sessions that could not
+// be renewed after the new password was stored say so.
+func mapPasswordError(ctx http.Context, err error) http.Response {
+	if errors.Is(err, authsvc.ErrSessionsNotReplaced) {
+		return internalError(ctx, err, "password updated but sessions could not be renewed")
+	}
+	return mapError(ctx, err, "failed to update password")
+}
+
+// internalError logs err and answers 500 with failure. A sentence gets the
+// internal code and a machine code (internal_error) is its own code, as the
+// routes have always answered.
+func internalError(ctx http.Context, err error, failure string) http.Response {
+	slog.Error("controller internal error", "endpoint", failure, "error", err)
+	return responses.FailMessage(ctx, http.StatusInternalServerError, failure)
 }

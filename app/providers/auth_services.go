@@ -14,6 +14,7 @@ import (
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/sessions"
 	"github.com/macrowallets/waas/app/services/settings"
+	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
 const (
@@ -189,4 +190,40 @@ func newSessionIssuer(app foundation.Application) (*authsvc.SessionIssuer, error
 		return nil, fmt.Errorf("vault: session issuer: %w", err)
 	}
 	return issuer, nil
+}
+
+// newCredentials changes a password, signed in or with a reset token, and ends
+// the sessions the old one opened.
+func newCredentials(app foundation.Application) (*authsvc.Credentials, error) {
+	passwords, err := resolve[*authsvc.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	users, err := resolve[*usersvc.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	resets, err := resolve[*sessions.PasswordResets](app)
+	if err != nil {
+		return nil, err
+	}
+	issuer, err := resolve[*authsvc.SessionIssuer](app)
+	if err != nil {
+		return nil, err
+	}
+	revoker, err := resolve[*authsvc.SessionRevoker](app)
+	if err != nil {
+		return nil, err
+	}
+	credentials, err := authsvc.NewCredentials(authsvc.CredentialsDeps{
+		Passwords: passwords,
+		Users:     users,
+		Resets:    resets,
+		Sessions:  issuer,
+		Revoker:   revoker,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("vault: credentials: %w", err)
+	}
+	return credentials, nil
 }

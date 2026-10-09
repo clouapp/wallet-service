@@ -69,51 +69,6 @@ func (ctrl *UsersController) sessions() controllers.SessionIssuer {
 	return controllers.SessionIssuer{Passwords: ctrl.passwords, Refresh: ctrl.refresh, Revoker: ctrl.revoker}
 }
 
-// ChangePassword godoc
-// @Summary      Change password
-// @Description  Validates the current password and updates it
-// @Tags         User
-// @Security     BearerAuth
-// @Accept       json
-// @Produce      json
-// @Param        request  body      ChangePasswordSwagger  true  "Password change payload"
-// @Success      200      {object}  map[string]string
-// @Failure      400      {object}  responses.ErrorBody
-// @Failure      401      {object}  responses.ErrorBody
-// @Router       /users/me/password [post]
-func (ctrl *UsersController) ChangePassword(ctx http.Context) http.Response {
-	user := requestctx.MustUser(ctx)
-
-	var req usersrequests.ChangePasswordRequest
-	if errResp := requests.Validate(ctx, &req); errResp != nil {
-		return errResp
-	}
-
-	if !ctrl.passwords.CheckPassword(req.CurrentPassword, user.PasswordHash) {
-		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "current password is incorrect")
-	}
-
-	hash, err := ctrl.passwords.HashPassword(req.NewPassword)
-	if err != nil {
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to hash password")
-	}
-
-	if err := ctrl.users.UpdatePasswordHash(ctx.Context(), user.ID, hash); err != nil {
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to update password")
-	}
-
-	session, err := ctrl.sessions().ReplaceSessions(ctx, user.ID)
-	if err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("auth: change password: replace sessions: %v", err)
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "password updated but sessions could not be renewed")
-	}
-	return ctx.Response().Success().Json(http.Json{
-		"message":       "password updated successfully",
-		"access_token":  session.AccessToken,
-		"refresh_token": session.RefreshToken,
-	})
-}
-
 // SetupTOTP godoc
 // @Summary      Begin TOTP enrollment
 // @Description  Generates a TOTP secret and QR URL; stores encrypted secret until verified
@@ -275,11 +230,6 @@ func (ctrl *UsersController) requireLiveSecondFactor(ctx http.Context, user *mod
 }
 
 // ---- Swagger-only types ----
-
-type ChangePasswordSwagger struct {
-	CurrentPassword string `json:"current_password"`
-	NewPassword     string `json:"new_password"`
-}
 
 type TotpSetupSwagger struct {
 	Secret string `json:"secret" example:"JBSWY3DPEHPK3PXP"`

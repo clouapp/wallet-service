@@ -7,6 +7,11 @@ import (
 // The types below document request and response bodies in the swagger
 // annotations of this package. Handlers do not use them.
 
+type ChangePasswordSwagger struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
 type UpdateMeSwagger struct {
 	FullName string `json:"full_name" example:"Alice Smith"`
 }
