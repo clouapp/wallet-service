@@ -26,3 +26,12 @@ type AccountListResponse struct {
 	Limit  int                              `json:"limit" example:"20"`
 	Offset int                              `json:"offset" example:"0"`
 }
+
+type TotpSetupSwagger struct {
+	Secret string `json:"secret" example:"JBSWY3DPEHPK3PXP"`
+	QrURL  string `json:"qr_url" example:"otpauth://totp/..."`
+}
+
+type ConfirmTotpSwagger struct {
+	Code string `json:"code" example:"123456"`
+}

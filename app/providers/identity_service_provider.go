@@ -62,6 +62,9 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 	app.Singleton((*authsvc.Credentials)(nil), func(app foundation.Application) (any, error) {
 		return newCredentials(app)
 	})
+	app.Singleton((*authsvc.TOTPEnrollment)(nil), func(app foundation.Application) (any, error) {
+		return newTOTPEnrollment(app)
+	})
 	app.Singleton((*usersvc.Service)(nil), func(app foundation.Application) (any, error) {
 		store, err := resolve[*repositories.UserRepository](app)
 		if err != nil {

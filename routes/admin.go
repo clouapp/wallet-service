@@ -79,7 +79,7 @@ func RegisterAdminRoutes() {
 	currencyCtrl := newDashboardCurrenciesController()
 	preferencesCtrl := newDashboardPreferencesController()
 	authCtrl := newDashboardAuthController()
-	usersCtrl := newDashboardUsersController()
+	totpCtrl := newDashboardTotpController()
 	userAccountCtrl := newDashboardUserAccountController()
 	profileCtrl := newDashboardProfileController()
 	passwordCtrl := newDashboardPasswordController()
@@ -130,9 +130,9 @@ func RegisterAdminRoutes() {
 		router.Post("/me/password", passwordCtrl.Update)
 		router.Get("/me/accounts", userAccountCtrl.Index)
 		router.Patch("/me/default-account", userAccountCtrl.UpdateDefault)
-		router.Post("/me/totp/setup", usersCtrl.SetupTOTP)
-		router.Post("/me/totp/verify", usersCtrl.ConfirmTOTP)
-		router.Delete("/me/totp", usersCtrl.DisableTOTP)
+		router.Post("/me/totp/setup", totpCtrl.Setup)
+		router.Post("/me/totp/verify", totpCtrl.Confirm)
+		router.Delete("/me/totp", totpCtrl.Destroy)
 	})
 
 	facades.Route().Prefix("/v1/accounts").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
@@ -356,16 +356,6 @@ func newDashboardAuthController() *dashauth.AuthController {
 	})
 }
 
-func newDashboardUsersController() *dashusers.UsersController {
-	return dashusers.NewUsersController(dashusers.UsersControllerDeps{
-		Users:        container.MustMake[*usersvc.Service](),
-		Passwords:    container.MustMake[*authsvc.Service](),
-		Refresh:      container.MustMake[*sessions.RefreshTokens](),
-		SecondFactor: container.MustMake[*authsvc.SecondFactorVerifier](),
-		Revoker:      container.MustMake[*authsvc.SessionRevoker](),
-	})
-}
-
 func newDashboardPasswordController() *dashusers.PasswordController {
 	return dashusers.NewPasswordController(container.MustMake[*authsvc.Credentials]())
 }
@@ -375,6 +365,10 @@ func newDashboardProfileController() *dashusers.ProfileController {
 		container.MustMake[*usersvc.Service](),
 		container.MustMake[*featuressvc.Service](),
 	)
+}
+
+func newDashboardTotpController() *dashusers.TotpController {
+	return dashusers.NewTotpController(container.MustMake[*authsvc.TOTPEnrollment]())
 }
 
 func newDashboardUserAccountController() *dashusers.AccountController {

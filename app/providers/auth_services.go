@@ -227,3 +227,35 @@ func newCredentials(app foundation.Application) (*authsvc.Credentials, error) {
 	}
 	return credentials, nil
 }
+
+// newTOTPEnrollment turns a user's TOTP on and off, sealing the secret with
+// the process Crypt (the enc:v1: envelope the verifier opens).
+func newTOTPEnrollment(app foundation.Application) (*authsvc.TOTPEnrollment, error) {
+	passwords, err := resolve[*authsvc.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	verifier, err := resolve[*authsvc.SecondFactorVerifier](app)
+	if err != nil {
+		return nil, err
+	}
+	users, err := resolve[*usersvc.Service](app)
+	if err != nil {
+		return nil, err
+	}
+	issuer, err := resolve[*authsvc.SessionIssuer](app)
+	if err != nil {
+		return nil, err
+	}
+	enrollment, err := authsvc.NewTOTPEnrollment(authsvc.EnrollmentDeps{
+		Passwords: passwords,
+		Verifier:  verifier,
+		Users:     users,
+		Sealer:    settings.CryptSealer{},
+		Sessions:  issuer,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("vault: totp enrollment: %w", err)
+	}
+	return enrollment, nil
+}
