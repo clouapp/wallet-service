@@ -25,3 +25,17 @@ type CreateAccountTokenResponse struct {
 	Token    string                `json:"token"`
 	Metadata resources.AccessToken `json:"metadata"`
 }
+
+type AddAccountUserSwagger struct {
+	Email string `json:"email" example:"user@example.com"`
+	Role  string `json:"role" example:"admin"`
+}
+
+type UpdateAccountUserSwagger struct {
+	Role   string `json:"role,omitempty" example:"admin"`
+	Status string `json:"status,omitempty" example:"suspended"`
+}
+
+type AccountUserListResponse struct {
+	Data []resources.AccountUser `json:"data"`
+}

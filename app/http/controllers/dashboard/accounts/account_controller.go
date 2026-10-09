@@ -2,18 +2,13 @@ package accounts
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 
-	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/controllers"
-	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
-	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	accountsrequests "github.com/macrowallets/waas/app/http/requests/dashboard/accounts"
 	tokenresource "github.com/macrowallets/waas/app/http/resources/dashboard/accounts"
@@ -213,176 +208,6 @@ func (ctrl *AccountsController) FreezeAccount(ctx http.Context) http.Response {
 	return ctx.Response().Success().Json(view)
 }
 
-// ListAccountUsers godoc
-// @Summary      List account members
-// @Description  Returns all active members of the account with their roles
-// @Tags         Accounts
-// @Security     BearerAuth
-// @Produce      json
-// @Param        accountId  path  string  true  "Account UUID"
-// @Success      200        {object}  AccountUserListResponse
-// @Failure      403        {object}  responses.ErrorBody
-// @Router       /accounts/{accountId}/users [get]
-func (ctrl *AccountsController) ListAccountUsers(ctx http.Context) http.Response {
-	account := requestctx.MustAccount(ctx)
-
-	limit, offset := pagination.ParseParams(ctx, 20)
-	members, total, err := ctrl.accountService.ListMembers(ctx.Context(), account.ID, limit, offset)
-	if err != nil {
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch members")
-	}
-	return ctx.Response().Success().Json(pagination.Response(tokenresource.AccountUsersFrom(members), total, limit, offset))
-}
-
-// AddAccountUser godoc
-// @Summary      Add a user to an account
-// @Description  Adds a user to the account with the specified role. Requires owner or admin.
-// @Tags         Accounts
-// @Security     BearerAuth
-// @Accept       json
-// @Produce      json
-// @Param        accountId  path      string                     true  "Account UUID"
-// @Param        request    body      AddAccountUserSwagger      true  "User and role payload"
-// @Success      201        {object}  tokenresource.AccountUser
-// @Failure      400        {object}  responses.ErrorBody
-// @Failure      403        {object}  responses.ErrorBody
-// @Router       /accounts/{accountId}/users [post]
-func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
-	account := requestctx.MustAccount(ctx)
-	callerID := requestctx.MustUserID(ctx)
-	var req accountsrequests.AddAccountUserRequest
-	if errResp := requests.Validate(ctx, &req); errResp != nil {
-		return errResp
-	}
-
-	targetPtr, findErr := ctrl.accountService.FindUserByEmail(ctx.Context(), req.Email)
-	if findErr != nil && !errors.Is(findErr, models.ErrRepositoryNotFound) {
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to look up user")
-	}
-	if targetPtr == nil || errors.Is(findErr, models.ErrRepositoryNotFound) {
-		base, errResp := requireFrontendBase(ctx, "failed to create invite")
-		if errResp != nil {
-			return errResp
-		}
-		issued, issueErr := ctrl.accountService.IssueInvite(ctx.Context(), account.ID, req.Email, req.Role, callerID, base)
-		if issueErr != nil {
-			if errors.Is(issueErr, accountsvc.ErrGrantRole) {
-				return inviteGrantForbidden(ctx, issueErr)
-			}
-			return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create invite")
-		}
-		if issued.MailErr != nil {
-			appfacades.Log().WithContext(ctx).Errorf("account: send invite mail failed")
-		}
-		return ctx.Response().Status(http.StatusAccepted).Json(http.Json{
-			"invite_id":   issued.Invite.ID,
-			"email":       issued.Invite.Email,
-			"role":        issued.Invite.Role,
-			"expires_at":  issued.Invite.ExpiresAt,
-			"invite_link": issued.InviteLink,
-		})
-	}
-
-	if err := ctrl.accountService.AddUser(ctx.Context(), account.ID, targetPtr.ID, req.Role, callerID); err != nil {
-		if errors.Is(err, accountsvc.ErrGrantRole) {
-			return inviteGrantForbidden(ctx, err)
-		}
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to add user")
-	}
-
-	au, auErr := ctrl.accountService.FindMember(ctx.Context(), account.ID, targetPtr.ID)
-	if auErr != nil && !errors.Is(auErr, models.ErrRepositoryNotFound) {
-		appfacades.Log().WithContext(ctx).Errorf("account: find membership after add: %v", auErr)
-		return responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, "not a member of this account")
-	}
-	return ctx.Response().Status(http.StatusCreated).Json(tokenresource.AccountUserPtr(au))
-}
-
-// inviteGrantForbidden answers a role the caller cannot grant. ErrGrantRole may
-// be wrapped, and that wrap can carry a query or the address the customer
-// typed, so the body stays the fixed envelope and the log keeps the type.
-func inviteGrantForbidden(ctx http.Context, err error) http.Response {
-	slog.Error("account invite grant refused", "error_type", fmt.Sprintf("%T", err))
-	return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, "forbidden")
-}
-
-// UpdateAccountUser godoc
-// @Summary      Update an account member
-// @Description  Changes role and/or status. Owner and admin only. Suspending leaves the API tokens that member minted for this account.
-// @Tags         Accounts
-// @Security     BearerAuth
-// @Accept       json
-// @Produce      json
-// @Param        accountId  path      string                     true  "Account UUID"
-// @Param        userId     path      string                     true  "User UUID"
-// @Param        request    body      UpdateAccountUserSwagger   true  "Role and/or status"
-// @Success      200        {object}  tokenresource.AccountUser
-// @Failure      403        {object}  responses.ErrorBody
-// @Failure      404        {object}  responses.ErrorBody
-// @Failure      422        {object}  responses.ErrorBody
-// @Router       /accounts/{accountId}/users/{userId} [patch]
-func (ctrl *AccountsController) UpdateAccountUser(ctx http.Context) http.Response {
-	account := middleware.AccountFrom(ctx)
-	if account == nil {
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
-	}
-	callerID := middleware.SessionUserID(ctx)
-	if callerID == uuid.Nil {
-		return responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
-	}
-
-	targetID, err := requests.RouteUUID(ctx, "userId")
-	if err != nil {
-		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid user id")
-	}
-
-	var req accountsrequests.UpdateAccountUserRequest
-	if errResp := requests.Validate(ctx, &req); errResp != nil {
-		return errResp
-	}
-
-	member, err := ctrl.accountService.UpdateMember(ctx.Context(), accountsvc.UpdateMemberInput{
-		AccountID: account.ID,
-		ActorID:   callerID,
-		TargetID:  targetID,
-		Role:      req.Role,
-		Status:    req.Status,
-	})
-	if errResp := mapMemberError(ctx, err); errResp != nil {
-		return errResp
-	}
-	return ctx.Response().Success().Json(tokenresource.AccountUserPtr(member))
-}
-
-// RemoveAccountUser godoc
-// @Summary      Remove a user from an account
-// @Description  Soft-deletes the account_user membership. Requires owner or admin.
-// @Tags         Accounts
-// @Security     BearerAuth
-// @Produce      json
-// @Param        accountId  path  string  true  "Account UUID"
-// @Param        userId     path  string  true  "User UUID to remove"
-// @Success      204  "No content"
-// @Failure      403  {object}  responses.ErrorBody
-// @Failure      404  {object}  responses.ErrorBody
-// @Router       /accounts/{accountId}/users/{userId} [delete]
-func (ctrl *AccountsController) RemoveAccountUser(ctx http.Context) http.Response {
-	account := requestctx.MustAccount(ctx)
-	callerID := middleware.SessionUserID(ctx)
-	if callerID == uuid.Nil {
-		return responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
-	}
-	targetID, err := requests.RouteUUID(ctx, "userId")
-	if err != nil {
-		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid user id")
-	}
-
-	if err := ctrl.accountService.RemoveMember(ctx.Context(), account.ID, callerID, targetID); err != nil {
-		return mapMemberError(ctx, err)
-	}
-	return ctx.Response().NoContent()
-}
-
 // ---- Swagger-only types (keep for @Param annotations) ----
 
 type CreateAccountSwagger struct {
@@ -392,18 +217,4 @@ type CreateAccountSwagger struct {
 type UpdateAccountSwagger struct {
 	Name           string `json:"name,omitempty" example:"New Name"`
 	ViewAllWallets *bool  `json:"view_all_wallets,omitempty" example:"true"`
-}
-
-type AddAccountUserSwagger struct {
-	Email string `json:"email" example:"user@example.com"`
-	Role  string `json:"role" example:"admin"`
-}
-
-type UpdateAccountUserSwagger struct {
-	Role   string `json:"role,omitempty" example:"admin"`
-	Status string `json:"status,omitempty" example:"suspended"`
-}
-
-type AccountUserListResponse struct {
-	Data []tokenresource.AccountUser `json:"data"`
 }

@@ -117,7 +117,7 @@ func (ctrl *InvitesController) Create(ctx http.Context) http.Response {
 	issued, err := ctrl.accounts.IssueInvite(ctx.Context(), account.ID, req.Email, req.Role, callerID, base)
 	if err != nil {
 		if errors.Is(err, accountsvc.ErrGrantRole) {
-			return inviteGrantForbidden(ctx, err)
+			return mapInviteError(ctx, err, "failed to create invite")
 		}
 		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to create invite")
 	}

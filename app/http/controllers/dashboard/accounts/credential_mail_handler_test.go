@@ -11,7 +11,7 @@ func TestHandlers_Leave_CredentialDispatchToTheDecidingService(t *testing.T) {
 		path      string
 		signature string
 	}{
-		{"account_controller.go", "func (ctrl *AccountsController) AddAccountUser"},
+		{"member_controller.go", "func (c *MemberController) Store"},
 		{"invites_controller.go", "func (ctrl *InvitesController) Create"},
 		{"invites_controller.go", "func (ctrl *InvitesController) Resend"},
 		{"../auth/auth_controller.go", "func (ctrl *AuthController) ForgotPassword"},

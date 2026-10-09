@@ -16,7 +16,7 @@ import (
 func TestInvite_Grant_ForbiddenOmitsTheCause(t *testing.T) {
 	cause := fmt.Errorf("insert account_invites: %w", accountsvc.ErrGrantRole)
 	response := &recordingResponse{}
-	inviteGrantForbidden(&recordingContext{base: context.Background(), response: response}, cause)
+	mapInviteError(&recordingContext{base: context.Background(), response: response}, cause, "failed to create invite")
 
 	if response.status != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", response.status)

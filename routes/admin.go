@@ -82,6 +82,7 @@ func RegisterAdminRoutes() {
 	usersCtrl := newDashboardUsersController()
 	accountsCtrl := newDashboardAccountsController()
 	tokenCtrl := newDashboardTokenController()
+	memberCtrl := newDashboardMemberController()
 	accountSettingsCtrl := newDashboardAccountSettingsController()
 	accountActivityCtrl := newDashboardAccountActivityController()
 	accountFeaturesCtrl := newDashboardAccountFeaturesController()
@@ -139,10 +140,10 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.Can(accounts, middleware.PermAccountLifecycle)).Post("/archive", accountsCtrl.ArchiveAccount)
 			r.Middleware(middleware.Can(accounts, middleware.PermAccountLifecycle)).Post("/freeze", accountsCtrl.FreezeAccount)
 
-			r.Middleware(middleware.Can(accounts, middleware.PermUsersRead)).Get("/users", accountsCtrl.ListAccountUsers)
-			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/users", accountsCtrl.AddAccountUser)
-			r.Middleware(middleware.AccountUpdateMember(accounts)).Patch("/users/{userId}", accountsCtrl.UpdateAccountUser)
-			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Delete("/users/{userId}", accountsCtrl.RemoveAccountUser)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersRead)).Get("/users", memberCtrl.Index)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/users", memberCtrl.Store)
+			r.Middleware(middleware.AccountUpdateMember(accounts)).Patch("/users/{userId}", memberCtrl.Update)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Delete("/users/{userId}", memberCtrl.Destroy)
 			r.Middleware(middleware.Can(accounts, middleware.PermUsersRead)).Get("/invites", inviteCtrl.List)
 			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/invites", inviteCtrl.Create)
 			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/invites/{id}/resend", inviteCtrl.Resend)
@@ -555,6 +556,10 @@ func newDashboardAccountsController() *dashaccounts.AccountsController {
 		Limits:         container.MustMake[*settingssvc.Service](),
 		Features:       container.MustMake[*featuressvc.Service](),
 	})
+}
+
+func newDashboardMemberController() *dashaccounts.MemberController {
+	return dashaccounts.NewMemberController(container.MustMake[*accountsvc.Service]())
 }
 
 func newDashboardTokenController() *dashaccounts.TokenController {

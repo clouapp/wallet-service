@@ -29,3 +29,13 @@ func TestNew_Token_ControllerRequiresBothServices(t *testing.T) {
 		})
 	}
 }
+
+func TestNew_Member_ControllerRequiresTheAccountService(t *testing.T) {
+	defer func() {
+		if got := recover(); got != "dashboard member controller: account service is required" {
+			t.Fatalf("panic = %v", got)
+		}
+	}()
+	NewMemberController(nil)
+	t.Fatal("expected a panic")
+}
