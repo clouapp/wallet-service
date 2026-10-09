@@ -38,6 +38,7 @@ func TestList_For_MemberWithRolesPairsEachAccountWithTheCallersRole(t *testing.T
 	svc := NewService(Deps{
 		Accounts:    pagedAccounts{rows: []models.Account{{ID: a}, {ID: b}}, total: 7},
 		Memberships: &roleMemberships{roles: map[uuid.UUID]string{a: models.AccountRoleOwner, b: models.AccountRoleAuditor}},
+		SweepLimits: fixedSweepLimits{},
 	})
 
 	got, total, err := svc.ListForMemberWithRoles(context.Background(), uuid.New(), "", "", 20, 0)
@@ -94,5 +95,32 @@ func TestList_For_MemberWithRolesReturnsTheStoreErrors(t *testing.T) {
 	})
 	if _, _, err := svc.ListForMemberWithRoles(context.Background(), uuid.New(), "", "", 20, 0); !errors.Is(err, boom) {
 		t.Fatalf("role read err = %v", err)
+	}
+}
+
+func TestList_For_MemberWithRolesServesEachAccountWithItsSweepLimits(t *testing.T) {
+	a := uuid.New()
+	limits := `{"daily":"5"}`
+	svc := NewService(Deps{
+		Accounts:    pagedAccounts{rows: []models.Account{{ID: a}}, total: 1},
+		Memberships: &roleMemberships{roles: map[uuid.UUID]string{a: models.AccountRoleUser}},
+		SweepLimits: fixedSweepLimits{document: &limits},
+	})
+
+	got, _, err := svc.ListForMemberWithRoles(context.Background(), uuid.New(), "", "", 20, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].SweepLimits == nil || *got[0].SweepLimits != limits {
+		t.Fatalf("items = %+v, want the account with its sweep limits", got)
+	}
+
+	failing := NewService(Deps{
+		Accounts:    pagedAccounts{rows: []models.Account{{ID: a}}, total: 1},
+		Memberships: &roleMemberships{roles: map[uuid.UUID]string{a: models.AccountRoleUser}},
+		SweepLimits: fixedSweepLimits{err: errors.New("settings unavailable")},
+	})
+	if _, _, err := failing.ListForMemberWithRoles(context.Background(), uuid.New(), "", "", 20, 0); err == nil {
+		t.Fatal("an account whose sweep limits could not be read was served")
 	}
 }

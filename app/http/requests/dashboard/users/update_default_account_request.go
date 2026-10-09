@@ -1,6 +1,7 @@
 package users
 
 import (
+	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 )
 
@@ -16,4 +17,10 @@ func (r *UpdateDefaultAccountRequest) Rules(ctx http.Context) map[string]string 
 	return map[string]string{
 		"account_id": "required|uuid",
 	}
+}
+
+// Account is the account id, which the uuid rule already checked.
+func (r *UpdateDefaultAccountRequest) Account() uuid.UUID {
+	id, _ := uuid.Parse(r.AccountID)
+	return id
 }

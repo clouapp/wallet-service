@@ -68,3 +68,35 @@ type AccountDetail struct {
 func NewAccountDetail(detail accountsvc.Detail) AccountDetail {
 	return AccountDetail{Account: NewAccount(detail.View), Features: detail.Features}
 }
+
+// MemberAccount is one row of GET /v1/users/me/accounts. Existing account
+// fields stay; role is the caller's account_users.role, returned as stored
+// (owner, admin, auditor, or user).
+type MemberAccount struct {
+	Account
+	Role string `json:"role" example:"owner"`
+}
+
+// NewMemberAccounts shapes the caller's page of accounts. The page is never null.
+func NewMemberAccounts(members []accountsvc.MemberAccount) []MemberAccount {
+	items := make([]MemberAccount, 0, len(members))
+	for _, member := range members {
+		items = append(items, MemberAccount{Account: NewAccount(member.View), Role: member.Role})
+	}
+	return items
+}
+
+// DefaultAccount is PATCH /v1/users/me/default-account: the new default
+// account, or null when it can no longer be read.
+type DefaultAccount struct {
+	Account *Account `json:"account"`
+}
+
+// NewDefaultAccount shapes the default account view. A nil view is null.
+func NewDefaultAccount(view *accountsvc.View) DefaultAccount {
+	if view == nil {
+		return DefaultAccount{}
+	}
+	account := NewAccount(*view)
+	return DefaultAccount{Account: &account}
+}

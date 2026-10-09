@@ -1,0 +1,19 @@
+package users
+
+import (
+	accountresources "github.com/macrowallets/waas/app/http/resources/dashboard/accounts"
+)
+
+// The types below document request and response bodies in the swagger
+// annotations of this package. Handlers do not use them.
+
+type UpdateDefaultAccountSwagger struct {
+	AccountID string `json:"account_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+}
+
+type AccountListResponse struct {
+	Data   []accountresources.MemberAccount `json:"data"`
+	Total  int64                            `json:"total" example:"64"`
+	Limit  int                              `json:"limit" example:"20"`
+	Offset int                              `json:"offset" example:"0"`
+}

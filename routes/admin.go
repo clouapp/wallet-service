@@ -80,6 +80,7 @@ func RegisterAdminRoutes() {
 	preferencesCtrl := newDashboardPreferencesController()
 	authCtrl := newDashboardAuthController()
 	usersCtrl := newDashboardUsersController()
+	userAccountCtrl := newDashboardUserAccountController()
 	accountCtrl := newDashboardAccountController()
 	tokenCtrl := newDashboardTokenController()
 	memberCtrl := newDashboardMemberController()
@@ -125,8 +126,8 @@ func RegisterAdminRoutes() {
 		router.Get("/me", usersCtrl.GetMe)
 		router.Patch("/me", usersCtrl.UpdateMe)
 		router.Post("/me/password", usersCtrl.ChangePassword)
-		router.Get("/me/accounts", usersCtrl.ListMyAccounts)
-		router.Patch("/me/default-account", usersCtrl.UpdateDefaultAccount)
+		router.Get("/me/accounts", userAccountCtrl.Index)
+		router.Patch("/me/default-account", userAccountCtrl.UpdateDefault)
 		router.Post("/me/totp/setup", usersCtrl.SetupTOTP)
 		router.Post("/me/totp/verify", usersCtrl.ConfirmTOTP)
 		router.Delete("/me/totp", usersCtrl.DisableTOTP)
@@ -356,14 +357,16 @@ func newDashboardAuthController() *dashauth.AuthController {
 func newDashboardUsersController() *dashusers.UsersController {
 	return dashusers.NewUsersController(dashusers.UsersControllerDeps{
 		Users:        container.MustMake[*usersvc.Service](),
-		Accounts:     container.MustMake[*accountsvc.Service](),
 		Passwords:    container.MustMake[*authsvc.Service](),
 		Refresh:      container.MustMake[*sessions.RefreshTokens](),
 		SecondFactor: container.MustMake[*authsvc.SecondFactorVerifier](),
 		Revoker:      container.MustMake[*authsvc.SessionRevoker](),
 		Features:     container.MustMake[*featuressvc.Service](),
-		Limits:       container.MustMake[*settingssvc.Service](),
 	})
+}
+
+func newDashboardUserAccountController() *dashusers.AccountController {
+	return dashusers.NewAccountController(container.MustMake[*accountsvc.Service]())
 }
 
 func newDashboardWalletsController() *dashwallets.WalletController {

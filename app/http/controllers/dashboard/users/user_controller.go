@@ -1,10 +1,7 @@
 package users
 
 import (
-	"errors"
-	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
@@ -12,14 +9,11 @@ import (
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
-	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
 	usersrequests "github.com/macrowallets/waas/app/http/requests/dashboard/users"
-	accountresource "github.com/macrowallets/waas/app/http/resources/dashboard/accounts"
 	userresource "github.com/macrowallets/waas/app/http/resources/dashboard/users"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
-	accountsvc "github.com/macrowallets/waas/app/services/account"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/sessions"
@@ -29,26 +23,22 @@ import (
 
 type UsersController struct {
 	users        *usersvc.Service
-	accounts     *accountsvc.Service
 	passwords    *authsvc.Service
 	refresh      *sessions.RefreshTokens
 	secondFactor *authsvc.SecondFactorVerifier
 	revoker      *authsvc.SessionRevoker
 	features     *featuressvc.Service
-	limits       *settings.Service
 }
 
 // UsersControllerDeps is everything the dashboard users controller needs.
 // Every field is required.
 type UsersControllerDeps struct {
 	Users        *usersvc.Service
-	Accounts     *accountsvc.Service
 	Passwords    *authsvc.Service
 	Refresh      *sessions.RefreshTokens
 	SecondFactor *authsvc.SecondFactorVerifier
 	Revoker      *authsvc.SessionRevoker
 	Features     *featuressvc.Service
-	Limits       *settings.Service
 }
 
 // NewUsersController wires the dashboard user handlers from UsersControllerDeps.
@@ -56,9 +46,6 @@ type UsersControllerDeps struct {
 func NewUsersController(deps UsersControllerDeps) *UsersController {
 	if deps.Users == nil {
 		panic("dashboard users controller: users service is required")
-	}
-	if deps.Accounts == nil {
-		panic("dashboard users controller: account service is required")
 	}
 	if deps.Passwords == nil {
 		panic("dashboard users controller: auth service is required")
@@ -75,18 +62,13 @@ func NewUsersController(deps UsersControllerDeps) *UsersController {
 	if deps.Features == nil {
 		panic("dashboard users controller: feature flags are required")
 	}
-	if deps.Limits == nil {
-		panic("dashboard users controller: settings service is required")
-	}
 	return &UsersController{
 		users:        deps.Users,
-		accounts:     deps.Accounts,
 		passwords:    deps.Passwords,
 		refresh:      deps.Refresh,
 		secondFactor: deps.SecondFactor,
 		revoker:      deps.Revoker,
 		features:     deps.Features,
-		limits:       deps.Limits,
 	}
 }
 
@@ -198,134 +180,6 @@ func (ctrl *UsersController) ChangePassword(ctx http.Context) http.Response {
 		"access_token":  session.AccessToken,
 		"refresh_token": session.RefreshToken,
 	})
-}
-
-const (
-	myAccountsDefaultLimit    = 20
-	myAccountsMaxLimit        = 100
-	myAccountsSearchMaxLength = 100
-)
-
-var myAccountsBounds = pagination.Bounds{DefaultLimit: myAccountsDefaultLimit, MaxLimit: myAccountsMaxLimit}
-
-// ListMyAccounts godoc
-// @Summary      List accounts for current user
-// @Description  Returns a paginated list of accounts the authenticated user is a member of, ordered by name. A limit above 100 is capped; an offset past the end returns an empty page with the real total.
-// @Tags         User
-// @Security     BearerAuth
-// @Produce      json
-// @Param        limit        query   int     false  "Page size, 1-100 (default 20)"                 example(20)
-// @Param        offset       query   int     false  "Rows to skip, >= 0 (default 0)"                example(0)
-// @Param        search       query   string  false  "Case-insensitive match on name or id (max 100 chars)"
-// @Param        environment  query   string  false  "Only accounts in this environment"             Enums(prod, test)
-// @Success      200  {object}  AccountListResponse
-// @Failure      400  {object}  responses.ErrorBody
-// @Failure      401  {object}  responses.ErrorBody
-// @Router       /users/me/accounts [get]
-func (ctrl *UsersController) ListMyAccounts(ctx http.Context) http.Response {
-	userID := requestctx.MustUserID(ctx)
-
-	limit, offset, err := pagination.ParseStrict(ctx.Request().Query("limit"), ctx.Request().Query("offset"), myAccountsBounds)
-	if err != nil {
-		return paginationError(ctx, err)
-	}
-
-	search, environment, errMessage := parseMyAccountsFilter(ctx.Request().Query("search"), ctx.Request().Query("environment"))
-	if errMessage != "" {
-		return responses.FailMessage(ctx, http.StatusBadRequest, errMessage)
-	}
-
-	members, total, err := ctrl.accounts.ListForMemberWithRoles(ctx.Context(), userID, search, environment, limit, offset)
-	if err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("user: list my accounts: %v", err)
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch accounts")
-	}
-
-	items, err := ctrl.accountViewsWithRole(ctx, members)
-	if err != nil {
-		appfacades.Log().WithContext(ctx).Errorf("user: list my accounts roles: %v", err)
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to fetch accounts")
-	}
-
-	return ctx.Response().Success().Json(pagination.Response(items, total, limit, offset))
-}
-
-// accountViewsWithRole shapes the listed accounts with the caller's role on each.
-func (ctrl *UsersController) accountViewsWithRole(ctx http.Context, members []accountsvc.MemberAccount) ([]myAccount, error) {
-	items := make([]myAccount, 0, len(members))
-	for _, member := range members {
-		view, err := ctrl.accountView(ctx, member.Account)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, myAccount{Account: view, Role: member.Role})
-	}
-	return items, nil
-}
-
-func (ctrl *UsersController) accountView(ctx http.Context, account models.Account) (accountresource.Account, error) {
-	return controllers.AccountView(ctx.Context(), ctrl.limits, account)
-}
-
-func parseMyAccountsFilter(search, environment string) (string, string, string) {
-	search = strings.TrimSpace(search)
-	if utf8.RuneCountInString(search) > myAccountsSearchMaxLength {
-		return "", "", fmt.Sprintf("search must be at most %d characters", myAccountsSearchMaxLength)
-	}
-
-	environment = strings.TrimSpace(environment)
-	if environment != "" && environment != models.EnvironmentProd && environment != models.EnvironmentTest {
-		return "", "", fmt.Sprintf("environment must be %q or %q", models.EnvironmentProd, models.EnvironmentTest)
-	}
-
-	return search, environment, ""
-}
-
-// UpdateDefaultAccount godoc
-// @Summary      Set default account
-// @Description  Updates the authenticated user's default account
-// @Tags         User
-// @Security     BearerAuth
-// @Accept       json
-// @Produce      json
-// @Param        request  body      UpdateDefaultAccountSwagger  true  "Default account payload"
-// @Success      200      {object}  map[string]interface{}
-// @Failure      400      {object}  responses.ErrorBody
-// @Failure      403      {object}  responses.ErrorBody
-// @Router       /users/me/default-account [patch]
-func (ctrl *UsersController) UpdateDefaultAccount(ctx http.Context) http.Response {
-	userID := requestctx.MustUserID(ctx)
-
-	var req usersrequests.UpdateDefaultAccountRequest
-	if errResp := requests.Validate(ctx, &req); errResp != nil {
-		return errResp
-	}
-
-	accountID, _ := uuid.Parse(req.AccountID)
-
-	au, err := ctrl.accounts.FindMember(ctx.Context(), accountID, userID)
-	if err != nil || au == nil {
-		return responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, "not a member of this account")
-	}
-
-	userPtr, _ := ctrl.users.FindByID(ctx.Context(), userID)
-	if userPtr == nil {
-		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "user not found")
-	}
-	userPtr.DefaultAccountID = &accountID
-	if err := ctrl.users.UpdateDefaultAccountID(ctx.Context(), userPtr.ID, &accountID); err != nil {
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to update default account")
-	}
-
-	account, _ := ctrl.accounts.FindByID(ctx.Context(), accountID)
-	if account == nil {
-		return ctx.Response().Success().Json(http.Json{"account": accountresource.AccountPtr(nil)})
-	}
-	view, err := ctrl.accountView(ctx, *account)
-	if err != nil {
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternal, "failed to update default account")
-	}
-	return ctx.Response().Success().Json(http.Json{"account": &view})
 }
 
 // SetupTOTP godoc
@@ -499,25 +353,6 @@ type ChangePasswordSwagger struct {
 	NewPassword     string `json:"new_password"`
 }
 
-type UpdateDefaultAccountSwagger struct {
-	AccountID string `json:"account_id" example:"550e8400-e29b-41d4-a716-446655440000"`
-}
-
-// myAccount is one row of GET /v1/users/me/accounts. Existing account fields
-// stay; role is the caller's account_users.role, returned as stored
-// (owner, admin, auditor, or user).
-type myAccount struct {
-	accountresource.Account
-	Role string `json:"role" example:"owner"`
-}
-
-type AccountListResponse struct {
-	Data   []myAccount `json:"data"`
-	Total  int64       `json:"total" example:"64"`
-	Limit  int         `json:"limit" example:"20"`
-	Offset int         `json:"offset" example:"0"`
-}
-
 type TotpSetupSwagger struct {
 	Secret string `json:"secret" example:"JBSWY3DPEHPK3PXP"`
 	QrURL  string `json:"qr_url" example:"otpauth://totp/..."`
@@ -525,15 +360,4 @@ type TotpSetupSwagger struct {
 
 type ConfirmTotpSwagger struct {
 	Code string `json:"code" example:"123456"`
-}
-
-func paginationError(ctx http.Context, err error) http.Response {
-	switch {
-	case errors.Is(err, pagination.ErrInvalidLimit):
-		return responses.Error(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, pagination.ErrInvalidLimit.Error())
-	case errors.Is(err, pagination.ErrInvalidOffset):
-		return responses.Error(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, pagination.ErrInvalidOffset.Error())
-	default:
-		return responses.InternalError(ctx, err)
-	}
 }

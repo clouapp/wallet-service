@@ -14,9 +14,15 @@ import (
 	activitylog "github.com/macrowallets/waas/app/services/activity"
 )
 
-// ErrAccountNotCreated is an account, or its owner membership, that could not
-// be inserted.
-var ErrAccountNotCreated = errors.New("create the account")
+var (
+	// ErrAccountNotCreated is an account, or its owner membership, that could
+	// not be inserted.
+	ErrAccountNotCreated = errors.New("create the account")
+	// ErrNotMember is an account the user is not an active member of.
+	ErrNotMember = errors.New("not a member of this account")
+	// ErrUserNotFound is a signed-in user whose row cannot be read.
+	ErrUserNotFound = errors.New("user not found")
+)
 
 // View is an account as the dashboard serves it: the row and its sweep
 // limits, which live in settings. A failed limits read fails the view; it is
@@ -135,6 +141,44 @@ func (s *Service) changeStatus(ctx context.Context, account *models.Account, sta
 	return s.view(ctx, *account)
 }
 
+// SetDefaultAccount makes an account the user is a member of the user's
+// default account and returns its view. A membership that is missing, or
+// cannot be read, is ErrNotMember; a user that cannot be read is
+// ErrUserNotFound. An account that cannot be read back after the write has no
+// view: the result is nil with no error.
+func (s *Service) SetDefaultAccount(ctx context.Context, userID, accountID uuid.UUID) (*View, error) {
+	member, err := s.FindMember(ctx, accountID, userID)
+	if err != nil || member == nil {
+		return nil, ErrNotMember
+	}
+	user, err := s.FindUserByID(ctx, userID)
+	logUnreadable("default account: read user", err)
+	if user == nil {
+		return nil, ErrUserNotFound
+	}
+	if err := s.users.UpdateDefaultAccountID(ctx, user.ID, &accountID); err != nil {
+		return nil, err
+	}
+	account, err := s.FindByID(ctx, accountID)
+	logUnreadable("default account: read account", err)
+	if account == nil {
+		return nil, nil
+	}
+	view, err := s.view(ctx, *account)
+	if err != nil {
+		return nil, err
+	}
+	return &view, nil
+}
+
+// logUnreadable logs a read that failed for a reason other than a missing row,
+// where the caller answers as if the row were missing.
+func logUnreadable(read string, err error) {
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+		slog.Error("account: "+read, "error", err)
+	}
+}
+
 // view reads the account's sweep limits for its dashboard view.
 func (s *Service) view(ctx context.Context, account models.Account) (View, error) {
 	if s.sweepLimits == nil {
@@ -200,15 +244,16 @@ func (s *Service) ListForMember(ctx context.Context, userID uuid.UUID, search, e
 	return s.accounts.PaginateByMember(ctx, userID, search, environment, limit, offset)
 }
 
-// MemberAccount is an account with the listing user's role on it.
+// MemberAccount is the view of an account with the listing user's role on it.
 type MemberAccount struct {
-	Account models.Account
-	Role    string
+	View
+	Role string
 }
 
-// ListForMemberWithRoles is ListForMember with the user's stored role on each
-// listed account. A listed account with no active role is a broken membership
-// and fails the read instead of being served without one.
+// ListForMemberWithRoles is ListForMember with the user's stored role and the
+// sweep limits on each listed account. A listed account with no active role is
+// a broken membership and fails the read instead of being served without one;
+// so do sweep limits that cannot be read.
 func (s *Service) ListForMemberWithRoles(ctx context.Context, userID uuid.UUID, search, environment string, limit, offset int) ([]MemberAccount, int64, error) {
 	accounts, total, err := s.ListForMember(ctx, userID, search, environment, limit, offset)
 	if err != nil {
@@ -232,7 +277,14 @@ func (s *Service) ListForMemberWithRoles(ctx context.Context, userID uuid.UUID, 
 		if !ok || strings.TrimSpace(role) == "" {
 			return nil, 0, fmt.Errorf("account %s has no role for user %s", account.ID, userID)
 		}
-		items = append(items, MemberAccount{Account: account, Role: role})
+		items = append(items, MemberAccount{View: View{Account: account}, Role: role})
+	}
+	for i := range items {
+		view, err := s.view(ctx, items[i].Account)
+		if err != nil {
+			return nil, 0, err
+		}
+		items[i].View = view
 	}
 	return items, total, nil
 }
