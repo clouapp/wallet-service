@@ -132,6 +132,19 @@ func newEnrollment(t *testing.T, user *models.User, sealer prefixSealer) enrollm
 	return enrollmentFixture{enrollment: enrollment, users: users, refresh: refresh, watermarks: watermarks}
 }
 
+// readProof is the proof a caller brings to Disable; reads counts how often
+// Disable asked for it.
+type readProof struct {
+	code, recovery string
+	err            error
+	reads          int
+}
+
+func (p *readProof) Read() (string, string, error) {
+	p.reads++
+	return p.code, p.recovery, p.err
+}
+
 func newTOTPUser() *models.User {
 	return &models.User{ID: uuid.New(), Email: "ada@example.com"}
 }
@@ -220,10 +233,13 @@ func TestTOTP_Disable_NeedsALiveSecondFactor(t *testing.T) {
 	user, _ := enabledUser(t)
 	f := newEnrollment(t, user, prefixSealer{})
 
-	_, err := f.enrollment.Disable(context.Background(), &recordingGuard{}, user.ID, "  ", "")
+	_, err := f.enrollment.Disable(context.Background(), &recordingGuard{}, user.ID, &readProof{code: "  "})
 	assert.ErrorIs(t, err, authsvc.ErrInvalidSecondFactor)
-	_, err = f.enrollment.Disable(context.Background(), &recordingGuard{}, user.ID, "000000", "")
+	_, err = f.enrollment.Disable(context.Background(), &recordingGuard{}, user.ID, &readProof{code: "000000"})
 	assert.ErrorIs(t, err, authsvc.ErrInvalidSecondFactor)
+	unreadable := errors.New("body does not bind")
+	_, err = f.enrollment.Disable(context.Background(), &recordingGuard{}, user.ID, &readProof{err: unreadable})
+	assert.ErrorIs(t, err, unreadable, "a proof that cannot be read is returned as it is")
 	assert.True(t, f.users.user.TotpEnabled)
 	assert.Empty(t, f.watermarks.at)
 }
@@ -234,7 +250,7 @@ func TestTOTP_Disable_TurnsItOffAndReplacesTheSessions(t *testing.T) {
 	code, err := totp.GenerateCode(secret, time.Now())
 	require.NoError(t, err)
 
-	disabled, err := f.enrollment.Disable(context.Background(), &recordingGuard{}, user.ID, " "+code+" ", "")
+	disabled, err := f.enrollment.Disable(context.Background(), &recordingGuard{}, user.ID, &readProof{code: " " + code + " "})
 
 	require.NoError(t, err)
 	assert.False(t, f.users.user.TotpEnabled)
@@ -248,10 +264,12 @@ func TestTOTP_Disable_TurnsItOffAndReplacesTheSessions(t *testing.T) {
 func TestTOTP_Disable_AsksNoProofOfAUserWithoutIt(t *testing.T) {
 	user := newTOTPUser()
 	f := newEnrollment(t, user, prefixSealer{})
+	proof := &readProof{err: errors.New("body does not bind")}
 
-	_, err := f.enrollment.Disable(context.Background(), &recordingGuard{}, user.ID, "", "")
+	_, err := f.enrollment.Disable(context.Background(), &recordingGuard{}, user.ID, proof)
 
 	require.NoError(t, err)
+	assert.Zero(t, proof.reads, "the proof of a user without 2FA is not read")
 	assert.Contains(t, f.watermarks.at, user.ID)
 }
 
@@ -259,17 +277,17 @@ func TestTOTP_Disable_NamesTheStepThatFailed(t *testing.T) {
 	user := newTOTPUser()
 	f := newEnrollment(t, user, prefixSealer{})
 	f.users.findErr = errors.New("store down")
-	_, err := f.enrollment.Disable(context.Background(), &recordingGuard{}, user.ID, "", "")
+	_, err := f.enrollment.Disable(context.Background(), &recordingGuard{}, user.ID, &readProof{})
 	assert.ErrorIs(t, err, authsvc.ErrUserNotFound)
 
 	f = newEnrollment(t, newTOTPUser(), prefixSealer{})
 	f.users.disableErr = errors.New("store down")
-	_, err = f.enrollment.Disable(context.Background(), &recordingGuard{}, f.users.user.ID, "", "")
+	_, err = f.enrollment.Disable(context.Background(), &recordingGuard{}, f.users.user.ID, &readProof{})
 	assert.ErrorIs(t, err, authsvc.ErrTOTPNotDisabled)
 	assert.Empty(t, f.watermarks.at)
 
 	f = newEnrollment(t, newTOTPUser(), prefixSealer{})
-	_, err = f.enrollment.Disable(context.Background(), &recordingGuard{err: errors.New("signing failed")}, f.users.user.ID, "", "")
+	_, err = f.enrollment.Disable(context.Background(), &recordingGuard{err: errors.New("signing failed")}, f.users.user.ID, &readProof{})
 	assert.ErrorIs(t, err, authsvc.ErrSessionsNotReplaced)
 	assert.False(t, f.users.user.TotpEnabled, "2FA is off before the sessions are replaced")
 }

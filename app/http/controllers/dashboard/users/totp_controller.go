@@ -86,15 +86,13 @@ func (c *TotpController) Confirm(ctx http.Context) http.Response {
 //	@Success		200	{object}	map[string]interface{}
 //	@Failure		500	{object}	responses.ErrorBody
 //	@Router			/users/me/totp [delete]
+//
+// The proof (DisableTotpRequest) is read by the service only when the user has
+// 2FA on, so the body of a user without it is not read.
 func (c *TotpController) Destroy(ctx http.Context) http.Response {
 	user := requestctx.MustUser(ctx)
 
-	var req usersrequests.DisableTotpRequest
-	if response := requests.Validate(ctx, &req); response != nil {
-		return response
-	}
-
-	disabled, err := c.totp.Disable(ctx.Context(), appfacades.Auth(ctx), user.ID, req.Code, req.RecoveryCode)
+	disabled, err := c.totp.Disable(ctx.Context(), appfacades.Auth(ctx), user.ID, usersrequests.NewDisableTotpProof(ctx))
 	if err != nil {
 		return mapDisableError(ctx, err)
 	}

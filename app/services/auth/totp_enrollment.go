@@ -53,6 +53,14 @@ type SecretSealer interface {
 	Seal(plaintext string) (string, error)
 }
 
+// SecondFactorProof is what a caller brings to turn 2FA off: the current code
+// or an unused recovery code. Disable reads it only when the user has 2FA on:
+// a user without it has nothing to prove, and a proof that cannot be read is
+// not that user's error. Read's error is returned as it is.
+type SecondFactorProof interface {
+	Read() (code, recoveryCode string, err error)
+}
+
 // TOTPEnrollment turns a user's TOTP second factor on and off: setup stores a
 // sealed secret, confirm proves the user holds it and turns 2FA on with fresh
 // recovery codes, disable turns it off and replaces the sessions.
@@ -169,17 +177,21 @@ func (e *TOTPEnrollment) Confirm(ctx context.Context, user *models.User, code st
 }
 
 // Disable turns the user's 2FA off. A user who has it on must prove a live
-// second factor first: the current code or an unused recovery code, either
-// trimmed; neither is ErrInvalidSecondFactor, and the verifier's refusals are
-// returned as they are. Every session of the user is then replaced by a new
-// one for the caller, signed with guard. A recovery code delete that fails is
-// logged; 2FA stays off.
-func (e *TOTPEnrollment) Disable(ctx context.Context, guard SessionGuard, userID uuid.UUID, code, recoveryCode string) (TOTPDisabled, error) {
+// second factor first: proof is read, its code and recovery code trimmed;
+// neither is ErrInvalidSecondFactor, and the verifier's refusals are returned
+// as they are. Every session of the user is then replaced by a new one for
+// the caller, signed with guard. A recovery code delete that fails is logged;
+// 2FA stays off.
+func (e *TOTPEnrollment) Disable(ctx context.Context, guard SessionGuard, userID uuid.UUID, proof SecondFactorProof) (TOTPDisabled, error) {
 	user, err := e.users.FindByID(ctx, userID)
 	if err != nil || user == nil {
 		return TOTPDisabled{}, ErrUserNotFound
 	}
 	if user.TotpEnabled {
+		code, recoveryCode, err := proof.Read()
+		if err != nil {
+			return TOTPDisabled{}, err
+		}
 		code, recoveryCode = strings.TrimSpace(code), strings.TrimSpace(recoveryCode)
 		if code == "" && recoveryCode == "" {
 			return TOTPDisabled{}, ErrInvalidSecondFactor

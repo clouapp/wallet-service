@@ -9,6 +9,7 @@ import (
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/pagination"
+	"github.com/macrowallets/waas/app/http/requests"
 	usersrequests "github.com/macrowallets/waas/app/http/requests/dashboard/users"
 	"github.com/macrowallets/waas/app/http/responses"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
@@ -75,10 +76,14 @@ func mapPasswordError(ctx http.Context, err error) http.Response {
 	return mapError(ctx, err, "failed to update password")
 }
 
-// mapDisableError is mapError for turning 2FA off: a refused second factor
-// keeps the auth answers, and sessions that could not be renewed after 2FA
+// mapDisableError is mapError for turning 2FA off: a proof whose form request
+// refused it is that answer, a refused second factor keeps the auth answers, and sessions that could not be renewed after 2FA
 // went off say so. Any other verifier failure is a 500 "internal error".
 func mapDisableError(ctx http.Context, err error) http.Response {
+	var refusal *requests.Refusal
+	if errors.As(err, &refusal) {
+		return refusal.Response
+	}
 	if response := controllers.MapSecondFactorError(ctx, err); response != nil {
 		return response
 	}
