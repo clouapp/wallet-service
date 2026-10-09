@@ -164,6 +164,29 @@ func (s *PlatformAccountSweepLimitsTestSuite) TestAnother_Group_AndAnUnknownAcco
 	s.AssertError(missing, 401, "unauthorized", "missing or malformed bearer token")
 }
 
+// TestThe_Body_IsReadAfterTheGroupAndTheAccount pins the order for an admin:
+// an unknown group or account is 404 whatever the body, and only a write
+// that may go ahead reads it, so a body that is not a JSON object is 400
+// there alone.
+func (s *PlatformAccountSweepLimitsTestSuite) TestThe_Body_IsReadAfterTheGroupAndTheAccount() {
+	admin := s.seedUser(false)
+	s.grantPlatformAdmin(admin.ID)
+	adminSession := s.signIn(admin.Email)
+	accountID := s.createAccount("Known")
+	body := `null`
+
+	missingGroup := s.putRaw(adminSession.AccessToken, s.groupPath(accountID, "sweep_limits"), body)
+	s.AssertError(missingGroup, 404, responses.CodeNotFound, "settings group not found")
+	missingAccount := s.putRaw(adminSession.AccessToken, s.groupPath(uuid.New(), "account_sweep_limits"), body)
+	s.AssertError(missingAccount, 404, "not_found", "account not found")
+	unreadable := s.putRaw(adminSession.AccessToken, s.groupPath(accountID, "account_sweep_limits"), body)
+	s.AssertError(unreadable, 400, responses.CodeInvalidRequest, "invalid request body")
+	s.Equal(int64(0), s.count(
+		`SELECT count(*) FROM settings WHERE account_id = ? AND "group" = 'account_sweep_limits'`,
+		accountID,
+	))
+}
+
 func (s *PlatformAccountSweepLimitsTestSuite) TestZero_Negative_AndANegativeCapLeaveTheRowUnchanged() {
 	admin := s.seedUser(false)
 	s.grantPlatformAdmin(admin.ID)
