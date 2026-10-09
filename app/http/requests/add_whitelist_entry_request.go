@@ -28,5 +28,5 @@ func (r *AddWhitelistEntryRequest) Rules(ctx http.Context) map[string]string {
 }
 
 func (r *AddWhitelistEntryRequest) PrepareForValidation(ctx http.Context, data validation.Data) error {
-	return prepareWalletChain(ctx, data)
+	return PrepareWalletChain(ctx, data)
 }

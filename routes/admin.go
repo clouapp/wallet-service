@@ -28,7 +28,6 @@ import (
 	accountsvc "github.com/macrowallets/waas/app/services/account"
 	activitysvc "github.com/macrowallets/waas/app/services/activity"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
-	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/credentialmail"
 	"github.com/macrowallets/waas/app/services/currencies"
@@ -43,7 +42,6 @@ import (
 	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/withdraw"
-	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/app/services/withdrawalrecords"
 )
 
@@ -304,12 +302,12 @@ func RegisterAdminRoutes() {
 			r.Get("/transactions", walletTxCtrl.ListWalletTransactions)
 			r.Get("/transactions/{txId}", walletTxCtrl.GetWalletTransaction)
 
-			r.Get("/withdrawals", withdrawalCtrl.ListWalletWithdrawals)
-			r.Middleware(middleware.RequireFundAction(middleware.FundWithdraw)).Post("/withdrawals", withdrawalCtrl.CreateWalletWithdrawal)
-			r.Post("/withdrawals/estimate", withdrawalCtrl.EstimateWithdrawalFee)
+			r.Get("/withdrawals", withdrawalCtrl.Index)
+			r.Middleware(middleware.RequireFundAction(middleware.FundWithdraw)).Post("/withdrawals", withdrawalCtrl.Store)
+			r.Post("/withdrawals/estimate", withdrawalCtrl.Estimate)
 			r.Get("/fee-estimate", feeEstimateCtrl.GetWalletFeeEstimate)
-			r.Get("/withdrawals/{withdrawalId}", withdrawalCtrl.GetWalletWithdrawal)
-			r.Middleware(middleware.WalletCancelWithdrawal(walletPolicyMemberships(), container.MustMake[*withdrawalrecords.Records]())).Post("/withdrawals/{withdrawalId}/cancel", withdrawalCtrl.CancelWalletWithdrawal)
+			r.Get("/withdrawals/{withdrawalId}", withdrawalCtrl.Show)
+			r.Middleware(middleware.WalletCancelWithdrawal(walletPolicyMemberships(), container.MustMake[*withdrawalrecords.Records]())).Post("/withdrawals/{withdrawalId}/cancel", withdrawalCtrl.Cancel)
 
 			r.Middleware(middleware.RequireFundAction(middleware.FundSweep)).Post("/consolidate", sweepCtrl.ConsolidateWallet)
 			r.Get("/gas-status", sweepCtrl.GetGasStatus)
@@ -325,7 +323,7 @@ func RegisterAdminRoutes() {
 	// Dashboard withdrawal detail. Same session and account-header auth as
 	// GET /v1/wallets/{walletId}/withdrawals; the id is not scoped by a wallet path.
 	facades.Route().Prefix("/v1/withdrawals").Middleware(middleware.SessionAuth(), accountHeader, totpEnrollment, noCache).Group(func(router route.Router) {
-		router.Get("/{withdrawalId}", withdrawalCtrl.GetDashboardWithdrawal)
+		router.Get("/{withdrawalId}", withdrawalCtrl.ShowInAccount)
 	})
 }
 
@@ -453,19 +451,12 @@ func newDashboardAddressesController() *dashaddresses.AddressesController {
 	})
 }
 
-func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalsController {
-	return dashwithdrawals.NewWithdrawalsController(dashwithdrawals.WithdrawalsControllerDeps{
-		Withdrawals:       container.MustMake[*withdrawalrecords.Records](),
-		Chains:            container.MustMake[*chainsvc.Service](),
-		Users:             container.MustMake[*usersvc.Service](),
-		Registry:          container.MustMake[*chainpkg.Registry](),
-		WithdrawalService: container.MustMake[*withdraw.Service](),
-		Passwords:         container.MustMake[*authsvc.Service](),
-		Flags:             container.MustMake[*featuressvc.Service](),
-		Events:            container.MustMake[*withdrawalevents.Publisher](),
-		Wallets:           container.MustMake[*walletrecords.Wallets](),
-		SecondFactor:      container.MustMake[*authsvc.SecondFactorVerifier](),
-	})
+func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalController {
+	return dashwithdrawals.NewWithdrawalController(
+		container.MustMake[*withdrawalrecords.Records](),
+		container.MustMake[*withdraw.Service](),
+		container.MustMake[*featuressvc.Service](),
+	)
 }
 
 func newDashboardSweepController() *dashsweep.SweepController {

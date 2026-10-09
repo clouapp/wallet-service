@@ -42,21 +42,45 @@ func TestError_Mappers_KeepTheirBytes(t *testing.T) {
 		{"MapInternalError", func(ctx http.Context) http.Response { return MapInternalError(ctx, cause, "contract") },
 			500, legacyJSON, `{"error":{"code":"internal_error","message":"internal_error"}}`},
 		{"a 500 refusal sentence", func(ctx http.Context) http.Response {
-			return MapWithdrawalCreateError(ctx, &withdraw.CreateRefusal{Status: withdraw.CreateStatusInternal, Message: "failed to persist withdrawal"})
+			return MapWithdrawalError(ctx, &withdraw.CreateRefusal{Status: withdraw.CreateStatusInternal, Message: "failed to persist withdrawal"})
 		}, 500, legacyJSON, `{"error":{"code":"internal","message":"failed to persist withdrawal"}}`},
 		// withdraw.Service words an unknown asset as the fixed sentence (never what was
 		// typed), so the controller writes the refusal message as it is. The old
 		// "unknown asset ZZZ on eth" case pinned a prefix scrub that the service made
 		// redundant when it started returning the fixed sentence.
 		{"an unknown asset on create", func(ctx http.Context) http.Response {
-			return MapWithdrawalCreateError(ctx, &withdraw.CreateRefusal{Status: withdraw.CreateStatusUnprocessable, Message: "unknown asset"})
+			return MapWithdrawalError(ctx, &withdraw.CreateRefusal{Status: withdraw.CreateStatusUnprocessable, Message: "unknown asset"})
 		}, 422, legacyJSON, `{"error":{"code":"unprocessable","message":"unknown asset"}}`},
 		{"an unknown chain on create is an outage and names no chain", func(ctx http.Context) http.Response {
-			return MapWithdrawalCreateError(ctx, fmt.Errorf("resolve: %w", chainregistry.ErrUnknownChain))
+			return MapWithdrawalError(ctx, fmt.Errorf("resolve: %w", chainregistry.ErrUnknownChain))
 		}, 500, envelopeJSON, `{"error":{"code":"internal","message":"internal error"}}` + "\n"},
 		{"a refused create", func(ctx http.Context) http.Response {
-			return MapWithdrawalCreateError(ctx, &withdraw.CreateRefusal{Status: withdraw.CreateStatusForbidden, Message: "2FA must be enabled before withdrawing"})
+			return MapWithdrawalError(ctx, &withdraw.CreateRefusal{Status: withdraw.CreateStatusForbidden, Message: "2FA must be enabled before withdrawing"})
 		}, 403, legacyJSON, `{"error":{"code":"forbidden","message":"2FA must be enabled before withdrawing"}}`},
+		{"a caller with neither user nor account", func(ctx http.Context) http.Response {
+			return MapWithdrawalError(ctx, withdraw.ErrUnauthenticated)
+		}, 401, legacyJSON, `{"error":{"code":"unauthenticated","message":"unauthenticated"}}`},
+		{"a row failure is a generic 500", func(ctx http.Context) http.Response {
+			return MapWithdrawalError(ctx, &withdraw.CreateRowError{Endpoint: "mark_withdrawal_failed", Err: cause})
+		}, 500, legacyJSON, `{"error":{"code":"internal_error","message":"internal_error"}}`},
+		{"a failed execution after the row was marked", func(ctx http.Context) http.Response {
+			return MapWithdrawalError(ctx, &withdraw.ExecuteError{Err: fmt.Errorf("plan: %w", withdraw.ErrInvalidPassphrase)})
+		}, 401, envelopeJSON, `{"error":{"code":"unauthorized","message":"invalid passphrase"}}` + "\n"},
+		{"an execution that ran out of funds", func(ctx http.Context) http.Response {
+			return MapWithdrawalError(ctx, &withdraw.ExecuteError{Err: sweep.ErrInsufficientFunds})
+		}, 422, legacyJSON, `{"error":{"code":"insufficient_funds","message":"insufficient_funds"}}`},
+		{"an execution over the spending cap", func(ctx http.Context) http.Response {
+			return MapWithdrawalError(ctx, &withdraw.ExecuteError{Err: withdraw.ErrSpendingLimitExceeded})
+		}, 429, legacyJSON, `{"error":{"code":"spending_limit_exceeded","limit_type":"daily_usd","message":"spending_limit_exceeded"}}`},
+		{"a concurrent execution", func(ctx http.Context) http.Response {
+			return MapWithdrawalError(ctx, &withdraw.ExecuteError{Err: withdraw.ErrConcurrentWithdraw})
+		}, 409, envelopeJSON, `{"error":{"code":"conflict","message":"withdrawal already in progress for this wallet"}}` + "\n"},
+		{"an execution that failed for an unknown reason", func(ctx http.Context) http.Response {
+			return MapWithdrawalError(ctx, &withdraw.ExecuteError{Err: cause})
+		}, 500, legacyJSON, `{"error":{"code":"internal_error","message":"internal_error"}}`},
+		{"an unknown chain during execution is not the create outage", func(ctx http.Context) http.Response {
+			return MapWithdrawalError(ctx, &withdraw.ExecuteError{Err: fmt.Errorf("resolve: %w", chainregistry.ErrUnknownChain)})
+		}, 500, legacyJSON, `{"error":{"code":"internal_error","message":"internal_error"}}`},
 		{"responses.InternalError", func(ctx http.Context) http.Response { return responses.InternalError(ctx, cause) },
 			500, envelopeJSON, `{"error":{"code":"internal","message":"internal error"}}` + "\n"},
 		{"responses.ProviderError", func(ctx http.Context) http.Response { return responses.ProviderError(ctx, cause) },

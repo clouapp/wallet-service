@@ -9,7 +9,6 @@ func TestPassphrase_Forms_AcceptOnlyThePassphraseField(t *testing.T) {
 	}{
 		{name: "create wallet", rules: (&CreateWalletRequest{}).Rules(nil)},
 		{name: "generate address", rules: (&GenerateAddressRequest{}).Rules(nil)},
-		{name: "withdraw", rules: (&CreateWalletWithdrawalRequest{}).Rules(nil)},
 		{name: "consolidate", rules: (&ConsolidateRequest{}).Rules(nil)},
 	}
 	for _, form := range forms {

@@ -2,6 +2,7 @@ package withdrawals_test
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -11,24 +12,26 @@ import (
 	"github.com/macrowallets/waas/app/http/resources"
 	"github.com/macrowallets/waas/app/http/resources/withdrawals"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/withdraw"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
-func TestFailure_Codes_AreThePublicList(t *testing.T) {
+func TestFailure_Codes_TheServicePersistsAreThePublicList(t *testing.T) {
 	t.Parallel()
 
 	codes := []struct{ got, want string }{
-		{withdrawals.FailureInsufficientFunds, resources.CodeInsufficientFunds},
-		{withdrawals.FailureWalletNotGasReady, resources.CodeWalletNotGasReady},
-		{withdrawals.FailureUnsupportedChain, resources.CodeUnsupportedChain},
-		{withdrawals.FailureSweepLimitExceeded, resources.CodeSweepLimitExceeded},
-		{withdrawals.FailureInvalidPassphrase, resources.CodeInvalidPassphrase},
-		{withdrawals.FailurePassphraseTooShort, resources.CodePassphraseTooShort},
-		{withdrawals.FailureConcurrentWithdrawal, resources.CodeConcurrentWithdrawal},
-		{withdrawals.FailureTooManyAttempts, resources.CodeTooManyAttempts},
-		{withdrawals.FailureSpendingLimit, resources.CodeSpendingLimitExceeded},
-		{withdrawals.FailureSpendingLimitInvalid, resources.CodeSpendingLimitInvalid},
-		{withdrawals.FailureSpendingQuote, resources.CodeSpendingLimitQuoteUnavailable},
-		{withdrawals.FailureInternalError, resources.CodeInternalError},
+		{withdraw.FailureInsufficientFunds, resources.CodeInsufficientFunds},
+		{withdraw.FailureWalletNotGasReady, resources.CodeWalletNotGasReady},
+		{withdraw.FailureUnsupportedChain, resources.CodeUnsupportedChain},
+		{withdraw.FailureSweepLimitExceeded, resources.CodeSweepLimitExceeded},
+		{withdraw.FailureInvalidPassphrase, resources.CodeInvalidPassphrase},
+		{withdraw.FailurePassphraseTooShort, resources.CodePassphraseTooShort},
+		{withdraw.FailureConcurrentWithdrawal, resources.CodeConcurrentWithdrawal},
+		{withdraw.FailureTooManyAttempts, resources.CodeTooManyAttempts},
+		{withdraw.FailureSpendingLimit, resources.CodeSpendingLimitExceeded},
+		{withdraw.FailureSpendingLimitInvalid, resources.CodeSpendingLimitInvalid},
+		{withdraw.FailureSpendingQuote, resources.CodeSpendingLimitQuoteUnavailable},
+		{withdraw.FailureInternalError, resources.CodeInternalError},
 	}
 	seen := map[string]struct{}{}
 	for _, code := range codes {
@@ -119,5 +122,66 @@ func TestWithdrawals_Preserve_SliceNilness(t *testing.T) {
 	}
 	if string(emptyPage) != `{"data":[],"limit":50,"offset":0,"total":0}` {
 		t.Fatalf("empty page = %s", emptyPage)
+	}
+}
+
+func TestLookup_Keeps_TheExternalWire(t *testing.T) {
+	t.Parallel()
+
+	id := uuid.MustParse("11111111-1111-4111-8111-111111111111")
+	wallet := uuid.MustParse("22222222-2222-4222-8222-222222222222")
+	reason := "insufficient_funds"
+	created := carbon.NewDateTime(carbon.Parse("2024-05-06 07:08:09"))
+	row := &models.Withdrawal{ID: id, WalletID: wallet, Status: "failed", Amount: "4", DestinationAddress: "bc1q", FailureReason: &reason}
+	row.CreatedAt = created
+	row.UpdatedAt = created
+
+	raw, err := json.Marshal(withdrawals.NewLookup(row, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"id":"11111111-1111-4111-8111-111111111111","idempotency_key":"11111111-1111-4111-8111-111111111111","wallet_id":"22222222-2222-4222-8222-222222222222","status":"failed","amount":"4","destination_address":"bc1q","tx_hash":null,"transaction_status":null,"failure_reason":"insufficient_funds","created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:09"}`
+	if string(raw) != want {
+		t.Fatalf("wire = %s", raw)
+	}
+
+	row.Status = "broadcast"
+	row.FailureReason = nil
+	raw, err = json.Marshal(withdrawals.NewLookup(row, &models.Transaction{TxHash: "0xhash", Status: "confirming"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = `{"id":"11111111-1111-4111-8111-111111111111","idempotency_key":"11111111-1111-4111-8111-111111111111","wallet_id":"22222222-2222-4222-8222-222222222222","status":"broadcast","amount":"4","destination_address":"bc1q","tx_hash":"0xhash","transaction_status":"confirming","failure_reason":null,"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:09"}`
+	if string(raw) != want {
+		t.Fatalf("wire = %s", raw)
+	}
+
+	raw, err = json.Marshal(withdrawals.NewLookup(row, &models.Transaction{Status: "pending"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"tx_hash":null`) || !strings.Contains(string(raw), `"transaction_status":"pending"`) {
+		t.Fatalf("a transaction without a hash: %s", raw)
+	}
+}
+
+func TestFeeEstimate_Keeps_TheTypesWire(t *testing.T) {
+	t.Parallel()
+
+	for _, estimate := range []types.FeeEstimate{
+		{Fee: "0.00021", FeeAsset: "ETH"},
+		{Fee: "0.00021", FeeAsset: "ETH", GasPrice: "7", GasLimit: 21000},
+	} {
+		want, err := json.Marshal(estimate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := json.Marshal(withdrawals.NewFeeEstimate(&estimate))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != string(want) {
+			t.Fatalf("wire = %s, want %s", got, want)
+		}
 	}
 }

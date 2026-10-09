@@ -16,9 +16,7 @@ func TestPrepare_For_ValidationReadsTheWalletChainFromTheRequest(t *testing.T) {
 	wallet := &models.Wallet{Chain: "eth"}
 	ctx := scopeContext{ctx: context.WithValue(context.Background(), requestctx.KeyWallet, wallet)}
 	preparers := []validationPreparer{
-		&EstimateWithdrawalRequest{},
 		&AddWhitelistEntryRequest{},
-		&CreateWalletWithdrawalRequest{},
 	}
 	for _, preparer := range preparers {
 		data := chainData{}
@@ -34,9 +32,7 @@ func TestPrepare_For_ValidationReadsTheWalletChainFromTheRequest(t *testing.T) {
 
 func TestPrepare_For_ValidationLeavesTheChainUnsetWhenTheWalletIsMissing(t *testing.T) {
 	preparers := []validationPreparer{
-		&EstimateWithdrawalRequest{},
 		&AddWhitelistEntryRequest{},
-		&CreateWalletWithdrawalRequest{},
 	}
 	contexts := []http.Context{
 		scopeContext{ctx: context.Background()},

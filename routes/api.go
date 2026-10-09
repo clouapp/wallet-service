@@ -15,18 +15,15 @@ import (
 	extwithdrawals "github.com/macrowallets/waas/app/http/controllers/external/withdrawals"
 	"github.com/macrowallets/waas/app/http/middleware"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
-	authsvc "github.com/macrowallets/waas/app/services/auth"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/deposit"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/feeestimate"
 	"github.com/macrowallets/waas/app/services/sweep"
-	usersvc "github.com/macrowallets/waas/app/services/users"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/withdraw"
-	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/app/services/withdrawalrecords"
 )
 
@@ -79,8 +76,8 @@ func RegisterExternalAPI() {
 			r.Middleware(middleware.Throttle(middleware.ThrottleGasCheck)).Post("/gas-check", sweepCtrl.ForceGasCheck)
 			r.Post("/withdraw/preview", sweepCtrl.PreviewWithdraw)
 			r.Get("/fee-estimate", feeEstimateCtrl.GetWalletFeeEstimate)
-			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWithdrawalsCreate)).Post("/withdrawals", withdrawalCtrl.CreateWalletWithdrawal)
-			r.Get("/withdrawals/{idempotencyKey}", withdrawalCtrl.GetWalletWithdrawalByIdempotencyKey)
+			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWithdrawalsCreate)).Post("/withdrawals", withdrawalCtrl.Store)
+			r.Get("/withdrawals/{idempotencyKey}", withdrawalCtrl.ShowByKey)
 		})
 
 		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermTransactionsRead)).Group(func(r route.Router) {
@@ -129,19 +126,12 @@ func newExternalSweepController() *extsweep.SweepController {
 	})
 }
 
-func newExternalWithdrawalsController() *extwithdrawals.WithdrawalsController {
-	return extwithdrawals.NewWithdrawalsController(extwithdrawals.WithdrawalsControllerDeps{
-		Withdrawals:       container.MustMake[*withdrawalrecords.Records](),
-		Chains:            container.MustMake[*chainsvc.Service](),
-		Users:             container.MustMake[*usersvc.Service](),
-		Transactions:      container.MustMake[*walletrecords.Transactions](),
-		Registry:          container.MustMake[*chainpkg.Registry](),
-		WithdrawalService: container.MustMake[*withdraw.Service](),
-		Passwords:         container.MustMake[*authsvc.Service](),
-		Flags:             container.MustMake[*featuressvc.Service](),
-		Events:            container.MustMake[*withdrawalevents.Publisher](),
-		SecondFactor:      container.MustMake[*authsvc.SecondFactorVerifier](),
-	})
+func newExternalWithdrawalsController() *extwithdrawals.WithdrawalController {
+	return extwithdrawals.NewWithdrawalController(
+		container.MustMake[*withdrawalrecords.Records](),
+		container.MustMake[*withdraw.Service](),
+		container.MustMake[*featuressvc.Service](),
+	)
 }
 
 func newExternalWalletsController() *extwallets.WalletsController {

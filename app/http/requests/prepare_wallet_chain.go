@@ -7,9 +7,9 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 )
 
-// prepareWalletChain copies the chain from the wallet middleware already stored.
+// PrepareWalletChain copies the chain from the wallet middleware already stored.
 // A missing wallet leaves the chain unset.
-func prepareWalletChain(ctx http.Context, data validation.Data) error {
+func PrepareWalletChain(ctx http.Context, data validation.Data) error {
 	wallet, ok := requestctx.Wallet(ctx)
 	if !ok || wallet == nil {
 		return nil
