@@ -23,6 +23,23 @@ func RouteString(ctx http.Context, name string) (string, error) {
 	return value, nil
 }
 
+// RouteParam reads one path parameter as it is. Only an empty value is an
+// error: the value is not trimmed, so a blank id reaches the lookup, which
+// answers it as not found.
+func RouteParam(ctx http.Context, name string) (string, error) {
+	if ctx == nil || ctx.Request() == nil {
+		return "", fmt.Errorf("missing request")
+	}
+	if name == "" {
+		return "", fmt.Errorf("missing path parameter name")
+	}
+	value := ctx.Request().Route(name)
+	if value == "" {
+		return "", fmt.Errorf("missing %s", name)
+	}
+	return value, nil
+}
+
 // RouteUUID reads one path parameter as a UUID.
 func RouteUUID(ctx http.Context, name string) (uuid.UUID, error) {
 	if ctx == nil || ctx.Request() == nil {
