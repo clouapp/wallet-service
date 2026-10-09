@@ -58,7 +58,7 @@ func (c *FeatureController) Index(ctx http.Context) http.Response {
 //	@Security		BearerAuth
 //	@Accept			json
 //	@Produce		json
-//	@Param			key	path		string							true	"Feature key"
+//	@Param			key	path		string	true	"Feature key"
 //	@Success		200	{object}	featuressvc.Flag
 //	@Failure		403	{object}	responses.ErrorBody
 //	@Failure		404	{object}	responses.ErrorBody

@@ -33,7 +33,7 @@ func NewAuthController(signIn *authsvc.SignIn) *AuthController {
 //	@Tags			Auth
 //	@Accept			json
 //	@Produce		json
-//	@Param			request	body		RegisterSwagger		true	"Registration payload"
+//	@Param			request	body		RegisterSwagger	true	"Registration payload"
 //	@Success		201		{object}	AuthResponse
 //	@Failure		400		{object}	responses.ErrorBody
 //	@Failure		422		{object}	responses.ErrorBody
@@ -65,7 +65,7 @@ func (c *AuthController) Register(ctx http.Context) http.Response {
 //	@Tags			Auth
 //	@Accept			json
 //	@Produce		json
-//	@Param			request	body		LoginSwagger		true	"Login credentials"
+//	@Param			request	body		LoginSwagger	true	"Login credentials"
 //	@Success		200		{object}	AuthResponse
 //	@Failure		400		{object}	responses.ErrorBody
 //	@Failure		401		{object}	responses.ErrorBody

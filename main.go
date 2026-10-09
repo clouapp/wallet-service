@@ -27,45 +27,45 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-// @title           Vault Custody Service API
-// @version         1.0
-// @description     Multi-chain cryptocurrency custody service with deposit scanning, withdrawals, and webhooks
-// @termsOfService  http://swagger.io/terms/
+//	@title			Vault Custody Service API
+//	@version		1.0
+//	@description	Multi-chain cryptocurrency custody service with deposit scanning, withdrawals, and webhooks
+//	@termsOfService	http://swagger.io/terms/
 
-// @contact.name   API Support
-// @contact.email  support@vault.dev
+//	@contact.name	API Support
+//	@contact.email	support@vault.dev
 
-// @license.name  MIT
-// @license.url   https://opensource.org/licenses/MIT
+//	@license.name	MIT
+//	@license.url	https://opensource.org/licenses/MIT
 
-// @host      localhost:8080
-// @BasePath  /
+//	@host		localhost:8080
+//	@BasePath	/
 
-// @securityDefinitions.apikey ApiKeyAuth
-// @in header
-// @name X-API-Key
+//	@securityDefinitions.apikey	ApiKeyAuth
+//	@in							header
+//	@name						X-API-Key
 
-// @securityDefinitions.apikey SignatureAuth
-// @in header
-// @name X-API-Signature
+//	@securityDefinitions.apikey	SignatureAuth
+//	@in							header
+//	@name						X-API-Signature
 
-// @tag.name Chains
-// @tag.description Operations about blockchain networks
+//	@tag.name			Chains
+//	@tag.description	Operations about blockchain networks
 
-// @tag.name Wallets
-// @tag.description Wallet management operations
+//	@tag.name			Wallets
+//	@tag.description	Wallet management operations
 
-// @tag.name Addresses
-// @tag.description Address generation and lookup
+//	@tag.name			Addresses
+//	@tag.description	Address generation and lookup
 
-// @tag.name Withdrawals
-// @tag.description Withdrawal request operations
+//	@tag.name			Withdrawals
+//	@tag.description	Withdrawal request operations
 
-// @tag.name Transactions
-// @tag.description Transaction history and details
+//	@tag.name			Transactions
+//	@tag.description	Transaction history and details
 
-// @tag.name Webhooks
-// @tag.description Webhook configuration for event notifications
+//	@tag.name			Webhooks
+//	@tag.description	Webhook configuration for event notifications
 
 var (
 	deposits    *deposit.Service

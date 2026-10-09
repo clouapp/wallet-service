@@ -116,8 +116,8 @@ func (c *SettingsController) Archive(ctx http.Context) http.Response {
 //	@Security		BearerAuth
 //	@Accept			json
 //	@Produce		json
-//	@Param			walletId	path		string					true	"Wallet UUID"
-//	@Param			request		body		FreezeWalletSwagger		true	"Freeze payload"
+//	@Param			walletId	path		string				true	"Wallet UUID"
+//	@Param			request		body		FreezeWalletSwagger	true	"Freeze payload"
 //	@Success		200			{object}	settingsresources.Settings
 //	@Failure		403			{object}	responses.ErrorBody
 //	@Router			/wallets/{walletId}/freeze [post]

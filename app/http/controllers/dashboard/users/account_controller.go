@@ -32,10 +32,10 @@ func NewAccountController(accounts *accountsvc.Service) *AccountController {
 //	@Tags			User
 //	@Security		BearerAuth
 //	@Produce		json
-//	@Param			limit		query		int		false	"Page size, 1-100 (default 20)"								example(20)
-//	@Param			offset		query		int		false	"Rows to skip, >= 0 (default 0)"							example(0)
+//	@Param			limit		query		int		false	"Page size, 1-100 (default 20)"		example(20)
+//	@Param			offset		query		int		false	"Rows to skip, >= 0 (default 0)"	example(0)
 //	@Param			search		query		string	false	"Case-insensitive match on name or id (max 100 chars)"
-//	@Param			environment	query		string	false	"Only accounts in this environment"							Enums(prod, test)
+//	@Param			environment	query		string	false	"Only accounts in this environment"	Enums(prod, test)
 //	@Success		200			{object}	AccountListResponse
 //	@Failure		400			{object}	responses.ErrorBody
 //	@Failure		401			{object}	responses.ErrorBody

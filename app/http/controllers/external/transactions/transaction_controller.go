@@ -32,9 +32,9 @@ func NewTransactionController(withdrawals *withdraw.Service) *TransactionControl
 //	@Produce		json
 //	@Security		ApiKeyAuth
 //	@Security		SignatureAuth
-//	@Param			chain	query		string	false	"Chain ID filter"			example(eth)
-//	@Param			type	query		string	false	"Transaction type"			Enums(deposit, withdrawal)
-//	@Param			status	query		string	false	"Transaction status"		Enums(pending, confirmed, failed)
+//	@Param			chain	query		string	false	"Chain ID filter"		example(eth)
+//	@Param			type	query		string	false	"Transaction type"		Enums(deposit, withdrawal)
+//	@Param			status	query		string	false	"Transaction status"	Enums(pending, confirmed, failed)
 //	@Param			user_id	query		string	false	"External user ID filter"
 //	@Param			limit	query		int		false	"Max results (default 50)"	example(50)
 //	@Param			offset	query		int		false	"Pagination offset"			example(0)
