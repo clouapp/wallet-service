@@ -17,6 +17,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
+	accountsrequests "github.com/macrowallets/waas/app/http/requests/dashboard/accounts"
 	tokenresource "github.com/macrowallets/waas/app/http/resources/dashboard/accounts"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
@@ -88,7 +89,7 @@ func (ctrl *AccountsController) accountView(ctx http.Context, account models.Acc
 func (ctrl *AccountsController) CreateAccount(ctx http.Context) http.Response {
 	userID := requestctx.MustUserID(ctx)
 
-	var req requests.CreateAccountRequest
+	var req accountsrequests.CreateAccountRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
@@ -161,7 +162,7 @@ type AccountDetail struct {
 func (ctrl *AccountsController) UpdateAccount(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
 
-	var req requests.UpdateAccountRequest
+	var req accountsrequests.UpdateAccountRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
@@ -261,7 +262,7 @@ func (ctrl *AccountsController) ListAccountUsers(ctx http.Context) http.Response
 func (ctrl *AccountsController) AddAccountUser(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
 	callerID := requestctx.MustUserID(ctx)
-	var req requests.AddAccountUserRequest
+	var req accountsrequests.AddAccountUserRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
@@ -347,7 +348,7 @@ func (ctrl *AccountsController) UpdateAccountUser(ctx http.Context) http.Respons
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid user id")
 	}
 
-	var req requests.UpdateAccountUserRequest
+	var req accountsrequests.UpdateAccountUserRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
@@ -359,7 +360,7 @@ func (ctrl *AccountsController) UpdateAccountUser(ctx http.Context) http.Respons
 	return ctx.Response().Success().Json(tokenresource.AccountUserPtr(member))
 }
 
-func memberChange(req requests.UpdateAccountUserRequest) accountsvc.MemberChange {
+func memberChange(req accountsrequests.UpdateAccountUserRequest) accountsvc.MemberChange {
 	change := accountsvc.MemberChange{}
 	if req.Role != "" {
 		role := req.Role
@@ -439,7 +440,7 @@ func (ctrl *AccountsController) CreateAccountToken(ctx http.Context) http.Respon
 	account := requestctx.MustAccount(ctx)
 	callerID, _ := requestctx.UserID(ctx)
 
-	var req requests.CreateAccountTokenRequest
+	var req accountsrequests.CreateAccountTokenRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}

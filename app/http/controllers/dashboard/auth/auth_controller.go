@@ -11,6 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/http/controllers"
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
+	authrequests "github.com/macrowallets/waas/app/http/requests/dashboard/auth"
 	userresource "github.com/macrowallets/waas/app/http/resources/dashboard/users"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
@@ -102,7 +103,7 @@ func (ctrl *AuthController) sessions() controllers.SessionIssuer {
 // @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /auth/register [post]
 func (ctrl *AuthController) Register(ctx http.Context) http.Response {
-	var req requests.RegisterRequest
+	var req authrequests.RegisterRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
@@ -163,7 +164,7 @@ func (ctrl *AuthController) Register(ctx http.Context) http.Response {
 // @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /auth/login [post]
 func (ctrl *AuthController) Login(ctx http.Context) http.Response {
-	var req requests.LoginRequest
+	var req authrequests.LoginRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
@@ -234,7 +235,7 @@ func (ctrl *AuthController) Login(ctx http.Context) http.Response {
 // @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /auth/2fa/verify [post]
 func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
-	var req requests.VerifyTwoFactorRequest
+	var req authrequests.VerifyTwoFactorRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
@@ -280,7 +281,7 @@ func (ctrl *AuthController) VerifyTwoFactor(ctx http.Context) http.Response {
 // @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /auth/refresh [post]
 func (ctrl *AuthController) RefreshToken(ctx http.Context) http.Response {
-	var req requests.RefreshTokenRequest
+	var req authrequests.RefreshTokenRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
@@ -371,7 +372,7 @@ func (ctrl *AuthController) Logout(ctx http.Context) http.Response {
 // @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /auth/recover [post]
 func (ctrl *AuthController) ForgotPassword(ctx http.Context) http.Response {
-	var req requests.ForgotPasswordRequest
+	var req authrequests.ForgotPasswordRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
@@ -396,7 +397,7 @@ func (ctrl *AuthController) ForgotPassword(ctx http.Context) http.Response {
 // @Failure      429  {object}  responses.ErrorBody  "Rate limit exceeded (too_many_requests, Retry-After header)"
 // @Router       /auth/recover/confirm [post]
 func (ctrl *AuthController) ResetPassword(ctx http.Context) http.Response {
-	var req requests.ResetPasswordRequest
+	var req authrequests.ResetPasswordRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}

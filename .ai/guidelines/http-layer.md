@@ -117,10 +117,12 @@ Rules:
   "walletId")` for a UUID, `ctx.Request().Route("id")` / `Query("limit")` for the
   rest, the documented Goravel way. A form request exists only where there are
   rules to run: no request that copies a parameter into a struct.
-- Form requests live in `app/http/requests/<surface>/<resource>/<action>_request.go`
-  (`requests/platform/chains/update_request.go`), or `requests/<resource>/` when
-  both surfaces use one (`requests/withdrawals/store_request.go`); the older flat
-  `<name>_request.go` files move as their controllers do. They implement `Authorize`, `Rules` and,
+- Form requests mirror the controllers: `app/http/requests/<surface>/<resource>/<action>_request.go`,
+  package `<resource>`, imported as `<resource>requests`
+  (`requests/platform/chains/update_request.go`). A request both surfaces use sits in
+  `app/http/requests/<resource>/` (`requests/withdrawals/store_request.go`); the shared pieces
+  (`Validate`, `RouteUUID`, `RouteString`, the document parsers) stay in
+  `app/http/requests`. A form request implements `Authorize`, `Rules` and,
   when the messages matter, `Messages`/`Filters`; permission is route middleware,
   so `Authorize` allows (`requests.Open` embeds that).
 - **Every exported field carries `form:"<name>"` beside `json:"<name>"`, spelled

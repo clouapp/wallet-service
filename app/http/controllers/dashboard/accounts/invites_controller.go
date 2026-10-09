@@ -13,6 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
+	accountsrequests "github.com/macrowallets/waas/app/http/requests/dashboard/accounts"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
@@ -105,7 +106,7 @@ func inviteListItems(invites []models.AccountInvite) []inviteListItem {
 func (ctrl *InvitesController) Create(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
 	callerID := requestctx.MustUserID(ctx)
-	var req requests.AddAccountUserRequest
+	var req accountsrequests.AddAccountUserRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
@@ -226,7 +227,7 @@ func (ctrl *InvitesController) Preview(ctx http.Context) http.Response {
 
 // Accept spends an invite token.
 func (ctrl *InvitesController) Accept(ctx http.Context) http.Response {
-	var req requests.AcceptInviteRequest
+	var req accountsrequests.AcceptInviteRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}

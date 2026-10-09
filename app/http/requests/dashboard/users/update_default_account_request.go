@@ -1,4 +1,4 @@
-package requests
+package users
 
 import (
 	"github.com/goravel/framework/contracts/http"

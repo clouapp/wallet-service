@@ -14,7 +14,7 @@ import (
 	"github.com/goravel/framework/foundation"
 
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
-	"github.com/macrowallets/waas/app/http/requests"
+	accountsrequests "github.com/macrowallets/waas/app/http/requests/dashboard/accounts"
 	"github.com/macrowallets/waas/app/http/resources"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
@@ -141,11 +141,11 @@ type recordingRequest struct {
 
 func (r *recordingRequest) ValidateRequest(req http.FormRequest) (contractsvalidation.Errors, error) {
 	switch body := req.(type) {
-	case *requests.AddAccountUserRequest:
+	case *accountsrequests.AddAccountUserRequest:
 		body.Email = r.email
 		body.Role = r.role
 		return nil, nil
-	case *requests.CreateAccountRequest:
+	case *accountsrequests.CreateAccountRequest:
 		body.Name = r.name
 		return nil, nil
 	default:

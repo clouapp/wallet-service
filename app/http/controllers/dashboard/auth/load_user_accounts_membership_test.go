@@ -14,7 +14,7 @@ import (
 	"github.com/goravel/framework/foundation"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/macrowallets/waas/app/http/requests"
+	authrequests "github.com/macrowallets/waas/app/http/requests/dashboard/auth"
 	"github.com/macrowallets/waas/app/http/resources"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
@@ -145,7 +145,7 @@ type recordingRequest struct {
 }
 
 func (r *recordingRequest) ValidateRequest(req http.FormRequest) (contractsvalidation.Errors, error) {
-	body, ok := req.(*requests.LoginRequest)
+	body, ok := req.(*authrequests.LoginRequest)
 	if !ok {
 		return nil, errors.New("unexpected form request")
 	}

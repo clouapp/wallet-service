@@ -14,6 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/pagination"
 	"github.com/macrowallets/waas/app/http/requests"
+	usersrequests "github.com/macrowallets/waas/app/http/requests/dashboard/users"
 	accountresource "github.com/macrowallets/waas/app/http/resources/dashboard/accounts"
 	userresource "github.com/macrowallets/waas/app/http/resources/dashboard/users"
 	"github.com/macrowallets/waas/app/http/responses"
@@ -139,7 +140,7 @@ type MeProfile struct {
 func (ctrl *UsersController) UpdateMe(ctx http.Context) http.Response {
 	user := requestctx.MustUser(ctx)
 
-	var req requests.UpdateMeRequest
+	var req usersrequests.UpdateMeRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
@@ -169,7 +170,7 @@ func (ctrl *UsersController) UpdateMe(ctx http.Context) http.Response {
 func (ctrl *UsersController) ChangePassword(ctx http.Context) http.Response {
 	user := requestctx.MustUser(ctx)
 
-	var req requests.ChangePasswordRequest
+	var req usersrequests.ChangePasswordRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
@@ -295,7 +296,7 @@ func parseMyAccountsFilter(search, environment string) (string, string, string) 
 func (ctrl *UsersController) UpdateDefaultAccount(ctx http.Context) http.Response {
 	userID := requestctx.MustUserID(ctx)
 
-	var req requests.UpdateDefaultAccountRequest
+	var req usersrequests.UpdateDefaultAccountRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
@@ -380,7 +381,7 @@ func (ctrl *UsersController) SetupTOTP(ctx http.Context) http.Response {
 func (ctrl *UsersController) ConfirmTOTP(ctx http.Context) http.Response {
 	user := requestctx.MustUser(ctx)
 
-	var req requests.ConfirmTwoFactorRequest
+	var req usersrequests.ConfirmTwoFactorRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
@@ -474,7 +475,7 @@ func (ctrl *UsersController) DisableTOTP(ctx http.Context) http.Response {
 }
 
 func (ctrl *UsersController) requireLiveSecondFactor(ctx http.Context, user *models.User) http.Response {
-	var req requests.DisableTotpRequest
+	var req usersrequests.DisableTotpRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}

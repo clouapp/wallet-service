@@ -5,6 +5,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
+	preferencesrequests "github.com/macrowallets/waas/app/http/requests/dashboard/preferences"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/currencies"
@@ -54,7 +55,7 @@ func (ctrl *PreferencesController) UpdatePreferences(ctx http.Context) http.Resp
 	userID := requestctx.MustUserID(ctx)
 	user := requestctx.MustUser(ctx)
 
-	var req requests.UpdatePreferencesRequest
+	var req preferencesrequests.UpdatePreferencesRequest
 	if errResp := requests.Validate(ctx, &req); errResp != nil {
 		return errResp
 	}
