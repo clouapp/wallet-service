@@ -166,7 +166,7 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.Can(accounts, middleware.PermTokensWrite)).Delete("/tokens/{tokenId}", tokenCtrl.Destroy)
 
 			// S1.4.7: GET /v1/accounts/{accountId}/settings settings.read (policies.MayViewSettings).
-			r.Middleware(middleware.MayViewSettings()).Get("/settings", accountSettingsCtrl.Show)
+			r.Middleware(middleware.MayViewSettings()).Get("/settings", accountSettingsCtrl.Index)
 			// S1.4.7: POST /v1/accounts/{accountId}/settings/sections/{section}/cache settings.write (policies.MayUpdateSettings).
 			// Owner and admin may flush an account-managed section. Auditor and user may not.
 			r.Middleware(middleware.MayUpdateSettings()).Post("/settings/sections/{section}/cache", accountSettingsCtrl.Flush)
@@ -175,7 +175,7 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.MayUpdateSettings()).Post("/settings/sections/{section}/reset", accountSettingsCtrl.Reset)
 			// S1.4.7: GET /v1/accounts/{accountId}/settings/{group} settings.read (policies.MayViewSettings).
 			// Platform-managed groups stay readable for owner, admin, and auditor.
-			r.Middleware(middleware.MayViewSettings()).Get("/settings/{group}", accountSettingsCtrl.ShowGroup)
+			r.Middleware(middleware.MayViewSettings()).Get("/settings/{group}", accountSettingsCtrl.Show)
 			// S1.4.7: PATCH and PUT /v1/accounts/{accountId}/settings/{group} settings.write (policies.MayUpdateSettings).
 			// Owner and admin may write an account-managed group. Auditor and user may not.
 			r.Middleware(middleware.MayUpdateSettings()).Patch("/settings/{group}", accountSettingsCtrl.Update)

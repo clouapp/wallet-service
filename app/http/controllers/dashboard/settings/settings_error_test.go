@@ -23,7 +23,7 @@ func TestSettings_ValidationError_KeepsItsBytes(t *testing.T) {
 		"session_idle_minutes": {"must be between 5 and 1440"},
 		"zzz":                  {"unknown settings key"},
 	}}
-	if err := mapSettingsError(ginpkg.NewContext(ginCtx), invalid).Render(); err != nil {
+	if err := mapError(ginpkg.NewContext(ginCtx), invalid, "internal_error").Render(); err != nil {
 		t.Fatal(err)
 	}
 	rec.Flush()
