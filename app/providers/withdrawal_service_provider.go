@@ -72,9 +72,19 @@ func (p *WithdrawalServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
+		wallets, err := resolve[*walletrecords.Wallets](app)
+		if err != nil {
+			return nil, err
+		}
+		transactions, err := resolve[*walletrecords.Transactions](app)
+		if err != nil {
+			return nil, err
+		}
 		return withdrawalrecords.NewRecords(withdrawalrecords.Deps{
-			Store:    store,
-			Activity: activityLog,
+			Store:        store,
+			Activity:     activityLog,
+			Wallets:      wallets,
+			Transactions: transactions,
 		}), nil
 	})
 }
@@ -149,8 +159,9 @@ func newSweepService(app foundation.Application) (sweep.Service, error) {
 }
 
 // newWithdrawalService creates and executes withdrawals behind the
-// withdrawals-enabled flag. The USD quote and the create path (the second
-// factor and the withdrawal rows) are wired here, before anyone resolves it.
+// withdrawals-enabled flag. The USD quote, the create path (the second
+// factor and the withdrawal rows) and the submit path (the row outcome and the
+// withdrawal webhooks) are wired here, before anyone resolves it.
 func newWithdrawalService(app foundation.Application) (*withdraw.Service, error) {
 	registry, err := resolve[*chainpkg.Registry](app)
 	if err != nil {
@@ -204,6 +215,10 @@ func newWithdrawalService(app foundation.Application) (*withdraw.Service, error)
 	if err != nil {
 		return nil, err
 	}
+	events, err := resolve[*withdrawalevents.Publisher](app)
+	if err != nil {
+		return nil, fmt.Errorf("vault: withdrawal events: %w", err)
+	}
 	service := withdraw.NewService(withdraw.Deps{
 		Registry:     registry,
 		Webhook:      webhookService,
@@ -219,6 +234,7 @@ func newWithdrawalService(app foundation.Application) (*withdraw.Service, error)
 	})
 	service.UseUSDQuote(prices)
 	service.UseCreate(users, verifier, withdrawalRows, chains)
+	service.UseSubmit(withdrawalRows, events)
 	return service, nil
 }
 

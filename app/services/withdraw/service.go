@@ -82,6 +82,9 @@ type Service struct {
 	createTotp   TotpCheck
 	createRows   WithdrawalRows
 	createChains ChainCatalog
+	// submitRows and submitEvents serve Submit. submitEvents may be nil.
+	submitRows   SubmitRows
+	submitEvents SubmitEvents
 }
 
 // Deps is everything the withdrawal service needs. A nil field means that
