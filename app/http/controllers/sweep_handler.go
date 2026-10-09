@@ -20,26 +20,17 @@ type SweepHandler struct {
 	flags  *features.Service
 }
 
-// SweepHandlerDeps is everything the sweep handler needs.
-// Sweeps and Flags are required.
-type SweepHandlerDeps struct {
-	Sweeps sweep.Service
-	Flags  *features.Service
-}
-
-// NewSweepHandler wires the sweep handlers from SweepHandlerDeps. surface
-// ("dashboard" or "external") only names the surface in the panic messages.
-func NewSweepHandler(surface string, deps SweepHandlerDeps) *SweepHandler {
-	if deps.Sweeps == nil {
+// NewSweepHandler wires the sweep handlers with the sweep service and the
+// feature flags that can pause consolidation. surface ("dashboard" or
+// "external") only names the surface in the panic messages.
+func NewSweepHandler(surface string, sweeps sweep.Service, flags *features.Service) *SweepHandler {
+	if sweeps == nil {
 		panic(surface + " sweep controller: sweep service is required")
 	}
-	if deps.Flags == nil {
+	if flags == nil {
 		panic(surface + " sweep controller: feature flags are required")
 	}
-	return &SweepHandler{
-		sweeps: deps.Sweeps,
-		flags:  deps.Flags,
-	}
+	return &SweepHandler{sweeps: sweeps, flags: flags}
 }
 
 // Consolidate godoc

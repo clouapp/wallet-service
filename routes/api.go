@@ -113,10 +113,10 @@ func newExternalAddressesController() *extaddresses.AddressController {
 }
 
 func newExternalSweepController() *extsweep.SweepController {
-	return extsweep.NewSweepController(extsweep.SweepControllerDeps{
-		Sweeps: container.MustMake[*sweep.Box]().Service,
-		Flags:  container.MustMake[*featuressvc.Service](),
-	})
+	return extsweep.NewSweepController(
+		container.MustMake[*sweep.Box]().Service,
+		container.MustMake[*featuressvc.Service](),
+	)
 }
 
 func newExternalWithdrawalsController() *extwithdrawals.WithdrawalController {

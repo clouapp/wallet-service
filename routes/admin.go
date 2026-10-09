@@ -469,10 +469,10 @@ func newDashboardWithdrawalsController() *dashwithdrawals.WithdrawalController {
 }
 
 func newDashboardSweepController() *dashsweep.SweepController {
-	return dashsweep.NewSweepController(dashsweep.SweepControllerDeps{
-		Sweeps: container.MustMake[*sweep.Box]().Service,
-		Flags:  container.MustMake[*featuressvc.Service](),
-	})
+	return dashsweep.NewSweepController(
+		container.MustMake[*sweep.Box]().Service,
+		container.MustMake[*featuressvc.Service](),
+	)
 }
 
 func newDashboardUnspentsController() *dashwalletunspents.UnspentController {

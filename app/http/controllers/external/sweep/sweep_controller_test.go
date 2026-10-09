@@ -33,41 +33,24 @@ func (*sweepServiceStub) LoadLimits(context.Context, uuid.UUID) (*sweepsvc.Limit
 	return nil, nil
 }
 
-func sweepControllerDeps() SweepControllerDeps {
-	return SweepControllerDeps{
-		Sweeps: &sweepServiceStub{},
-		Flags:  &features.Service{},
-	}
-}
-
-func TestNew_Sweep_ControllerRequiresEveryDependency(t *testing.T) {
+func TestNew_SweepController_RequiresEveryDependency(t *testing.T) {
 	cases := []struct {
-		name  string
-		clear func(*SweepControllerDeps)
-		panic string
+		name   string
+		sweeps sweepsvc.Service
+		flags  *features.Service
+		panic  string
 	}{
-		{
-			name:  "sweep service",
-			clear: func(deps *SweepControllerDeps) { deps.Sweeps = nil },
-			panic: "external sweep controller: sweep service is required",
-		},
-		{
-			name:  "feature flags",
-			clear: func(deps *SweepControllerDeps) { deps.Flags = nil },
-			panic: "external sweep controller: feature flags are required",
-		},
+		{"sweep service", nil, &features.Service{}, "external sweep controller: sweep service is required"},
+		{"feature flags", &sweepServiceStub{}, nil, "external sweep controller: feature flags are required"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			deps := sweepControllerDeps()
-			tc.clear(&deps)
 			defer func() {
-				got := recover()
-				if got != tc.panic {
+				if got := recover(); got != tc.panic {
 					t.Fatalf("panic = %v", got)
 				}
 			}()
-			NewSweepController(deps)
+			NewSweepController(tc.sweeps, tc.flags)
 			t.Fatal("expected a panic")
 		})
 	}
