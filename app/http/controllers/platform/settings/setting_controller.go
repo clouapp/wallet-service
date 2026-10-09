@@ -1,37 +1,30 @@
 package settings
 
 import (
-	"errors"
-	"strings"
-
-	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/http"
 
-	appfacades "github.com/macrowallets/waas/app/facades"
-	"github.com/macrowallets/waas/app/http/middleware"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
+	settingsrequests "github.com/macrowallets/waas/app/http/requests/platform/settings"
+	resources "github.com/macrowallets/waas/app/http/resources/platform/settings"
 	"github.com/macrowallets/waas/app/http/responses"
 	settingssvc "github.com/macrowallets/waas/app/services/settings"
 )
 
-// mailTestFailedMessage is the 502 text. It names neither the SMTP password
-// nor the host credentials. The provider error stays off the wire and the log.
-const mailTestFailedMessage = "the test message was not sent"
-
-// SettingsController writes one platform settings group. S1.4.4 names
+// SettingController writes one platform settings group. S1.4.4 names
 // settings.update plus the group's UpdatePermission. webhook_delivery names
 // no permission, and this branch has no platform permission catalog, so a
 // platform_admins row is the gate. An unknown group is 404 for a platform admin.
-type SettingsController struct {
+type SettingController struct {
 	settings *settingssvc.Service
 }
 
-// NewSettingsController wires the platform settings handler.
-func NewSettingsController(settings *settingssvc.Service) *SettingsController {
+// NewSettingController wires the platform settings handler.
+func NewSettingController(settings *settingssvc.Service) *SettingController {
 	if settings == nil {
 		panic("platform settings controller: settings service is required")
 	}
-	return &SettingsController{settings: settings}
+	return &SettingController{settings: settings}
 }
 
 // Index godoc
@@ -44,15 +37,14 @@ func NewSettingsController(settings *settingssvc.Service) *SettingsController {
 // @Failure      401  {object}  responses.ErrorBody
 // @Failure      403  {object}  responses.ErrorBody
 // @Router       /platform/settings [get]
-func (ctrl *SettingsController) Index(ctx http.Context) http.Response {
-	actorID := middleware.SessionUserID(ctx)
-	if actorID == uuid.Nil {
-		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
+func (c *SettingController) Index(ctx http.Context) http.Response {
+	actorID := requestctx.MustUserID(ctx)
+
+	view, err := c.settings.PlatformIndex(ctx.Context(), actorID)
+	if err != nil {
+		return mapError(ctx, err, "list platform settings")
 	}
-	view, err := ctrl.settings.PlatformIndex(ctx.Context(), actorID)
-	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
-		return errResp
-	}
+
 	return ctx.Response().Success().Json(view)
 }
 
@@ -68,19 +60,19 @@ func (ctrl *SettingsController) Index(ctx http.Context) http.Response {
 // @Failure      403  {object}  responses.ErrorBody
 // @Failure      404  {object}  responses.ErrorBody
 // @Router       /platform/settings/{group} [get]
-func (ctrl *SettingsController) Show(ctx http.Context) http.Response {
-	actorID := middleware.SessionUserID(ctx)
-	if actorID == uuid.Nil {
-		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
-	}
-	group := strings.TrimSpace(ctx.Request().Route("group"))
-	if group == "" {
+func (c *SettingController) Show(ctx http.Context) http.Response {
+	actorID := requestctx.MustUserID(ctx)
+
+	group, err := requests.RouteString(ctx, "group")
+	if err != nil {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "group is required")
 	}
-	view, err := ctrl.settings.PlatformGroup(ctx.Context(), actorID, group)
-	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
-		return errResp
+
+	view, err := c.settings.PlatformGroup(ctx.Context(), actorID, group)
+	if err != nil {
+		return mapError(ctx, err, "show platform settings group")
 	}
+
 	return ctx.Response().Success().Json(view)
 }
 
@@ -97,23 +89,21 @@ func (ctrl *SettingsController) Show(ctx http.Context) http.Response {
 // @Failure      403  {object}  responses.ErrorBody
 // @Failure      404  {object}  responses.ErrorBody
 // @Router       /platform/accounts/{accountId}/settings/{group} [get]
-func (ctrl *SettingsController) ShowAccount(ctx http.Context) http.Response {
-	actorID := middleware.SessionUserID(ctx)
-	if actorID == uuid.Nil {
-		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
-	}
-	group := strings.TrimSpace(ctx.Request().Route("group"))
-	if group == "" {
+func (c *SettingController) ShowAccount(ctx http.Context) http.Response {
+	actorID := requestctx.MustUserID(ctx)
+
+	group, err := requests.RouteString(ctx, "group")
+	if err != nil {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "group is required")
 	}
-	accountID, err := uuid.Parse(strings.TrimSpace(ctx.Request().Route("accountId")))
+	// An id that is not a UUID is the nil account, which the service reports as not found.
+	accountID, _ := requests.RouteUUID(ctx, "accountId")
+
+	view, err := c.settings.PlatformAccountGroup(ctx.Context(), actorID, accountID, group)
 	if err != nil {
-		accountID = uuid.Nil
+		return mapError(ctx, err, "show platform account settings group")
 	}
-	view, err := ctrl.settings.PlatformAccountGroup(ctx.Context(), actorID, accountID, group)
-	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
-		return errResp
-	}
+
 	return ctx.Response().Success().Json(view)
 }
 
@@ -132,30 +122,29 @@ func (ctrl *SettingsController) ShowAccount(ctx http.Context) http.Response {
 // @Failure      404  {object}  responses.ErrorBody
 // @Failure      422  {object}  responses.ErrorBody
 // @Router       /platform/accounts/{accountId}/settings/{group} [put]
-func (ctrl *SettingsController) UpdateAccount(ctx http.Context) http.Response {
-	actorID := middleware.SessionUserID(ctx)
-	if actorID == uuid.Nil {
-		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
-	}
-	group := strings.TrimSpace(ctx.Request().Route("group"))
-	if group == "" {
+func (c *SettingController) UpdateAccount(ctx http.Context) http.Response {
+	actorID := requestctx.MustUserID(ctx)
+
+	group, err := requests.RouteString(ctx, "group")
+	if err != nil {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "group is required")
 	}
-	accountID, err := uuid.Parse(strings.TrimSpace(ctx.Request().Route("accountId")))
+	// An id that is not a UUID is the nil account, which the service reports as not found.
+	accountID, _ := requests.RouteUUID(ctx, "accountId")
+	// The group and the account answer 403 and 404 before the body is read.
+	if err := c.settings.AuthorizePlatformAccountSweepWrite(ctx.Context(), actorID, accountID, group); err != nil {
+		return mapError(ctx, err, "save platform account sweep limits")
+	}
+	var req settingsrequests.UpdateRequest
+	if err := req.Decode(ctx); err != nil {
+		return mapError(ctx, err, "save platform account sweep limits")
+	}
+
+	view, err := c.settings.SavePlatformAccountSweepLimits(ctx.Context(), actorID, accountID, group, req.Document)
 	if err != nil {
-		accountID = uuid.Nil
+		return mapError(ctx, err, "save platform account sweep limits")
 	}
-	if err := ctrl.settings.AuthorizePlatformAccountSweepWrite(ctx.Context(), actorID, accountID, group); err != nil {
-		return mapPlatformSettingsError(ctx, err)
-	}
-	document, err := requests.AccountSettingsDocument(ctx)
-	if err != nil {
-		return mapPlatformSettingsBodyError(ctx, err)
-	}
-	view, err := ctrl.settings.SavePlatformAccountSweepLimits(ctx.Context(), actorID, accountID, group, document)
-	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
-		return errResp
-	}
+
 	return ctx.Response().Success().Json(view)
 }
 
@@ -173,23 +162,23 @@ func (ctrl *SettingsController) UpdateAccount(ctx http.Context) http.Response {
 // @Failure      404  {object}  responses.ErrorBody
 // @Failure      422  {object}  responses.ErrorBody
 // @Router       /platform/settings/{group} [put]
-func (ctrl *SettingsController) Update(ctx http.Context) http.Response {
-	actorID := middleware.SessionUserID(ctx)
-	if actorID == uuid.Nil {
-		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
-	}
-	group := strings.TrimSpace(ctx.Request().Route("group"))
-	if group == "" {
+func (c *SettingController) Update(ctx http.Context) http.Response {
+	actorID := requestctx.MustUserID(ctx)
+
+	group, err := requests.RouteString(ctx, "group")
+	if err != nil {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "group is required")
 	}
-	document, err := requests.AccountSettingsDocument(ctx)
+	var req settingsrequests.UpdateRequest
+	if err := req.Decode(ctx); err != nil {
+		return mapError(ctx, err, "save platform settings group")
+	}
+
+	view, err := c.settings.SavePlatform(ctx.Context(), actorID, group, req.Document)
 	if err != nil {
-		return mapPlatformSettingsBodyError(ctx, err)
+		return mapError(ctx, err, "save platform settings group")
 	}
-	view, err := ctrl.settings.SavePlatform(ctx.Context(), actorID, group, document)
-	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
-		return errResp
-	}
+
 	return ctx.Response().Success().Json(view)
 }
 
@@ -204,14 +193,15 @@ func (ctrl *SettingsController) Update(ctx http.Context) http.Response {
 // @Failure      403  {object}  responses.ErrorBody
 // @Failure      404  {object}  responses.ErrorBody
 // @Router       /platform/settings/sections/{section}/cache [post]
-func (ctrl *SettingsController) Flush(ctx http.Context) http.Response {
-	actorID := middleware.SessionUserID(ctx)
-	if actorID == uuid.Nil {
-		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
+func (c *SettingController) Flush(ctx http.Context) http.Response {
+	actorID := requestctx.MustUserID(ctx)
+
+	section, _ := requests.RouteString(ctx, "section")
+
+	if err := c.settings.FlushPlatformSection(ctx.Context(), actorID, section); err != nil {
+		return mapError(ctx, err, "flush platform settings section")
 	}
-	if err := ctrl.settings.FlushPlatformSection(ctx.Context(), actorID, strings.TrimSpace(ctx.Request().Route("section"))); err != nil {
-		return mapPlatformSettingsError(ctx, err)
-	}
+
 	return ctx.Response().NoContent()
 }
 
@@ -227,78 +217,47 @@ func (ctrl *SettingsController) Flush(ctx http.Context) http.Response {
 // @Failure      403  {object}  responses.ErrorBody
 // @Failure      404  {object}  responses.ErrorBody
 // @Router       /platform/settings/sections/{section}/reset [post]
-func (ctrl *SettingsController) Reset(ctx http.Context) http.Response {
-	actorID := middleware.SessionUserID(ctx)
-	if actorID == uuid.Nil {
-		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
+func (c *SettingController) Reset(ctx http.Context) http.Response {
+	actorID := requestctx.MustUserID(ctx)
+
+	section, _ := requests.RouteString(ctx, "section")
+
+	view, err := c.settings.ResetPlatformSection(ctx.Context(), actorID, section)
+	if err != nil {
+		return mapError(ctx, err, "reset platform settings section")
 	}
-	view, err := ctrl.settings.ResetPlatformSection(ctx.Context(), actorID, strings.TrimSpace(ctx.Request().Route("section")))
-	if errResp := mapPlatformSettingsError(ctx, err); errResp != nil {
-		return errResp
-	}
+
 	return ctx.Response().Success().Json(view)
 }
 
-// TestMail godoc
+// Test godoc
 // @Summary      Send one platform mail test
 // @Description  POST /v1/platform/settings/mail/test. S1.4.6: settings.update + mail.update, declared before {group}. Neither permission is in the platform catalog, so a platform_admins row is the gate. A non-admin is 403 before the body is read. The body field is to. An invalid address is 422 validation_failed and nothing is sent. One message goes through facades.Mail, which reads mail_smtp and mail_delivery at send time. The answer is {"sent": true}. A mailer failure is 502 {"error":{"code","message"}} and the message does not include the password or the SMTP host credentials. The test is not audited.
 // @Tags         Platform Settings
 // @Security     BearerAuth
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]bool
+// @Success      200  {object}  resources.MailTestSent
 // @Failure      401  {object}  responses.ErrorBody
 // @Failure      403  {object}  responses.ErrorBody
 // @Failure      422  {object}  responses.ErrorBody
 // @Failure      502  {object}  responses.ErrorBody
 // @Router       /platform/settings/mail/test [post]
-func (ctrl *SettingsController) TestMail(ctx http.Context) http.Response {
-	actorID := middleware.SessionUserID(ctx)
-	if actorID == uuid.Nil {
-		return responses.Fail(ctx, http.StatusUnauthorized, responses.CodeUnauthorized, "unauthorized")
-	}
-	if err := ctrl.settings.AuthorizePlatformMailTest(ctx.Context(), actorID); err != nil {
-		return mapPlatformSettingsError(ctx, err)
-	}
-	var req requests.PlatformMailTestRequest
-	if resp := requests.Validate(ctx, &req); resp != nil {
-		return resp
-	}
-	err := ctrl.settings.SendPlatformMailTest(ctx.Context(), req.To)
-	if err != nil {
-		appfacades.Log().Error(mailTestFailedMessage)
-		return responses.Fail(ctx, http.StatusBadGateway, responses.CodeProviderUnavailable, mailTestFailedMessage)
-	}
-	return ctx.Response().Success().Json(http.Json{"sent": true})
-}
+func (c *SettingController) Test(ctx http.Context) http.Response {
+	actorID := requestctx.MustUserID(ctx)
 
-func mapPlatformSettingsBodyError(ctx http.Context, err error) http.Response {
-	if errors.Is(err, requests.ErrAccountSettingsBodyTooLarge) {
-		return responses.Fail(ctx, http.StatusRequestEntityTooLarge, responses.CodeRequestTooLarge, "request body is too large")
+	// A non-admin answers 403 before the body is read.
+	if err := c.settings.AuthorizePlatformMailTest(ctx.Context(), actorID); err != nil {
+		return mapError(ctx, err, "send platform mail test")
 	}
-	return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid request body")
-}
+	var req settingsrequests.MailTestRequest
+	if response := requests.Validate(ctx, &req); response != nil {
+		return response
+	}
 
-func mapPlatformSettingsError(ctx http.Context, err error) http.Response {
-	if err == nil {
-		return nil
+	if err := c.settings.SendPlatformMailTest(ctx.Context(), req.To); err != nil {
+		return mapError(ctx, err, "send platform mail test")
 	}
-	var invalid *settingssvc.ValidationError
-	if errors.As(err, &invalid) {
-		return responses.FieldsFailed(ctx, invalid.Fields)
-	}
-	switch {
-	case errors.Is(err, settingssvc.ErrGroupNotFound):
-		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "settings group not found")
-	case errors.Is(err, settingssvc.ErrAccountNotFound):
-		return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, settingssvc.ErrAccountNotFound.Error())
-	case errors.Is(err, settingssvc.ErrSectionNotFound):
-		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "settings section not found")
-	case errors.Is(err, settingssvc.ErrPlatformForbidden):
-		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, settingssvc.ErrPlatformForbidden.Error())
-	case errors.Is(err, settingssvc.ErrPlatformViewForbidden):
-		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, settingssvc.ErrPlatformViewForbidden.Error())
-	default:
-		return responses.Fail(ctx, http.StatusInternalServerError, responses.CodeInternalError, "internal_error")
-	}
+
+	return ctx.Response().Success().Json(resources.NewMailTestSent())
 }

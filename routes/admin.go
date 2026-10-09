@@ -75,7 +75,6 @@ func RegisterAdminRoutes() {
 	accountRolesCtrl := newDashboardAccountRolesController()
 	platformFeaturesCtrl := newPlatformFeaturesController()
 	platformAccountsCtrl := newPlatformAccountsController()
-	platformAccountListCtrl := newPlatformAccountListController()
 	platformAccountUsersCtrl := newPlatformAccountUsersController()
 	platformAccountOwnersCtrl := newPlatformAccountOwnersController()
 	platformChainsCtrl := newPlatformChainsController()
@@ -206,13 +205,13 @@ func RegisterAdminRoutes() {
 		router.Patch("/chains/{chainId}", platformChainsCtrl.Update)
 		// Declared before {group} so the literal path mail/test is not a group name.
 		// S1.4.6: POST /v1/platform/settings/mail/test settings.update + mail.update (declared before {group}).
-		router.Post("/settings/mail/test", platformSettingsCtrl.TestMail)
+		router.Post("/settings/mail/test", platformSettingsCtrl.Test)
 		router.Get("/settings", platformSettingsCtrl.Index)
 		router.Get("/settings/{group}", platformSettingsCtrl.Show)
 		// S3.4.1: GET /v1/platform/accounts accounts.view.
 		// A platform_admins row is the gate. The plan does not name fields,
 		// pagination, or sort, so this list matches GET /v1/platform/users.
-		router.Get("/accounts", platformAccountListCtrl.Index)
+		router.Get("/accounts", platformAccountsCtrl.Index)
 		// S3.4.1: POST /v1/platform/accounts/{id}/freeze|unfreeze|archive accounts.lifecycle.
 		// A platform_admins row is the gate. These posts are not behind AccountContext,
 		// so a frozen or archived account can still be changed.
@@ -494,54 +493,48 @@ func newDashboardAccountFeaturesController() *dashfeatures.FeaturesController {
 	)
 }
 
-func newPlatformAccountsController() *platformaccounts.LifecycleController {
-	return platformaccounts.NewLifecycleController(
+func newPlatformAccountsController() *platformaccounts.AccountController {
+	return platformaccounts.NewAccountController(
 		container.MustMake[*accountsvc.Service](),
 	)
 }
 
-func newPlatformAccountUsersController() *platformaccounts.UsersController {
-	return platformaccounts.NewUsersController(
+func newPlatformAccountUsersController() *platformaccounts.UserController {
+	return platformaccounts.NewUserController(
 		container.MustMake[*accountsvc.Service](),
 	)
 }
 
-func newPlatformAccountOwnersController() *platformaccounts.OwnersController {
-	return platformaccounts.NewOwnersController(
+func newPlatformAccountOwnersController() *platformaccounts.OwnerController {
+	return platformaccounts.NewOwnerController(
 		container.MustMake[*accountsvc.Service](),
 	)
 }
 
-func newPlatformAccountListController() *platformaccounts.ListController {
-	return platformaccounts.NewListController(
-		container.MustMake[*accountsvc.Service](),
-	)
-}
-
-func newPlatformUsersController() *platformusers.UsersController {
-	return platformusers.NewUsersController(
+func newPlatformUsersController() *platformusers.UserController {
+	return platformusers.NewUserController(
 		container.MustMake[*usersvc.Service](),
 	)
 }
 
-func newPlatformSettingsController() *platformsettings.SettingsController {
-	return platformsettings.NewSettingsController(
+func newPlatformSettingsController() *platformsettings.SettingController {
+	return platformsettings.NewSettingController(
 		container.MustMake[*settingssvc.Service](),
 	)
 }
 
-func newPlatformChainsController() *platformchains.ChainsController {
-	return platformchains.NewChainsController(platformchains.ChainsControllerDeps{
-		Thresholds: container.MustMake[*chainsvc.Thresholds](),
-		RPC:        container.MustMake[*chainsvc.RPC](),
-	})
+func newPlatformChainsController() *platformchains.ChainController {
+	return platformchains.NewChainController(
+		container.MustMake[*chainsvc.Thresholds](),
+		container.MustMake[*chainsvc.RPC](),
+	)
 }
 
-func newPlatformFeaturesController() *platformfeatures.FeaturesController {
-	return platformfeatures.NewFeaturesController(platformfeatures.FeaturesControllerDeps{
-		Features: container.MustMake[*featuressvc.Service](),
-		Accounts: container.MustMake[*accountsvc.Service](),
-	})
+func newPlatformFeaturesController() *platformfeatures.FeatureController {
+	return platformfeatures.NewFeatureController(
+		container.MustMake[*featuressvc.Service](),
+		container.MustMake[*accountsvc.Service](),
+	)
 }
 
 func newDashboardAccountsController() *dashaccounts.AccountsController {

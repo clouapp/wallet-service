@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	ginpkg "github.com/goravel/gin"
 
-	"github.com/macrowallets/waas/app/http/requests"
+	featuresrequests "github.com/macrowallets/waas/app/http/requests/platform/features"
 )
 
 // TestPlatform_Feature_BodyErrorKeepsItsBytes pins the 422 a scoped write
@@ -19,7 +19,7 @@ func TestPlatform_Feature_BodyErrorKeepsItsBytes(t *testing.T) {
 	ginCtx, _ := gin.CreateTestContext(rec)
 	ginCtx.Request = httptest.NewRequest(nethttp.MethodPatch, "/", nil)
 
-	if err := mapPlatformFeatureBodyError(ginpkg.NewContext(ginCtx), requests.ErrAccountFeatureEnabledRequired).Render(); err != nil {
+	if err := mapError(ginpkg.NewContext(ginCtx), featuresrequests.ErrEnabledRequired, "set platform feature").Render(); err != nil {
 		t.Fatal(err)
 	}
 	rec.Flush()
