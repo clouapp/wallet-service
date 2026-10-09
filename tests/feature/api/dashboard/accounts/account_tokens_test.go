@@ -15,9 +15,9 @@ import (
 	"github.com/goravel/framework/facades"
 
 	appfacades "github.com/macrowallets/waas/app/facades"
-	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
 	activitylog "github.com/macrowallets/waas/app/services/activity"
+	"github.com/macrowallets/waas/app/services/apitoken"
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
@@ -214,7 +214,7 @@ func (s *accountTokensSuite) TestCreate_Stores_OnlyTheSecretHash() {
 		Metadata map[string]json.RawMessage `json:"metadata"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
-	claims := &middleware.APITokenClaims{}
+	claims := &apitoken.Claims{}
 	_, _, err := jwt.NewParser().ParseUnverified(parsed.Token, claims)
 	s.Require().NoError(err)
 	if claims.Secret == "" {
@@ -254,7 +254,7 @@ func (s *accountTokensSuite) TestCreate_And_RevokeWriteActivityWithoutTheSecret(
 		} `json:"metadata"`
 	}
 	s.Require().NoError(json.Unmarshal([]byte(s.body(resp)), &parsed))
-	claims := &middleware.APITokenClaims{}
+	claims := &apitoken.Claims{}
 	_, _, err := jwt.NewParser().ParseUnverified(parsed.Token, claims)
 	s.Require().NoError(err)
 	if claims.Secret == "" {
