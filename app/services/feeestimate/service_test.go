@@ -276,6 +276,25 @@ func TestEstimate_Invalid_InputsFailBeforeQuoting(t *testing.T) {
 	}
 }
 
+// The message is the fixed sentence the client reads; the symbol and the chain
+// stay on the cause for the log.
+func TestEstimate_Unknown_AssetAnswersTheFixedSentence(t *testing.T) {
+	f := newFixture(t, DefaultCacheTTL)
+	eth := f.wallets[models.ChainETH]
+	for _, asset := range []string{"DOGE", "USDC"} {
+		t.Run(asset, func(t *testing.T) {
+			_, err := f.service.Estimate(context.Background(), Request{Wallet: eth, Asset: asset, Amount: "1"})
+			got := requireError(t, err, KindUnprocessable, CodeUnknownAsset)
+			if got.Message != "unknown asset" {
+				t.Fatalf("message = %q, want %q", got.Message, "unknown asset")
+			}
+			if !strings.Contains(got.Error(), asset) {
+				t.Fatalf("the cause lost the asset: %v", got)
+			}
+		})
+	}
+}
+
 func TestEstimate_Insufficient_FundsStillReturnsTheFee(t *testing.T) {
 	f := newFixture(t, DefaultCacheTTL)
 	f.quoter.quote.Strategy, f.quoter.quote.Basis, f.quoter.quote.AmountSpendable = sweep.StrategyInsufficient, sweep.FeeBasisUnfundedDirect, false

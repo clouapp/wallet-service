@@ -180,6 +180,9 @@ func (s *feeEstimateSuite) TestInvalid_Inputs_AreRejectedBeforeQuoting() {
 		s.Equal(tc.code, feeEstimateErrorCode(body), tc.query.Encode())
 		s.NotEmpty(feeEstimateErrorMessage(body), tc.query.Encode())
 	}
+
+	unknown := s.get(feeEstimatePath(walletID, url.Values{"amount": {"1"}, "asset": {"DOGE"}}), bearer, 422)
+	s.Equal("unknown asset", feeEstimateErrorMessage(unknown), "the symbol stays out of the body")
 }
 
 func feeEstimateErrorBody(body map[string]any) map[string]any {
