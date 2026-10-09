@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
-	"strconv"
 	"strings"
 )
 
@@ -24,7 +23,6 @@ const (
 var (
 	ErrAPIPermissionDenied = errors.New("api token is missing the required scope")
 	ErrSpendingLimit       = errors.New("api token spending limit exceeded")
-	ErrUnpricedSpend       = errors.New("spending limit cannot price this asset")
 )
 
 // APIPermissionCatalog is the scope vocabulary the dashboard already sends.
@@ -177,39 +175,6 @@ func CanonicalIPCidr(raw string) (string, error) {
 	return network.String(), nil
 }
 
-// TokenDailyUSDLimit reports whether the stored spending limit caps daily USD.
-func TokenDailyUSDLimit(raw string) (float64, bool, error) {
-	limit, err := dailyUSDLimit(raw)
-	if err != nil || limit == nil {
-		return 0, false, err
-	}
-	return *limit, true, nil
-}
-
-// AuthorizeTokenSpend applies a daily USD cap. An empty limit does not change the spent total.
-// alreadySpent is the total before this withdrawal. The returned total includes this withdrawal.
-func AuthorizeTokenSpend(limitJSON, asset, amount string, alreadySpent float64) (float64, error) {
-	limit, err := dailyUSDLimit(limitJSON)
-	if err != nil {
-		return 0, err
-	}
-	if limit == nil {
-		return alreadySpent, nil
-	}
-	add, err := TokenUSDAmount(asset, amount)
-	if err != nil {
-		return 0, err
-	}
-	if alreadySpent < 0 || add < 0 {
-		return 0, ErrSpendingLimit
-	}
-	next := alreadySpent + add
-	if next > *limit {
-		return 0, ErrSpendingLimit
-	}
-	return next, nil
-}
-
 func dailyUSDLimit(raw string) (*float64, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || raw == "{}" || raw == "null" {
@@ -230,20 +195,6 @@ func dailyUSDLimit(raw string) (*float64, error) {
 		return nil, ErrSpendingLimit
 	}
 	return parsed.DailyUSD, nil
-}
-
-// TokenUSDAmount is the USD value counted against a daily cap.
-func TokenUSDAmount(asset, amount string) (float64, error) {
-	switch strings.ToLower(strings.TrimSpace(asset)) {
-	case "usd", "usdt", "usdc":
-	default:
-		return 0, ErrUnpricedSpend
-	}
-	value, err := strconv.ParseFloat(strings.TrimSpace(amount), 64)
-	if err != nil || value < 0 {
-		return 0, ErrSpendingLimit
-	}
-	return value, nil
 }
 
 // CanonicalSpendingLimit stores either {} or {"daily_usd":n}.
