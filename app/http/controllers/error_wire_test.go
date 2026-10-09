@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"errors"
+	"fmt"
 	nethttp "net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/app/services/feeestimate"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/withdraw"
@@ -42,9 +44,16 @@ func TestError_Mappers_KeepTheirBytes(t *testing.T) {
 		{"a 500 refusal sentence", func(ctx http.Context) http.Response {
 			return MapWithdrawalCreateError(ctx, &withdraw.CreateRefusal{Status: withdraw.CreateStatusInternal, Message: "failed to persist withdrawal"})
 		}, 500, legacyJSON, `{"error":{"code":"internal","message":"failed to persist withdrawal"}}`},
+		// withdraw.Service words an unknown asset as the fixed sentence (never what was
+		// typed), so the controller writes the refusal message as it is. The old
+		// "unknown asset ZZZ on eth" case pinned a prefix scrub that the service made
+		// redundant when it started returning the fixed sentence.
 		{"an unknown asset on create", func(ctx http.Context) http.Response {
-			return MapWithdrawalCreateError(ctx, &withdraw.CreateRefusal{Status: withdraw.CreateStatusBadRequest, Message: "unknown asset ZZZ on eth"})
-		}, 400, legacyJSON, `{"error":{"code":"invalid_request","message":"unknown asset"}}`},
+			return MapWithdrawalCreateError(ctx, &withdraw.CreateRefusal{Status: withdraw.CreateStatusUnprocessable, Message: "unknown asset"})
+		}, 422, legacyJSON, `{"error":{"code":"unprocessable","message":"unknown asset"}}`},
+		{"an unknown chain on create is an outage and names no chain", func(ctx http.Context) http.Response {
+			return MapWithdrawalCreateError(ctx, fmt.Errorf("resolve: %w", chainregistry.ErrUnknownChain))
+		}, 500, envelopeJSON, `{"error":{"code":"internal","message":"internal error"}}` + "\n"},
 		{"a refused create", func(ctx http.Context) http.Response {
 			return MapWithdrawalCreateError(ctx, &withdraw.CreateRefusal{Status: withdraw.CreateStatusForbidden, Message: "2FA must be enabled before withdrawing"})
 		}, 403, legacyJSON, `{"error":{"code":"forbidden","message":"2FA must be enabled before withdrawing"}}`},

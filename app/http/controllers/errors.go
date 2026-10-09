@@ -3,7 +3,6 @@ package controllers
 import (
 	"errors"
 	"log/slog"
-	"strings"
 
 	"github.com/goravel/framework/contracts/http"
 
@@ -58,6 +57,12 @@ func MapSweepError(ctx http.Context, err error) http.Response {
 // The body stays the legacy {"error": message} map, which the writer wraps
 // into {"error":{"code","message"}}. A row failure is a generic 500.
 func MapWithdrawalCreateError(ctx http.Context, err error) http.Response {
+	// A chain the registry does not know is an outage, not something the
+	// caller can fix, so its text (the refusal message names it) is not returned.
+	if errors.Is(err, chainregistry.ErrUnknownChain) {
+		slog.Error("create withdrawal chain unavailable")
+		return responses.Error(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error")
+	}
 	var refusal *withdraw.CreateRefusal
 	if errors.As(err, &refusal) && refusal != nil {
 		return mapWithdrawalRefusal(ctx, refusal)
@@ -77,19 +82,11 @@ func MapWithdrawalCreateError(ctx http.Context, err error) http.Response {
 	return MapInternalError(ctx, err, "create_wallet_withdrawal")
 }
 
-// mapWithdrawalRefusal keeps a caller-fixable refusal on the status the
-// service chose. A chain the registry does not know is an outage, and an unknown
-// asset names what the customer typed, so neither of those texts is returned.
+// mapWithdrawalRefusal keeps a caller-fixable refusal on the status and the
+// sentence the service chose. withdraw.Service words every refusal for the
+// client (an unknown asset is the fixed "unknown asset", not what was typed).
 func mapWithdrawalRefusal(ctx http.Context, refusal *withdraw.CreateRefusal) http.Response {
-	if errors.Is(refusal, chainregistry.ErrUnknownChain) {
-		slog.Error("create withdrawal chain unavailable")
-		return responses.Error(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error")
-	}
-	message := refusal.Message
-	if strings.HasPrefix(message, "unknown asset ") {
-		message = "unknown asset"
-	}
-	return responses.FailMessage(ctx, createRefusalStatus(refusal.Status), message)
+	return responses.FailMessage(ctx, createRefusalStatus(refusal.Status), refusal.Message)
 }
 
 func createRefusalStatus(status withdraw.CreateStatus) int {
