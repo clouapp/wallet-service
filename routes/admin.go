@@ -89,6 +89,7 @@ func RegisterAdminRoutes() {
 	accountActivityCtrl := newDashboardAccountActivityController()
 	accountFeaturesCtrl := newDashboardAccountFeaturesController()
 	accountRolesCtrl := newDashboardAccountRolesController()
+	accountPermissionsCtrl := newDashboardAccountPermissionsController()
 	platformFeaturesCtrl := newPlatformFeaturesController()
 	platformAccountsCtrl := newPlatformAccountsController()
 	platformAccountUsersCtrl := newPlatformAccountUsersController()
@@ -158,7 +159,7 @@ func RegisterAdminRoutes() {
 			// S3.4.2: GET /v1/accounts/{accountId}/permissions roles.read.
 			// The catalog is the same code. There is no permissions table
 			// and no write on this path.
-			r.Middleware(middleware.Can(accounts, middleware.PermRolesRead)).Get("/permissions", accountRolesCtrl.Permissions)
+			r.Middleware(middleware.Can(accounts, middleware.PermRolesRead)).Get("/permissions", accountPermissionsCtrl.Index)
 
 			r.Middleware(middleware.Can(accounts, middleware.PermTokensRead)).Get("/tokens", tokenCtrl.Index)
 			r.Middleware(middleware.Can(accounts, middleware.PermTokensWrite), middleware.MintAPITokenPermissions()).Post("/tokens", tokenCtrl.Store)
@@ -499,8 +500,12 @@ func newDashboardAccountSettingsController() *dashsettings.SettingsController {
 	)
 }
 
-func newDashboardAccountRolesController() *dashroles.Controller {
-	return dashroles.NewController()
+func newDashboardAccountRolesController() *dashroles.RoleController {
+	return dashroles.NewRoleController()
+}
+
+func newDashboardAccountPermissionsController() *dashroles.PermissionController {
+	return dashroles.NewPermissionController()
 }
 
 func newDashboardAccountFeaturesController() *dashfeatures.FeaturesController {
