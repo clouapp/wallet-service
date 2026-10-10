@@ -82,6 +82,13 @@ func registerVault() {
 			"balance_refresh_interval_seconds": envInt("LOCAL_BALANCE_REFRESH_INTERVAL_SECONDS", 60),
 			"balance_refresh_spacing_ms":       envInt("LOCAL_BALANCE_REFRESH_SPACING_MS", 500),
 		},
+		// secp256k1 keygen pre-parameters (Paillier safe primes) kept generated ahead, in
+		// memory only, by a background goroutine of the local HTTP mode (it runs with the
+		// local workers); one keygen takes two sets. 0 leaves each keygen to search its
+		// own inside the request, which takes minutes on a two-core host.
+		"mpc": map[string]any{
+			"preparams_pool_size": envInt("MPC_PREPARAMS_POOL_SIZE", 0),
+		},
 		// Block window and parallelism of every deposit scan (Lambda and local); 0 keeps
 		// the scanner defaults (50 blocks, 500 while catching up, 8 parallel fetches).
 		"deposit_scan": map[string]any{

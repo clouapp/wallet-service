@@ -68,13 +68,20 @@ type BalanceRefresher interface {
 	RefreshAll(ctx context.Context) (refresh.PassSummary, error)
 }
 
+// PreParamsFiller keeps the MPC keygen pre-parameters generated ahead of time; Run
+// returns when ctx is cancelled.
+type PreParamsFiller interface {
+	Run(ctx context.Context)
+}
+
 // Workers are the jobs Start runs; Deliverer, Scanner and Balances are only needed
-// when the configuration enables their loop.
+// when the configuration enables their loop. PreParams is optional.
 type Workers struct {
 	Checker   WithdrawalConfirmationChecker
 	Deliverer OutboxDeliverer
 	Scanner   DepositScanner
 	Balances  BalanceRefresher
+	PreParams PreParamsFiller
 }
 
 type Config struct {
@@ -168,6 +175,10 @@ func Start(ctx context.Context, cfg Config, workers Workers) (*Loops, error) {
 	}
 	scanChains := append([]string(nil), cfg.DepositScanChains...)
 	loops := &Loops{}
+
+	if workers.PreParams != nil {
+		loops.running.Go(func() { workers.PreParams.Run(ctx) })
+	}
 
 	loops.every(ctx, cfg.ConfirmationInterval, func() {
 		if err := checker.RunWithdrawalConfirmationCheck(ctx); err != nil {
