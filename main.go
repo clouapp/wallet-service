@@ -18,6 +18,7 @@ import (
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/localworkers"
+	"github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/webhooksync"
@@ -164,8 +165,8 @@ func handleWebhookWorker(ctx context.Context, sqsEvent events.SQSEvent) (events.
 }
 
 // startLocalWorkers stands in for the confirmation_tracker and webhook_worker
-// Lambdas, which never run beside the local HTTP server, and keeps the wallet
-// balance read model refreshed. It returns nil when no worker was started.
+// Lambdas, which never run beside the local HTTP server, keeps the wallet
+// balance read model refreshed and fills the MPC keygen pre-parameters pool. It returns nil when no worker was started.
 func startLocalWorkers(ctx context.Context) lifecycle.Workers {
 	if !facades.Config().GetBool("vault.local_workers.enabled") {
 		slog.Info("local workers disabled")
@@ -190,6 +191,7 @@ func startLocalWorkers(ctx context.Context) lifecycle.Workers {
 		Deliverer: webhooks,
 		Scanner:   deposits,
 		Balances:  container.MustMake[*refresh.WalletRefresher](),
+		PreParams: container.MustMake[*mpc.PreParamsPool](),
 	})
 	if err != nil {
 		slog.Error("local workers not started", "error", err)

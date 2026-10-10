@@ -15,7 +15,7 @@ import (
 
 // AppServiceProvider binds the process-wide clients the domain providers
 // share: the AWS configuration, the Secrets Manager client built from it, and
-// the MPC service. Boot loads the token and chain catalogs.
+// the MPC service with its keygen pre-parameters pool. Boot loads the token and chain catalogs.
 type AppServiceProvider struct{}
 
 func (receiver *AppServiceProvider) Register(app foundation.Application) {
@@ -33,8 +33,15 @@ func (receiver *AppServiceProvider) Register(app foundation.Application) {
 		}
 		return sweepsecrets.NewClient(*cfg, facades.Config().GetString("vault.aws.endpoint_url")), nil
 	})
-	app.Singleton((*mpc.TSSService)(nil), func(foundation.Application) (any, error) {
-		return mpc.NewTSSService(), nil
+	app.Singleton((*mpc.PreParamsPool)(nil), func(foundation.Application) (any, error) {
+		return mpc.NewPreParamsPool(facades.Config().GetInt("vault.mpc.preparams_pool_size"), mpc.GeneratePreParams), nil
+	})
+	app.Singleton((*mpc.TSSService)(nil), func(app foundation.Application) (any, error) {
+		pool, err := resolve[*mpc.PreParamsPool](app)
+		if err != nil {
+			return nil, err
+		}
+		return mpc.NewTSSServiceWithPreParams(pool), nil
 	})
 }
 
