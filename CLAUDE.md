@@ -171,6 +171,12 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 - Key material (shares, passphrases, derived keys) is never returned after the one-time
   recovery material at creation, never logged, queued or cached. — guarded by
   `TestWallet_Recovery_MaterialSuite` (`tests/feature/api/external/wallets/wallets_recovery_material_test.go`).
+- secp256k1 keygen pre-parameters (the Paillier safe primes that become part of both
+  shares) may come from `mpc.PreParamsPool` (`MPC_PREPARAMS_POOL_SIZE`, default 0; filled
+  by the local workers): kept in process memory only, never persisted or logged, each set
+  used by one party of one keygen. With no running pool a keygen searches its own inside
+  the request (minutes on a two-core host). — guarded by
+  `app/services/mpc/preparams_pool_test.go` and `TestKeygen_Secp256k1_UsesThePooledPreParams`.
 - Signing order (build → policy checks → fetch share B → combine → sign → broadcast →
   persist) is not changed "in passing". Any change to `mpc`, `wallet`, `withdraw` or
   `sweep` runs the testnet e2e (`scripts/e2e`, `tools/e2e-funder`: SOL, BTC, ETH, POL).
@@ -186,7 +192,7 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 |---|---|---|
 | Goravel queue, `sync` connection (`QUEUE_CONNECTION`, default `sync`; `config/queue.go`) | credential mail (`jobs.SendCredentialMailJob`, always `DispatchSync`) | runs in the dispatching process. The `database` connection (queue `blockchain`) is configured but nothing runs `queue:work` and no job uses it |
 | AWS SQS (`app/adapters/queue/sqs`, port `queue.Sender`) | outbound webhook delivery | `webhook_worker` Lambda |
-| `app/services/localworkers` | local stand-in for `confirmation_tracker` and `webhook_worker`, and the wallet balance refresh loop (and optional deposit scan) | started from `main.go` in local mode only |
+| `app/services/localworkers` | local stand-in for `confirmation_tracker` and `webhook_worker`, the wallet balance refresh loop (and optional deposit scan), and the MPC keygen pre-parameters pool | started from `main.go` in local mode only |
 
 - Local webhook delivery from the outbox runs only when no SQS webhook queue is
   configured, so a message is never drained twice. — guarded by
