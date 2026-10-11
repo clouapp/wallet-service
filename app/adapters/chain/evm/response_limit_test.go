@@ -69,7 +69,7 @@ func TestEVMScanBlock_AcceptsBlocksAboveTheDefaultLimit(t *testing.T) {
 		t.Fatalf("default client err = %v, want an explicit size error", err)
 	}
 
-	live := NewEVMLive(EVMConfig{ChainIDStr: models.ChainBase, NativeSymbol: models.NativeETH, RPCURL: srv.URL, StrictLogScan: true})
+	live := NewEVMLive(EVMConfig{ChainIDStr: models.ChainBase, NativeSymbol: models.NativeETH, RPCURL: srv.URL})
 	transfers, err := live.ScanBlock(context.Background(), 1)
 	if err != nil {
 		t.Fatalf("ScanBlock on a %d-byte block: %v", len(body), err)
