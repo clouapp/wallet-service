@@ -216,3 +216,30 @@ func walletIDs(wallets []models.Wallet) []uuid.UUID {
 	}
 	return ids
 }
+
+func (s *WalletRepositoryTestSuite) TestSetMPCSecretARN_Moves_ARowThatStillHoldsTheOldARN() {
+	w := s.makeWallet("eth")
+	s.Require().NoError(s.repo.Create(context.Background(), w))
+
+	s.Require().NoError(s.repo.SetMPCSecretARN(context.Background(), w.ID, "arn:test", "arn:aws:secretsmanager:us-east-1:430776404482:secret:new"))
+
+	found, err := s.repo.FindByID(context.Background(), w.ID)
+	s.Require().NoError(err)
+	s.Equal("arn:aws:secretsmanager:us-east-1:430776404482:secret:new", found.MPCSecretARN)
+}
+
+func (s *WalletRepositoryTestSuite) TestSetMPCSecretARN_Refuses_ARowThatMovedMeanwhile() {
+	w := s.makeWallet("eth")
+	s.Require().NoError(s.repo.Create(context.Background(), w))
+
+	err := s.repo.SetMPCSecretARN(context.Background(), w.ID, "arn:stale", "arn:aws:secretsmanager:us-east-1:430776404482:secret:new")
+
+	s.Error(err)
+	found, findErr := s.repo.FindByID(context.Background(), w.ID)
+	s.Require().NoError(findErr)
+	s.Equal("arn:test", found.MPCSecretARN, "the row a concurrent writer moved is left as it is")
+}
+
+func (s *WalletRepositoryTestSuite) TestSetMPCSecretARN_Refuses_AnUnknownWallet() {
+	s.Error(s.repo.SetMPCSecretARN(context.Background(), uuid.New(), "arn:test", "arn:new"))
+}

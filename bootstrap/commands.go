@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/console"
@@ -106,13 +107,13 @@ func Commands() []console.Command {
 			DecryptRPC: decryptChainRPC,
 			AppEnv:     appfacades.Config().GetString("app.env"),
 		}),
-		commands.NewSecretsMigrateShares(commands.SecretsMigrateSharesDeps{
-			Migration: sharemigration.NewService(sharemigration.Deps{
-				Wallets: container.MustMake[*repositories.WalletRepository](),
-				Target:  appShareStore(),
-			}),
-			SourceFor: shareSourceAt,
-		}),
+		commands.NewSecretsMigrateShares(sharemigration.NewService(sharemigration.Deps{
+			Wallets:        container.MustMake[*repositories.WalletRepository](),
+			Sources:        shareSourceAt,
+			Target:         appShareStore(),
+			TargetEndpoint: appfacades.Config().GetString("vault.aws.endpoint_url"),
+			TargetKMSKeyID: secretsadapter.KMSKeyID(appfacades.Config().GetString("vault.master_key_ref")),
+		})),
 		commands.NewTransactionsBackfillFees(deposits, registry),
 	})
 }
@@ -175,14 +176,25 @@ func appShareStore() *secretsadapter.WalletStore {
 	return secretsadapter.NewShareStore(secrets, secretsadapter.KMSKeyID(appfacades.Config().GetString("vault.master_key_ref")))
 }
 
-// shareSourceAt is a Secrets Manager at endpoint (empty: AWS) with the app's AWS
-// credentials and region: the source of secrets:migrate-shares. It never writes.
-func shareSourceAt(endpoint string) (sharemigration.Source, error) {
-	cfg, err := container.Make[*aws.Config]()
-	if err != nil {
-		return nil, fmt.Errorf("aws config: %w", err)
+// shareSourceAt is the Secrets Manager at endpoint (empty: AWS itself) read with the
+// credentials of profile (empty: the app's own): the source of secrets:migrate-shares.
+// It never writes.
+func shareSourceAt(endpoint, profile string) (sharemigration.Source, error) {
+	if profile == "" {
+		cfg, err := container.Make[*aws.Config]()
+		if err != nil {
+			return nil, fmt.Errorf("aws config: %w", err)
+		}
+		return secretsadapter.NewShareStore(secretsadapter.NewClient(*cfg, endpoint), ""), nil
 	}
-	return secretsadapter.NewShareStore(secretsadapter.NewClient(*cfg, endpoint), ""), nil
+	cfg, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion(appfacades.Config().GetString("vault.aws.region")),
+		awsconfig.WithSharedConfigProfile(profile),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("aws profile %s: %w", profile, err)
+	}
+	return secretsadapter.NewShareStore(secretsadapter.NewClient(cfg, endpoint), ""), nil
 }
 
 func configuredChainProfile() string {

@@ -16,19 +16,11 @@ import (
 // never a share.
 type SecretsMigrateShares struct {
 	migration *sharemigration.Service
-	sourceFor func(endpoint string) (sharemigration.Source, error)
 }
 
-// SecretsMigrateSharesDeps wires the command. SourceFor builds the Secrets Manager
-// the shares are read from; an empty endpoint is AWS itself.
-type SecretsMigrateSharesDeps struct {
-	Migration *sharemigration.Service
-	SourceFor func(endpoint string) (sharemigration.Source, error)
-}
-
-// NewSecretsMigrateShares builds the command from deps.
-func NewSecretsMigrateShares(deps SecretsMigrateSharesDeps) *SecretsMigrateShares {
-	return &SecretsMigrateShares{migration: deps.Migration, sourceFor: deps.SourceFor}
+// NewSecretsMigrateShares wires the command to the migration service.
+func NewSecretsMigrateShares(migration *sharemigration.Service) *SecretsMigrateShares {
+	return &SecretsMigrateShares{migration: migration}
 }
 
 func (c *SecretsMigrateShares) Signature() string { return "secrets:migrate-shares" }
@@ -42,27 +34,32 @@ func (c *SecretsMigrateShares) Extend() command.Extend {
 		Category: "secrets",
 		Flags: []command.Flag{
 			&command.StringFlag{Name: "from-endpoint", Usage: "Secrets Manager the shares are read from (e.g. http://127.0.0.1:4566 for LocalStack); empty is AWS"},
+			&command.StringFlag{Name: "from-profile", Usage: "AWS profile that reads the source (default: the app's own credentials)"},
 			&command.BoolFlag{Name: "apply", Usage: "create the copies and move the ARNs (default: report only)"},
 		},
 	}
 }
 
 func (c *SecretsMigrateShares) Handle(ctx console.Context) error {
-	source, err := c.sourceFor(ctx.Option("from-endpoint"))
-	if err != nil {
-		return fail(ctx, err)
-	}
 	apply := ctx.OptionBool("apply")
-	rows, err := c.migration.Run(context.Background(), source, apply)
-	for _, row := range rows {
-		to := row.To
-		if to == "" {
-			to = "-"
-		}
-		ctx.Info(fmt.Sprintf("%-13s %s %-9s %s -> %s", row.Status, row.WalletID, row.Chain, row.From, to))
+	report, err := c.migration.Run(context.Background(), sharemigration.Request{
+		SourceEndpoint: ctx.Option("from-endpoint"),
+		SourceProfile:  ctx.Option("from-profile"),
+		Apply:          apply,
+	})
+	ctx.Info(fmt.Sprintf("target: %s, sealed with %s", orDefault(report.TargetEndpoint, "AWS"), orDefault(report.TargetKMSKeyID, "the default Secrets Manager key")))
+	for _, row := range report.Rows {
+		ctx.Info(fmt.Sprintf("%-13s %s %-9s %s -> %s", row.Status, row.WalletID, row.Chain, row.From, orDefault(row.To, "-")))
 	}
 	if !apply {
 		ctx.Info("dry run: nothing was written; run again with --apply")
 	}
 	return fail(ctx, err)
+}
+
+func orDefault(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
 }

@@ -231,7 +231,7 @@ func TestRefresh_Commands_HaveNoQueueFlag(t *testing.T) {
 }
 
 func TestSecrets_Migrate_SharesSignature(t *testing.T) {
-	cmd := NewSecretsMigrateShares(SecretsMigrateSharesDeps{})
+	cmd := NewSecretsMigrateShares(nil)
 	if cmd.Signature() != "secrets:migrate-shares" {
 		t.Fatalf("signature = %s", cmd.Signature())
 	}
@@ -248,7 +248,7 @@ func TestSecrets_Migrate_SharesSignature(t *testing.T) {
 			names[f.Name] = true
 		}
 	}
-	if !names["from-endpoint"] || !names["apply"] {
-		t.Fatalf("flags = %v, want from-endpoint and apply", names)
+	if !names["from-endpoint"] || !names["from-profile"] || !names["apply"] {
+		t.Fatalf("flags = %v, want from-endpoint, from-profile and apply", names)
 	}
 }
