@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -115,7 +116,8 @@ func NewPublisher(deps PublisherDeps) *Publisher {
 
 // Publish sends one deposit event to every subscribed config owned by the wallet's
 // account (and to legacy configs without an owner), at most once per config per
-// transaction. Nothing is sent when the amount cannot be stated unambiguously.
+// transaction, and for deposit.confirming at most once per config per transaction and
+// count (see subjectOf). Nothing is sent when the amount cannot be stated unambiguously.
 func (p *Publisher) Publish(ctx context.Context, eventType types.EventType, tx models.Transaction) error {
 	return p.publish(ctx, eventType, tx, time.Time{})
 }
@@ -157,7 +159,7 @@ func (p *Publisher) publish(ctx context.Context, eventType types.EventType, tx m
 	transactionID := tx.ID
 	enqueued, err := p.enqueuer.EnqueueScoped(ctx, webhook.ScopedEvent{
 		EventType:     eventType,
-		SubjectID:     tx.ID.String(),
+		SubjectID:     subjectOf(eventType, tx),
 		WalletID:      tx.WalletID,
 		AccountID:     accountID,
 		TransactionID: &transactionID,
@@ -169,6 +171,20 @@ func (p *Publisher) publish(ctx context.Context, eventType types.EventType, tx m
 	}
 	slog.Info("deposit webhook published", "event_type", eventType, "transaction_id", tx.ID, "deliveries", enqueued)
 	return nil
+}
+
+// subjectOf is the outbox subject of a deposit event; the outbox keeps one row per
+// config, type and subject. deposit.pending, deposit.confirmed and deposit.failed
+// happen once per deposit: their subject is the transaction id, the key the deposit
+// event backfill looks up. deposit.confirming reports progress and is sent again each
+// time the count rises, so its subject is "<transaction id>:<confirmations>": one row
+// per count, and a count already sent is not sent twice. The payload keeps the plain
+// transaction id either way.
+func subjectOf(eventType types.EventType, tx models.Transaction) string {
+	if eventType == types.EventDepositConfirming {
+		return tx.ID.String() + ":" + strconv.Itoa(tx.Confirmations)
+	}
+	return tx.ID.String()
 }
 
 func (p *Publisher) payload(tx models.Transaction) (Payload, error) {
