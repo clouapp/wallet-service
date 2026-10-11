@@ -75,6 +75,9 @@ type Transaction struct {
 	Origin              string     `gorm:"type:varchar(24);index"`
 	RawPayload          string     `gorm:"type:jsonb"`
 	SyncedAt            *time.Time `gorm:"type:timestamptz"`
+	// Finality is the policy the tracker confirms this transaction by, copied from
+	// its chain when the row was recorded, like RequiredConfs.
+	Finality string `gorm:"type:varchar(20);not null;default:confirmations"`
 
 	// Relationships
 	Address *Address `gorm:"foreignKey:AddressID"`
@@ -84,4 +87,13 @@ type Transaction struct {
 // TableName specifies the table name for Transaction model
 func (t *Transaction) TableName() string {
 	return "transactions"
+}
+
+// FinalityPolicy is the policy the transaction is confirmed by; a row that names
+// none counts confirmations.
+func (t *Transaction) FinalityPolicy() string {
+	if t.Finality == "" {
+		return FinalityConfirmations
+	}
+	return t.Finality
 }

@@ -99,14 +99,14 @@ func assertSeededChains(t *testing.T, ctx context.Context) {
 	want := []seededChain{
 		{id: models.ChainETH, name: "Ethereum", adapter: models.AdapterTypeEVM, native: "eth", decimals: 18, network: 1, hasNetwork: true, envVar: "ETH_RPC_URL", confirmations: 12, order: 1, gas: "5000000000000000", dust: "500000000000000", dustUSD: "1"},
 		{id: models.ChainBTC, name: "Bitcoin", adapter: models.AdapterTypeBitcoin, native: "btc", decimals: 8, envVar: "BTC_RPC_URL", confirmations: 6, order: 3, gas: "", dust: "10000", dustUSD: "0"},
-		{id: models.ChainPolygon, name: "Polygon", adapter: models.AdapterTypeEVM, native: types.NativeSymbolPOL, decimals: 18, network: 137, hasNetwork: true, envVar: "POLYGON_RPC_URL", confirmations: 128, order: 5, gas: "500000000000000000", dust: "100000000000000000", dustUSD: "0.1"},
+		{id: models.ChainPolygon, name: "Polygon", adapter: models.AdapterTypeEVM, native: types.NativeSymbolPOL, decimals: 18, network: 137, hasNetwork: true, envVar: "POLYGON_RPC_URL", confirmations: 3, order: 5, gas: "500000000000000000", dust: "100000000000000000", dustUSD: "0.1"},
 		{id: models.ChainSOL, name: "Solana", adapter: models.AdapterTypeSolana, native: "sol", decimals: 9, envVar: "SOLANA_RPC_URL", confirmations: 1, order: 7, gas: "10000000", dust: "1000000", dustUSD: "1"},
 		{id: models.ChainBase, name: "Base", adapter: models.AdapterTypeEVM, native: models.NativeETH, decimals: 18, network: models.EVMNetworkIDBaseMainnet, hasNetwork: true, envVar: "BASE_RPC_URL", envReference: true, confirmations: baseConfirmations, order: 9, gas: "200000000000000", dust: "20000000000000", dustUSD: "0.1"},
 		{id: models.ChainArbitrum, name: "Arbitrum One", adapter: models.AdapterTypeEVM, native: models.NativeETH, decimals: 18, network: models.EVMNetworkIDArbitrumMainnet, hasNetwork: true, envVar: "ARBITRUM_RPC_URL", envReference: true, confirmations: arbitrumConfirmations, order: 11, gas: "200000000000000", dust: "20000000000000", dustUSD: "0.1"},
 		{id: models.ChainBSC, name: "BNB Smart Chain", adapter: models.AdapterTypeEVM, native: models.NativeBNB, decimals: 18, network: models.EVMNetworkIDBSCMainnet, hasNetwork: true, envVar: "BSC_RPC_URL", envReference: true, confirmations: bscConfirmations, order: 13, gas: "500000000000000", dust: "50000000000000", dustUSD: "0.1"},
 		{id: models.ChainTETH, name: "Sepolia", adapter: models.AdapterTypeEVM, native: "eth", decimals: 18, network: 11155111, hasNetwork: true, envVar: "TETH_RPC_URL", testnet: true, mainnet: models.ChainETH, confirmations: 12, order: 2, gas: "5000000000000000", dust: "500000000000000", dustUSD: "1"},
 		{id: models.ChainTBTC, name: "Bitcoin Testnet", adapter: models.AdapterTypeBitcoin, native: "btc", decimals: 8, envVar: "TBTC_RPC_URL", testnet: true, mainnet: models.ChainBTC, confirmations: 6, order: 4, gas: "", dust: "10000", dustUSD: "0"},
-		{id: models.ChainTPolygon, name: "Polygon Amoy", adapter: models.AdapterTypeEVM, native: types.NativeSymbolPOL, decimals: 18, network: 80002, hasNetwork: true, envVar: "TPOLYGON_RPC_URL", testnet: true, mainnet: models.ChainPolygon, confirmations: 128, order: 6, gas: "500000000000000000", dust: "100000000000000000", dustUSD: "0.1"},
+		{id: models.ChainTPolygon, name: "Polygon Amoy", adapter: models.AdapterTypeEVM, native: types.NativeSymbolPOL, decimals: 18, network: 80002, hasNetwork: true, envVar: "TPOLYGON_RPC_URL", testnet: true, mainnet: models.ChainPolygon, confirmations: 3, order: 6, gas: "500000000000000000", dust: "100000000000000000", dustUSD: "0.1"},
 		{id: models.ChainTSOL, name: "Solana Devnet", adapter: models.AdapterTypeSolana, native: "sol", decimals: 9, envVar: "TSOL_RPC_URL", testnet: true, mainnet: models.ChainSOL, confirmations: 1, order: 8, gas: "10000000", dust: "1000000", dustUSD: "1"},
 		{id: models.ChainTBase, name: "Base Sepolia", adapter: models.AdapterTypeEVM, native: models.NativeETH, decimals: 18, network: models.EVMNetworkIDBaseSepolia, hasNetwork: true, envVar: "TBASE_RPC_URL", envReference: true, testnet: true, mainnet: models.ChainBase, confirmations: baseConfirmations, order: 10, gas: "200000000000000", dust: "20000000000000", dustUSD: "0.1"},
 		{id: models.ChainTArbitrum, name: "Arbitrum Sepolia", adapter: models.AdapterTypeEVM, native: models.NativeETH, decimals: 18, network: models.EVMNetworkIDArbitrumSepolia, hasNetwork: true, envVar: "TARBITRUM_RPC_URL", envReference: true, testnet: true, mainnet: models.ChainArbitrum, confirmations: arbitrumConfirmations, order: 12, gas: "200000000000000", dust: "20000000000000", dustUSD: "0.1"},
@@ -143,6 +143,9 @@ func assertSeededChains(t *testing.T, ctx context.Context) {
 		if chain.IsTestnet != row.testnet || chain.RequiredConfirmations != row.confirmations || chain.DisplayOrder != row.order || chain.Status != "active" {
 			t.Fatalf("chain %s flags: testnet=%v confirmations=%d order=%d status=%q", row.id, chain.IsTestnet, chain.RequiredConfirmations, chain.DisplayOrder, chain.Status)
 		}
+		if want := seededFinality(row.id); chain.Finality != want {
+			t.Fatalf("chain %s finality %q, want %q", row.id, chain.Finality, want)
+		}
 		if !sameOptionalInt(chain.NetworkID, row.network, row.hasNetwork) || !sameOptionalString(chain.MainnetChainID, row.mainnet) {
 			t.Fatalf("chain %s network link does not match the seed", row.id)
 		}
@@ -151,6 +154,31 @@ func assertSeededChains(t *testing.T, ctx context.Context) {
 		}
 		requireDustUSD(t, row.id, chain.DustThresholdUSD, row.dustUSD)
 		requireSealedEndpoint(t, chain.RpcURL, seedEndpointPlaintext(row.envVar, row.envReference))
+	}
+}
+
+// seededFinality is the finality policy a new chain row gets: Polygon and BSC read
+// the finalized block, TRON the solidified block, every other chain counts
+// confirmations.
+func seededFinality(chainID string) string {
+	switch chainID {
+	case models.ChainPolygon, models.ChainTPolygon, models.ChainBSC, models.ChainTBSC:
+		return models.FinalityFinalizedTag
+	case models.ChainTron, models.ChainTTron:
+		return models.FinalitySolidified
+	}
+	return models.FinalityConfirmations
+}
+
+// TestSeed_Chains_NativeFinalityChainsCountTheirFinalityLag: under finalized_tag or
+// solidified, required_confirmations is the finality lag measured on 2026-10-11
+// plus the tip block (Amoy 3, BSC testnet 2, Nile 19), shown as "n/N".
+func TestSeed_Chains_NativeFinalityChainsCountTheirFinalityLag(t *testing.T) {
+	if got := configuredConfirmations(t, models.ChainBSC); got != 2 {
+		t.Fatalf("bsc confirmations default %d, want 2", got)
+	}
+	if got := configuredConfirmations(t, models.ChainTron); got != 19 {
+		t.Fatalf("tron confirmations default %d, want 19", got)
 	}
 }
 

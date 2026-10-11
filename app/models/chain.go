@@ -80,6 +80,44 @@ const (
 	EnvironmentTest = "test"
 )
 
+// Finality policies: how the confirmation tracker decides that a transaction is
+// final. A chain stores one (chains.finality) and each transaction keeps the one
+// it was recorded under (transactions.finality), like required_confs.
+const (
+	// FinalityConfirmations confirms a transaction once its block has
+	// required_confirmations confirmations (the tip block counts one).
+	FinalityConfirmations = "confirmations"
+	// FinalityFinalizedTag confirms an EVM transaction once its block is at or below
+	// the block eth_getBlockByNumber("finalized") returns.
+	FinalityFinalizedTag = "finalized_tag"
+	// FinalitySolidified confirms a TRON transaction once its block is at or below
+	// the solidified block /walletsolidity returns.
+	FinalitySolidified = "solidified"
+)
+
+// IsFinalityPolicy reports whether policy is one of the finality policies.
+func IsFinalityPolicy(policy string) bool {
+	switch policy {
+	case FinalityConfirmations, FinalityFinalizedTag, FinalitySolidified:
+		return true
+	}
+	return false
+}
+
+// FinalityFitsAdapter reports whether a chain of adapterType can read policy:
+// confirmations everywhere, finalized_tag on EVM and solidified on TRON.
+func FinalityFitsAdapter(policy, adapterType string) bool {
+	switch policy {
+	case FinalityConfirmations:
+		return true
+	case FinalityFinalizedTag:
+		return adapterType == AdapterTypeEVM
+	case FinalitySolidified:
+		return adapterType == AdapterTypeTron
+	}
+	return false
+}
+
 type Chain struct {
 	orm.Model
 	ID                       string              `gorm:"type:varchar(20);primary_key"`
@@ -98,6 +136,10 @@ type Chain struct {
 	GasReadinessThresholdRaw *string             `gorm:"type:text;not null"`
 	DustThresholdNativeRaw   *string             `gorm:"type:text;not null"`
 	DustThresholdUSD         numeric.NullDecimal `gorm:"type:decimal(16,4);not null"`
+	// Finality is the policy new transactions of this chain are confirmed by. Under
+	// finalized_tag or solidified, RequiredConfirmations is the typical finality lag,
+	// for display only.
+	Finality string `gorm:"type:varchar(20);not null;default:confirmations"`
 }
 
 // ChainThresholdWrite is the subset of threshold columns a platform patch may
