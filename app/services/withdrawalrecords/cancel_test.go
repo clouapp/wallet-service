@@ -33,7 +33,7 @@ func (s *cancelStore) Within(ctx context.Context, fn func(context.Context) error
 	return fn(ctx)
 }
 func (s *cancelStore) Create(context.Context, *models.Withdrawal) error { return nil }
-func (s *cancelStore) RetryBroadcast(context.Context, uuid.UUID, string, string, string, string) error {
+func (s *cancelStore) RetryBroadcast(context.Context, uuid.UUID, string, string, *uint32, string, string) error {
 	return nil
 }
 func (s *cancelStore) MarkFailed(context.Context, uuid.UUID, string) error { return nil }

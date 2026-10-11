@@ -325,7 +325,14 @@ Cada config só recebe eventos de wallets da própria conta (configs legadas sem
 
 - `amount` é decimal (string); `amount_base_units` é inteiro na menor unidade do ativo (string), com `decimals`.
 - `failure_code` ∈ `insufficient_funds`, `wallet_not_gas_ready`, `unsupported_chain`, `sweep_limit_exceeded`,
-  `invalid_passphrase`, `passphrase_too_short`, `concurrent_withdrawal`, `too_many_attempts`, `internal_error`.
+  `invalid_passphrase`, `passphrase_too_short`, `concurrent_withdrawal`, `too_many_attempts`, `internal_error`,
+  e no XRP `destination_below_reserve` (destino inexistente recebendo menos que a reserva base),
+  `destination_tag_required` (destino exige destination tag e o saque não enviou `destination_tag`),
+  `destination_tag_not_supported` (`destination_tag` numa chain que não é XRP), `expired` (pagamento passou do
+  `LastLedgerSequence` sem entrar num ledger validado) e `onchain_<resultado em minúsculas>` (pagamento validado com
+  resultado `tec…`, ex. `onchain_tecno_dst_insuf_xrp`; a fee foi paga).
+- `destination_tag` (inteiro 0..4294967295, só XRP) vem ao lado de `destination_address` quando o saque tem tag;
+  omitido nos demais.
 - Deduplicação: no máximo um evento por (config, tipo, saque) — índice único `webhook_events_subject_dedup_unique`.
 - Retentativas: até `max_attempts` (10) com backoff exponencial (10s → 10min no modo local; SQS em produção).
 - Reparo: o confirmation tracker também reprocessa saques `broadcast` cuja transação já está `confirmed`,

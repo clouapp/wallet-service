@@ -61,7 +61,7 @@ type transactionStore interface {
 // sweepRunner plans and executes a withdrawal. Consolidation, gas refresh,
 // and limit reads stay on the sweep service.
 type sweepRunner interface {
-	PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int, toAddress string, callerAccountID uuid.UUID) (*sweep.Plan, error)
+	PlanForWithdrawalTo(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int, to sweep.Destination, callerAccountID uuid.UUID) (*sweep.Plan, error)
 	ExecutePlan(ctx context.Context, plan *sweep.Plan, creds sweep.SigningCredentials, withdrawalTxID uuid.UUID, toAddress string, externalUserID string) (*sweep.Result, error)
 }
 
@@ -130,6 +130,7 @@ type WithdrawRequest struct {
 	WalletID        uuid.UUID `json:"wallet_id"`
 	ExternalUserID  string    `json:"external_user_id"`
 	ToAddress       string    `json:"to_address"`
+	DestinationTag  *uint32   `json:"destination_tag,omitempty"`
 	Amount          string    `json:"amount"`
 	Asset           string    `json:"asset"`
 	Passphrase      string    `json:"-"`
@@ -166,7 +167,7 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 
 	if req.IdempotencyKey != "" {
 		existing, err := s.transactionRepo.FindByIdempotencyKey(ctx, req.IdempotencyKey)
-		if err == nil && existing != nil {
+		if err == nil && existing != nil && existing.Status != string(types.TxStatusFailed) {
 			return existing, &Metadata{}, nil
 		}
 	}
@@ -219,7 +220,7 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		return nil, nil, err
 	}
 
-	plan, err := s.sweep.PlanForWithdrawal(ctx, wallet.ID, req.Asset, amount, req.ToAddress, req.CallerAccountID)
+	plan, err := s.sweep.PlanForWithdrawalTo(ctx, wallet.ID, req.Asset, amount, sweep.Destination{Address: req.ToAddress, Tag: req.DestinationTag}, req.CallerAccountID)
 	if err != nil {
 		if errors.Is(err, sweep.ErrUnsupportedChain) {
 			// Bubble the sentinel; the controller maps it to 422
@@ -234,6 +235,10 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 
 	switch plan.Strategy {
 	case sweep.StrategyInsufficient:
+		if plan.Shortfall != nil {
+			slog.Warn("withdrawal refused", "wallet_id", wallet.ID, "chain", wallet.Chain, "reason", plan.Shortfall.Error())
+			return nil, nil, plan.Shortfall
+		}
 		return nil, nil, sweep.ErrInsufficientFunds
 	case sweep.StrategyMultiSweep:
 		adapter, adapterErr := s.registry.Chain(wallet.Chain)

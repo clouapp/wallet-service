@@ -29,6 +29,7 @@ type WithdrawalStore interface {
 	FindByIDAndWallet(ctx context.Context, withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error)
 	FindBroadcastWithConfirmedTransaction(ctx context.Context, limit int) ([]models.Withdrawal, error)
 	MarkConfirmed(ctx context.Context, id uuid.UUID, transactionID uuid.UUID) error
+	MarkFailed(ctx context.Context, id uuid.UUID, failureReason string) error
 }
 
 type TransactionStore interface {
@@ -59,6 +60,7 @@ type Payload struct {
 	AmountBaseUnits       *string `json:"amount_base_units"`
 	Decimals              *int    `json:"decimals"`
 	DestinationAddress    string  `json:"destination_address"`
+	DestinationTag        *uint32 `json:"destination_tag,omitempty"`
 	TxHash                *string `json:"tx_hash"`
 	Confirmations         int     `json:"confirmations"`
 	RequiredConfirmations int     `json:"required_confirmations"`
@@ -135,6 +137,7 @@ func (p *Publisher) PublishFailed(ctx context.Context, withdrawal *models.Withdr
 		Chain:              attempt.Chain,
 		Asset:              attempt.Asset,
 		DestinationAddress: withdrawal.DestinationAddress,
+		DestinationTag:     withdrawal.DestinationTag,
 		Status:             models.WithdrawalStatusFailed,
 		FailureCode:        &code,
 		OccurredAt:         p.now().Format(time.RFC3339),
@@ -177,6 +180,49 @@ func (p *Publisher) MarkConfirmed(ctx context.Context, tx *models.Transaction) e
 	}
 	if err := p.withdrawals.MarkConfirmed(ctx, withdrawal.ID, tx.ID); err != nil {
 		return fmt.Errorf("mark withdrawal %s confirmed: %w", withdrawal.ID, err)
+	}
+	return nil
+}
+
+// MarkFailed is called once a withdrawal transaction failed on chain (an XRP tec
+// result, or a payment past its LastLedgerSequence): it publishes withdrawal.failed
+// with failureCode and the transaction, then marks the withdrawal row failed. A row
+// already failed is left alone and nothing is published again; the per-subject
+// dedup keeps a retry after a crash in between from delivering twice.
+func (p *Publisher) MarkFailed(ctx context.Context, tx *models.Transaction, failureCode string) error {
+	if tx == nil || tx.ID == uuid.Nil {
+		return errors.New("mark withdrawal failed: transaction is required")
+	}
+	if tx.TxType != models.TxTypeWithdrawal {
+		return fmt.Errorf("mark withdrawal failed: transaction %s is a %s", tx.ID, tx.TxType)
+	}
+	code := strings.TrimSpace(failureCode)
+	if code == "" {
+		return errors.New("mark withdrawal failed: failure code is required")
+	}
+
+	withdrawal, err := p.withdrawalForTransaction(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if withdrawal != nil && withdrawal.Status == models.WithdrawalStatusFailed {
+		return nil
+	}
+
+	var accountID *uuid.UUID
+	if withdrawal != nil {
+		accountID = withdrawal.AccountID
+	}
+	payload := p.transactionPayload(withdrawal, tx, models.WithdrawalStatusFailed)
+	payload.FailureCode = &code
+	if err := p.publish(ctx, types.EventWithdrawalFailed, tx.WalletID, accountID, &tx.ID, payload); err != nil {
+		return err
+	}
+	if withdrawal == nil {
+		return nil
+	}
+	if err := p.withdrawals.MarkFailed(ctx, withdrawal.ID, code); err != nil {
+		return fmt.Errorf("mark withdrawal %s failed: %w", withdrawal.ID, err)
 	}
 	return nil
 }
@@ -245,6 +291,7 @@ func (p *Publisher) transactionPayload(withdrawal *models.Withdrawal, tx *models
 		Chain:                 tx.Chain,
 		Asset:                 tx.Asset,
 		DestinationAddress:    tx.ToAddress,
+		DestinationTag:        tx.DestinationTag,
 		TxHash:                &txHash,
 		Confirmations:         tx.Confirmations,
 		RequiredConfirmations: tx.RequiredConfs,

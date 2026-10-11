@@ -14,11 +14,14 @@ import (
 type StoreRequest struct {
 	Amount             string `form:"amount"              json:"amount"              example:"0.001"`
 	DestinationAddress string `form:"destination_address" json:"destination_address" example:"bc1q..."`
-	Note               string `form:"note"                json:"note,omitempty"      example:"Monthly payment"`
-	Passphrase         string `form:"passphrase"          json:"passphrase"          example:"my-secure-wallet-passphrase"`
-	TotpCode           string `form:"totp_code"           json:"totp_code"           example:"123456"`
-	IdempotencyKey     string `form:"idempotency_key"     json:"idempotency_key,omitempty" example:"80571fff-8d0b-5c1e-9a3f-2b6f0f7c1a11"`
-	Asset              string `form:"asset"               json:"asset,omitempty"     example:"USDT"`
+	// DestinationTag is the XRP Ledger destination tag (0..4294967295). Only XRP
+	// wallets accept it; any other chain answers 422 destination_tag_not_supported.
+	DestinationTag *uint32 `form:"destination_tag" json:"destination_tag,omitempty" example:"12345" minimum:"0" maximum:"4294967295"`
+	Note           string  `form:"note"                json:"note,omitempty"      example:"Monthly payment"`
+	Passphrase     string  `form:"passphrase"          json:"passphrase"          example:"my-secure-wallet-passphrase"`
+	TotpCode       string  `form:"totp_code"           json:"totp_code"           example:"123456"`
+	IdempotencyKey string  `form:"idempotency_key"     json:"idempotency_key,omitempty" example:"80571fff-8d0b-5c1e-9a3f-2b6f0f7c1a11"`
+	Asset          string  `form:"asset"               json:"asset,omitempty"     example:"USDT"`
 }
 
 func (r *StoreRequest) Authorize(ctx http.Context) error {
@@ -40,6 +43,7 @@ func (r *StoreRequest) Rules(ctx http.Context) map[string]string {
 		"destination_address": "required|blockchain_address",
 		"passphrase":          "required|min_len:12",
 		"idempotency_key":     "uuid",
+		"destination_tag":     "uint32",
 	}
 	if userID, ok := requestctx.UserID(ctx); ok && userID != uuid.Nil {
 		rules["totp_code"] = "required|min_len:6|max_len:6"

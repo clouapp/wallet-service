@@ -12,6 +12,16 @@ const (
 	WithdrawalStatusFailed       = "failed"
 )
 
+// Failure reasons of a withdrawal whose payment left the service and failed on
+// chain (XRP only). A payment a validated ledger includes with a failure result is
+// WithdrawalFailureOnChainPrefix + its lowercase result code, e.g.
+// onchain_tecno_dst_insuf_xrp; one that can no longer be included is
+// WithdrawalFailureExpired.
+const (
+	WithdrawalFailureOnChainPrefix = "onchain_"
+	WithdrawalFailureExpired       = "expired"
+)
+
 type Withdrawal struct {
 	orm.Model
 	ID                 uuid.UUID  `gorm:"type:uuid;primary_key"`
@@ -21,9 +31,11 @@ type Withdrawal struct {
 	Status             string     `gorm:"type:varchar(20);default:pending"`
 	Amount             string     `gorm:"type:decimal(36,18)"`
 	DestinationAddress string     `gorm:"type:text;not null"`
-	FeeEstimate        string     `gorm:"type:decimal(36,18)"`
-	Note               string     `gorm:"type:text"`
-	CreatedBy          *uuid.UUID `gorm:"type:uuid"`
+	// DestinationTag is the XRP Ledger destination tag; nil means none.
+	DestinationTag *uint32    `gorm:"type:bigint"`
+	FeeEstimate    string     `gorm:"type:decimal(36,18)"`
+	Note           string     `gorm:"type:text"`
+	CreatedBy      *uuid.UUID `gorm:"type:uuid"`
 	// FailureReason holds the public error code returned to the caller, never internal details.
 	FailureReason *string `gorm:"type:varchar(64)"`
 	TxHash        string  `gorm:"-"`

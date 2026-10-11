@@ -231,6 +231,17 @@ func (r *TransactionRepository) SetBlockNumber(ctx context.Context, id uuid.UUID
 	return r.updateColumns(ctx, id, map[string]any{"block_number": block}, "set transaction block number")
 }
 
+// MarkFailed sets the failed status and the reason (an on-chain result code or
+// "expired") in error_message, and releases the idempotency key so a retry of the
+// withdrawal with the same key can record its new transaction under it.
+func (r *TransactionRepository) MarkFailed(ctx context.Context, id uuid.UUID, reason string) error {
+	return r.updateColumns(ctx, id, map[string]any{
+		"status":          string(types.TxStatusFailed),
+		"error_message":   reason,
+		"idempotency_key": nil,
+	}, "mark transaction failed")
+}
+
 // RecordConfirmations stores the confirmation count, status, and confirmed_at together.
 func (r *TransactionRepository) RecordConfirmations(ctx context.Context, id uuid.UUID, confirmations int, status string, confirmedAt *time.Time) error {
 	return r.updateColumns(ctx, id, map[string]any{

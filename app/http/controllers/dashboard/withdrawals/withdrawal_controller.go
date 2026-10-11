@@ -118,6 +118,7 @@ func (c *WithdrawalController) Store(ctx http.Context) http.Response {
 		Asset:              req.Asset,
 		Amount:             req.Amount,
 		DestinationAddress: req.DestinationAddress,
+		DestinationTag:     req.DestinationTag,
 		Note:               req.Note,
 		IdempotencyKey:     req.IdempotencyKey,
 	})

@@ -603,15 +603,16 @@ func (r *refuseTotp) Verify(*models.User, string, string) error {
 }
 
 type memChains struct {
-	decimals int
-	missing  bool
+	decimals    int
+	missing     bool
+	adapterType string
 }
 
 func (m memChains) FindByID(context.Context, string) (*models.Chain, error) {
 	if m.missing {
 		return nil, models.ErrRepositoryNotFound
 	}
-	return &models.Chain{NativeDecimals: m.decimals}, nil
+	return &models.Chain{NativeDecimals: m.decimals, AdapterType: m.adapterType}, nil
 }
 
 type memWithdrawalRows struct {
@@ -626,6 +627,7 @@ type memWithdrawalRows struct {
 	retryErr         error
 	retryAmount      string
 	retryDestination string
+	retryTag         *uint32
 	retryFee         string
 	retryNote        string
 }
@@ -664,13 +666,14 @@ func (m *memWithdrawalRows) Create(_ context.Context, withdrawal *models.Withdra
 	return nil
 }
 
-func (m *memWithdrawalRows) RetryBroadcast(_ context.Context, _ uuid.UUID, amount, destination, feeEstimate, note string) error {
+func (m *memWithdrawalRows) RetryBroadcast(_ context.Context, _ uuid.UUID, amount, destination string, destinationTag *uint32, feeEstimate, note string) error {
 	m.retries++
 	if m.inside {
 		m.retriedInside = true
 	}
 	m.retryAmount = amount
 	m.retryDestination = destination
+	m.retryTag = destinationTag
 	m.retryFee = feeEstimate
 	m.retryNote = note
 	if m.retryErr != nil {

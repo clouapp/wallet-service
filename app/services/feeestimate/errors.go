@@ -34,6 +34,11 @@ const (
 	CodeTooManyAddresses     = "sweep_limit_exceeded"
 	CodeGasEstimateFailed    = "gas_estimate_failed"
 	CodeUnavailable          = "fee_estimate_unavailable"
+	CodeDestinationReserve   = "destination_below_reserve"
+	CodeDestinationTag       = "destination_tag_required"
+	// CodeDestinationTagUnsupported is a destination_tag on a chain other than XRP.
+	CodeDestinationTagUnsupported = "destination_tag_not_supported"
+	CodeInvalidDestinationTag     = "invalid_destination_tag"
 )
 
 // Error is a classified estimate failure. Message is safe to show API clients.
@@ -64,6 +69,12 @@ func classifyQuoteError(err error) *Error {
 	switch {
 	case errors.Is(err, sweep.ErrUnsupportedChain):
 		return newError(KindUnprocessable, CodeUnsupportedChain, "fee estimates are not supported on this chain", err)
+	case errors.Is(err, sweep.ErrDestinationBelowReserve):
+		return newError(KindUnprocessable, CodeDestinationReserve, "the destination account does not exist and the amount is below the base reserve it needs", err)
+	case errors.Is(err, sweep.ErrDestinationTagUnsupported):
+		return newError(KindUnprocessable, CodeDestinationTagUnsupported, "destination tags are only supported on XRP", err)
+	case errors.Is(err, sweep.ErrDestinationTagRequired):
+		return newError(KindUnprocessable, CodeDestinationTag, "the destination account requires a destination tag; send destination_tag", err)
 	case errors.Is(err, sweep.ErrFeeQuoteNeedsTokenBalance):
 		return newError(KindUnprocessable, CodeTokenBalanceRequired, "the wallet holds none of this token, so its transfer cannot be simulated", err)
 	case errors.Is(err, sweep.ErrTooManyAddresses):

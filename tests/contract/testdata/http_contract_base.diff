@@ -354,9 +354,9 @@ added: 84 activate an active wallet: POST /v1/wallets/{{wallet}}/activate
 added: 85 archive a wallet: POST /v1/wallets/{{archivedWallet}}/archive
 added: 86 archive an archived wallet: POST /v1/wallets/{{archivedWallet}}/archive
 added: 87 test an undeliverable webhook: POST /v1/wallets/{{wallet}}/webhooks/{{webhook}}/test
-added: 88 withdraw preview on an unsupported chain: POST /v1/wallets/{{xrpWallet}}/withdraw/preview
+added: 88 withdraw preview of an XRP issued currency: POST /v1/wallets/{{xrpWallet}}/withdraw/preview
 added: 89 convert a negative amount: GET /v1/convert?from=USD&to=BRL&amount=-1
 added: 90 create a scoped account token: POST /v1/accounts/{{account}}/tokens
 added: 91 external wallets outside the token scope: GET /api/v1/wallets
 added: 92 external transaction with a malformed id: GET /api/v1/transactions/not-a-uuid
-added: 93 external withdraw preview on an unsupported chain: POST /api/v1/wallets/{{xrpWallet}}/withdraw/preview
+added: 93 external withdraw preview of an XRP issued currency: POST /api/v1/wallets/{{xrpWallet}}/withdraw/preview
