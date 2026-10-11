@@ -1064,6 +1064,9 @@ definitions:
       limit:
         example: 50
         type: integer
+      next_cursor:
+        example: eyJ1cGRhdGVkX2F0IjoiMjAyNi0xMC0xMVQxMjowMDowMFoiLCJpZCI6IjdkM2M5ZjNlLTJiMWEtNGM1ZC04ZTZmLTBhMWIyYzNkNGU1ZiJ9
+        type: string
       offset:
         example: 0
         type: integer
@@ -1078,6 +1081,9 @@ definitions:
       address_id:
         type: string
       amount:
+        type: string
+      amount_base_units:
+        example: "1500000"
         type: string
       asset:
         type: string
@@ -1100,6 +1106,9 @@ definitions:
         type: string
       created_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      decimals:
+        example: 6
+        type: integer
       destination_tag:
         type: integer
       direction:
@@ -1127,6 +1136,9 @@ definitions:
         type: string
       parent_transaction_id:
         type: string
+      required_confirmations:
+        example: 12
+        type: integer
       required_confs:
         type: integer
       source:
@@ -1138,6 +1150,9 @@ definitions:
       to_address:
         type: string
       token_contract:
+        type: string
+      transaction_id:
+        format: uuid
         type: string
       tx_hash:
         type: string
@@ -1664,6 +1679,34 @@ definitions:
         type: string
       url:
         example: https://example.com/hook
+        type: string
+    type: object
+  webhooks.RedeliverRequest:
+    properties:
+      event_ids:
+        example:
+        - 3f2b8c1e-0d4a-4f6b-9e2a-7c5d1b8e9f00
+        items:
+          type: string
+        type: array
+      since:
+        example: "2026-10-10T00:00:00Z"
+        type: string
+      types:
+        example:
+        - deposit.confirmed
+        items:
+          type: string
+        type: array
+      until:
+        example: "2026-10-11T00:00:00Z"
+        type: string
+    type: object
+  webhooks.Redelivery:
+    properties:
+      requeued:
+        type: integer
+      webhook_id:
         type: string
     type: object
   webhooks.UpdateRequest:
@@ -2926,6 +2969,78 @@ paths:
       - ApiKeyAuth: []
       - SignatureAuth: []
       summary: Update a webhook subscription
+      tags:
+      - Webhooks
+  /api/v1/webhooks/{webhookId}/redeliver:
+    post:
+      consumes:
+      - application/json
+      description: 'Queues again events of one of the account''s webhooks, whatever
+        their delivery status: the events named in `event_ids` (at most 500), or every
+        event created from `since` (RFC 3339, at most 7 days ago) up to `until` (default
+        now), optionally only of `types`. Only events created in the last 7 days are
+        redelivered, at most 500 per request (a larger window is refused: narrow `since`,
+        `until` or `types`), and an event already pending that was queued in the last
+        minute is left alone. A requeued event is delivered again with the same `X-Vault-Delivery-Id`,
+        so receivers deduplicate on it. A legacy webhook is claimed with PATCH before
+        it can be redelivered.'
+      parameters:
+      - description: Webhook UUID
+        in: path
+        name: webhookId
+        required: true
+        type: string
+      - description: 'Events to redeliver: event_ids, or since with optional until
+          and types'
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/webhooks.RedeliverRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/webhooks.Redelivery'
+        "400":
+          description: Invalid webhook id
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "403":
+          description: Token lacks webhooks.write, or a legacy webhook not claimed
+            yet
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "404":
+          description: webhook not found
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "409":
+          description: webhook is inactive
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "422":
+          description: Invalid selection (validation_failed with errors)
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "429":
+          description: Rate limit exceeded (too_many_requests, Retry-After header)
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: Redeliver webhook events
       tags:
       - Webhooks
   /auth/2fa/verify:
@@ -4574,8 +4689,14 @@ paths:
       - Chains
   /v1/transactions:
     get:
-      description: Returns a paginated list of transactions with optional filters
-        by chain, type, status, or user. Always scoped to the authenticated account.
+      description: |-
+        Returns a page of the account's transactions, optionally filtered by chain, type, status or user. Always scoped to the authenticated account.
+
+        Without updated_since or cursor it is an offset page, newest first (created_at descending).
+
+        With updated_since or cursor it reads the changes feed: transactions in (updated_at, id) ascending order, from updated_since (inclusive) or strictly after the cursor, whichever comes later, with the same filters; limit defaults to 50 and is capped at 200, offset is refused unless 0, and the body adds next_cursor (null on the last page). Pass next_cursor as cursor, with the same filters, to read the next page. Every change of a transaction (status, confirmations, failure, fee, block) moves its updated_at, so a transaction comes back after each change: credit idempotently by transaction_id.
+
+        updated_at has one-second precision and is stamped when the write runs, not when it commits, so a change can become visible after a reader has paged past its second. A reconciler should therefore start each run from updated_since = start of its last complete run minus a few minutes, and follow next_cursor until it is null, rather than keep a cursor between runs.
       parameters:
       - description: Chain ID filter
         example: eth
@@ -4592,6 +4713,7 @@ paths:
       - description: Transaction status
         enum:
         - pending
+        - confirming
         - confirmed
         - failed
         in: query
@@ -4601,12 +4723,23 @@ paths:
         in: query
         name: user_id
         type: string
-      - description: Max results (default 50)
+      - description: 'Changes feed: first updated_at to return, RFC 3339 (URL-encode
+          a + offset)'
+        example: "2026-10-11T12:00:00Z"
+        format: date-time
+        in: query
+        name: updated_since
+        type: string
+      - description: 'Changes feed: next_cursor of the previous page'
+        in: query
+        name: cursor
+        type: string
+      - description: Max results (default 50; the changes feed caps it at 200)
         example: 50
         in: query
         name: limit
         type: integer
-      - description: Pagination offset
+      - description: Pagination offset (offset page only)
         example: 0
         in: query
         name: offset
@@ -4618,6 +4751,11 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/transactions.List'
+        "400":
+          description: Invalid updated_since, cursor, limit or offset on the changes
+            feed (invalid_request)
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
         "401":
           description: Unauthorized
           schema:

@@ -1,8 +1,11 @@
 package withdraw
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"sort"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -17,6 +20,16 @@ type memTransactions struct {
 	err error
 	// byKey answers FindByIdempotencyKey; a missing key is a lookup error.
 	byKey map[string]*models.Transaction
+	// lastChangesCall is the last ListChangedForAccount call.
+	lastChangesCall changesCall
+}
+
+// changesCall records the arguments of one ListChangedForAccount call.
+type changesCall struct {
+	accountID                       uuid.UUID
+	chainID, txType, status, userID string
+	after                           TransactionPosition
+	limit                           int
 }
 
 func newMemTransactions() *memTransactions {
@@ -96,6 +109,45 @@ func (m *memTransactions) List(_ context.Context, chainID, txType, status, userI
 
 func (m *memTransactions) ListForAccount(ctx context.Context, _ uuid.UUID, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
 	return m.List(ctx, chainID, txType, status, userID, limit, offset)
+}
+
+// ListChangedForAccount reads the account's rows in (updated_at, id) order strictly
+// after the position, like the repository; err, when set, fails it.
+func (m *memTransactions) ListChangedForAccount(_ context.Context, accountID uuid.UUID, chainID, txType, status, userID string, afterUpdatedAt time.Time, afterID uuid.UUID, limit int) ([]models.Transaction, int64, error) {
+	m.lastChangesCall = changesCall{
+		accountID: accountID, chainID: chainID, txType: txType, status: status, userID: userID,
+		after: TransactionPosition{UpdatedAt: afterUpdatedAt, ID: afterID}, limit: limit,
+	}
+	if m.err != nil {
+		return nil, 0, m.err
+	}
+	matched := []models.Transaction{}
+	for _, tx := range m.rows {
+		if m.wallets[tx.WalletID] != accountID || tx.UpdatedAt == nil {
+			continue
+		}
+		if (chainID != "" && tx.Chain != chainID) || (txType != "" && tx.TxType != txType) ||
+			(status != "" && tx.Status != status) || (userID != "" && tx.ExternalUserID != userID) {
+			continue
+		}
+		at := tx.UpdatedAt.StdTime()
+		if at.Before(afterUpdatedAt) || (at.Equal(afterUpdatedAt) && bytes.Compare(tx.ID[:], afterID[:]) <= 0) {
+			continue
+		}
+		matched = append(matched, *tx)
+	}
+	sort.Slice(matched, func(i, j int) bool {
+		left, right := matched[i].UpdatedAt.StdTime(), matched[j].UpdatedAt.StdTime()
+		if !left.Equal(right) {
+			return left.Before(right)
+		}
+		return bytes.Compare(matched[i].ID[:], matched[j].ID[:]) < 0
+	})
+	total := int64(len(matched))
+	if limit < len(matched) {
+		matched = matched[:limit]
+	}
+	return matched, total, nil
 }
 
 type memWalletReader struct{}

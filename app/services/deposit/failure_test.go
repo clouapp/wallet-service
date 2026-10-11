@@ -171,7 +171,7 @@ type failureFixture struct {
 
 func newFailureFixture(t *testing.T, store pending.Store) failureFixture {
 	t.Helper()
-	f := newScanFixture(t, scanHead, ScanOptions{BatchBlocks: 10, CatchUpBlocks: 100, Concurrency: 4}).withRedisCheckpoint(t, startBlock)
+	f := newScanFixture(t, scanHead, ScanOptions{BatchBlocks: 10, CatchUpBlocks: 100, Concurrency: 4}).withCheckpoint(t, startBlock)
 	txRepo := installCreateFailureGate(t)
 	clock := &testClock{now: time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)}
 	f.svc.now = clock.Now

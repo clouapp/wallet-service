@@ -15,7 +15,7 @@ errors and renders a resource. Everything it needs lives in a few packages under
 | `requests` | running a form request (`requests.Validate`), a path parameter (`RouteUUID`, `RouteParam`, `RouteString`) |
 | `responses` | every failure body: `Fail`, `FailWith`, `FailMessage`, `Error`, `InternalError`, `ProviderError`, `ValidationFailed`, `FieldsFailed`, `FieldError` (see `http-error-contract.md`) |
 | `resources` | the wire shape. **JSON tags exist only here** — a model carries none, not even `json:"-"` (`TestModels_Carry_NoWireTags`) |
-| `pagination` | the list window (`pagination.ParseParams`, `ParseStrict`) and the list envelope (`pagination.Response`) |
+| `pagination` | the list window (`pagination.ParseParams`, `ParseStrict`), the list envelope (`pagination.Response`) and the keyset cursor (`EncodeCursor`, `DecodeCursor`, `CursorResponse`) |
 | `middleware` | who is asking and what they may reach: auth, account/wallet scope, permission guards (`Can`, `WalletCan`, `May*`), `Throttle`, `PlatformAdmin`. `middleware/requestctx` reads what they stored |
 
 ## Surfaces
@@ -163,6 +163,10 @@ Rules:
 - Paginated lists keep the envelope `{"data","limit","offset","total"}` (keys in
   that order: it is a map) through `pagination.ParseParams` and
   `pagination.Response`; the rows inside `data` are resources.
+  A keyset page (the changes feed of `GET /api/v1/transactions`) keeps that
+  envelope at offset 0 and adds `next_cursor` (`pagination.CursorResponse`), an
+  opaque `pagination.EncodeCursor` token that is null on the last page; an
+  unreadable cursor is 400 `invalid_request` `cursor is invalid`.
 - **A success body is written with the Goravel idiom** (permanent rule, D1/D14):
   `ctx.Response().Success().Json(body)` for 200,
   `ctx.Response().Status(http.StatusCreated).Json(body)` (or `Json(status, body)`)

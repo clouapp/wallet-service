@@ -56,9 +56,6 @@ type EVMConfig struct {
 	// DustThresholdNative is the minimum native balance on a child for sweep
 	// eligibility. Populated from the chains table. nil when unset.
 	DustThresholdNative *big.Int
-	// StrictLogScan fails ScanBlock when eth_getLogs fails, so the deposit scanner
-	// retries the block instead of marking it scanned without its ERC-20 deposits.
-	StrictLogScan bool
 }
 
 // EVMLive talks to an EVM JSON-RPC node.
@@ -684,9 +681,11 @@ func (a *EVMLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.Detec
 		}
 	}
 
-	// ERC-20 Transfer events
+	// ERC-20 Transfer events. A block whose logs did not load fails, so the deposit
+	// scanner retries it (and keeps it pending) instead of marking it scanned
+	// without its token deposits.
 	tokens, err := a.scanERC20(ctx, blockNum, block.Hash, blockTime)
-	if err != nil && a.cfg.StrictLogScan {
+	if err != nil {
 		return nil, fmt.Errorf("erc20 logs of block %d: %w", blockNum, err)
 	}
 	transfers = append(transfers, tokens...)

@@ -11,6 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/txkind"
+	"github.com/macrowallets/waas/app/services/withdraw"
 )
 
 func TestTransaction_From_KeepsTheModelWire(t *testing.T) {
@@ -45,34 +46,38 @@ func TestTransaction_From_KeepsTheModelWire(t *testing.T) {
 	withContract.Asset = "USDC"
 	withContract.TokenContract = "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582"
 
+	eighteen, six := 18, 6
 	cases := []struct {
-		name string
-		tx   models.Transaction
-		want string
+		name     string
+		tx       models.Transaction
+		decimals *int
+		want     string
 	}{
 		{
 			name: "zero",
 			tx:   models.Transaction{},
-			want: `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","address_id":null,"wallet_id":"00000000-0000-0000-0000-000000000000","external_user_id":"","chain":"","tx_type":"","tx_hash":"","log_index":0,"from_address":"","to_address":"","amount":"","asset":"","token_contract":"","confirmations":0,"required_confs":0,"status":"","fee":"","block_number":0,"block_hash":"","error_message":"","confirmed_at":null,"type":"unknown","direction":"unknown"}`,
+			want: `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","address_id":null,"wallet_id":"00000000-0000-0000-0000-000000000000","external_user_id":"","chain":"","tx_type":"","tx_hash":"","log_index":0,"from_address":"","to_address":"","amount":"","asset":"","token_contract":"","confirmations":0,"required_confs":0,"status":"","fee":"","block_number":0,"block_hash":"","error_message":"","confirmed_at":null,"type":"unknown","direction":"unknown","transaction_id":"00000000-0000-0000-0000-000000000000","required_confirmations":0}`,
 		},
 		{
 			name: "stamped",
 			tx:   stamped,
-			want: `{"created_at":"2024-05-06 07:08:09","updated_at":null,"id":"00000000-0000-0000-0000-000000000000","address_id":null,"wallet_id":"00000000-0000-0000-0000-000000000000","external_user_id":"","chain":"","tx_type":"","tx_hash":"","log_index":0,"from_address":"","to_address":"","amount":"","asset":"","token_contract":"","confirmations":0,"required_confs":0,"status":"","fee":"","block_number":0,"block_hash":"","error_message":"","confirmed_at":null,"source":"chain","type":"unknown","direction":"incoming","chain_direction":"inbound"}`,
+			want: `{"created_at":"2024-05-06 07:08:09","updated_at":null,"id":"00000000-0000-0000-0000-000000000000","address_id":null,"wallet_id":"00000000-0000-0000-0000-000000000000","external_user_id":"","chain":"","tx_type":"","tx_hash":"","log_index":0,"from_address":"","to_address":"","amount":"","asset":"","token_contract":"","confirmations":0,"required_confs":0,"status":"","fee":"","block_number":0,"block_hash":"","error_message":"","confirmed_at":null,"source":"chain","type":"unknown","direction":"incoming","chain_direction":"inbound","transaction_id":"00000000-0000-0000-0000-000000000000","required_confirmations":0}`,
 		},
 		{
-			name: "plain",
-			tx:   plain,
-			want: `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10","id":"11111111-1111-4111-8111-111111111111","address_id":"22222222-2222-4222-8222-222222222222","wallet_id":"22222222-2222-4222-8222-222222222222","external_user_id":"user-1","chain":"eth","tx_type":"withdrawal","tx_hash":"0xabc","log_index":2,"from_address":"0xfrom","to_address":"0xto","amount":"1000","asset":"ETH","token_contract":"0xtoken","confirmations":3,"required_confs":12,"status":"confirmed","fee":"10","block_number":99,"block_hash":"0xblock","error_message":"none","idempotency_key":"idem-1","confirmed_at":"2024-05-06T07:09:00Z","source":"withdrawal_flow","parent_transaction_id":"33333333-3333-4333-8333-333333333333","origin":"user_request","synced_at":"2024-05-06T07:10:00Z","type":"withdrawal","direction":"outgoing","chain_direction":"outbound"}`,
+			name:     "plain",
+			tx:       plain,
+			decimals: &eighteen,
+			want:     `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10","id":"11111111-1111-4111-8111-111111111111","address_id":"22222222-2222-4222-8222-222222222222","wallet_id":"22222222-2222-4222-8222-222222222222","external_user_id":"user-1","chain":"eth","tx_type":"withdrawal","tx_hash":"0xabc","log_index":2,"from_address":"0xfrom","to_address":"0xto","amount":"1000","asset":"ETH","token_contract":"0xtoken","confirmations":3,"required_confs":12,"status":"confirmed","fee":"10","block_number":99,"block_hash":"0xblock","error_message":"none","idempotency_key":"idem-1","confirmed_at":"2024-05-06T07:09:00Z","source":"withdrawal_flow","parent_transaction_id":"33333333-3333-4333-8333-333333333333","origin":"user_request","synced_at":"2024-05-06T07:10:00Z","type":"withdrawal","direction":"outgoing","chain_direction":"outbound","transaction_id":"11111111-1111-4111-8111-111111111111","amount_base_units":"1000","decimals":18,"required_confirmations":12}`,
 		},
 		{
-			name: "contract",
-			tx:   withContract,
-			want: `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10","id":"11111111-1111-4111-8111-111111111111","address_id":"22222222-2222-4222-8222-222222222222","wallet_id":"22222222-2222-4222-8222-222222222222","external_user_id":"user-1","chain":"polygon","tx_type":"withdrawal","tx_hash":"0xabc","log_index":2,"from_address":"0xfrom","to_address":"0xto","amount":"1000","asset":"USDC","token_contract":"0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582","confirmations":3,"required_confs":12,"status":"confirmed","fee":"10","block_number":99,"block_hash":"0xblock","error_message":"none","idempotency_key":"idem-1","confirmed_at":"2024-05-06T07:09:00Z","source":"withdrawal_flow","parent_transaction_id":"33333333-3333-4333-8333-333333333333","origin":"user_request","synced_at":"2024-05-06T07:10:00Z","type":"withdrawal","direction":"outgoing","chain_direction":"outbound"}`,
+			name:     "contract",
+			tx:       withContract,
+			decimals: &six,
+			want:     `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10","id":"11111111-1111-4111-8111-111111111111","address_id":"22222222-2222-4222-8222-222222222222","wallet_id":"22222222-2222-4222-8222-222222222222","external_user_id":"user-1","chain":"polygon","tx_type":"withdrawal","tx_hash":"0xabc","log_index":2,"from_address":"0xfrom","to_address":"0xto","amount":"1000","asset":"USDC","token_contract":"0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582","confirmations":3,"required_confs":12,"status":"confirmed","fee":"10","block_number":99,"block_hash":"0xblock","error_message":"none","idempotency_key":"idem-1","confirmed_at":"2024-05-06T07:09:00Z","source":"withdrawal_flow","parent_transaction_id":"33333333-3333-4333-8333-333333333333","origin":"user_request","synced_at":"2024-05-06T07:10:00Z","type":"withdrawal","direction":"outgoing","chain_direction":"outbound","transaction_id":"11111111-1111-4111-8111-111111111111","amount_base_units":"1000","decimals":6,"required_confirmations":12}`,
 		},
 	}
 	for _, tc := range cases {
-		raw, err := json.Marshal(TransactionFrom(tc.tx))
+		raw, err := json.Marshal(TransactionFrom(withdraw.AccountTransaction{Transaction: tc.tx, Decimals: tc.decimals}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -96,7 +101,7 @@ func TestTransaction_From_KeepsRelatedRowsOnTheirViews(t *testing.T) {
 		iv      = "iv-secret"
 		salt    = "salt-secret"
 	)
-	raw, err := json.Marshal(TransactionFrom(models.Transaction{
+	raw, err := json.Marshal(TransactionFrom(withdraw.AccountTransaction{Transaction: models.Transaction{
 		ID: id, Chain: "eth", TxType: models.TxTypeDeposit, Amount: "1", Asset: "eth",
 		RawPayload: payload,
 		Address: &models.Address{
@@ -104,7 +109,7 @@ func TestTransaction_From_KeepsRelatedRowsOnTheirViews(t *testing.T) {
 			EncryptedPrivateKey: cipher, EncryptionIV: iv, EncryptionSalt: salt,
 		},
 		Wallet: &models.Wallet{ID: id, Chain: "eth", Label: "hot", MPCCustomerShare: share},
-	}))
+	}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +157,7 @@ func TestTransaction_From_CarriesAnUnsignedAmountWithTypeAndDirection(t *testing
 		},
 	}
 	for name, tc := range cases {
-		raw, err := json.Marshal(TransactionFrom(tc.tx))
+		raw, err := json.Marshal(TransactionFrom(withdraw.AccountTransaction{Transaction: tc.tx}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -183,12 +188,12 @@ func TestTransactions_From_KeepsNilEmptyAndOrder(t *testing.T) {
 	if got := TransactionsFrom(nil); got != nil {
 		t.Fatal("nil slice became an empty slice")
 	}
-	if got := TransactionsFrom([]models.Transaction{}); got == nil || len(got) != 0 {
+	if got := TransactionsFrom([]withdraw.AccountTransaction{}); got == nil || len(got) != 0 {
 		t.Fatalf("empty slice = %#v", got)
 	}
-	views := TransactionsFrom([]models.Transaction{
-		{Amount: "1", TxType: models.TxTypeDeposit},
-		{Amount: "2", TxType: models.TxTypeWithdrawal},
+	views := TransactionsFrom([]withdraw.AccountTransaction{
+		{Transaction: models.Transaction{Amount: "1", TxType: models.TxTypeDeposit}},
+		{Transaction: models.Transaction{Amount: "2", TxType: models.TxTypeWithdrawal}},
 	})
 	if len(views) != 2 || views[0].Type != txkind.TypeDeposit || views[1].Direction != txkind.DirectionOutgoing {
 		t.Fatalf("views = %+v", views)

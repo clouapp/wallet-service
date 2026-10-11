@@ -53,7 +53,9 @@ type AssetDecimals interface {
 
 // Payload is the data object of every deposit webhook. Amount is the exact decimal
 // rendering of AmountBaseUnits with Decimals; receivers should credit from
-// AmountBaseUnits and Decimals and may use Amount as a cross-check.
+// AmountBaseUnits and Decimals and may use Amount as a cross-check. DestinationTag
+// is the XRP Ledger destination tag the payment carried, next to ToAddress; it is
+// omitted when the payment had none and on every other chain.
 type Payload struct {
 	ID                    string  `json:"id"`
 	TransactionID         string  `json:"transaction_id"`
@@ -66,6 +68,7 @@ type Payload struct {
 	LogIndex              int     `json:"log_index"`
 	FromAddress           string  `json:"from_address"`
 	ToAddress             string  `json:"to_address"`
+	DestinationTag        *uint32 `json:"destination_tag,omitempty"`
 	Asset                 string  `json:"asset"`
 	TokenContract         *string `json:"token_contract"`
 	Amount                string  `json:"amount"`
@@ -109,6 +112,21 @@ func NewPublisher(deps PublisherDeps) *Publisher {
 // account (and to legacy configs without an owner), at most once per config per
 // transaction. Nothing is sent when the amount cannot be stated unambiguously.
 func (p *Publisher) Publish(ctx context.Context, eventType types.EventType, tx models.Transaction) error {
+	return p.publish(ctx, eventType, tx, time.Time{})
+}
+
+// Republish sends again an event the tracker already published, for the configs
+// that never got it: the same payload as Publish, stamped with when the event
+// occurred, so a config created after that instant is left out. The per-config
+// dedup keeps the configs that got it from receiving it twice.
+func (p *Publisher) Republish(ctx context.Context, eventType types.EventType, tx models.Transaction, occurredAt time.Time) error {
+	if occurredAt.IsZero() {
+		return fmt.Errorf("republish %s for transaction %s: the instant it occurred is required", eventType, tx.ID)
+	}
+	return p.publish(ctx, eventType, tx, occurredAt)
+}
+
+func (p *Publisher) publish(ctx context.Context, eventType types.EventType, tx models.Transaction, occurredAt time.Time) error {
 	if p.enqueuer == nil {
 		return errors.New("publish deposit webhook: no enqueuer configured")
 	}
@@ -139,6 +157,7 @@ func (p *Publisher) Publish(ctx context.Context, eventType types.EventType, tx m
 		AccountID:     accountID,
 		TransactionID: &transactionID,
 		Data:          payload,
+		OccurredAt:    occurredAt,
 	})
 	if err != nil {
 		return fmt.Errorf("publish %s: %w", eventType, err)
@@ -185,6 +204,10 @@ func (p *Publisher) payload(tx models.Transaction) (Payload, error) {
 	if tx.AddressID != nil {
 		addressID := tx.AddressID.String()
 		payload.AddressID = &addressID
+	}
+	if tx.DestinationTag != nil {
+		tag := *tx.DestinationTag
+		payload.DestinationTag = &tag
 	}
 	if contract := strings.TrimSpace(tx.TokenContract); contract != "" {
 		payload.TokenContract = &contract

@@ -2,6 +2,7 @@ package deposit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -77,7 +78,10 @@ func (s *Service) RunOperator(ctx context.Context, req OperatorScan) (OperatorOu
 		}
 		out.Info = append(out.Info, "transaction scan complete: chain="+chainID+" tx="+txHash+" new_deposits="+strconv.Itoa(recorded))
 	default:
-		if err := s.ScanLatestBlocks(ctx, chainID); err != nil {
+		if err := s.scanLatestBlocks(ctx, chainID); err != nil {
+			if errors.Is(err, ErrScanInProgress) {
+				return out, fmt.Errorf("deposit scan skipped, run it again once the other scan of %s ends: %w", chainID, err)
+			}
 			return out, fmt.Errorf("deposit scan failed: %w", err)
 		}
 		out.Info = append(out.Info, "deposit scan complete: chain="+chainID)

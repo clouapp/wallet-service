@@ -221,6 +221,52 @@ func (r *TransactionRepository) FindConfirmedOutboundWithoutFee(ctx context.Cont
 	return rows, nil
 }
 
+// FindConfirmedDepositsMissingEvent lists the deposits confirmed between from and to
+// (on chainIDs; none means every chain) that at least one webhook config should have
+// received eventType for and never did, oldest confirmation first. A config counts
+// when it is active, subscribes to eventType, may see the deposit's wallet (its
+// wallet, its account, or a legacy config without either) and was created no later
+// than the confirmation (a config without a creation time counts as older); it never
+// got the event when it has no webhook_events row for
+// (config, eventType, deposit id). These are the rules webhook.EnqueueScoped applies
+// to an event with OccurredAt, so republishing a returned deposit fills the gap.
+func (r *TransactionRepository) FindConfirmedDepositsMissingEvent(ctx context.Context, eventType string, from, to time.Time, chainIDs []string, limit int) ([]models.Transaction, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("list deposits missing an event: limit is required")
+	}
+	if eventType == "" {
+		return nil, fmt.Errorf("list deposits missing an event: event type is required")
+	}
+	query := r.Query(ctx).
+		Where("tx_type = ? AND status = ?", models.TxTypeDeposit, string(types.TxStatusConfirmed)).
+		Where("confirmed_at >= ? AND confirmed_at <= ?", from, to).
+		Where(`EXISTS (
+			SELECT 1 FROM webhook_configs c
+			JOIN wallets w ON w.id = transactions.wallet_id
+			WHERE c.is_active
+			  AND position(? IN c.events) > 0
+			  AND (c.wallet_id IS NULL OR c.wallet_id = transactions.wallet_id)
+			  AND (c.account_id IS NULL OR c.account_id = w.account_id)
+			  AND (c.created_at IS NULL OR c.created_at <= (transactions.confirmed_at AT TIME ZONE 'UTC'))
+			  AND NOT EXISTS (
+				SELECT 1 FROM webhook_events e
+				WHERE e.webhook_config_id = c.id AND e.event_type = ? AND e.subject_id = transactions.id::text
+			  )
+		)`, `"`+eventType+`"`, eventType)
+	if len(chainIDs) > 0 {
+		chains := make([]any, len(chainIDs))
+		for i, chainID := range chainIDs {
+			chains[i] = chainID
+		}
+		query = query.WhereIn("chain", chains)
+	}
+	var rows []models.Transaction
+	if err := query.Order("confirmed_at").Order("id").Limit(limit).Find(&rows); err != nil {
+		return nil, fmt.Errorf("list deposits missing an event: %w", err)
+	}
+	return rows, nil
+}
+
 // SetFee stores the paid fee in native base units.
 func (r *TransactionRepository) SetFee(ctx context.Context, id uuid.UUID, fee string) error {
 	return r.updateColumns(ctx, id, map[string]any{"fee": fee}, "set transaction fee")
@@ -287,6 +333,23 @@ func (r *TransactionRepository) ListForAccount(ctx context.Context, accountID uu
 	dataQuery := r.Query(ctx).Where(scope, accountID)
 	countQuery, dataQuery = applyTransactionFilters(countQuery, dataQuery, chainID, txType, status, userID)
 	return listTransactions(countQuery, dataQuery, limit, offset, "created_at DESC")
+}
+
+// ListChangedForAccount returns up to limit transactions of the account's wallets whose
+// (updated_at, id) comes strictly after (afterUpdatedAt, afterID), in that order, and how
+// many match from that position on. The nil id makes the position inclusive of
+// afterUpdatedAt. The filters are those of ListForAccount. A limit below one is an error.
+func (r *TransactionRepository) ListChangedForAccount(ctx context.Context, accountID uuid.UUID, chainID, txType, status, userID string, afterUpdatedAt time.Time, afterID uuid.UUID, limit int) ([]models.Transaction, int64, error) {
+	if limit <= 0 {
+		return nil, 0, fmt.Errorf("list changed transactions: limit is required")
+	}
+	scope := "wallet_id IN (SELECT id FROM wallets WHERE account_id = ?)"
+	after := "(updated_at, id) > (?, ?)"
+	since := afterUpdatedAt.UTC()
+	countQuery := r.Query(ctx).Model(&models.Transaction{}).Where(scope, accountID).Where(after, since, afterID)
+	dataQuery := r.Query(ctx).Where(scope, accountID).Where(after, since, afterID)
+	countQuery, dataQuery = applyTransactionFilters(countQuery, dataQuery, chainID, txType, status, userID)
+	return listTransactions(countQuery, dataQuery, limit, 0, "updated_at ASC, id ASC")
 }
 
 // ListByWalletAndChain lists one wallet's transactions on a chain, newest block first.

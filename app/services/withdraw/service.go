@@ -56,6 +56,7 @@ type transactionStore interface {
 	FindByIDForAccount(ctx context.Context, id, accountID uuid.UUID) (*models.Transaction, error)
 	List(ctx context.Context, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error)
 	ListForAccount(ctx context.Context, accountID uuid.UUID, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error)
+	ListChangedForAccount(ctx context.Context, accountID uuid.UUID, chainID, txType, status, userID string, afterUpdatedAt time.Time, afterID uuid.UUID, limit int) ([]models.Transaction, int64, error)
 }
 
 // sweepRunner plans and executes a withdrawal. Consolidation, gas refresh,
@@ -75,6 +76,7 @@ type Service struct {
 	addressRepo     *repositories.AddressRepository
 	sweep           sweepRunner
 	flags           accountGate
+	decimals        AssetDecimals
 	usdQuote        USDQuote
 	// createUsers, createTotp, createRows and createChains serve Create.
 	// Request does not read them. A nil value fails Create before it persists.
@@ -99,6 +101,8 @@ type Deps struct {
 	Addresses    *repositories.AddressRepository
 	Sweep        sweepRunner
 	Flags        accountGate
+	// Decimals gives the asset decimals the external transaction reads carry.
+	Decimals AssetDecimals
 }
 
 // NewService wires the withdrawal service from Deps.
@@ -113,6 +117,7 @@ func NewService(deps Deps) *Service {
 		addressRepo:     deps.Addresses,
 		sweep:           deps.Sweep,
 		flags:           deps.Flags,
+		decimals:        deps.Decimals,
 	}
 }
 
@@ -380,10 +385,11 @@ func zeroShare(b []byte) {
 // Query helpers (used by API controllers)
 // ---------------------------------------------------------------------------
 
-// GetTransactionForAccount returns the transaction when it belongs to a wallet
-// of the account. A missing row and a transaction of another account are both
-// ErrTransactionNotFound, so the id of another account is never confirmed.
-func (s *Service) GetTransactionForAccount(ctx context.Context, accountID, id uuid.UUID) (*models.Transaction, error) {
+// GetTransactionForAccount returns the transaction, with its asset decimals, when
+// it belongs to a wallet of the account. A missing row and a transaction of
+// another account are both ErrTransactionNotFound, so the id of another account
+// is never confirmed.
+func (s *Service) GetTransactionForAccount(ctx context.Context, accountID, id uuid.UUID) (*AccountTransaction, error) {
 	tx, err := s.transactionRepo.FindByIDForAccount(ctx, id, accountID)
 	if errors.Is(err, models.ErrRepositoryNotFound) {
 		return nil, ErrTransactionNotFound
@@ -391,7 +397,7 @@ func (s *Service) GetTransactionForAccount(ctx context.Context, accountID, id uu
 	if err != nil {
 		return nil, fmt.Errorf("get transaction: %w", err)
 	}
-	return tx, nil
+	return &s.accountTransactions([]models.Transaction{*tx})[0], nil
 }
 
 func (s *Service) ListTransactions(ctx context.Context, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
@@ -401,7 +407,12 @@ func (s *Service) ListTransactions(ctx context.Context, chainID, txType, status,
 // ListTransactionsForAccount is the account-scoped variant used by external API
 // endpoints that accept a customer-supplied filter (e.g. external_user_id).
 // Without this scoping, any API token could retrieve transactions for another
-// account by guessing or enumerating external_ids.
-func (s *Service) ListTransactionsForAccount(ctx context.Context, accountID uuid.UUID, chainID, txType, status, userID string, limit, offset int) ([]models.Transaction, int64, error) {
-	return s.transactionRepo.ListForAccount(ctx, accountID, chainID, txType, status, userID, limit, offset)
+// account by guessing or enumerating external_ids. Each row carries its asset
+// decimals.
+func (s *Service) ListTransactionsForAccount(ctx context.Context, accountID uuid.UUID, chainID, txType, status, userID string, limit, offset int) ([]AccountTransaction, int64, error) {
+	rows, total, err := s.transactionRepo.ListForAccount(ctx, accountID, chainID, txType, status, userID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	return s.accountTransactions(rows), total, nil
 }
