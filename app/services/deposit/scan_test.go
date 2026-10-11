@@ -198,6 +198,10 @@ func (r *recordingDepositEvents) Publish(_ context.Context, eventType types.Even
 	return nil
 }
 
+func (r *recordingDepositEvents) Republish(ctx context.Context, eventType types.EventType, tx models.Transaction, _ time.Time) error {
+	return r.Publish(ctx, eventType, tx)
+}
+
 func (r *recordingDepositEvents) count(eventType types.EventType) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -258,14 +262,14 @@ func newScanFixture(t *testing.T, head uint64, opts ScanOptions) scanFixture {
 	return scanFixture{svc: svc, adapter: adapter, events: events, address: address.Address, sleeps: sleeps}
 }
 
-func (f scanFixture) withRedisCheckpoint(t *testing.T, checkpoint uint64) scanFixture {
+// withRedisCache wires the scanner to the test Redis with the watched-address set
+// loaded and no checkpoint cached.
+func (f scanFixture) withRedisCache(t *testing.T) scanFixture {
 	t.Helper()
 	rdb := testRedis(t)
-	key := "vault:checkpoint:" + scanTestChain
-	if err := rdb.Set(context.Background(), key, checkpoint, 0).Err(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { rdb.Del(context.Background(), key, addressCacheKey(scanTestChain)) })
+	t.Cleanup(func() {
+		rdb.Del(context.Background(), checkpointCacheKey(scanTestChain), addressCacheKey(scanTestChain))
+	})
 	f.svc.store = redisStore{client: rdb}
 	if err := f.svc.RefreshAddressCache(context.Background(), scanTestChain); err != nil {
 		t.Fatal(err)
@@ -273,13 +277,35 @@ func (f scanFixture) withRedisCheckpoint(t *testing.T, checkpoint uint64) scanFi
 	return f
 }
 
-func (f scanFixture) checkpoint(t *testing.T) uint64 {
+// withCheckpoint is a chain already being scanned: the database holds the checkpoint
+// and Redis caches it.
+func (f scanFixture) withCheckpoint(t *testing.T, checkpoint uint64) scanFixture {
 	t.Helper()
-	value, err := f.svc.loadCheckpoint(context.Background(), scanTestChain)
-	if err != nil {
+	f = f.withRedisCache(t)
+	if _, err := f.svc.checkpoints.Advance(context.Background(), scanTestChain, checkpoint); err != nil {
 		t.Fatal(err)
 	}
-	return value
+	if err := f.svc.store.Set(context.Background(), checkpointCacheKey(scanTestChain), checkpoint, 0); err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+// checkpoint returns the database checkpoint and checks that the Redis cache, when the
+// fixture has one, holds the same block.
+func (f scanFixture) checkpoint(t *testing.T) uint64 {
+	t.Helper()
+	stored, err := f.svc.checkpoints.Find(context.Background(), scanTestChain)
+	if err != nil {
+		t.Fatalf("read the database checkpoint: %v", err)
+	}
+	if cache, ok := f.svc.store.(redisStore); ok {
+		cached, found, err := cache.Uint64(context.Background(), checkpointCacheKey(scanTestChain))
+		if err != nil || !found || cached != stored {
+			t.Fatalf("the Redis checkpoint (%d, found %v, err %v) does not match the database checkpoint %d", cached, found, err, stored)
+		}
+	}
+	return stored
 }
 
 func depositHashes(t *testing.T) []string {
@@ -592,7 +618,7 @@ func TestScan_Range_RejectsBlockZeroAndAcceptsAnEmptyRange(t *testing.T) {
 }
 
 func TestScan_LatestBlocks_CatchesUpWithoutSkippingBlocks(t *testing.T) {
-	f := newScanFixture(t, 3000, ScanOptions{BatchBlocks: 10, CatchUpBlocks: 100, Concurrency: 4}).withRedisCheckpoint(t, 1000)
+	f := newScanFixture(t, 3000, ScanOptions{BatchBlocks: 10, CatchUpBlocks: 100, Concurrency: 4}).withCheckpoint(t, 1000)
 	f.adapter.depositTo(1001, "tx-first", f.address)
 	f.adapter.depositTo(1100, "tx-last", f.address)
 	f.adapter.depositTo(1101, "tx-next-window", f.address)
@@ -619,7 +645,7 @@ func TestScan_LatestBlocks_CatchesUpWithoutSkippingBlocks(t *testing.T) {
 }
 
 func TestScan_LatestBlocks_NearTheHeadUsesTheNormalBatch(t *testing.T) {
-	f := newScanFixture(t, 1008, ScanOptions{BatchBlocks: 10, CatchUpBlocks: 100, Concurrency: 4}).withRedisCheckpoint(t, 1000)
+	f := newScanFixture(t, 1008, ScanOptions{BatchBlocks: 10, CatchUpBlocks: 100, Concurrency: 4}).withCheckpoint(t, 1000)
 	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
 		t.Fatal(err)
 	}
@@ -632,7 +658,7 @@ func TestScan_LatestBlocks_NearTheHeadUsesTheNormalBatch(t *testing.T) {
 }
 
 func TestScan_LatestBlocks_FailedBlockKeepsTheCheckpointBeforeIt(t *testing.T) {
-	f := newScanFixture(t, 3000, ScanOptions{BatchBlocks: 10, CatchUpBlocks: 100, Concurrency: 4}).withRedisCheckpoint(t, 1000)
+	f := newScanFixture(t, 3000, ScanOptions{BatchBlocks: 10, CatchUpBlocks: 100, Concurrency: 4}).withCheckpoint(t, 1000)
 	f.adapter.failAt[1050] = errors.New("rpc call getBlock: Post: context deadline exceeded")
 
 	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err == nil {
@@ -644,7 +670,7 @@ func TestScan_LatestBlocks_FailedBlockKeepsTheCheckpointBeforeIt(t *testing.T) {
 }
 
 func TestScan_Block_TargetedScanIsIdempotentAndLeavesTheCheckpoint(t *testing.T) {
-	f := newScanFixture(t, 1000, DefaultScanOptions()).withRedisCheckpoint(t, 500)
+	f := newScanFixture(t, 1000, DefaultScanOptions()).withCheckpoint(t, 500)
 	f.adapter.depositTo(900, "tx-internal", f.address)
 	f.adapter.depositTo(900, "tx-unwatched", "someone-else")
 
@@ -732,6 +758,10 @@ func TestSame_Tx_Hash(t *testing.T) {
 		{"0xabcd", "0xabce", false},
 		{"5FE9YMmi", "5FE9YMmi", true},
 		{"5FE9YMmi", "5fe9ymmi", false},
+		// XRP Ledger, Bitcoin and TRON: 32-byte hex hashes without 0x.
+		{"429100F561631FEA1B5EC4BB26B0607E753F0A5157B38824206CD298318C7516", "429100f561631fea1b5ec4bb26b0607e753f0a5157b38824206cd298318c7516", true},
+		{"429100F561631FEA1B5EC4BB26B0607E753F0A5157B38824206CD298318C7516", "429100f561631fea1b5ec4bb26b0607e753f0a5157b38824206cd298318c7517", false},
+		{"5FE9", "5fe9", false},
 	}
 	for _, tc := range cases {
 		if got := sameTxHash(tc.a, tc.b); got != tc.want {

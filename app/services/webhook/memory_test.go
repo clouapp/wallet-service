@@ -19,6 +19,7 @@ type memoryWebhook struct {
 	configOrder []uuid.UUID
 	events      map[string]*models.WebhookEvent
 	eventOrder  []string
+	created     map[string]time.Time
 	touched     map[string]time.Time
 	findByIDErr error
 }
@@ -27,6 +28,7 @@ func newMemoryWebhook() *memoryWebhook {
 	return &memoryWebhook{
 		configs: map[uuid.UUID]*models.WebhookConfig{},
 		events:  map[string]*models.WebhookEvent{},
+		created: map[string]time.Time{},
 		touched: map[string]time.Time{},
 	}
 }
@@ -191,6 +193,7 @@ func (m *memoryWebhook) CreateEventRow(event *models.WebhookEvent) error {
 	copied := *event
 	m.events[key] = &copied
 	m.eventOrder = append(m.eventOrder, key)
+	m.created[key] = time.Now().UTC()
 	return nil
 }
 
@@ -292,6 +295,115 @@ func (e memoryEvents) MarkFailed(_ context.Context, eventID, errMsg string) erro
 	event.LastError = errMsg
 	e.store.touched[eventID] = time.Now().UTC()
 	return nil
+}
+
+// ClaimStaleForRedispatch mirrors the repository: pending rows of an active config
+// with attempts left, untouched since staleAfter, oldest first; each claim counts
+// one attempt and touches the row.
+func (e memoryEvents) ClaimStaleForRedispatch(_ context.Context, staleAfter time.Duration, limit int) ([]models.WebhookEvent, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("limit must be positive")
+	}
+	if staleAfter <= 0 {
+		return nil, fmt.Errorf("stale period must be positive")
+	}
+	e.store.mu.Lock()
+	defer e.store.mu.Unlock()
+	now := time.Now().UTC()
+	cutoff := now.Add(-staleAfter)
+	var out []models.WebhookEvent
+	for _, key := range e.store.eventOrder {
+		event := e.store.events[key]
+		if event == nil || event.DeliveryStatus != models.WebhookDeliveryPending || event.WebhookConfigID == nil || event.Attempts >= event.MaxAttempts {
+			continue
+		}
+		if cfg := e.store.configs[*event.WebhookConfigID]; cfg == nil || !cfg.IsActive {
+			continue
+		}
+		updated := e.store.touched[key]
+		if updated.IsZero() {
+			updated = e.store.created[key]
+		}
+		if e.store.created[key].After(cutoff) || updated.After(cutoff) {
+			continue
+		}
+		event.Attempts++
+		e.store.touched[key] = now
+		out = append(out, *event)
+		if len(out) == limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+// FindForRedelivery mirrors the repository: the config's events created in
+// [since, until), of eventTypes when any are given, oldest first.
+func (e memoryEvents) FindForRedelivery(_ context.Context, configID uuid.UUID, since, until time.Time, eventTypes []string, limit int) ([]uuid.UUID, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("limit must be positive")
+	}
+	e.store.mu.Lock()
+	defer e.store.mu.Unlock()
+	wanted := map[string]bool{}
+	for _, eventType := range eventTypes {
+		wanted[eventType] = true
+	}
+	var ids []uuid.UUID
+	for _, key := range e.store.eventOrder {
+		event := e.store.events[key]
+		created := e.store.created[key]
+		if event == nil || event.WebhookConfigID == nil || *event.WebhookConfigID != configID {
+			continue
+		}
+		if created.Before(since) || !created.Before(until) || (len(wanted) > 0 && !wanted[event.EventType]) {
+			continue
+		}
+		ids = append(ids, event.ID)
+		if len(ids) == limit {
+			break
+		}
+	}
+	return ids, nil
+}
+
+// RequeueForRedelivery mirrors the repository: the listed events of the config
+// created since createdSince go back to pending with no attempts, except a pending
+// event touched after busySince.
+func (e memoryEvents) RequeueForRedelivery(_ context.Context, configID uuid.UUID, ids []uuid.UUID, createdSince, busySince time.Time) ([]models.WebhookEvent, error) {
+	e.store.mu.Lock()
+	defer e.store.mu.Unlock()
+	now := time.Now().UTC()
+	var out []models.WebhookEvent
+	for _, id := range ids {
+		key := id.String()
+		event := e.store.events[key]
+		if event == nil || event.WebhookConfigID == nil || *event.WebhookConfigID != configID || e.store.created[key].Before(createdSince) {
+			continue
+		}
+		touched := e.store.touched[key]
+		if touched.IsZero() {
+			touched = e.store.created[key]
+		}
+		if event.DeliveryStatus == models.WebhookDeliveryPending && touched.After(busySince) {
+			continue
+		}
+		event.DeliveryStatus = models.WebhookDeliveryPending
+		event.Attempts = 0
+		event.DeliveredAt = nil
+		e.store.touched[key] = now
+		out = append(out, *event)
+	}
+	return out, nil
+}
+
+// backdate moves an event's insert and last touch back by ago.
+func (m *memoryWebhook) backdate(id string, ago time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	at := time.Now().UTC().Add(-ago)
+	m.created[id] = at
+	m.touched[id] = at
 }
 
 func backoffElapsed(attempts int, updated time.Time, base, max time.Duration, now time.Time) bool {

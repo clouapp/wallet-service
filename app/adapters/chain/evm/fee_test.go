@@ -357,16 +357,23 @@ func logScanNode(t *testing.T) *httptest.Server {
 	return server
 }
 
-func TestStrict_Log_ScanFailsTheBlockWhenGetLogsFails(t *testing.T) {
+func TestScan_Block_FailsTheBlockWhenGetLogsFailsOnEveryEVMChain(t *testing.T) {
 	server := logScanNode(t)
-	strict := NewEVMLive(EVMConfig{ChainIDStr: models.ChainBase, NativeSymbol: "eth", NetworkID: models.EVMNetworkIDBaseSepolia, RPCURL: server.URL, StrictLogScan: true})
-	if _, err := strict.ScanBlock(context.Background(), 1); err == nil {
-		t.Fatal("a strict scan must fail the block so the scanner retries it")
+	chains := []string{
+		models.ChainETH, models.ChainTETH, models.ChainPolygon, models.ChainTPolygon,
+		models.ChainBase, models.ChainTBase, models.ChainArbitrum, models.ChainTArbitrum,
+		models.ChainBSC, models.ChainTBSC,
 	}
-
-	lenient := NewEVMLive(EVMConfig{ChainIDStr: models.ChainETH, NativeSymbol: "eth", NetworkID: models.EVMNetworkIDEthereumSepolia, RPCURL: server.URL})
-	transfers, err := lenient.ScanBlock(context.Background(), 1)
-	if err != nil || len(transfers) != 1 {
-		t.Fatalf("the deployed chains keep native-only results, got %d transfers err %v", len(transfers), err)
+	for _, chainID := range chains {
+		t.Run(chainID, func(t *testing.T) {
+			live := NewEVMLive(EVMConfig{ChainIDStr: chainID, NativeSymbol: "eth", RPCURL: server.URL})
+			transfers, err := live.ScanBlock(context.Background(), 1)
+			if err == nil || !strings.Contains(err.Error(), "erc20 logs of block 1") {
+				t.Fatalf("a block whose logs did not load must fail so the scanner retries it, got %d transfers err %v", len(transfers), err)
+			}
+			if transfers != nil {
+				t.Fatalf("a failed block must not return its native transfers alone, got %d", len(transfers))
+			}
+		})
 	}
 }

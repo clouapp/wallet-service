@@ -206,12 +206,41 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 |---|---|---|
 | Goravel queue, `sync` connection (`QUEUE_CONNECTION`, default `sync`; `config/queue.go`) | credential mail (`jobs.SendCredentialMailJob`, always `DispatchSync`) | runs in the dispatching process. The `database` connection (queue `blockchain`) is configured but nothing runs `queue:work` and no job uses it |
 | AWS SQS (`app/adapters/queue/sqs`, port `queue.Sender`) | outbound webhook delivery | `webhook_worker` Lambda, or on a host without Lambda the `webhook_poller` process (same handler) |
-| `app/services/localworkers` | local stand-in for `confirmation_tracker` and `webhook_worker`, the wallet balance refresh loop (and optional deposit scan), and the MPC keygen pre-parameters pool | started from `main.go` in local mode only |
+| `app/services/localworkers` | local stand-in for `confirmation_tracker` and `webhook_worker` (with a webhook queue, the outbox re-dispatch instead of local delivery), the wallet balance refresh loop (and optional deposit scan, with the deposit event backfill of the scanned chains), and the MPC keygen pre-parameters pool | started from `main.go` in local mode only |
 
 - Local webhook delivery from the outbox runs only when no SQS webhook queue is
   configured, so a message is never drained twice. — guarded by
   `TestStart_Skips_OutboxWhenAQueueDelivers` (`app/services/localworkers`) and
   `TestOne_Consumer_PerQueue` (`tests/architecture`).
+- Webhook delivery is at least once. An event is a `webhook_events` row (one per config, type
+  and subject: the partial unique index of migration 260) written before the queue send, and
+  receivers deduplicate on `X-Vault-Delivery-Id` (the row id), which every resend keeps. Three
+  repairs keep a row from being lost:
+  - **Deposit events.** The tracker persists a deposit's status, then publishes; a failed publish
+    is only logged, and the client credits a deposit only on `deposit.confirmed`. The
+    `confirmation_tracker` (every chain) and the local confirmation loop (the locally scanned
+    chains) run `deposit.Service.BackfillDepositEvents`: a deposit confirmed between 48 h and
+    1 min ago is republished when an active config that subscribes to `deposit.confirmed`, may
+    see the wallet and was created no later than the confirmation has no row for (config,
+    `deposit.confirmed`, deposit id). The event carries `OccurredAt` = the confirmation, so a
+    config created later is left out, and the unique index keeps reruns idempotent; at most 50
+    deposits per run. `deposit.pending` and `deposit.confirming` are not backfilled. — guarded
+    by `TestBackfill_DepositEvents_*`, `TestRun_ConfirmationCheck_RepairsADepositConfirmedWhosePublishFailed`
+    (`app/services/deposit`) and `TestFind_ConfirmedDepositsMissingEvent_*` (`tests/feature/repositories`).
+  - **Queue mode.** An outbox row whose SQS send failed, or whose message left the queue without
+    a recorded attempt, stays `pending`. `webhook.Service.RedispatchStale` claims pending rows of
+    active configs untouched for 5 minutes (`FOR UPDATE SKIP LOCKED`, 50 per run), counts the
+    claim as one attempt (so a row is sent at most `max_attempts` times) and sends them again. It
+    runs from the `confirmation_tracker` Lambda when `vault.queues.webhook` is set and from the
+    local workers when a queue is configured (`RedispatchOutbox`), never beside the local outbox.
+    — guarded by `TestRedispatch_Stale_*`, `TestWebhookEventRepository_ClaimStaleForRedispatch_*`
+    and `TestStart_Redispatches_TheOutboxWhenAQueueDelivers`.
+  - **On request.** `POST /api/v1/webhooks/{webhookId}/redeliver` (`webhooks.write`) requeues
+    `event_ids`, or the events created from `since` to `until` of `types`, of one webhook the
+    token's account owns: only events of the last 7 days, at most 500 per request, an event
+    pending and queued in the last minute left alone. — guarded by
+    `tests/feature/api/external/webhooks` (`TestRedeliver_Webhook_*`) and `TestRedeliver_*`
+    (`app/services/webhook`).
 - `webhook_poller` replaces the `webhook_worker` Lambda where none runs; the two never consume
   one queue together. — **UNGUARDED**: `TestOne_Consumer_PerQueue` reads the consumers from
   `template.yaml` and cannot see where the poller runs; this rests on the deployment.
@@ -219,6 +248,23 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   carries `(subject_id, purpose)` and mints the token when it runs. — guarded by
   `app/jobs/send_credential_mail_test.go` and `TestJob_Payload_IsDecodedNotPositional`.
 - The app registers no events or listeners; add an event only together with a listener.
+- The deposit scan checkpoint of each chain lives in Postgres (`deposit_scan_checkpoints`)
+  and never moves back; Redis (`vault:checkpoint:<chain>`) is a copy written after the
+  database. A read falls back from Redis to the database on a miss or an error. Only a chain
+  the database does not hold, with Redis answering a clean miss (or not configured), starts
+  at the head; a Redis error with no row, or a database error, skips the cycle and moves
+  nothing. — guarded by `app/services/deposit/checkpoint_test.go` and
+  `TestDeposit_Scan_CheckpointRepositorySuite`.
+- One scanner per chain: a `ScanLatestBlocks` cycle holds `vault:lock:deposit_scan:<chain>`
+  (`cacheguard.Acquire`, TTL 2 min, above the 60 s `deposit_scanner` Lambda timeout). A held
+  lock skips the cycle; a lock store that is down or missing fails it. `scan:deposits
+  --block|--tx|--pending|--retry-pending` take no lock and never move the checkpoint. —
+  guarded by `app/services/deposit/scan_lock_test.go`.
+- A block is never marked scanned while its deposits are not all read and recorded: it is
+  retried, then kept in the pending-blocks store. On every EVM chain a failed `eth_getLogs`
+  fails the block. — guarded by `app/services/deposit/failure_test.go`,
+  `TestScan_Block_FailsTheBlockWhenGetLogsFailsOnEveryEVMChain` and
+  `TestRegister_ActiveChains_EVMBlockWhoseLogsFailGoesPending`.
 
 ### 8. Database and migrations
 
@@ -227,15 +273,16 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `Migrations()` in `bootstrap/migrations.go`. A migration never edits an applied one; it adds
   the next number. — guarded by the migration tests in `tests/migrations` (e.g.
   `non_negative_amounts_test.go`).
-- A NEW migration uses the schema builder, `facades.Schema()` from `app/facades`
-  (`Create`, `Table`, `DropIfExists`), unless it needs a Postgres feature the builder does not
-  express (CHECK or partial-unique constraints, `USING` casts, enum types, data backfills):
-  then it runs raw SQL. The applied migrations keep their raw SQL; do not rewrite them. A
-  migration imports no app code (`app/models`, `app/services`, `pkg/*`): copy what it needs
-  into the migration, so a later change there cannot change what a fresh database gets.
-  `artisan make:migration` creates the file and appends it to `Migrations()`, but the
-  framework drops the host and organisation of the module path, so the generated import
-  reads `waas/app/facades`: change it to `github.com/macrowallets/waas/app/facades`.
+- A NEW migration uses the schema builder, `migrationSchema()` from
+  `database/migrations/orm.go` (`Create`, `Table`, `DropIfExists`), unless it needs a Postgres
+  feature the builder does not express (CHECK or partial-unique constraints, `USING` casts,
+  enum types, data backfills): then it runs raw SQL. The applied migrations keep their raw
+  SQL; do not rewrite them. A migration imports no app code (`app/models`, `app/services`,
+  `pkg/*`, `app/facades`): copy what it needs into the migration, so a later change there
+  cannot change what a fresh database gets. The database layer may not import `app/facades`
+  (`TestImports_Import_Direction`), so `orm.go` is the one file that reaches the framework
+  facades. `artisan make:migration` creates the file and appends it to `Migrations()`; replace
+  the facades import it generates with `migrationSchema()`.
 - Amounts are base-unit integers/strings (`pkg/amount`, `numeric` columns), never floats,
   and never negative. — guarded by `TestEnforce_Non_NegativeAmounts*`.
 - Every write to a `transactions` row moves `updated_at` (the ORM stamps it on each
@@ -527,8 +574,10 @@ BTC_RPC_URL=https://blockstream.info/testnet/api
 API_KEY_SECRET=dev-secret-key-not-for-production
 ```
 
-Redis is the cache driver (rate limits, locks, settings cache, deposit scanner state): the app needs
-it reachable. `.env.dev.example` / `.env.example` carry the full lists, with the throttle variables.
+Redis is the cache driver (rate limits, locks including the per-chain deposit scan lock, settings
+cache, the deposit scanner's watched addresses and its copy of the scan checkpoint, which lives in
+Postgres): the app needs it reachable. `.env.dev.example` / `.env.example` carry the full lists,
+with the throttle variables.
 
 ### Bitcoin-family provider failover
 
@@ -553,11 +602,15 @@ LTC_TATUM_DATA_API_URL=               # optional, default https://api.tatum.io (
 
 ### RPC response limits
 
-One node answer is read up to a per-chain limit and refused past it with an explicit `response larger than N bytes` error (never truncated): EVM 64 MiB (`evmRPCMaxResponseBytes`; a busy Base Sepolia block with full transactions is ~4.3 MB), Solana 32 MiB (`solanaRPCMaxResponseBytes`), Bitcoin family 32 MiB, TRON HTTP 64 MiB. Other JSON-RPC clients (chain probes, `evmcall`) keep the 1 MiB default.
+One node answer is read up to a per-chain limit and refused past it with an explicit `response larger than N bytes` error (never truncated): EVM 64 MiB (`evmRPCMaxResponseBytes`; a busy Base Sepolia block with full transactions is ~4.3 MB), Solana 32 MiB (`solanaRPCMaxResponseBytes`), Bitcoin family 32 MiB, TRON HTTP 64 MiB, the XRP `ledger` scan 32 MiB (`xrpLedgerMaxResponseBytes`; the other XRP calls keep 1 MiB). Other JSON-RPC clients (chain probes, `evmcall`) keep the 1 MiB default.
 
 ### Paid fees
 
 The confirmation tracker stores the fee actually paid (native base units) in `transactions.fee` when a withdrawal, sweep or gas_seed confirms: EVM gasUsed × effectiveGasPrice + L1 fee, BTC/LTC inputs − outputs, Solana `meta.fee`, TRON `fee` (energy + bandwidth burned), XRP `Fee` (drops) of the transaction in a validated ledger. An XRP transaction is confirmed only when validated with `meta.TransactionResult` `tesSUCCESS`. XRP only: a validated `tec…` result marks the transaction and its withdrawal `failed` with `onchain_<result in lowercase>` (e.g. `onchain_tecno_dst_insuf_xrp`), stores the fee it still burned, and sends `withdrawal.failed` once; a payment past its `LastLedgerSequence` (kept in `transactions.raw_payload`) that the node searched every ledger for (`tx` `min_ledger`/`max_ledger` → `searched_all`, inside `complete_ledgers`) is failed with `expired`, no fee. Other chains never mark an on-chain failure. Older rows: `go run . artisan transactions:backfill-fees [--chain a,b] [--apply]` (dry run by default, idempotent, reads only).
+
+### XRP deposits
+
+`ScanBlock` on `xrp`/`txrp` reads one validated ledger (rippled `ledger`, `transactions` and `expand` true; API v1 `metaData` and API v2 `tx_json`/`meta` shapes) and reports, in ledger order (`TransactionIndex`), every `Payment` with `meta.TransactionResult` `tesSUCCESS` that delivered XRP to another account: the amount is `meta.delivered_amount` in drops (a partial payment credits what arrived, never `Amount`), `From` is `Account`, `To` is `Destination`, and `DestinationTag` is carried to `transactions.destination_tag` and to the `deposit.*` webhooks (`destination_tag`, omitted without a tag and on other chains). Not deposits: `tec…` payments, issued-currency or MPT deliveries (an object `delivered_amount`; the token registry does not model XRPL issued currencies), payments an account makes to itself, and every other type, including `CheckCash`, `EscrowFinish`, `PaymentChannelClaim` and `AccountDelete`, which can also deliver XRP. A ledger that is not validated, not closed, not the one asked for, without its transactions list, with a transaction not expanded or without metadata, or a payment whose `delivered_amount` is missing or `unavailable`, is an error, never an empty ledger, so the engine retries it and then keeps it pending. An XRP withdrawal is a `Payment` from the base address to its destination, so it is a deposit only when that destination is itself a watched address (as on every chain). The head is the validated ledger, so with 1 required confirmation a deposit is confirmed on the cycle that records it (tip − ledger + 1). A scanner runs only where one is scheduled for the chain: the local workers scan the chains in `LOCAL_DEPOSIT_SCAN_CHAINS` (`xrp`/`txrp` must be listed), the SAM `deposit_scanner` schedules (`template.yaml`) list no XRP chain, and `artisan scan:deposits` scans on demand; the first cycle starts at the head, without history. A ledger closes every 3–5 s, so the default windows (`DEPOSIT_SCAN_BATCH_BLOCKS` 50, `DEPOSIT_SCAN_CATCH_UP_BLOCKS` 500, 8 ledgers fetched at a time) are about 3–4 minutes and 30–40 minutes of ledgers; a ledger the load-balanced public servers do not have yet answers `lgrNotFound` and is retried. — guarded by `TestLive_ScanBlock_*` (`app/adapters/chain/xrp/scan_test.go`, altnet ledgers recorded in `testdata/xrpl`) and `TestXRP_Deposit_*` (`app/services/deposit/xrp_deposit_test.go`).
 
 ### TRON gas_seed
 

@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"errors"
+	"net"
 	"testing"
 	"time"
 
@@ -20,7 +21,7 @@ func TestNew_Returns_NilForANilClient(t *testing.T) {
 func TestNil_Store_ReportsAMissingClient(t *testing.T) {
 	var store *Store
 	ctx := context.Background()
-	if _, err := store.Uint64(ctx, "vault:checkpoint:eth"); err == nil {
+	if _, _, err := store.Uint64(ctx, "vault:checkpoint:eth"); err == nil {
 		t.Fatal("expected error for a nil store read")
 	}
 	if err := store.Set(ctx, "vault:checkpoint:eth", 1, 0); err == nil {
@@ -65,12 +66,12 @@ func TestSet_And_Uint64RoundTrip(t *testing.T) {
 		t.Fatalf("ttl = %s, want no expiry", ttl)
 	}
 
-	got, err := store.Uint64(ctx, key)
+	got, found, err := store.Uint64(ctx, key)
 	if err != nil {
 		t.Fatalf("uint64: %v", err)
 	}
-	if got != 42 {
-		t.Fatalf("value = %d", got)
+	if !found || got != 42 {
+		t.Fatalf("value = %d, found = %v", got, found)
 	}
 }
 
@@ -92,14 +93,53 @@ func TestSet_Keeps_APositiveTTL(t *testing.T) {
 	}
 }
 
-func TestUint64_Missing_KeyIsRedisNil(t *testing.T) {
+func TestUint64_Missing_KeyIsNotFoundAndNotAnError(t *testing.T) {
 	client := testenv.TestRedis(t)
 	prefix := testenv.TestRedisPrefix(t, client)
 
-	_, err := New(client).Uint64(context.Background(), prefix+"vault:checkpoint:missing")
-	if !errors.Is(err, redis.Nil) {
-		t.Fatalf("error = %v", err)
+	value, found, err := New(client).Uint64(context.Background(), prefix+"vault:checkpoint:missing")
+	if err != nil || found || value != 0 {
+		t.Fatalf("a missing key must be a clean miss, got value %d found %v err %v", value, found, err)
 	}
+}
+
+func TestUint64_Unparsable_ValueIsAnError(t *testing.T) {
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
+	key := prefix + "vault:checkpoint:corrupt"
+	ctx := context.Background()
+	if err := client.Set(ctx, key, "not-a-block", 0).Err(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+
+	_, found, err := New(client).Uint64(ctx, key)
+	if err == nil || found {
+		t.Fatalf("a value that is not a block number must fail, got found %v err %v", found, err)
+	}
+}
+
+func TestUint64_Unreachable_RedisIsAnError(t *testing.T) {
+	client := redis.NewClient(&redis.Options{Addr: closedLocalAddr(t), DialTimeout: 200 * time.Millisecond, MaxRetries: -1})
+	t.Cleanup(func() { _ = client.Close() })
+
+	_, found, err := New(client).Uint64(context.Background(), "vault:checkpoint:eth")
+	if err == nil || found {
+		t.Fatalf("an unreachable Redis must not look like a missing key, got found %v err %v", found, err)
+	}
+}
+
+// closedLocalAddr is a local address on a port that was just free, so a dial is refused at once.
+func closedLocalAddr(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve a local port: %v", err)
+	}
+	addr := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatalf("release the local port: %v", err)
+	}
+	return addr
 }
 
 func TestSet_Membership_Commands(t *testing.T) {
@@ -233,7 +273,7 @@ func TestCommands_Canceled_Context(t *testing.T) {
 	key := prefix + "vault:checkpoint:eth"
 	setKey := prefix + "vault:addresses:eth"
 
-	if _, err := store.Uint64(ctx, key); !errors.Is(err, context.Canceled) {
+	if _, _, err := store.Uint64(ctx, key); !errors.Is(err, context.Canceled) {
 		t.Fatalf("get error = %v", err)
 	}
 	if err := store.Set(ctx, key, 1, 0); !errors.Is(err, context.Canceled) {

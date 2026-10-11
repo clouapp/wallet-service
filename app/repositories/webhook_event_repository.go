@@ -117,6 +117,105 @@ func (r *WebhookEventRepository) FindDueForDelivery(ctx context.Context, limit i
 	return events, nil
 }
 
+// ClaimStaleForRedispatch takes up to limit pending events whose queue message was
+// lost, oldest first: the event knows its config and that config is active, it has
+// attempts left, and neither its insert nor any delivery attempt touched it for
+// staleAfter. Each claimed row counts one attempt and is touched now, so the next
+// run leaves it alone for another staleAfter and a row is claimed at most
+// max_attempts times. Concurrent runs skip each other's rows (SKIP LOCKED).
+func (r *WebhookEventRepository) ClaimStaleForRedispatch(ctx context.Context, staleAfter time.Duration, limit int) ([]models.WebhookEvent, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("limit must be positive")
+	}
+	if staleAfter <= 0 {
+		return nil, fmt.Errorf("stale period must be positive")
+	}
+	var events []models.WebhookEvent
+	if err := r.Query(ctx).Raw(`
+		UPDATE webhook_events
+		SET attempts = attempts + 1, updated_at = (NOW() AT TIME ZONE 'UTC')
+		WHERE id IN (
+			SELECT e.id FROM webhook_events e
+			JOIN webhook_configs c ON c.id = e.webhook_config_id AND c.is_active
+			WHERE e.delivery_status = ?
+			  AND e.attempts < e.max_attempts
+			  AND e.created_at <= (NOW() AT TIME ZONE 'UTC') - make_interval(secs => ?)
+			  AND (e.updated_at IS NULL OR e.updated_at <= (NOW() AT TIME ZONE 'UTC') - make_interval(secs => ?))
+			ORDER BY e.created_at
+			LIMIT ?
+			FOR UPDATE OF e SKIP LOCKED
+		)
+		RETURNING *`,
+		models.WebhookDeliveryPending, staleAfter.Seconds(), staleAfter.Seconds(), limit,
+	).Scan(&events); err != nil {
+		return nil, fmt.Errorf("claim stale webhook events: %w", err)
+	}
+	return events, nil
+}
+
+// FindForRedelivery returns the ids of configID's events created in [since, until),
+// of eventTypes when any are given, oldest first, at most limit. created_at holds
+// UTC wall-clock time, so the bounds are converted to UTC in the query.
+func (r *WebhookEventRepository) FindForRedelivery(ctx context.Context, configID uuid.UUID, since, until time.Time, eventTypes []string, limit int) ([]uuid.UUID, error) {
+	if configID == uuid.Nil {
+		return nil, fmt.Errorf("config id is required")
+	}
+	if limit <= 0 {
+		return nil, fmt.Errorf("limit must be positive")
+	}
+	query := r.Query(ctx).Model(&models.WebhookEvent{}).
+		Where("webhook_config_id = ?", configID).
+		Where("created_at >= (?::timestamptz AT TIME ZONE 'UTC') AND created_at < (?::timestamptz AT TIME ZONE 'UTC')", since, until)
+	if len(eventTypes) > 0 {
+		types := make([]any, len(eventTypes))
+		for i, eventType := range eventTypes {
+			types[i] = eventType
+		}
+		query = query.WhereIn("event_type", types)
+	}
+	var rows []struct{ ID uuid.UUID }
+	if err := query.Select("id").Order("created_at").Order("id").Limit(limit).Scan(&rows); err != nil {
+		return nil, fmt.Errorf("list webhook events to redeliver: %w", err)
+	}
+	ids := make([]uuid.UUID, len(rows))
+	for i, row := range rows {
+		ids[i] = row.ID
+	}
+	return ids, nil
+}
+
+// RequeueForRedelivery sets the listed events of configID that were created at or
+// after createdSince back to pending, with no attempts and no delivery time, and
+// returns them. An event already pending that was touched after busySince (queued or
+// attempted moments ago) is left as it is, so a repeated request does not queue it
+// twice. An id of another config, or unknown, is skipped.
+func (r *WebhookEventRepository) RequeueForRedelivery(ctx context.Context, configID uuid.UUID, ids []uuid.UUID, createdSince, busySince time.Time) ([]models.WebhookEvent, error) {
+	if configID == uuid.Nil {
+		return nil, fmt.Errorf("config id is required")
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	values := make([]string, len(ids))
+	for i, id := range ids {
+		values[i] = id.String()
+	}
+	var events []models.WebhookEvent
+	if err := r.Query(ctx).Raw(`
+		UPDATE webhook_events
+		SET delivery_status = ?, attempts = 0, delivered_at = NULL, updated_at = (NOW() AT TIME ZONE 'UTC')
+		WHERE webhook_config_id = ?
+		  AND id IN ?
+		  AND created_at >= (?::timestamptz AT TIME ZONE 'UTC')
+		  AND NOT (delivery_status = ? AND updated_at IS NOT NULL AND updated_at > (?::timestamptz AT TIME ZONE 'UTC'))
+		RETURNING *`,
+		models.WebhookDeliveryPending, configID, values, createdSince, models.WebhookDeliveryPending, busySince,
+	).Scan(&events); err != nil {
+		return nil, fmt.Errorf("requeue webhook events: %w", err)
+	}
+	return events, nil
+}
+
 // MarkFailed sets delivery_status to failed and stores last_error.
 func (r *WebhookEventRepository) MarkFailed(ctx context.Context, eventID, errMsg string) error {
 	_, err := r.Query(ctx).Exec(

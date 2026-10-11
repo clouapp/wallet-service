@@ -114,7 +114,6 @@ func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByC
 				ERC20Tokens:           tokensByChain[ch.ID],
 				GasReadinessThreshold: resolveGasReadinessThreshold(&ch),
 				DustThresholdNative:   resolveDustThresholdNative(&ch),
-				StrictLogScan:         !lenientLogScanChains[ch.ID],
 			})
 		case models.AdapterTypeBitcoin:
 			network := "mainnet"
@@ -210,16 +209,6 @@ func bitcoinFallbacks(configured, apiKey string, defaults []string) []bitcoincha
 		fallbacks = append(fallbacks, bitcoinchain.BitcoinFallback{URL: rawURL, APIKey: apiKey})
 	}
 	return fallbacks
-}
-
-// lenientLogScanChains keep their deployed deposit scan: a block whose eth_getLogs
-// fails is scanned for native transfers only. Every other EVM record fails the block
-// so the scanner retries it (evmchain.EVMConfig.StrictLogScan).
-var lenientLogScanChains = map[string]bool{
-	models.ChainETH:      true,
-	models.ChainTETH:     true,
-	models.ChainPolygon:  true,
-	models.ChainTPolygon: true,
 }
 
 // resolveGasReadinessThreshold is the chains.gas_readiness_threshold_raw value.

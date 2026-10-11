@@ -473,6 +473,11 @@ func (a *Live) validatedLedgerIndex(ctx context.Context) (uint64, error) {
 }
 
 func (a *Live) call(ctx context.Context, method string, params []any, dest any) error {
+	return a.callWithLimit(ctx, method, params, dest, xrpRPCMaxResponseBytes)
+}
+
+// callWithLimit is call with an answer of up to limit bytes.
+func (a *Live) callWithLimit(ctx context.Context, method string, params []any, dest any, limit int) error {
 	body, err := json.Marshal(xrpRPCRequest{Method: method, Params: params})
 	if err != nil {
 		return err
@@ -490,7 +495,7 @@ func (a *Live) call(ctx context.Context, method string, params []any, dest any) 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("xrp %s: http %d", method, resp.StatusCode)
 	}
-	raw, err := readLimited(resp.Body, xrpRPCMaxResponseBytes)
+	raw, err := readLimited(resp.Body, limit)
 	if err != nil {
 		return fmt.Errorf("xrp %s: %w", method, err)
 	}

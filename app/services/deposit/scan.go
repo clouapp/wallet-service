@@ -2,6 +2,7 @@ package deposit
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -448,11 +449,21 @@ func requireReachedBlock(ctx context.Context, adapter types.Chain, blockNum uint
 	return nil
 }
 
-// sameTxHash compares hex hashes case-insensitively; other encodings, such as Solana's
-// base58 signatures, are case-sensitive.
+// sameTxHash compares hex hashes case-insensitively: 0x-prefixed ones (EVM) and
+// 32-byte ones without a prefix (XRP Ledger, Bitcoin, TRON). Other encodings, such
+// as Solana's base58 signatures, are case-sensitive.
 func sameTxHash(a, b string) bool {
-	if strings.HasPrefix(a, "0x") || strings.HasPrefix(a, "0X") {
+	if strings.HasPrefix(a, "0x") || strings.HasPrefix(a, "0X") || (isHash32Hex(a) && isHash32Hex(b)) {
 		return strings.EqualFold(a, b)
 	}
 	return a == b
+}
+
+// isHash32Hex reports whether s is 32 bytes written in hex, without a prefix.
+func isHash32Hex(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(s)
+	return err == nil
 }

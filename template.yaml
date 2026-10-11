@@ -231,6 +231,11 @@ Resources:
           DATABASE_URL: !Ref DatabaseURL
           REDIS_HOST: !Ref RedisHost
           ETHERSCAN_API_KEY: !Ref EtherscanAPIKey
+      # The tracker enqueues deposit, withdrawal and sweep events and re-dispatches
+      # the outbox rows whose queue message was lost.
+      Policies:
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt WebhookQueue.QueueName
       Events:
         Schedule:
           Type: Schedule

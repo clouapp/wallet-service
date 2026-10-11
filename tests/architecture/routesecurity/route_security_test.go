@@ -123,6 +123,7 @@ var routeTable = map[string]routeSecurity{
 	"GET|HEAD /api/v1/webhooks":                                        api(chainWebhooksRead),
 	"POST /api/v1/webhooks":                                            api(chainWebhooksWrite),
 	"PATCH /api/v1/webhooks/{webhookId}":                               api(chainWebhooksWrite),
+	"POST /api/v1/webhooks/{webhookId}/redeliver":                      api(chainWebhooksWrite),
 	"GET|HEAD /health":                                                 public(),
 	"GET|HEAD /swagger/doc.json":                                       public(),
 	"GET|HEAD /swagger/index.html":                                     public(),

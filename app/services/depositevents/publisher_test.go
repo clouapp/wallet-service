@@ -2,6 +2,7 @@ package depositevents
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -62,6 +63,7 @@ func newFixture() fixture {
 			"bsc/bnb":       18,
 			"base/eth":      18,
 			"arbitrum/USDC": 6,
+			"txrp/xrp":      6,
 		},
 	})
 	publisher.now = func() time.Time { return time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC) }
@@ -205,5 +207,90 @@ func TestPublish_Wallet_WithoutAccountIsNotScopedToAnyAccount(t *testing.T) {
 	}
 	if payload.Amount != "0.000001" {
 		t.Fatalf("amount = %q, want 0.000001", payload.Amount)
+	}
+}
+
+func TestRepublish_Sends_TheSameEventStampedWithWhenItOccurred(t *testing.T) {
+	f := newFixture()
+	tx := f.deposit("eth", "ETH", "500000000000000000")
+	occurredAt := tx.ConfirmedAt.Add(-time.Second)
+
+	if err := f.publisher.Republish(context.Background(), types.EventDepositConfirmed, tx, occurredAt); err != nil {
+		t.Fatalf("Republish: %v", err)
+	}
+
+	event, payload := onlyPayload(t, f.enqueuer)
+	if !event.OccurredAt.Equal(occurredAt) {
+		t.Fatalf("occurred at = %v, want %v", event.OccurredAt, occurredAt)
+	}
+	if event.SubjectID != tx.ID.String() || event.EventType != types.EventDepositConfirmed {
+		t.Fatalf("unexpected event identity %+v", event)
+	}
+	if payload.Amount != "0.5" || payload.Status != tx.Status || payload.ConfirmedAt == nil {
+		t.Fatalf("payload = %+v", payload)
+	}
+}
+
+func TestRepublish_Refuses_AnEventWithoutItsInstant(t *testing.T) {
+	f := newFixture()
+	err := f.publisher.Republish(context.Background(), types.EventDepositConfirmed, f.deposit("eth", "ETH", "1"), time.Time{})
+	if err == nil {
+		t.Fatal("a republished event must say when it occurred")
+	}
+	if len(f.enqueuer.events) != 0 {
+		t.Fatalf("nothing may be enqueued, got %d", len(f.enqueuer.events))
+	}
+}
+
+func TestPublish_Live_EventCarriesNoOccurredAt(t *testing.T) {
+	f := newFixture()
+	if err := f.publisher.Publish(context.Background(), types.EventDepositConfirmed, f.deposit("eth", "ETH", "1")); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	event, _ := onlyPayload(t, f.enqueuer)
+	if !event.OccurredAt.IsZero() {
+		t.Fatalf("a live event reaches every config, got occurred at %v", event.OccurredAt)
+	}
+}
+
+// payloadJSON is the deposit webhook data object as a receiver decodes it.
+func payloadJSON(t *testing.T, payload Payload) map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	return decoded
+}
+
+func TestPublish_Carries_TheXRPDestinationTagOnlyWhenThePaymentHadOne(t *testing.T) {
+	tag := uint32(777001)
+	tagged := newFixture()
+	tx := tagged.deposit("txrp", "xrp", "1000000")
+	tx.DestinationTag = &tag
+	if err := tagged.publisher.Publish(context.Background(), types.EventDepositPending, tx); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	_, payload := onlyPayload(t, tagged.enqueuer)
+	if got := payloadJSON(t, payload)["destination_tag"]; got != float64(tag) {
+		t.Fatalf("destination_tag = %v, want %d", got, tag)
+	}
+
+	for _, deposit := range []struct{ chain, asset, baseUnits string }{
+		{"txrp", "xrp", "1000000"},
+		{"polygon", "USDC", "25000000"},
+	} {
+		untagged := newFixture()
+		if err := untagged.publisher.Publish(context.Background(), types.EventDepositPending, untagged.deposit(deposit.chain, deposit.asset, deposit.baseUnits)); err != nil {
+			t.Fatalf("Publish: %v", err)
+		}
+		_, payload := onlyPayload(t, untagged.enqueuer)
+		if got, present := payloadJSON(t, payload)["destination_tag"]; present {
+			t.Fatalf("%s deposit without a tag carries destination_tag %v", deposit.chain, got)
+		}
 	}
 }

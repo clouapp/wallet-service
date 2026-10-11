@@ -22,7 +22,7 @@
 | **Deploy** | SAM CLI (`template.yaml`) | IaC nativo AWS, `sam deploy` |
 | **Filas** | SQS + DLQ nativa | Retry automático, sem Redis pra filas |
 | **Scheduling** | EventBridge → Lambda | Block scanning periódico por chain |
-| **Cache** | Redis (ElastiCache) | Address lookup O(1) + checkpoints |
+| **Cache** | Redis (ElastiCache) | Address lookup O(1) + cópia dos checkpoints (o checkpoint fica no PostgreSQL) |
 | **Database** | PostgreSQL (RDS) | ACID, JSONB |
 | **Secrets** | AWS KMS | Envelope encryption |
 
@@ -34,7 +34,7 @@
 - `ReportBatchItemFailures` — falha itens individuais sem perder o batch
 - Custo zero no volume de POC
 
-Redis permanece para: SET de endereços (address matching O(1)) e block checkpoints.
+Redis permanece para: SET de endereços (address matching O(1)), cópia em cache dos block checkpoints e o lock de varredura por chain. O checkpoint durável de cada chain fica no PostgreSQL (`deposit_scan_checkpoints`).
 
 ---
 
@@ -281,6 +281,12 @@ configs legadas sem dono recebem tudo. Deduplicação por (config, tipo, transa�
   `amount_base_units` + `decimals`. O consumidor deve converter a partir de `amount_base_units`/`decimals` com
   aritmética decimal exata e rejeitar payloads sem esses campos.
 - Se os decimais do ativo não forem conhecidos, o evento não é emitido (fica no log) em vez de sair ambíguo.
+- XRP (`xrp`/`txrp`): `destination_tag` (inteiro 0..4294967295) vem ao lado de `to_address` quando o pagamento
+  recebido tinha tag, e também fica em `transactions.destination_tag`; é omitido sem tag e nas demais chains. Um
+  depósito XRP é um `Payment` com resultado `tesSUCCESS` num ledger validado, pelo valor de `delivered_amount` em drops
+  (um pagamento parcial credita o que chegou, não o `Amount` pedido); pagamentos `tec…`, moedas emitidas (IOU),
+  pagamentos de uma conta para si mesma e os demais tipos de transação não são depósitos. A varredura periódica só roda com
+  `xrp`/`txrp` em `LOCAL_DEPOSIT_SCAN_CHAINS`.
 
 ## Reconciliação: feed de alterações de `GET /api/v1/transactions`
 

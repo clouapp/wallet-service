@@ -430,3 +430,12 @@ func (f *ingestWebhookEventRepo) FindDueForDelivery(_ context.Context, limit int
 func (f *ingestWebhookEventRepo) MarkFailed(_ context.Context, eventID, errMsg string) error {
 	return nil
 }
+func (f *ingestWebhookEventRepo) ClaimStaleForRedispatch(context.Context, time.Duration, int) ([]models.WebhookEvent, error) {
+	return nil, nil
+}
+func (f *ingestWebhookEventRepo) FindForRedelivery(context.Context, uuid.UUID, time.Time, time.Time, []string, int) ([]uuid.UUID, error) {
+	return nil, nil
+}
+func (f *ingestWebhookEventRepo) RequeueForRedelivery(context.Context, uuid.UUID, []uuid.UUID, time.Time, time.Time) ([]models.WebhookEvent, error) {
+	return nil, nil
+}
