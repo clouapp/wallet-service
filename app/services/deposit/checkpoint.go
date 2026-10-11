@@ -64,9 +64,9 @@ func (s *Service) loadCheckpoint(ctx context.Context, chainID string) (uint64, b
 }
 
 // persistCachedCheckpoint copies a checkpoint read from Redis to the database once per
-// process, so a cache written before the database held checkpoints, or a database
-// write that failed, cannot reset the chain to the head when the key is lost. It
-// returns the block to resume after: the database one, which is never behind the cache.
+// process, and again after a Redis write failed, so a cache written before the database
+// held checkpoints cannot reset the chain to the head when the key is lost. It returns
+// the block to resume after: the database one, which is never behind the cache.
 func (s *Service) persistCachedCheckpoint(ctx context.Context, chainID string, cached uint64) uint64 {
 	if _, done := s.persisted.Load(chainID); done {
 		return cached
@@ -100,6 +100,9 @@ func (s *Service) saveCheckpoint(ctx context.Context, chainID string, block uint
 		return nil
 	}
 	if err := s.store.Set(ctx, checkpointCacheKey(chainID), stored, 0); err != nil {
+		// Redis now trails the database. The next read compares the two, so a Redis
+		// that keeps refusing writes does not make every cycle repeat the same blocks.
+		s.persisted.Delete(chainID)
 		return fmt.Errorf("cache %s checkpoint %d: %w", chainID, stored, err)
 	}
 	return nil

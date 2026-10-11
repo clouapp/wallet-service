@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
@@ -244,5 +245,35 @@ func TestScan_LatestBlocks_SlowerScannerDoesNotRewindTheCheckpoint(t *testing.T)
 	}
 	if got := f.checkpoint(t); got != ahead {
 		t.Fatalf("the slower scanner must leave the database at %d and cache it, got %d", ahead, got)
+	}
+}
+
+// readOnlyCheckpointCache is the test Redis refusing every write, as a replica after a
+// failover or a Redis that cannot persist (MISCONF) does, while reads still answer.
+type readOnlyCheckpointCache struct {
+	redisStore
+}
+
+func (readOnlyCheckpointCache) Set(context.Context, string, uint64, time.Duration) error {
+	return errors.New("READONLY You can't write against a read only replica.")
+}
+
+func TestScan_LatestBlocks_KeepsAdvancingWhenRedisRefusesWrites(t *testing.T) {
+	f := newCheckpointFixture(t).withCheckpoint(t, checkpointTestStart)
+	f.svc.store = readOnlyCheckpointCache{redisStore: f.svc.store.(redisStore)}
+
+	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
+		t.Fatal(err)
+	}
+	f.adapter.head = checkpointTestHead + 8
+	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := f.adapter.calls.Load(); got != 16 {
+		t.Fatalf("a stale Redis copy must not make the scanner repeat blocks the database is past, got %d fetches for 16 blocks", got)
+	}
+	if got, _ := f.databaseCheckpoint(t); got != checkpointTestHead+8 {
+		t.Fatalf("expected the database checkpoint at %d, got %d", checkpointTestHead+8, got)
 	}
 }
