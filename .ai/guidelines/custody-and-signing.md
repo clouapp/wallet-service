@@ -47,6 +47,10 @@ Curves: secp256k1 (EVM, BTC) and ed25519 (SOL). HD derivation (`hdkey`,
 - A recovery-material download (if exposed) is its own route with its own
   permission and re-authentication.
 - Zero buffers holding share or key bytes after use where the library allows.
+- secp256k1 keygen pre-parameters may be generated ahead by `mpc.PreParamsPool`
+  (`MPC_PREPARAMS_POOL_SIZE`): they become part of the shares, so the pool keeps
+  them in process memory only, hands each set to one party of one keygen, and never
+  persists, logs or caches them elsewhere.
 - `facades.Crypt()` (APP_KEY) protects TOTP secrets, RPC URLs and webhook
   secrets at rest — **it is not used for MPC shares**, which have their own
   envelope.

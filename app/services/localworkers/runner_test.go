@@ -535,3 +535,37 @@ func TestSplit_Scan_ChainsKeepsTheConfiguredOrder(t *testing.T) {
 		t.Fatalf("dedicated %v, want %v", dedicated, want)
 	}
 }
+
+type recordingFiller struct {
+	started chan struct{}
+	stopped atomic.Bool
+}
+
+func (f *recordingFiller) Run(ctx context.Context) {
+	close(f.started)
+	<-ctx.Done()
+	time.Sleep(50 * time.Millisecond)
+	f.stopped.Store(true)
+}
+
+func TestStart_Runs_ThePreParamsFillerUntilCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	filler := &recordingFiller{started: make(chan struct{})}
+
+	loops, err := Start(ctx, Config{ConfirmationInterval: time.Hour}, Workers{Checker: &countingChecker{}, PreParams: filler})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	select {
+	case <-filler.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the pre-params filler never ran")
+	}
+
+	cancel()
+	loops.Wait()
+	if !filler.stopped.Load() {
+		t.Fatal("Wait must not return before the pre-params filler stopped")
+	}
+}

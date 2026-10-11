@@ -16,18 +16,28 @@ import (
 )
 
 // TSSService implements the Service interface using tss-lib v2.
-type TSSService struct{}
+type TSSService struct {
+	// preParams, when running, supplies the secp256k1 keygen pre-parameters; with no
+	// pool, or a pool that is not running, each party generates its own inline.
+	preParams *PreParamsPool
+}
 
 // NewTSSService creates a new TSSService.
 func NewTSSService() *TSSService {
 	return &TSSService{}
 }
 
+// NewTSSServiceWithPreParams creates a TSSService whose secp256k1 keygen takes its
+// pre-parameters from pool.
+func NewTSSServiceWithPreParams(pool *PreParamsPool) *TSSService {
+	return &TSSService{preParams: pool}
+}
+
 // Keygen runs a 2-party MPC key generation ceremony for the given curve.
 func (s *TSSService) Keygen(ctx context.Context, curve Curve) (*KeygenResult, error) {
 	switch curve {
 	case CurveSecp256k1:
-		return keygenSecp256k1(ctx)
+		return keygenSecp256k1(ctx, s.preParams)
 	case CurveEd25519:
 		return keygenEd25519(ctx)
 	default:
@@ -36,7 +46,17 @@ func (s *TSSService) Keygen(ctx context.Context, curve Curve) (*KeygenResult, er
 }
 
 // keygenSecp256k1 performs a 2-of-2 MPC keygen on secp256k1.
-func keygenSecp256k1(ctx context.Context) (*KeygenResult, error) {
+func keygenSecp256k1(ctx context.Context, pool *PreParamsPool) (*KeygenResult, error) {
+	// One set of pre-parameters per party, never shared between them.
+	preParamsA, err := pool.Take(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("keygen pre-params A: %w", err)
+	}
+	preParamsB, err := pool.Take(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("keygen pre-params B: %w", err)
+	}
+
 	// Create two party IDs with distinct random keys.
 	keyA, err := randomBigInt256()
 	if err != nil {
@@ -74,8 +94,8 @@ func keygenSecp256k1(ctx context.Context) (*KeygenResult, error) {
 	paramsB.SetNoProofMod()
 	paramsB.SetNoProofFac()
 
-	partyA := keygen.NewLocalParty(paramsA, outCh, endCh)
-	partyB := keygen.NewLocalParty(paramsB, outCh, endCh)
+	partyA := newKeygenParty(paramsA, outCh, endCh, preParamsA)
+	partyB := newKeygenParty(paramsB, outCh, endCh, preParamsB)
 	parties := []tss.Party{partyA, partyB}
 
 	// Start both parties concurrently.
@@ -176,6 +196,15 @@ func routeMessage(party tss.Party, msg tss.Message, errCh chan<- error) {
 	if _, tssErr := party.Update(pMsg); tssErr != nil {
 		errCh <- tssErr.Cause()
 	}
+}
+
+// newKeygenParty creates a secp256k1 keygen party on preParams, or, when nil, on
+// pre-parameters the party generates itself.
+func newKeygenParty(params *tss.Parameters, out chan<- tss.Message, end chan<- keygen.LocalPartySaveData, preParams *keygen.LocalPreParams) tss.Party {
+	if preParams == nil {
+		return keygen.NewLocalParty(params, out, end)
+	}
+	return keygen.NewLocalParty(params, out, end, *preParams)
 }
 
 // matchSavesByIndex returns (saveA, saveB) ordered by original party index (0, 1).
