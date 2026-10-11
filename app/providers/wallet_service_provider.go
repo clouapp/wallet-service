@@ -139,7 +139,7 @@ func newWalletService(app foundation.Application) (*wallet.Service, error) {
 		Registry:     registry,
 		AddressCache: addresscache.New(redisClient),
 		MPC:          mpcService,
-		Secrets:      sweepsecrets.NewWalletStore(secrets),
+		Secrets:      sweepsecrets.NewWalletStore(secrets, sweepsecrets.KMSKeyID(facades.Config().GetString("vault.master_key_ref"))),
 		Wallets:      wallets,
 		Addresses:    addresses,
 		WebhookSync:  webhookSync,
