@@ -56,6 +56,9 @@ type EVMConfig struct {
 	// DustThresholdNative is the minimum native balance on a child for sweep
 	// eligibility. Populated from the chains table. nil when unset.
 	DustThresholdNative *big.Int
+	// Finality is the chains.finality policy new transactions are recorded with;
+	// empty is confirmations.
+	Finality string
 }
 
 // EVMLive talks to an EVM JSON-RPC node.
