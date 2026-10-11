@@ -14,6 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/macrowallets/waas/tests/memcache"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
@@ -40,6 +41,8 @@ func newDepositSvc(registry *chain.Registry, webhookSvc *webhook.Service) *Servi
 		Webhook:      webhookSvc,
 		Addresses:    repositories.NewAddressRepository(nil),
 		Transactions: repositories.NewTransactionRepository(nil),
+		Checkpoints:  repositories.NewDepositScanCheckpointRepository(nil),
+		Cache:        memcache.New(),
 	})
 }
 

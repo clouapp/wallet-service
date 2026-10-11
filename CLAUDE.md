@@ -243,6 +243,23 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   carries `(subject_id, purpose)` and mints the token when it runs. — guarded by
   `app/jobs/send_credential_mail_test.go` and `TestJob_Payload_IsDecodedNotPositional`.
 - The app registers no events or listeners; add an event only together with a listener.
+- The deposit scan checkpoint of each chain lives in Postgres (`deposit_scan_checkpoints`)
+  and never moves back; Redis (`vault:checkpoint:<chain>`) is a copy written after the
+  database. A read falls back from Redis to the database on a miss or an error. Only a chain
+  the database does not hold, with Redis answering a clean miss (or not configured), starts
+  at the head; a Redis error with no row, or a database error, skips the cycle and moves
+  nothing. — guarded by `app/services/deposit/checkpoint_test.go` and
+  `TestDeposit_Scan_CheckpointRepositorySuite`.
+- One scanner per chain: a `ScanLatestBlocks` cycle holds `vault:lock:deposit_scan:<chain>`
+  (`cacheguard.Acquire`, TTL 2 min, above the 60 s `deposit_scanner` Lambda timeout). A held
+  lock skips the cycle; a lock store that is down or missing fails it. `scan:deposits
+  --block|--tx|--pending|--retry-pending` take no lock and never move the checkpoint. —
+  guarded by `app/services/deposit/scan_lock_test.go`.
+- A block is never marked scanned while its deposits are not all read and recorded: it is
+  retried, then kept in the pending-blocks store. On every EVM chain a failed `eth_getLogs`
+  fails the block. — guarded by `app/services/deposit/failure_test.go`,
+  `TestScan_Block_FailsTheBlockWhenGetLogsFailsOnEveryEVMChain` and
+  `TestRegister_ActiveChains_EVMBlockWhoseLogsFailGoesPending`.
 
 ### 8. Database and migrations
 
@@ -251,15 +268,16 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `Migrations()` in `bootstrap/migrations.go`. A migration never edits an applied one; it adds
   the next number. — guarded by the migration tests in `tests/migrations` (e.g.
   `non_negative_amounts_test.go`).
-- A NEW migration uses the schema builder, `facades.Schema()` from `app/facades`
-  (`Create`, `Table`, `DropIfExists`), unless it needs a Postgres feature the builder does not
-  express (CHECK or partial-unique constraints, `USING` casts, enum types, data backfills):
-  then it runs raw SQL. The applied migrations keep their raw SQL; do not rewrite them. A
-  migration imports no app code (`app/models`, `app/services`, `pkg/*`): copy what it needs
-  into the migration, so a later change there cannot change what a fresh database gets.
-  `artisan make:migration` creates the file and appends it to `Migrations()`, but the
-  framework drops the host and organisation of the module path, so the generated import
-  reads `waas/app/facades`: change it to `github.com/macrowallets/waas/app/facades`.
+- A NEW migration uses the schema builder, `migrationSchema()` from
+  `database/migrations/orm.go` (`Create`, `Table`, `DropIfExists`), unless it needs a Postgres
+  feature the builder does not express (CHECK or partial-unique constraints, `USING` casts,
+  enum types, data backfills): then it runs raw SQL. The applied migrations keep their raw
+  SQL; do not rewrite them. A migration imports no app code (`app/models`, `app/services`,
+  `pkg/*`, `app/facades`): copy what it needs into the migration, so a later change there
+  cannot change what a fresh database gets. The database layer may not import `app/facades`
+  (`TestImports_Import_Direction`), so `orm.go` is the one file that reaches the framework
+  facades. `artisan make:migration` creates the file and appends it to `Migrations()`; replace
+  the facades import it generates with `migrationSchema()`.
 - Amounts are base-unit integers/strings (`pkg/amount`, `numeric` columns), never floats,
   and never negative. — guarded by `TestEnforce_Non_NegativeAmounts*`.
 - Seed data is test-only (`database/seeders`, registered by `WithSeeders(seeders.All)`;
@@ -544,8 +562,10 @@ BTC_RPC_URL=https://blockstream.info/testnet/api
 API_KEY_SECRET=dev-secret-key-not-for-production
 ```
 
-Redis is the cache driver (rate limits, locks, settings cache, deposit scanner state): the app needs
-it reachable. `.env.dev.example` / `.env.example` carry the full lists, with the throttle variables.
+Redis is the cache driver (rate limits, locks including the per-chain deposit scan lock, settings
+cache, the deposit scanner's watched addresses and its copy of the scan checkpoint, which lives in
+Postgres): the app needs it reachable. `.env.dev.example` / `.env.example` carry the full lists,
+with the throttle variables.
 
 ### Bitcoin-family provider failover
 

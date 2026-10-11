@@ -32,12 +32,15 @@ import (
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
 )
 
-// DepositServiceProvider binds the deposit scanner, the inbound webhook
-// ingest that records provider-pushed deposits, and the publisher of deposit
-// webhooks both of them use.
+// DepositServiceProvider binds the deposit scanner with its checkpoint
+// repository, the inbound webhook ingest that records provider-pushed deposits,
+// and the publisher of deposit webhooks both of them use.
 type DepositServiceProvider struct{}
 
 func (p *DepositServiceProvider) Register(app foundation.Application) {
+	app.Singleton((*repositories.DepositScanCheckpointRepository)(nil), func(foundation.Application) (any, error) {
+		return repositories.NewDepositScanCheckpointRepository(nil), nil
+	})
 	app.Singleton((*depositevents.Publisher)(nil), func(app foundation.Application) (any, error) {
 		return newDepositEvents(app)
 	})
@@ -72,9 +75,11 @@ func newDepositEvents(app foundation.Application) (*depositevents.Publisher, err
 }
 
 // newDepositService scans blocks for deposits and tracks confirmations. The
-// setters run here, before anyone resolves the service: the withdrawal and
-// deposit webhooks, the scan window from deposit_scan, the failure policy,
-// the pending-block store and the balance refresher.
+// checkpoint lives in the database with a Redis copy, and each chain's scan
+// holds a lock in the process cache. The setters run here, before anyone
+// resolves the service: the withdrawal and deposit webhooks, the scan window
+// from deposit_scan, the failure policy, the pending-block store and the
+// balance refresher.
 func newDepositService(app foundation.Application) (*deposit.Service, error) {
 	registry, err := resolve[*chainpkg.Registry](app)
 	if err != nil {
@@ -94,6 +99,10 @@ func newDepositService(app foundation.Application) (*deposit.Service, error) {
 		return nil, err
 	}
 	transactions, err := resolve[*repositories.TransactionRepository](app)
+	if err != nil {
+		return nil, err
+	}
+	checkpoints, err := resolve[*repositories.DepositScanCheckpointRepository](app)
 	if err != nil {
 		return nil, err
 	}
@@ -124,6 +133,8 @@ func newDepositService(app foundation.Application) (*deposit.Service, error) {
 	}
 	service := deposit.NewService(deposit.Deps{
 		Store:        scanner.New(redisClient),
+		Checkpoints:  checkpoints,
+		Cache:        facades.Cache(),
 		Registry:     registry,
 		Webhook:      webhookService,
 		Addresses:    addresses,

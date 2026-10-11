@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	contractscache "github.com/goravel/framework/contracts/cache"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
@@ -19,10 +21,11 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-// RedisStore runs the scanner's checkpoint and watched-address commands.
+// RedisStore runs the scanner's checkpoint cache and watched-address commands.
 // The service keeps the keys. A nil RedisStore means Redis is not configured.
 type RedisStore interface {
-	Uint64(ctx context.Context, key string) (uint64, error)
+	// Uint64 reads key; found is false, with no error, when the key does not exist.
+	Uint64(ctx context.Context, key string) (value uint64, found bool, err error)
 	Set(ctx context.Context, key string, value uint64, expiration time.Duration) error
 	SIsMember(ctx context.Context, key, member string) (bool, error)
 	SCard(ctx context.Context, key string) (int64, error)
@@ -33,11 +36,15 @@ type RedisStore interface {
 // ---------------------------------------------------------------------------
 // Service — stateless deposit scanner designed for Lambda invocation.
 // Each call to ScanLatestBlocks processes new blocks since last checkpoint.
-// State lives in Redis (checkpoint) and Postgres (transactions).
+// State lives in Postgres (checkpoint, transactions); Redis caches the checkpoint
+// and the watched addresses and holds the per-chain scan lock.
 // ---------------------------------------------------------------------------
 
 type Service struct {
 	store                RedisStore
+	checkpoints          CheckpointStore
+	cache                contractscache.Driver
+	cacheInSync          sync.Map // chain IDs whose Redis checkpoint this process knows matches the database
 	registry             *chain.Registry
 	webhookSvc           *webhook.Service
 	addressRepo          *repositories.AddressRepository
@@ -109,9 +116,11 @@ func (s *Service) SetWithdrawalConfirmations(withdrawals WithdrawalConfirmations
 }
 
 // Deps is everything the deposit service needs. A nil field means that
-// dependency is absent.
+// dependency is absent; without Checkpoints or Cache ScanLatestBlocks refuses to scan.
 type Deps struct {
 	Store                RedisStore
+	Checkpoints          CheckpointStore
+	Cache                contractscache.Driver
 	Registry             *chain.Registry
 	Webhook              *webhook.Service
 	Addresses            *repositories.AddressRepository
@@ -123,6 +132,8 @@ type Deps struct {
 func NewService(deps Deps) *Service {
 	return &Service{
 		store:                deps.Store,
+		checkpoints:          deps.Checkpoints,
+		cache:                deps.Cache,
 		registry:             deps.Registry,
 		webhookSvc:           deps.Webhook,
 		addressRepo:          deps.Addresses,
@@ -138,8 +149,21 @@ func NewService(deps Deps) *Service {
 }
 
 // ScanLatestBlocks is the Lambda entry point. Scans new blocks for a chain.
-// Called by EventBridge on schedule (every 5-60s depending on chain).
+// Called by EventBridge on schedule (every 5-60s depending on chain). A cycle that
+// finds another scanner on the chain is skipped and returns nil.
 func (s *Service) ScanLatestBlocks(ctx context.Context, chainID string) error {
+	err := s.scanLatestBlocks(ctx, chainID)
+	if errors.Is(err, ErrScanInProgress) {
+		slog.Info("deposit scan skipped, another scanner holds the chain", "chain", chainID)
+		return nil
+	}
+	return err
+}
+
+// scanLatestBlocks runs one cycle under the chain's scan lock, or returns
+// ErrScanInProgress when another scanner holds it. A checkpoint that cannot be read
+// skips the cycle with an error and moves nothing.
+func (s *Service) scanLatestBlocks(ctx context.Context, chainID string) error {
 	s.resolveScanOptions(ctx)
 
 	adapter, err := s.registry.Chain(chainID)
@@ -147,8 +171,17 @@ func (s *Service) ScanLatestBlocks(ctx context.Context, chainID string) error {
 		return err
 	}
 
-	lastBlock, err := s.loadCheckpoint(ctx, chainID)
+	release, err := s.lockChain(chainID)
 	if err != nil {
+		return err
+	}
+	defer release()
+
+	lastBlock, found, err := s.loadCheckpoint(ctx, chainID)
+	if err != nil {
+		return fmt.Errorf("deposit scan skipped: %w", err)
+	}
+	if !found {
 		lastBlock, err = adapter.GetLatestBlock(ctx)
 		if err != nil {
 			return fmt.Errorf("get latest block: %w", err)
@@ -275,24 +308,6 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 
 	slog.Info("deposit detected", "chain", chainID, "tx", transfer.TxHash, "user", addr.ExternalUserID, "asset", asset, "amount", transfer.Amount.String())
 	return true, nil
-}
-
-// ---------------------------------------------------------------------------
-// Redis checkpoint
-// ---------------------------------------------------------------------------
-
-func (s *Service) loadCheckpoint(ctx context.Context, chainID string) (uint64, error) {
-	if s.store == nil {
-		return 0, fmt.Errorf("no redis")
-	}
-	return s.store.Uint64(ctx, "vault:checkpoint:"+chainID)
-}
-
-func (s *Service) saveCheckpoint(ctx context.Context, chainID string, blockNum uint64) error {
-	if s.store == nil {
-		return nil
-	}
-	return s.store.Set(ctx, "vault:checkpoint:"+chainID, blockNum, 0)
 }
 
 // ---------------------------------------------------------------------------

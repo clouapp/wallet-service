@@ -22,7 +22,7 @@
 | **Deploy** | SAM CLI (`template.yaml`) | IaC nativo AWS, `sam deploy` |
 | **Filas** | SQS + DLQ nativa | Retry automático, sem Redis pra filas |
 | **Scheduling** | EventBridge → Lambda | Block scanning periódico por chain |
-| **Cache** | Redis (ElastiCache) | Address lookup O(1) + checkpoints |
+| **Cache** | Redis (ElastiCache) | Address lookup O(1) + cópia dos checkpoints (o checkpoint fica no PostgreSQL) |
 | **Database** | PostgreSQL (RDS) | ACID, JSONB |
 | **Secrets** | AWS KMS | Envelope encryption |
 
@@ -34,7 +34,7 @@
 - `ReportBatchItemFailures` — falha itens individuais sem perder o batch
 - Custo zero no volume de POC
 
-Redis permanece para: SET de endereços (address matching O(1)) e block checkpoints.
+Redis permanece para: SET de endereços (address matching O(1)), cópia em cache dos block checkpoints e o lock de varredura por chain. O checkpoint durável de cada chain fica no PostgreSQL (`deposit_scan_checkpoints`).
 
 ---
 
