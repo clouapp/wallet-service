@@ -79,17 +79,21 @@ ifeq ($(AWS_DECLARED_ACCOUNT_ID),)
   AWS_ACCOUNT_ID := $(shell aws sts get-caller-identity --query Account --output text 2>/dev/null)
 endif
 
-# .env.$(ENV) may carry a deploy user's keys as AMZ_* (never AWS_*, which the app and
-# docker compose read). When set, they reach aws/sam as AWS_* in the AWS targets below
-# only, and AWS_PROFILE/AWS_SESSION_TOKEN from the shell are dropped so they cannot
-# outrank them; nothing is written to ~/.aws. Without them the shell's own credentials
-# are used. AWS_ENDPOINT_URL (LocalStack) never reaches these commands. check-account
-# is the backstop either way.
+# Deploy credentials for the AWS targets below, from .env.$(ENV), first match wins:
+# - AMZ_ACCESS_KEY_ID/AMZ_SECRET_ACCESS_KEY: a deploy user's keys (never AWS_*, which
+#   the app and docker compose read). They reach aws/sam as AWS_* in these targets only.
+# - AWS_DEPLOY_PROFILE: a named profile in ~/.aws, so no key sits in the dotenv.
+# - neither: the shell's own credentials.
+# The shell's AWS_PROFILE/AWS_SESSION_TOKEN cannot outrank the first two, nothing is
+# written to ~/.aws, and AWS_ENDPOINT_URL (LocalStack) never reaches these commands.
+# check-account is the backstop either way.
 AWS_TARGETS = check-account deploy delete stack-outputs server-credentials dlq-check dlq-replay-webhooks dlq-replay-withdrawals
 ifneq ($(strip $(AMZ_ACCESS_KEY_ID)),)
 $(AWS_TARGETS): export AWS_ACCESS_KEY_ID := $(AMZ_ACCESS_KEY_ID)
 $(AWS_TARGETS): export AWS_SECRET_ACCESS_KEY := $(AMZ_SECRET_ACCESS_KEY)
 AWS_ENV = env -u AWS_PROFILE -u AWS_SESSION_TOKEN -u AWS_ENDPOINT_URL AWS_DEFAULT_REGION=$(AWS_REGION)
+else ifneq ($(strip $(AWS_DEPLOY_PROFILE)),)
+AWS_ENV = env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN -u AWS_ENDPOINT_URL AWS_PROFILE=$(AWS_DEPLOY_PROFILE) AWS_DEFAULT_REGION=$(AWS_REGION)
 else
 AWS_ENV = env -u AWS_ENDPOINT_URL AWS_DEFAULT_REGION=$(AWS_REGION)
 endif

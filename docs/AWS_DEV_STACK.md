@@ -24,15 +24,18 @@ the deploy credentials:
 ```dotenv
 AWS_REGION=us-east-1
 AWS_ACCOUNT_ID=<12-digit account id>
-AMZ_ACCESS_KEY_ID=<deploy user key>
-AMZ_SECRET_ACCESS_KEY=<deploy user secret>
+AWS_DEPLOY_PROFILE=<profile in ~/.aws>   # or AMZ_ACCESS_KEY_ID + AMZ_SECRET_ACCESS_KEY
 SERVER_SSH=forge@<host>
 ```
 
-- `AMZ_*` reach `aws` and `sam` as `AWS_*` in the AWS targets only. The shell's
-  `AWS_PROFILE`, `AWS_SESSION_TOKEN` and `AWS_ENDPOINT_URL` are dropped, nothing is
-  written to `~/.aws`, and the app and docker compose never see them. With `AMZ_*`
-  empty, the shell's own credentials are used.
+- Credentials, first match wins:
+  - `AMZ_*`: a deploy user's keys. They reach `aws` and `sam` as `AWS_*` in the AWS
+    targets only; the app and docker compose never see them.
+  - `AWS_DEPLOY_PROFILE`: a named profile in `~/.aws`, so no key sits in the dotenv.
+  - Neither: the shell's own credentials.
+
+  The shell's `AWS_PROFILE` and `AWS_SESSION_TOKEN` cannot outrank the first two,
+  `AWS_ENDPOINT_URL` is always dropped, and nothing is written to `~/.aws`.
 - `check-account` runs first and refuses unless those credentials belong to
   `AWS_ACCOUNT_ID`.
 
@@ -72,9 +75,9 @@ access keys. A dedicated deploy user needs, for this stack only (replace `ACCOUN
     { "Effect": "Allow", "Action": ["cloudformation:ValidateTemplate", "cloudformation:GetTemplateSummary", "sts:GetCallerIdentity"], "Resource": "*" },
     { "Effect": "Allow", "Action": "sqs:*", "Resource": "arn:aws:sqs:us-east-1:ACCOUNT:vault-*-dev" },
     { "Effect": "Allow", "Action": ["kms:CreateKey", "kms:ListAliases"], "Resource": "*" },
-    { "Effect": "Allow", "Action": ["kms:DescribeKey", "kms:GetKeyPolicy", "kms:PutKeyPolicy", "kms:EnableKeyRotation", "kms:GetKeyRotationStatus", "kms:TagResource", "kms:ListResourceTags", "kms:UpdateKeyDescription", "kms:ScheduleKeyDeletion", "kms:CreateAlias", "kms:DeleteAlias", "kms:UpdateAlias"], "Resource": ["arn:aws:kms:us-east-1:ACCOUNT:key/*", "arn:aws:kms:us-east-1:ACCOUNT:alias/waas-dev-*"] },
-    { "Effect": "Allow", "Action": ["iam:CreateUser", "iam:DeleteUser", "iam:GetUser", "iam:TagUser", "iam:UntagUser", "iam:AttachUserPolicy", "iam:DetachUserPolicy", "iam:ListAttachedUserPolicies", "iam:CreateAccessKey", "iam:DeleteAccessKey", "iam:ListAccessKeys", "iam:UpdateAccessKey"], "Resource": "arn:aws:iam::ACCOUNT:user/waas-dev-server" },
-    { "Effect": "Allow", "Action": ["iam:CreatePolicy", "iam:DeletePolicy", "iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicyVersions", "iam:CreatePolicyVersion", "iam:DeletePolicyVersion"], "Resource": "arn:aws:iam::ACCOUNT:policy/WaasServer-dev" },
+    { "Effect": "Allow", "Action": ["kms:DescribeKey", "kms:GetKeyPolicy", "kms:PutKeyPolicy", "kms:EnableKeyRotation", "kms:GetKeyRotationStatus", "kms:TagResource", "kms:UntagResource", "kms:ListResourceTags", "kms:ListKeyPolicies", "kms:UpdateKeyDescription", "kms:ScheduleKeyDeletion", "kms:CreateAlias", "kms:DeleteAlias", "kms:UpdateAlias"], "Resource": ["arn:aws:kms:us-east-1:ACCOUNT:key/*", "arn:aws:kms:us-east-1:ACCOUNT:alias/waas-dev-*"] },
+    { "Effect": "Allow", "Action": ["iam:CreateUser", "iam:DeleteUser", "iam:GetUser", "iam:TagUser", "iam:UntagUser", "iam:AttachUserPolicy", "iam:DetachUserPolicy", "iam:ListAttachedUserPolicies", "iam:CreateAccessKey", "iam:DeleteAccessKey", "iam:ListAccessKeys", "iam:UpdateAccessKey", "iam:ListUserPolicies", "iam:ListGroupsForUser", "iam:ListUserTags", "iam:GetLoginProfile", "iam:ListMFADevices", "iam:ListSigningCertificates", "iam:ListSSHPublicKeys", "iam:ListServiceSpecificCredentials"], "Resource": "arn:aws:iam::ACCOUNT:user/waas-dev-server" },
+    { "Effect": "Allow", "Action": ["iam:CreatePolicy", "iam:DeletePolicy", "iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicyVersions", "iam:CreatePolicyVersion", "iam:DeletePolicyVersion", "iam:ListEntitiesForPolicy"], "Resource": "arn:aws:iam::ACCOUNT:policy/WaasServer-dev" },
     { "Effect": "Allow", "Action": ["secretsmanager:CreateSecret", "secretsmanager:DeleteSecret", "secretsmanager:DescribeSecret", "secretsmanager:GetSecretValue", "secretsmanager:PutSecretValue", "secretsmanager:UpdateSecret", "secretsmanager:TagResource"], "Resource": "arn:aws:secretsmanager:us-east-1:ACCOUNT:secret:waas/dev/*" }
   ]
 }
