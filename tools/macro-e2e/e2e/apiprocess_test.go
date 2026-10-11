@@ -14,11 +14,10 @@ import (
 )
 
 const (
-	testGrace         = 1500 * time.Millisecond
-	sleeperLifetime   = "30"
-	shellPath         = "/bin/sh"
-	sleepPath         = "/bin/sleep"
-	ignoreTermAndExec = `trap "" TERM; exec "$0" "$1"`
+	testGrace       = 1500 * time.Millisecond
+	sleeperLifetime = "30"
+	shellPath       = "/bin/sh"
+	sleepPath       = "/bin/sleep"
 )
 
 func copyExecutable(t *testing.T, source, destination string) {
@@ -35,17 +34,25 @@ func copyExecutable(t *testing.T, source, destination string) {
 	}
 }
 
-// startFakeAPI starts the state-dir "binary" (a copy of sleep) as the running e2e API.
+// startFakeAPI starts the state-dir "binary" (a copy of this test binary, see
+// sleeper_test.go) as the running e2e API.
 func startFakeAPI(t *testing.T, paths Paths, ignoreSIGTERM bool) *exec.Cmd {
 	t.Helper()
-	copyExecutable(t, sleepPath, paths.APIBinary)
-	command := exec.Command(paths.APIBinary, sleeperLifetime)
+	copyExecutable(t, testBinary(t), paths.APIBinary)
+	mode := sleeperPlain
 	if ignoreSIGTERM {
-		command = exec.Command(shellPath, "-c", ignoreTermAndExec, paths.APIBinary, sleeperLifetime)
+		mode = sleeperIgnoreTerm
+	}
+	command := exec.Command(paths.APIBinary, sleeperLifetime)
+	command.Env = append(os.Environ(), sleeperEnv+"="+mode)
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
 	}
 	if err := command.Start(); err != nil {
 		t.Fatal(err)
 	}
+	waitForSleeper(t, stdout)
 	t.Cleanup(func() {
 		_ = command.Process.Kill()
 		_ = command.Wait()
@@ -217,9 +224,15 @@ func TestAPI_Start_RunsTheBinaryWithTheEnvironAndWaitsForHealth(t *testing.T) {
 	if content, _ := os.ReadFile(paths.APIPIDFile); string(content) != strconv.Itoa(pid)+"\n" {
 		t.Fatalf("pid file %q", content)
 	}
+	// The API runs in BackDir. pwd may print it with symlinks resolved (on macOS the
+	// temp dir is under /var, a link to /private/var), so either form is the same dir.
+	backDir, err := filepath.EvalSymlinks(paths.BackDir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if log, _ := os.ReadFile(paths.APILog); strings.Contains(string(log), "db=vault_test cwd="+paths.BackDir) {
+		if log, _ := os.ReadFile(paths.APILog); strings.Contains(string(log), "db=vault_test cwd="+paths.BackDir+"\n") || strings.Contains(string(log), "db=vault_test cwd="+backDir+"\n") {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
