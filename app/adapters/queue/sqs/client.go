@@ -29,6 +29,16 @@ type Client struct {
 var _ queue.Sender = (*Client)(nil)
 var _ api = (*awssqs.Client)(nil)
 
+// NewClient builds the SQS client. An empty endpoint keeps the SDK's resolver;
+// otherwise every call goes there (LocalStack), as the Secrets Manager client does.
+func NewClient(cfg aws.Config, endpoint string) *awssqs.Client {
+	return awssqs.NewFromConfig(cfg, func(o *awssqs.Options) {
+		if endpoint != "" {
+			o.BaseEndpoint = aws.String(endpoint)
+		}
+	})
+}
+
 // New publishes webhook jobs to webhookURL with client. An empty webhookURL makes
 // SendWebhook log and skip, so a process without the queue still runs.
 func New(client *awssqs.Client, webhookURL string) *Client {
