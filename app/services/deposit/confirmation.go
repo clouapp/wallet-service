@@ -127,9 +127,14 @@ func (s *Service) updateConfirmations(ctx context.Context, chainID string, adapt
 	return s.applyConfirmations(ctx, adapter, currentBlock, pending)
 }
 
+// applyConfirmations counts each pending transaction's confirmations at
+// currentBlock and confirms it by the finality policy it was recorded under (see
+// reachedConfirmation). The chain's finalized or solidified block is read at most
+// once per call, which is once per chain per tracker pass.
 func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, currentBlock uint64, pending []models.Transaction) error {
 	confirmedWallets := newWalletSet()
 	defer func() { s.refreshBalances(ctx, confirmedWallets.ids) }()
+	finality := newFinalityHeights(adapter)
 	for _, tx := range pending {
 		if tx.BlockNumber == 0 {
 			if !isOutboundTxType(tx.TxType) {
@@ -163,7 +168,7 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 
 		newStatus := string(types.TxStatusConfirming)
 		var confirmedAt *time.Time
-		if confs >= tx.RequiredConfs {
+		if reachedConfirmation(ctx, finality, &tx, confs) {
 			newStatus = string(types.TxStatusConfirmed)
 			now := time.Now().UTC()
 			confirmedAt = &now

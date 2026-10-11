@@ -207,6 +207,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		TokenContract:  tokenContract,
 		Confirmations:  0,
 		RequiredConfs:  int(adapter.RequiredConfirmations()),
+		Finality:       chain.FinalityPolicyOf(adapter),
 		Status:         string(types.TxStatusPending),
 		BlockNumber:    int64(transfer.BlockNumber),
 		BlockHash:      transfer.BlockHash,
