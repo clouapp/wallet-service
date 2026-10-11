@@ -13,8 +13,14 @@ import (
 )
 
 const (
-	pollBatchSize   = 10
+	// pollBatchSize keeps a batch inside the queue's 60 s visibility timeout: five
+	// deliveries at the 10 s delivery timeout each, as template.yaml's BatchSize.
+	pollBatchSize   = 5
 	pollWaitSeconds = 20
+	// batchDeadline bounds a batch, below the visibility timeout. A batch runs to
+	// its end even when the process is stopping: a delivery cut mid-flight may
+	// have been posted without being recorded, and would be posted again.
+	batchDeadline = 55 * time.Second
 	// receiveBackoff spaces the receives after a failed one, so a missing
 	// permission or an unreachable endpoint does not spin.
 	receiveBackoff = 5 * time.Second
@@ -39,12 +45,12 @@ var _ pollAPI = (*awssqs.Client)(nil)
 type Poller struct {
 	api      pollAPI
 	queueURL string
-	sleep    func(context.Context, time.Duration)
+	backoff  time.Duration
 }
 
 // NewPoller polls queueURL with client.
 func NewPoller(client *awssqs.Client, queueURL string) *Poller {
-	return &Poller{api: client, queueURL: queueURL, sleep: sleepContext}
+	return &Poller{api: client, queueURL: queueURL, backoff: receiveBackoff}
 }
 
 // Run receives until ctx ends, then returns nil. Receive and delete errors are
@@ -63,13 +69,15 @@ func (p *Poller) Run(ctx context.Context, handle Handler) error {
 		}
 		if err != nil {
 			slog.Error("sqs receive failed", "queue", p.queueURL, "error", err)
-			p.sleep(ctx, receiveBackoff)
+			sleepContext(ctx, p.backoff)
 			continue
 		}
 		if len(out.Messages) == 0 {
 			continue
 		}
-		p.handleBatch(ctx, out.Messages, handle)
+		batchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), batchDeadline)
+		p.handleBatch(batchCtx, out.Messages, handle)
+		cancel()
 	}
 	return nil
 }

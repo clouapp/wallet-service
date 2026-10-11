@@ -27,7 +27,7 @@ func (f *fakePollAPI) ReceiveMessage(_ context.Context, in *awssqs.ReceiveMessag
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.receives++
-	if aws.ToString(in.QueueUrl) != "https://sqs.test/queue" || in.MaxNumberOfMessages != 10 || in.WaitTimeSeconds != 20 {
+	if aws.ToString(in.QueueUrl) != "https://sqs.test/queue" || in.MaxNumberOfMessages != 5 || in.WaitTimeSeconds != 20 {
 		return nil, errors.New("unexpected receive input")
 	}
 	if len(f.errs) > 0 {
@@ -64,13 +64,8 @@ func message(id string) sqstypes.Message {
 	}
 }
 
-func newTestPoller(api *fakePollAPI) (*Poller, *[]time.Duration) {
-	slept := &[]time.Duration{}
-	return &Poller{
-		api:      api,
-		queueURL: "https://sqs.test/queue",
-		sleep:    func(_ context.Context, d time.Duration) { *slept = append(*slept, d) },
-	}, slept
+func newTestPoller(api *fakePollAPI) *Poller {
+	return &Poller{api: api, queueURL: "https://sqs.test/queue", backoff: time.Millisecond}
 }
 
 func runPoller(t *testing.T, api *fakePollAPI, handle Handler) {
@@ -78,8 +73,7 @@ func runPoller(t *testing.T, api *fakePollAPI, handle Handler) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	api.cancel = cancel
-	poller, _ := newTestPoller(api)
-	if err := poller.Run(ctx, handle); err != nil {
+	if err := newTestPoller(api).Run(ctx, handle); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 }
@@ -133,17 +127,13 @@ func TestPoller_Run_BacksOffAfterAReceiveError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	api := &fakePollAPI{errs: []error{errors.New("throttled")}, cancel: cancel}
-	poller, slept := newTestPoller(api)
 
-	if err := poller.Run(ctx, func(context.Context, events.SQSEvent) (events.SQSEventResponse, error) {
+	if err := newTestPoller(api).Run(ctx, func(context.Context, events.SQSEvent) (events.SQSEventResponse, error) {
 		return events.SQSEventResponse{}, nil
 	}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if len(*slept) != 1 || (*slept)[0] != receiveBackoff {
-		t.Fatalf("slept = %v, want one %v back-off", *slept, receiveBackoff)
-	}
 	if api.receives != 2 {
 		t.Fatalf("receives = %d, want a retry after the back-off", api.receives)
 	}
@@ -153,9 +143,8 @@ func TestPoller_Run_StopsWhenTheContextEnds(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	api := &fakePollAPI{batches: [][]sqstypes.Message{{message("a")}}}
-	poller, _ := newTestPoller(api)
 
-	if err := poller.Run(ctx, func(context.Context, events.SQSEvent) (events.SQSEventResponse, error) {
+	if err := newTestPoller(api).Run(ctx, func(context.Context, events.SQSEvent) (events.SQSEventResponse, error) {
 		t.Fatal("handler ran after the context ended")
 		return events.SQSEventResponse{}, nil
 	}); err != nil {
@@ -163,5 +152,43 @@ func TestPoller_Run_StopsWhenTheContextEnds(t *testing.T) {
 	}
 	if api.receives != 0 {
 		t.Fatalf("receives = %d, want none", api.receives)
+	}
+}
+
+func TestPoller_Run_KeepsPollingAfterAnEmptyReceive(t *testing.T) {
+	api := &fakePollAPI{batches: [][]sqstypes.Message{{}, {message("a")}}}
+	handled := 0
+
+	runPoller(t, api, func(context.Context, events.SQSEvent) (events.SQSEventResponse, error) {
+		handled++
+		return events.SQSEventResponse{}, nil
+	})
+
+	if handled != 1 || len(api.deleted) != 1 {
+		t.Fatalf("handled = %d, deleted = %v; want the second receive delivered", handled, api.deleted)
+	}
+}
+
+// A stop signal mid-batch must not cut the deliveries: one posted but not yet
+// recorded would be posted again.
+func TestPoller_Run_FinishesTheBatchInFlightWhenStopping(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	api := &fakePollAPI{batches: [][]sqstypes.Message{{message("a")}}, cancel: cancel}
+
+	if err := newTestPoller(api).Run(ctx, func(batchCtx context.Context, _ events.SQSEvent) (events.SQSEventResponse, error) {
+		cancel()
+		if batchCtx.Err() != nil {
+			t.Fatal("the batch context ended with the stop signal")
+		}
+		if _, ok := batchCtx.Deadline(); !ok {
+			t.Fatal("the batch has no deadline")
+		}
+		return events.SQSEventResponse{}, nil
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(api.deleted) != 1 {
+		t.Fatalf("deleted = %v, want the finished batch deleted", api.deleted)
 	}
 }
