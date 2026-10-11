@@ -225,13 +225,16 @@ func (s *WebhookEventRepositoryTestSuite) TestWebhookEventRepository_RequeueForR
 	inFlight := s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryPending, time.Hour, 10*time.Second)
 	tooOld := s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryDelivered, 9*24*time.Hour, 9*24*time.Hour)
 	ofOther := s.outboxRowOf(other.ID, "deposit.confirmed", models.WebhookDeliveryDelivered, time.Hour, time.Hour)
+	neverTouched := s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryPending, time.Hour, time.Hour)
+	_, err := facades.Orm().Query().Exec(`UPDATE webhook_events SET updated_at = NULL WHERE id = ?`, neverTouched.ID)
+	s.Require().NoError(err)
 
 	now := time.Now().UTC()
 	requeued, err := s.repo.RequeueForRedelivery(ctx, cfg.ID,
-		[]uuid.UUID{delivered.ID, failed.ID, stuck.ID, inFlight.ID, tooOld.ID, ofOther.ID, uuid.New()},
+		[]uuid.UUID{delivered.ID, failed.ID, stuck.ID, inFlight.ID, tooOld.ID, ofOther.ID, neverTouched.ID, uuid.New()},
 		now.Add(-7*24*time.Hour), now.Add(-time.Minute))
 	s.Require().NoError(err)
-	s.ElementsMatch([]uuid.UUID{delivered.ID, failed.ID, stuck.ID}, func() []uuid.UUID {
+	s.ElementsMatch([]uuid.UUID{delivered.ID, failed.ID, stuck.ID, neverTouched.ID}, func() []uuid.UUID {
 		ids := make([]uuid.UUID, 0, len(requeued))
 		for _, row := range requeued {
 			ids = append(ids, row.ID)

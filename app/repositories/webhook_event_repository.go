@@ -207,7 +207,7 @@ func (r *WebhookEventRepository) RequeueForRedelivery(ctx context.Context, confi
 		WHERE webhook_config_id = ?
 		  AND id IN ?
 		  AND created_at >= (?::timestamptz AT TIME ZONE 'UTC')
-		  AND NOT (delivery_status = ? AND updated_at > (?::timestamptz AT TIME ZONE 'UTC'))
+		  AND NOT (delivery_status = ? AND updated_at IS NOT NULL AND updated_at > (?::timestamptz AT TIME ZONE 'UTC'))
 		RETURNING *`,
 		models.WebhookDeliveryPending, configID, values, createdSince, models.WebhookDeliveryPending, busySince,
 	).Scan(&events); err != nil {
