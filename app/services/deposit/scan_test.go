@@ -732,6 +732,10 @@ func TestSame_Tx_Hash(t *testing.T) {
 		{"0xabcd", "0xabce", false},
 		{"5FE9YMmi", "5FE9YMmi", true},
 		{"5FE9YMmi", "5fe9ymmi", false},
+		// XRP Ledger, Bitcoin and TRON: 32-byte hex hashes without 0x.
+		{"429100F561631FEA1B5EC4BB26B0607E753F0A5157B38824206CD298318C7516", "429100f561631fea1b5ec4bb26b0607e753f0a5157b38824206cd298318c7516", true},
+		{"429100F561631FEA1B5EC4BB26B0607E753F0A5157B38824206CD298318C7516", "429100f561631fea1b5ec4bb26b0607e753f0a5157b38824206cd298318c7517", false},
+		{"5FE9", "5fe9", false},
 	}
 	for _, tc := range cases {
 		if got := sameTxHash(tc.a, tc.b); got != tc.want {

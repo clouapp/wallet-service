@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -228,5 +229,30 @@ func TestXRP_Deposit_AWithdrawalOfTheWalletIsNotADeposit(t *testing.T) {
 	}
 	if reloaded.TxType != models.TxTypeWithdrawal || reloaded.Status != string(types.TxStatusConfirming) {
 		t.Fatalf("the withdrawal row changed: %+v", reloaded)
+	}
+}
+
+// scan:deposits --tx takes the hash as the operator pastes it; rippled and the
+// explorers show it in upper case, and the node finds it in either case.
+func TestXRP_Deposit_TargetedScanFindsAPaymentByItsHashInEitherCase(t *testing.T) {
+	tag := xrpTaggedTag
+	f := newXRPDepositFixture(t, xrpTransfer(xrpTaggedHash, xrpTaggedSender, xrpTaggedRecipient, xrpTaggedDrops, &tag))
+	f.adapter.GetTransactionBlockFn = func(_ context.Context, hash string) (uint64, error) {
+		if strings.EqualFold(hash, xrpTaggedHash) {
+			return xrpTaggedLedger, nil
+		}
+		return 0, nil
+	}
+	fixtures.InsertAddress(t, f.wallet.ID, models.ChainTXRP, xrpTaggedRecipient, "user_tagged", 1)
+
+	recorded, err := f.svc.ScanTransaction(context.Background(), models.ChainTXRP, strings.ToLower(xrpTaggedHash))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recorded != 1 {
+		t.Fatalf("recorded %d deposits, want the tagged payment", recorded)
+	}
+	if deposit := xrpDeposit(t, xrpTaggedHash); deposit.DestinationTag == nil || *deposit.DestinationTag != xrpTaggedTag {
+		t.Fatalf("deposit %+v", deposit)
 	}
 }
