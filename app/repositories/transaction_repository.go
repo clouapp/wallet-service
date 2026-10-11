@@ -229,7 +229,9 @@ func (r *TransactionRepository) FindConfirmedOutboundWithoutFee(ctx context.Cont
 // than the confirmation (a config without a creation time counts as older); it never
 // got the event when it has no webhook_events row for
 // (config, eventType, deposit id). These are the rules webhook.EnqueueScoped applies
-// to an event with OccurredAt, so republishing a returned deposit fills the gap.
+// to an event with OccurredAt, so republishing a returned deposit fills the gap. It
+// fits only events whose subject is the deposit id: deposit.confirming carries the
+// count in its subject ("<id>:<confirmations>") and is never backfilled.
 func (r *TransactionRepository) FindConfirmedDepositsMissingEvent(ctx context.Context, eventType string, from, to time.Time, chainIDs []string, limit int) ([]models.Transaction, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("list deposits missing an event: limit is required")
