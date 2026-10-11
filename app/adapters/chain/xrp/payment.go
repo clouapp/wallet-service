@@ -14,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 
 	"github.com/macrowallets/waas/app/services/addressing"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -63,6 +64,8 @@ var (
 	}
 )
 
+var _ types.MPCSignatureFinalizer = (*Live)(nil)
+
 // xrpPayment is a native Payment. Flags and NetworkID are omitted: flags
 // default to 0, and network id 1 must not carry a NetworkID field.
 type xrpPayment struct {
@@ -76,59 +79,116 @@ type xrpPayment struct {
 	TxnSignature       []byte
 }
 
-func (a *Live) BuildTransfer(ctx context.Context, req types.TransferRequest) (*types.UnsignedTx, error) {
-	if err := a.requireAltnet(ctx); err != nil {
+// xrpPaymentState is everything a payment from one account reads from the ledger.
+// destination is nil when no destination was named.
+type xrpPaymentState struct {
+	facts       xrpLedgerFacts
+	fee         *big.Int
+	source      xrpAccountState
+	destination *xrpAccountState
+}
+
+func (s xrpPaymentState) funds() chain.XRPPaymentFunds {
+	funds := chain.XRPPaymentFunds{
+		Balance:     new(big.Int).Set(s.source.Balance),
+		Reserve:     s.facts.accountReserve(s.source.OwnerCount),
+		Fee:         new(big.Int).Set(s.fee),
+		BaseReserve: new(big.Int).Set(s.facts.ReserveDrops),
+	}
+	if s.destination != nil {
+		funds.DestinationChecked = true
+		funds.DestinationFunded = s.destination.Exists
+		funds.DestinationRequiresTag = s.destination.requiresDestinationTag()
+	}
+	return funds
+}
+
+// paymentState reads the altnet ledger facts, the fee BuildTransfer bids, the source
+// account and, when to is set, the destination account. The source is read on the
+// current open ledger so a payment sent before the previous one validated takes the
+// next Sequence and sees the balance that payment left; the destination is read on
+// the validated ledger.
+func (a *Live) paymentState(ctx context.Context, from, to string) (xrpPaymentState, error) {
+	if !addressing.IsXRPClassicAddress(from) || (to != "" && !addressing.IsXRPClassicAddress(to)) {
+		return xrpPaymentState{}, fmt.Errorf("xrp payment: from and to must be classic addresses: %w", chain.ErrInvalidAddress)
+	}
+	if from == to {
+		return xrpPaymentState{}, fmt.Errorf("xrp payment: from and to are the same address: %w", chain.ErrInvalidAddress)
+	}
+	facts, err := a.altnetFacts(ctx)
+	if err != nil {
+		return xrpPaymentState{}, err
+	}
+	fee, err := a.paymentFeeDrops(ctx)
+	if err != nil {
+		return xrpPaymentState{}, err
+	}
+	source, err := a.accountState(ctx, from, "current")
+	if err != nil {
+		return xrpPaymentState{}, err
+	}
+	state := xrpPaymentState{facts: facts, fee: fee, source: source}
+	if to != "" {
+		destination, err := a.accountState(ctx, to, "validated")
+		if err != nil {
+			return xrpPaymentState{}, err
+		}
+		state.destination = &destination
+	}
+	return state, nil
+}
+
+// PaymentFunds reads what one native payment from `from` can spend: its balance,
+// its account reserve (base + owner count × increment), and the fee BuildTransfer
+// would bid. When `to` is set, it also reports whether the destination exists and
+// requires a destination tag. Nothing is built or signed.
+func (a *Live) PaymentFunds(ctx context.Context, from, to string) (chain.XRPPaymentFunds, error) {
+	state, err := a.paymentState(ctx, from, to)
+	if err != nil {
+		return chain.XRPPaymentFunds{}, err
+	}
+	return state.funds(), nil
+}
+
+func (a *Live) paymentFeeDrops(ctx context.Context) (*big.Int, error) {
+	fee, err := a.openLedgerFeeDrops(ctx)
+	if err != nil {
 		return nil, err
 	}
+	if !fee.IsUint64() || fee.Uint64() == 0 || fee.Uint64() > xrpMaxFeeDrops {
+		return nil, fmt.Errorf("xrp open ledger fee %s drops is outside 1..%d: %w", fee, xrpMaxFeeDrops, chain.ErrFee)
+	}
+	return fee, nil
+}
+
+func (a *Live) BuildTransfer(ctx context.Context, req types.TransferRequest) (*types.UnsignedTx, error) {
 	if req.Token != nil {
 		return nil, fmt.Errorf("xrp: no issued currencies in this experiment")
 	}
 	if req.Asset != "" && !types.SameAssetSymbol(req.Asset, a.cfg.NativeSymbol) {
 		return nil, fmt.Errorf("xrp: asset %q is not %s", req.Asset, a.cfg.NativeSymbol)
 	}
-	if !addressing.IsXRPClassicAddress(req.From) || !addressing.IsXRPClassicAddress(req.To) {
-		return nil, fmt.Errorf("xrp payment: from and to must be classic addresses")
-	}
-	if req.From == req.To {
-		return nil, fmt.Errorf("xrp payment: from and to are the same address")
+	if req.To == "" {
+		return nil, fmt.Errorf("xrp payment: from and to must be classic addresses: %w", chain.ErrInvalidAddress)
 	}
 	if req.Amount == nil || req.Amount.Sign() <= 0 || !req.Amount.IsUint64() {
 		return nil, fmt.Errorf("xrp payment: amount must be a positive number of drops")
 	}
 	amount := req.Amount.Uint64()
 
-	facts, err := a.ledgerFacts(ctx)
+	state, err := a.paymentState(ctx, req.From, req.To)
 	if err != nil {
 		return nil, err
 	}
-	if facts.NetworkID != altnetNetworkID {
-		return nil, fmt.Errorf("xrp rpc network_id is %d, want altnet %d", facts.NetworkID, altnetNetworkID)
-	}
-	fee, err := a.openLedgerFeeDrops(ctx)
-	if err != nil {
+	facts, fee := state.facts, state.fee
+	funds := state.funds()
+	if err = xrpReserveAllows(funds.Balance, req.Amount, fee, funds.Reserve); err != nil {
 		return nil, err
 	}
-	if !fee.IsUint64() || fee.Uint64() == 0 || fee.Uint64() > xrpMaxFeeDrops {
-		return nil, fmt.Errorf("xrp open ledger fee %s drops is outside 1..%d", fee, xrpMaxFeeDrops)
+	if err = funds.CheckDestination(req.Amount); err != nil {
+		return nil, fmt.Errorf("xrp payment to %s: %w", req.To, err)
 	}
-	balance, err := a.accountDrops(ctx, req.From)
-	if err != nil {
-		return nil, err
-	}
-	if err := xrpReserveAllows(balance, req.Amount, fee, facts.ReserveDrops); err != nil {
-		return nil, err
-	}
-	destFunded, err := a.accountExists(ctx, req.To)
-	if err != nil {
-		return nil, err
-	}
-	if !destFunded && req.Amount.Cmp(facts.ReserveDrops) < 0 {
-		return nil, fmt.Errorf("xrp payment of %s drops is below the %s-drop reserve a new account needs", req.Amount, facts.ReserveDrops)
-	}
-	sequence, err := a.accountSequence(ctx, req.From)
-	if err != nil {
-		return nil, err
-	}
+	sequence := state.source.Sequence
 	if sequence > uint64(^uint32(0)) {
 		return nil, fmt.Errorf("xrp sequence does not fit a uint32")
 	}
@@ -173,50 +233,107 @@ func (a *Live) BuildTransfer(ctx context.Context, req types.TransferRequest) (*t
 }
 
 func (a *Live) SignTransaction(_ context.Context, unsigned *types.UnsignedTx, privateKey []byte) (*types.SignedTx, error) {
-	if unsigned == nil {
-		return nil, fmt.Errorf("xrp sign: unsigned transaction is required")
-	}
 	if len(privateKey) != 32 {
 		return nil, fmt.Errorf("xrp sign: private key must be 32 bytes")
 	}
-	blob, err := hex.DecodeString(metadataString(unsigned.Metadata, "unsigned_hex"))
-	if err != nil || len(blob) == 0 || !bytesEqual(blob, unsigned.RawBytes) {
-		return nil, fmt.Errorf("xrp sign: unsigned payment is missing")
-	}
-	payment, err := parseXRPPayment(blob)
+	payment, preimage, err := keyedPayment(unsigned, compressedPub(privateKey))
 	if err != nil {
 		return nil, fmt.Errorf("xrp sign: %w", err)
-	}
-	if len(payment.TxnSignature) != 0 || len(payment.SigningPubKey) != 0 {
-		return nil, fmt.Errorf("xrp sign: payment already has a key or a signature")
-	}
-	pub := compressedPub(privateKey)
-	account, err := addressing.DeriveXRPAddress(pub)
-	if err != nil {
-		return nil, fmt.Errorf("xrp sign: %w", err)
-	}
-	from := metadataString(unsigned.Metadata, "account")
-	if account != from {
-		return nil, fmt.Errorf("xrp sign: key does not own %s", from)
-	}
-	wantID, err := addressing.DecodeXRPClassicAddress(from)
-	if err != nil || !bytesEqual(wantID, payment.Account) {
-		return nil, fmt.Errorf("xrp sign: payment account is not %s", from)
-	}
-	payment.SigningPubKey = pub
-	preimage, err := payment.serialize(true, false)
-	if err != nil {
-		return nil, err
 	}
 	priv, _ := btcec.PrivKeyFromBytes(privateKey)
 	sig := ecdsa.Sign(priv, xrpSHA512Half(xrpSignPrefix, preimage))
-	payment.TxnSignature = sig.Serialize()
+	return signedPayment(unsigned.ChainID, payment, sig.Serialize())
+}
+
+// MPCSigningDigest is the digest the threshold ceremony signs for this payment:
+// SHA-512Half of "STX\0" and the payment serialized with publicKey as its
+// SigningPubKey. publicKey must own the payment's account.
+func (a *Live) MPCSigningDigest(unsigned *types.UnsignedTx, publicKey []byte) ([]byte, error) {
+	_, preimage, err := keyedPayment(unsigned, publicKey)
+	if err != nil {
+		return nil, fmt.Errorf("xrp mpc digest: %w", err)
+	}
+	return xrpSHA512Half(xrpSignPrefix, preimage), nil
+}
+
+// FinalizeMPCSignature turns the 64-byte R||S of the threshold ceremony over
+// MPCSigningDigest into the signed payment. S is normalised to the lower half of
+// the curve order (rippled refuses a high S), and the signature must verify
+// against publicKey, which must own the payment's account.
+func (a *Live) FinalizeMPCSignature(unsigned *types.UnsignedTx, signature []byte, publicKey []byte) (*types.SignedTx, error) {
+	if len(signature) != 64 {
+		return nil, fmt.Errorf("xrp finalize: MPC signature must contain exactly 64 R/S bytes")
+	}
+	payment, preimage, err := keyedPayment(unsigned, publicKey)
+	if err != nil {
+		return nil, fmt.Errorf("xrp finalize: %w", err)
+	}
+	var r, s btcec.ModNScalar
+	if overflow := r.SetByteSlice(signature[:32]); overflow || r.IsZero() {
+		return nil, fmt.Errorf("xrp finalize: MPC signature R is out of range")
+	}
+	if overflow := s.SetByteSlice(signature[32:]); overflow || s.IsZero() {
+		return nil, fmt.Errorf("xrp finalize: MPC signature S is out of range")
+	}
+	if s.IsOverHalfOrder() {
+		s.Negate()
+	}
+	sig := ecdsa.NewSignature(&r, &s)
+	pub, err := btcec.ParsePubKey(publicKey)
+	if err != nil {
+		return nil, fmt.Errorf("xrp finalize: signing public key")
+	}
+	if !sig.Verify(xrpSHA512Half(xrpSignPrefix, preimage), pub) {
+		return nil, fmt.Errorf("xrp finalize: MPC signature does not verify against the signing key")
+	}
+	return signedPayment(unsigned.ChainID, payment, sig.Serialize())
+}
+
+// keyedPayment parses the unsigned payment, checks that publicKey owns its account,
+// and returns it with SigningPubKey set and its signing preimage.
+func keyedPayment(unsigned *types.UnsignedTx, publicKey []byte) (xrpPayment, []byte, error) {
+	if unsigned == nil {
+		return xrpPayment{}, nil, fmt.Errorf("unsigned transaction is required")
+	}
+	blob, err := hex.DecodeString(metadataString(unsigned.Metadata, "unsigned_hex"))
+	if err != nil || len(blob) == 0 || !bytesEqual(blob, unsigned.RawBytes) {
+		return xrpPayment{}, nil, fmt.Errorf("unsigned payment is missing")
+	}
+	payment, err := parseXRPPayment(blob)
+	if err != nil {
+		return xrpPayment{}, nil, err
+	}
+	if len(payment.TxnSignature) != 0 || len(payment.SigningPubKey) != 0 {
+		return xrpPayment{}, nil, fmt.Errorf("payment already has a key or a signature")
+	}
+	account, err := addressing.DeriveXRPAddress(publicKey)
+	if err != nil {
+		return xrpPayment{}, nil, err
+	}
+	from := metadataString(unsigned.Metadata, "account")
+	if account != from {
+		return xrpPayment{}, nil, fmt.Errorf("key does not own %s", from)
+	}
+	wantID, err := addressing.DecodeXRPClassicAddress(from)
+	if err != nil || !bytesEqual(wantID, payment.Account) {
+		return xrpPayment{}, nil, fmt.Errorf("payment account is not %s", from)
+	}
+	payment.SigningPubKey = append([]byte(nil), publicKey...)
+	preimage, err := payment.serialize(true, false)
+	if err != nil {
+		return xrpPayment{}, nil, err
+	}
+	return payment, preimage, nil
+}
+
+func signedPayment(chainID string, payment xrpPayment, derSignature []byte) (*types.SignedTx, error) {
+	payment.TxnSignature = derSignature
 	signedBlob, err := payment.serialize(true, true)
 	if err != nil {
 		return nil, err
 	}
 	txHash := strings.ToUpper(hex.EncodeToString(xrpSHA512Half(xrpHashPrefix, signedBlob)))
-	return &types.SignedTx{ChainID: unsigned.ChainID, TxHash: txHash, RawBytes: signedBlob}, nil
+	return &types.SignedTx{ChainID: chainID, TxHash: txHash, RawBytes: signedBlob}, nil
 }
 
 func (a *Live) BroadcastTransaction(ctx context.Context, signed *types.SignedTx) (string, error) {
@@ -331,20 +448,27 @@ func (a *Live) VerifySignedTransaction(unsigned *types.UnsignedTx, signed *types
 }
 
 func (a *Live) requireAltnet(ctx context.Context) error {
+	_, err := a.altnetFacts(ctx)
+	return err
+}
+
+// altnetFacts refuses anything but the altnet testnet adapter and returns the
+// validated ledger facts it read to check the network.
+func (a *Live) altnetFacts(ctx context.Context) (xrpLedgerFacts, error) {
 	if a == nil || !a.cfg.IsTestnet {
-		return fmt.Errorf("xrp payments require the altnet testnet adapter")
+		return xrpLedgerFacts{}, fmt.Errorf("xrp payments require the altnet testnet adapter")
 	}
 	if err := refuseMainnetEndpoint(a.endpoint()); err != nil {
-		return err
+		return xrpLedgerFacts{}, err
 	}
 	facts, err := a.ledgerFacts(ctx)
 	if err != nil {
-		return err
+		return xrpLedgerFacts{}, err
 	}
 	if facts.NetworkID != altnetNetworkID {
-		return fmt.Errorf("xrp rpc network_id is %d, want altnet %d", facts.NetworkID, altnetNetworkID)
+		return xrpLedgerFacts{}, fmt.Errorf("xrp rpc network_id is %d, want altnet %d", facts.NetworkID, altnetNetworkID)
 	}
-	return nil
+	return facts, nil
 }
 
 func refuseMainnetEndpoint(raw string) error {
@@ -366,7 +490,7 @@ func xrpReserveAllows(balance, amount, fee, reserve *big.Int) error {
 	left := new(big.Int).Sub(balance, amount)
 	left.Sub(left, fee)
 	if left.Cmp(reserve) < 0 {
-		return fmt.Errorf("xrp payment would leave %s drops, below the %s-drop reserve", left, reserve)
+		return fmt.Errorf("xrp payment would leave %s drops, below the %s-drop reserve: %w", left, reserve, chain.ErrInsufficientFunds)
 	}
 	return nil
 }
