@@ -18,7 +18,9 @@ today and has a fix tracked elsewhere. Do not read either as permission.
 
 - The same binary serves every process; `vault.lambda_mode` (`LAMBDA_MODE`) picks the
   handler in `main.go`: empty → local Goravel HTTP server (+ `localworkers`), `api`,
-  `deposit_scanner`, `confirmation_tracker`, `webhook_reconciler`, `webhook_worker`.
+  `deposit_scanner`, `confirmation_tracker`, `webhook_reconciler`, `webhook_worker`, and
+  `webhook_poller` (a long-running process that stands in for the `webhook_worker` Lambda
+  on a host without Lambda, see `.ai/guidelines/queues-and-workers.md`).
   Deploy (SAM `template.yaml`, EventBridge, the Lambda modes) is out of scope for any
   reorganization: `main.go` only has to keep compiling. — guarded by `go build ./...`.
 - Goravel is assembled in `bootstrap/app.go` (`foundation.Setup()…Create()`): migrations,
