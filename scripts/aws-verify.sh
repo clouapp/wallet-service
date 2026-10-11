@@ -30,8 +30,9 @@ probe_secret=""
 
 awsq() { aws --region "$region" --output text "$@"; }
 ok() { printf '  ok    %s\n' "$*"; }
+# On stdout, like ok, so the report reads in order.
 fail() {
-	printf '  FAIL  %s\n' "$*" >&2
+	printf '  FAIL  %s\n' "$*"
 	failures=$((failures + 1))
 }
 
@@ -72,7 +73,13 @@ send_probe() {
 		--query MessageId >/dev/null
 }
 
-echo "identity: $(awsq sts get-caller-identity --query Arn) (region $region, environment $env_name)"
+# Without an identity every check below fails the same way; say what is missing instead.
+if ! identity="$(awsq sts get-caller-identity --query Arn 2>&1)"; then
+	echo "aws-verify: no usable AWS identity${AWS_PROFILE:+ for profile $AWS_PROFILE}: $(echo "$identity" | tr -s '\n' ' ')" >&2
+	echo "aws-verify: deploy the stack (make deploy ENV=$env_name), then install this host's profile (make server-credentials)" >&2
+	exit 2
+fi
+echo "identity: $identity (region $region, environment $env_name)"
 
 echo "SQS"
 check_queue() {
