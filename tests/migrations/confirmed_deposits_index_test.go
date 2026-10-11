@@ -22,7 +22,7 @@ func confirmedDepositsIndexes(t *testing.T) int64 {
 
 func TestConfirmed_DepositsIndex_CoversTheDepositEventBackfillAndDropsIt(t *testing.T) {
 	fixtures.TestDB(t)
-	migration := &migrations.M00000000000610CreateConfirmedDepositsIndex{}
+	migration := &migrations.M00000000000620CreateConfirmedDepositsIndex{}
 	assert.Equal(t, int64(1), confirmedDepositsIndexes(t))
 
 	require.NoError(t, migration.Down())
