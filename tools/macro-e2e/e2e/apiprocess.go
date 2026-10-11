@@ -27,7 +27,6 @@ const (
 	httpOK                 = http.StatusOK
 	binaryBackupStamp      = "20060102T150405Z"
 	freshBinarySuffix      = ".new"
-	deletedExeSuffix       = " (deleted)"
 	logFileFlags           = os.O_WRONLY | os.O_CREATE | os.O_APPEND
 	goBinary               = "go"
 	noValue                = "-"
@@ -296,16 +295,6 @@ func HTTPHealth(url string) func(ctx context.Context) (int, bool) {
 		_ = response.Body.Close()
 		return response.StatusCode, true
 	}
-}
-
-// ProcessExecutable is readlink(/proc/<pid>/exe) without " (deleted)"; false once the
-// process is gone (or a zombie).
-func ProcessExecutable(pid int) (string, bool) {
-	executable, err := os.Readlink("/proc/" + strconv.Itoa(pid) + "/exe")
-	if err != nil {
-		return "", false
-	}
-	return strings.TrimSuffix(executable, deletedExeSuffix), true
 }
 
 // GoBuild compiles the back end (`go build -o output .` in backDir).
