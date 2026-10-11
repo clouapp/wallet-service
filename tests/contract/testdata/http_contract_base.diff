@@ -360,3 +360,6 @@ added: 90 create a scoped account token: POST /v1/accounts/{{account}}/tokens
 added: 91 external wallets outside the token scope: GET /api/v1/wallets
 added: 92 external transaction with a malformed id: GET /api/v1/transactions/not-a-uuid
 added: 93 external withdraw preview of an XRP issued currency: POST /api/v1/wallets/{{xrpWallet}}/withdraw/preview
+added: 94 external transaction changes: GET /api/v1/transactions?updated_since=2026-01-01T00:00:00Z
+added: 95 external transaction changes with a malformed cursor: GET /api/v1/transactions?cursor=not-a-cursor
+added: 96 external transaction changes with a malformed timestamp: GET /api/v1/transactions?updated_since=yesterday

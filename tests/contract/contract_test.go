@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
@@ -429,6 +430,15 @@ func refusalScenario(apiRate *apiRateLimit) []step {
 		{name: "external transaction with a malformed id", method: "GET", path: "/api/v1/transactions/not-a-uuid", bearer: "scopedToken"},
 		{name: "external withdraw preview of an XRP issued currency", method: "POST", path: "/api/v1/wallets/{{xrpWallet}}/withdraw/preview",
 			bearer: "scopedToken", body: `{"asset":"usdt","amount":"1"}`},
+
+		// The changes feed of the external transactions: a page that ends the feed,
+		// then the two query refusals.
+		{name: "external transaction changes", method: "GET", path: "/api/v1/transactions?updated_since=2026-01-01T00:00:00Z",
+			bearer: "scopedToken", before: insertContractDeposit},
+		{name: "external transaction changes with a malformed cursor", method: "GET", path: "/api/v1/transactions?cursor=not-a-cursor",
+			bearer: "scopedToken"},
+		{name: "external transaction changes with a malformed timestamp", method: "GET", path: "/api/v1/transactions?updated_since=yesterday",
+			bearer: "scopedToken"},
 	}
 }
 
@@ -504,6 +514,23 @@ func insertXRPWallet(t *testing.T, vars map[string]string) {
 	t.Helper()
 	accountID := mustUUID(t, vars["account"])
 	vars["xrpWallet"] = fixtures.InsertWalletWithAccount(t, models.ChainXRP, &accountID).ID.String()
+}
+
+// insertContractDeposit records one confirmed ETH deposit on the scenario's
+// wallet, so the changes feed step renders a listed transaction.
+func insertContractDeposit(t *testing.T, vars map[string]string) {
+	t.Helper()
+	confirmedAt := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	deposit := models.Transaction{
+		ID: uuid.New(), WalletID: mustUUID(t, vars["wallet"]), ExternalUserID: "contract-user", Chain: "eth",
+		TxType: models.TxTypeDeposit, TxHash: "0xcontractdeposit", LogIndex: 0, FromAddress: "0xcontractsender",
+		ToAddress: fixtureDepositAddress, Amount: "1500000000000000000", Asset: "ETH", Confirmations: 12,
+		RequiredConfs: 12, Status: "confirmed", BlockNumber: 100, ConfirmedAt: &confirmedAt,
+		Direction: models.TxDirectionInbound, Source: models.TxSourceChain, RawPayload: "{}",
+	}
+	if err := facades.Orm().Query().Create(&deposit); err != nil {
+		t.Fatalf("insert contract deposit: %v", err)
+	}
 }
 
 func insertUndeliverableWebhook(t *testing.T, vars map[string]string) {

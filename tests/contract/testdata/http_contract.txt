@@ -468,3 +468,18 @@ content-type: application/json; charset=utf-8
 status: 422
 content-type: application/json; charset=utf-8
 {"error":{"code":"unsupported_chain","message":"unsupported_chain"}}
+
+### 94 external transaction changes: GET /api/v1/transactions?updated_since=2026-01-01T00:00:00Z
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[{"created_at":"<time>","updated_at":"<time>","id":"<uuid:70>","address_id":null,"wallet_id":"<uuid:56>","external_user_id":"contract-user","chain":"eth","tx_type":"deposit","tx_hash":"0xcontractdeposit","log_index":-1,"from_address":"0xcontractsender","to_address":"0x1111111111111111111111111111111111111111","amount":"1500000000000000000","asset":"ETH","token_contract":"","confirmations":12,"required_confs":12,"status":"confirmed","fee":"","block_number":100,"block_hash":"","error_message":"","confirmed_at":"<time>","source":"chain","type":"deposit","direction":"incoming","chain_direction":"inbound","transaction_id":"<uuid:70>","amount_base_units":"1500000000000000000","required_confirmations":12}],"limit":50,"next_cursor":null,"offset":0,"total":1}
+
+### 95 external transaction changes with a malformed cursor: GET /api/v1/transactions?cursor=not-a-cursor
+status: 400
+content-type: application/json; charset=utf-8
+{"error":{"code":"invalid_request","message":"cursor is invalid"}}
+
+### 96 external transaction changes with a malformed timestamp: GET /api/v1/transactions?updated_since=yesterday
+status: 400
+content-type: application/json; charset=utf-8
+{"error":{"code":"invalid_request","message":"updated_since must be an RFC 3339 timestamp"}}
