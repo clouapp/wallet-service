@@ -170,6 +170,13 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   value is never in the database. — guarded by `app/services/mpc/*_test.go`
   (`TestEncrypt_Decrypt_RoundTrip`, `TestDecrypt_Wrong_Passphrase`, keygen and signing tests)
   and `TestValidate_Existing_SeedWalletSecret*` (`database/seeders`).
+- Share B is created sealed with the KMS key `MASTER_KEY_REF` names (`KmsKeyId`); a local
+  reference leaves Secrets Manager on its default key. `app/services/sharemigration`
+  (`secrets:migrate-shares`) is a custody service: it moves share B between two Secrets
+  Managers, holds the bytes only in memory, zeroes them, never writes the source, and moves
+  `MPCSecretARN` with a compare-and-swap only after the copy reads back equal. — guarded by
+  `app/adapters/secretsmanager/wallet_store_test.go`, `app/services/sharemigration/service_test.go`
+  and `TestWallet_Repository_Suite` (`TestSetMPCSecretARN_*`).
 - Key material (shares, passphrases, derived keys) is never returned after the one-time
   recovery material at creation, never logged, queued or cached. — guarded by
   `TestWallet_Recovery_MaterialSuite` (`tests/feature/api/external/wallets/wallets_recovery_material_test.go`).
@@ -187,13 +194,16 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 | Mechanism | Carries | Consumer |
 |---|---|---|
 | Goravel queue, `sync` connection (`QUEUE_CONNECTION`, default `sync`; `config/queue.go`) | credential mail (`jobs.SendCredentialMailJob`, always `DispatchSync`) | runs in the dispatching process. The `database` connection (queue `blockchain`) is configured but nothing runs `queue:work` and no job uses it |
-| AWS SQS (`app/adapters/queue/sqs`, port `queue.Sender`) | outbound webhook delivery | `webhook_worker` Lambda |
+| AWS SQS (`app/adapters/queue/sqs`, port `queue.Sender`) | outbound webhook delivery | `webhook_worker` Lambda, or on a host without Lambda the `webhook_poller` process (same handler) |
 | `app/services/localworkers` | local stand-in for `confirmation_tracker` and `webhook_worker`, and the wallet balance refresh loop (and optional deposit scan) | started from `main.go` in local mode only |
 
 - Local webhook delivery from the outbox runs only when no SQS webhook queue is
   configured, so a message is never drained twice. — guarded by
   `TestStart_Skips_OutboxWhenAQueueDelivers` (`app/services/localworkers`) and
   `TestOne_Consumer_PerQueue` (`tests/architecture`).
+- `webhook_poller` replaces the `webhook_worker` Lambda where none runs; the two never consume
+  one queue together. — **UNGUARDED**: `TestOne_Consumer_PerQueue` reads the consumers from
+  `template.yaml` and cannot see where the poller runs; this rests on the deployment.
 - No job payload carries a credential (tokens, passphrases, shares): a credential mail job
   carries `(subject_id, purpose)` and mints the token when it runs. — guarded by
   `app/jobs/send_credential_mail_test.go` and `TestJob_Payload_IsDecodedNotPositional`.
