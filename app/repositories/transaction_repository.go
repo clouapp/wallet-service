@@ -289,6 +289,23 @@ func (r *TransactionRepository) ListForAccount(ctx context.Context, accountID uu
 	return listTransactions(countQuery, dataQuery, limit, offset, "created_at DESC")
 }
 
+// ListChangedForAccount returns up to limit transactions of the account's wallets whose
+// (updated_at, id) comes strictly after (afterUpdatedAt, afterID), in that order, and how
+// many match from that position on. The nil id makes the position inclusive of
+// afterUpdatedAt. The filters are those of ListForAccount. A limit below one is an error.
+func (r *TransactionRepository) ListChangedForAccount(ctx context.Context, accountID uuid.UUID, chainID, txType, status, userID string, afterUpdatedAt time.Time, afterID uuid.UUID, limit int) ([]models.Transaction, int64, error) {
+	if limit <= 0 {
+		return nil, 0, fmt.Errorf("list changed transactions: limit is required")
+	}
+	scope := "wallet_id IN (SELECT id FROM wallets WHERE account_id = ?)"
+	after := "(updated_at, id) > (?, ?)"
+	since := afterUpdatedAt.UTC()
+	countQuery := r.Query(ctx).Model(&models.Transaction{}).Where(scope, accountID).Where(after, since, afterID)
+	dataQuery := r.Query(ctx).Where(scope, accountID).Where(after, since, afterID)
+	countQuery, dataQuery = applyTransactionFilters(countQuery, dataQuery, chainID, txType, status, userID)
+	return listTransactions(countQuery, dataQuery, limit, 0, "updated_at ASC, id ASC")
+}
+
 // ListByWalletAndChain lists one wallet's transactions on a chain, newest block first.
 func (r *TransactionRepository) ListByWalletAndChain(ctx context.Context, walletID uuid.UUID, chainID string, limit, offset int) ([]models.Transaction, int64, error) {
 	if limit <= 0 {
