@@ -2,6 +2,7 @@ package depositevents
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -62,6 +63,7 @@ func newFixture() fixture {
 			"bsc/bnb":       18,
 			"base/eth":      18,
 			"arbitrum/USDC": 6,
+			"txrp/xrp":      6,
 		},
 	})
 	publisher.now = func() time.Time { return time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC) }
@@ -205,5 +207,47 @@ func TestPublish_Wallet_WithoutAccountIsNotScopedToAnyAccount(t *testing.T) {
 	}
 	if payload.Amount != "0.000001" {
 		t.Fatalf("amount = %q, want 0.000001", payload.Amount)
+	}
+}
+
+// payloadJSON is the deposit webhook data object as a receiver decodes it.
+func payloadJSON(t *testing.T, payload Payload) map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	return decoded
+}
+
+func TestPublish_Carries_TheXRPDestinationTagOnlyWhenThePaymentHadOne(t *testing.T) {
+	tag := uint32(777001)
+	tagged := newFixture()
+	tx := tagged.deposit("txrp", "xrp", "1000000")
+	tx.DestinationTag = &tag
+	if err := tagged.publisher.Publish(context.Background(), types.EventDepositPending, tx); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	_, payload := onlyPayload(t, tagged.enqueuer)
+	if got := payloadJSON(t, payload)["destination_tag"]; got != float64(tag) {
+		t.Fatalf("destination_tag = %v, want %d", got, tag)
+	}
+
+	for _, deposit := range []struct{ chain, asset, baseUnits string }{
+		{"txrp", "xrp", "1000000"},
+		{"polygon", "USDC", "25000000"},
+	} {
+		untagged := newFixture()
+		if err := untagged.publisher.Publish(context.Background(), types.EventDepositPending, untagged.deposit(deposit.chain, deposit.asset, deposit.baseUnits)); err != nil {
+			t.Fatalf("Publish: %v", err)
+		}
+		_, payload := onlyPayload(t, untagged.enqueuer)
+		if got, present := payloadJSON(t, payload)["destination_tag"]; present {
+			t.Fatalf("%s deposit without a tag carries destination_tag %v", deposit.chain, got)
+		}
 	}
 }

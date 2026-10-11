@@ -53,7 +53,9 @@ type AssetDecimals interface {
 
 // Payload is the data object of every deposit webhook. Amount is the exact decimal
 // rendering of AmountBaseUnits with Decimals; receivers should credit from
-// AmountBaseUnits and Decimals and may use Amount as a cross-check.
+// AmountBaseUnits and Decimals and may use Amount as a cross-check. DestinationTag
+// is the XRP Ledger destination tag the payment carried, next to ToAddress; it is
+// omitted when the payment had none and on every other chain.
 type Payload struct {
 	ID                    string  `json:"id"`
 	TransactionID         string  `json:"transaction_id"`
@@ -66,6 +68,7 @@ type Payload struct {
 	LogIndex              int     `json:"log_index"`
 	FromAddress           string  `json:"from_address"`
 	ToAddress             string  `json:"to_address"`
+	DestinationTag        *uint32 `json:"destination_tag,omitempty"`
 	Asset                 string  `json:"asset"`
 	TokenContract         *string `json:"token_contract"`
 	Amount                string  `json:"amount"`
@@ -185,6 +188,10 @@ func (p *Publisher) payload(tx models.Transaction) (Payload, error) {
 	if tx.AddressID != nil {
 		addressID := tx.AddressID.String()
 		payload.AddressID = &addressID
+	}
+	if tx.DestinationTag != nil {
+		tag := *tx.DestinationTag
+		payload.DestinationTag = &tag
 	}
 	if contract := strings.TrimSpace(tx.TokenContract); contract != "" {
 		payload.TokenContract = &contract

@@ -247,6 +247,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		LogIndex:       models.ScannerDepositLogIndex,
 		FromAddress:    transfer.From,
 		ToAddress:      transfer.To,
+		DestinationTag: transfer.DestinationTag,
 		Amount:         transfer.Amount.String(),
 		Asset:          asset,
 		TokenContract:  tokenContract,
