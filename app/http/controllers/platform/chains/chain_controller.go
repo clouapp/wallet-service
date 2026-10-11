@@ -34,8 +34,8 @@ func NewChainController(thresholds *chainsvc.Thresholds, rpc *chainsvc.RPC) *Cha
 
 // Update godoc
 //
-//	@Summary		Update chain sweep thresholds
-//	@Description	Writes gas_readiness_threshold_raw, dust_threshold_native_raw, and dust_threshold_usd. An omitted field is left unchanged. An unknown chain is 404 for a platform admin. A negative amount is 422 and is not stored. The RPC URL is not accepted and is not returned.
+//	@Summary		Update chain sweep thresholds, confirmations and finality
+//	@Description	Writes gas_readiness_threshold_raw, dust_threshold_native_raw, dust_threshold_usd, required_confirmations and finality. An omitted field is left unchanged. An unknown chain is 404 for a platform admin. A negative amount or a confirmation count below 1 is 422 and is not stored. finality is confirmations, finalized_tag (EVM chains only) or solidified (TRON chains only); another value, or one the chain cannot read, is 422. Moving a chain from finalized_tag or solidified to confirmations needs required_confirmations in the same body (422 otherwise). Both apply to the transactions recorded after the chain registry next loads the row. The RPC URL is not accepted and is not returned.
 //	@Tags			Platform Chains
 //	@Security		BearerAuth
 //	@Accept			json

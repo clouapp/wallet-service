@@ -142,15 +142,27 @@ type Chain struct {
 	Finality string `gorm:"type:varchar(20);not null;default:confirmations"`
 }
 
-// ChainThresholdWrite is the subset of threshold columns a platform patch may
-// store. A nil pointer leaves that column unchanged.
+// ChainThresholdWrite is the subset of chain columns a platform patch may store:
+// the sweep thresholds, the confirmation count and the finality policy. A nil
+// pointer leaves that column unchanged.
 type ChainThresholdWrite struct {
 	GasReadinessThresholdRaw *string
 	DustThresholdNativeRaw   *string
 	DustThresholdUSD         *string
+	RequiredConfirmations    *int
+	Finality                 *string
 }
 
 func (c *Chain) TableName() string { return "chains" }
+
+// FinalityPolicy is the chain's finality policy; a row that names none counts
+// confirmations.
+func (c *Chain) FinalityPolicy() string {
+	if c.Finality == "" {
+		return FinalityConfirmations
+	}
+	return c.Finality
+}
 
 func (c *Chain) FlagScopeIdentifier() string {
 	return "chain:" + c.ID

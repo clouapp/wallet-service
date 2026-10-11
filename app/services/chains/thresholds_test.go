@@ -199,6 +199,12 @@ func (s *thresholdStore) UpdateThresholds(_ context.Context, id string, write mo
 		}
 		s.chain.DustThresholdUSD = numeric.NewNullDecimal(parsed)
 	}
+	if write.RequiredConfirmations != nil {
+		s.chain.RequiredConfirmations = *write.RequiredConfirmations
+	}
+	if write.Finality != nil {
+		s.chain.Finality = *write.Finality
+	}
 	return nil
 }
 
@@ -244,7 +250,126 @@ func chainRow(id, adapter, gas, dust, usd string) *models.Chain {
 		DustThresholdNativeRaw:   &dust,
 		DustThresholdUSD:         numeric.NewNullDecimal(parsed),
 		RequiredConfirmations:    12,
+		Finality:                 models.FinalityConfirmations,
 	}
+}
+
+func polygonChain() *models.Chain {
+	chain := chainRow(models.ChainPolygon, models.AdapterTypeEVM, "500000000000000000", "100000000000000000", "0.1")
+	chain.RequiredConfirmations = 3
+	chain.Finality = models.FinalityFinalizedTag
+	return chain
+}
+
+func TestUpdate_Thresholds_StoresAFinalityTheChainCanReadAndAuditsIt(t *testing.T) {
+	t.Parallel()
+
+	store := &thresholdStore{chain: ethChain("5", "1", "1")}
+	activity := &thresholdActivity{}
+	service := chainsvc.NewThresholds(chainsvc.ThresholdDeps{
+		Store: store, Admins: &thresholdAdmins{allow: true}, Activity: activity,
+	})
+
+	view, err := service.Update(context.Background(), uuid.New(), "eth", thresholdObject(t, `{"finality":"finalized_tag"}`))
+	require.NoError(t, err)
+	assert.Equal(t, models.FinalityFinalizedTag, view.Finality)
+	assert.Equal(t, 12, view.RequiredConfirmations, "the count stays when the chain moves to its own finality")
+	require.NotNil(t, store.write)
+	require.NotNil(t, store.write.Finality)
+	assert.Equal(t, models.FinalityFinalizedTag, *store.write.Finality)
+	assert.Nil(t, store.write.RequiredConfirmations)
+	assert.Nil(t, store.write.GasReadinessThresholdRaw)
+	require.Len(t, activity.rows, 1)
+	encoded, err := activity.rows[0].Metadata.Encode()
+	require.NoError(t, err)
+	assert.Contains(t, encoded, `"finality"`)
+}
+
+func TestUpdate_Thresholds_RefusesAFinalityTheChainCannotRead(t *testing.T) {
+	t.Parallel()
+
+	for body, message := range map[string]string{
+		`{"finality":"solidified"}`: "is not supported on this chain",
+		`{"finality":"fast"}`:       "must be one of confirmations, finalized_tag, solidified",
+		`{"finality":null}`:         "must be one of confirmations, finalized_tag, solidified",
+		`{"finality":3}`:            "must be one of confirmations, finalized_tag, solidified",
+	} {
+		store := &thresholdStore{chain: ethChain("5", "1", "1")}
+		activity := &thresholdActivity{}
+		service := chainsvc.NewThresholds(chainsvc.ThresholdDeps{
+			Store: store, Admins: &thresholdAdmins{allow: true}, Activity: activity,
+		})
+		_, err := service.Update(context.Background(), uuid.New(), "eth", thresholdObject(t, body))
+		var invalid *chainsvc.ValidationError
+		require.ErrorAs(t, err, &invalid, body)
+		assert.Equal(t, []string{message}, invalid.Fields["finality"], body)
+		assert.Nil(t, store.write, body)
+		assert.Empty(t, activity.rows, body)
+	}
+
+	btc := &thresholdStore{chain: btcChain("", "10000", "0")}
+	service := chainsvc.NewThresholds(chainsvc.ThresholdDeps{
+		Store: btc, Admins: &thresholdAdmins{allow: true}, Activity: &thresholdActivity{},
+	})
+	_, err := service.Update(context.Background(), uuid.New(), "btc", thresholdObject(t, `{"finality":"finalized_tag"}`))
+	var invalid *chainsvc.ValidationError
+	require.ErrorAs(t, err, &invalid)
+	assert.Equal(t, []string{"is not supported on this chain"}, invalid.Fields["finality"])
+}
+
+// Leaving finalized_tag or solidified for confirmations makes the count decide
+// again, and the count a native-finality chain keeps is only its finality lag (3 on
+// Polygon): the patch must name the count it switches to.
+func TestUpdate_Thresholds_LeavingNativeFinalityNeedsTheConfirmationCount(t *testing.T) {
+	t.Parallel()
+
+	store := &thresholdStore{chain: polygonChain()}
+	service := chainsvc.NewThresholds(chainsvc.ThresholdDeps{
+		Store: store, Admins: &thresholdAdmins{allow: true}, Activity: &thresholdActivity{},
+	})
+
+	_, err := service.Update(context.Background(), uuid.New(), "polygon", thresholdObject(t, `{"finality":"confirmations"}`))
+	var invalid *chainsvc.ValidationError
+	require.ErrorAs(t, err, &invalid)
+	assert.Equal(t, []string{"is required when finality changes to confirmations"}, invalid.Fields["required_confirmations"])
+	assert.Nil(t, store.write)
+	assert.Equal(t, models.FinalityFinalizedTag, store.chain.Finality)
+
+	view, err := service.Update(context.Background(), uuid.New(), "polygon", thresholdObject(t, `{"finality":"confirmations","required_confirmations":128}`))
+	require.NoError(t, err)
+	assert.Equal(t, models.FinalityConfirmations, view.Finality)
+	assert.Equal(t, 128, view.RequiredConfirmations)
+	assert.Equal(t, models.FinalityConfirmations, store.chain.Finality)
+	assert.Equal(t, 128, store.chain.RequiredConfirmations)
+}
+
+func TestUpdate_Thresholds_StoresAPositiveConfirmationCount(t *testing.T) {
+	t.Parallel()
+
+	store := &thresholdStore{chain: ethChain("5", "1", "1")}
+	service := chainsvc.NewThresholds(chainsvc.ThresholdDeps{
+		Store: store, Admins: &thresholdAdmins{allow: true}, Activity: &thresholdActivity{},
+	})
+
+	view, err := service.Update(context.Background(), uuid.New(), "eth", thresholdObject(t, `{"required_confirmations":24}`))
+	require.NoError(t, err)
+	assert.Equal(t, 24, view.RequiredConfirmations)
+	assert.Equal(t, models.FinalityConfirmations, view.Finality)
+	assert.Equal(t, 24, store.chain.RequiredConfirmations)
+
+	for body, message := range map[string]string{
+		`{"required_confirmations":0}`:          "must be at least 1",
+		`{"required_confirmations":4294967296}`: "is too large",
+		`{"required_confirmations":"twelve"}`:   "must be an integer",
+		`{"required_confirmations":null}`:       "must be an integer",
+		`{"required_confirmations":-1}`:         "must not be negative",
+	} {
+		_, err := service.Update(context.Background(), uuid.New(), "eth", thresholdObject(t, body))
+		var invalid *chainsvc.ValidationError
+		require.ErrorAs(t, err, &invalid, body)
+		assert.Equal(t, []string{message}, invalid.Fields["required_confirmations"], body)
+	}
+	assert.Equal(t, 24, store.chain.RequiredConfirmations)
 }
 
 func thresholdObject(t *testing.T, raw string) map[string]json.RawMessage {

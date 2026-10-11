@@ -2571,7 +2571,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Writes gas_readiness_threshold_raw, dust_threshold_native_raw, and dust_threshold_usd. An omitted field is left unchanged. An unknown chain is 404 for a platform admin. A negative amount is 422 and is not stored. The RPC URL is not accepted and is not returned.",
+                "description": "Writes gas_readiness_threshold_raw, dust_threshold_native_raw, dust_threshold_usd, required_confirmations and finality. An omitted field is left unchanged. An unknown chain is 404 for a platform admin. A negative amount or a confirmation count below 1 is 422 and is not stored. finality is confirmations, finalized_tag (EVM chains only) or solidified (TRON chains only); another value, or one the chain cannot read, is 422. Moving a chain from finalized_tag or solidified to confirmations needs required_confirmations in the same body (422 otherwise). Both apply to the transactions recorded after the chain registry next loads the row. The RPC URL is not accepted and is not returned.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2581,7 +2581,7 @@ const docTemplate = `{
                 "tags": [
                     "Platform Chains"
                 ],
-                "summary": "Update chain sweep thresholds",
+                "summary": "Update chain sweep thresholds, confirmations and finality",
                 "parameters": [
                     {
                         "type": "string",
@@ -3991,7 +3991,7 @@ const docTemplate = `{
                         "SignatureAuth": []
                     }
                 ],
-                "description": "Returns blockchain networks filtered by the account's environment",
+                "description": "Returns blockchain networks filtered by the account's environment. finality is the rule that confirms a chain's transactions: confirmations (status follows confirmations against required_confirmations), finalized_tag (EVM: confirmed once the block is at or below the node's finalized block) or solidified (TRON: at or below the solidified block). Under finalized_tag and solidified, required_confirmations is the typical finality lag, kept for \"n/N confirmations\" displays; the status is decided by the policy.",
                 "produces": [
                     "application/json"
                 ],
@@ -6731,11 +6731,17 @@ const docTemplate = `{
                 "dust_threshold_usd": {
                     "type": "string"
                 },
+                "finality": {
+                    "type": "string"
+                },
                 "gas_readiness_threshold_raw": {
                     "type": "string"
                 },
                 "id": {
                     "type": "string"
+                },
+                "required_confirmations": {
+                    "type": "integer"
                 }
             }
         },
@@ -6753,6 +6759,15 @@ const docTemplate = `{
         "controllers.ChainInfo": {
             "type": "object",
             "properties": {
+                "finality": {
+                    "type": "string",
+                    "enum": [
+                        "confirmations",
+                        "finalized_tag",
+                        "solidified"
+                    ],
+                    "example": "confirmations"
+                },
                 "id": {
                     "type": "string",
                     "example": "eth"

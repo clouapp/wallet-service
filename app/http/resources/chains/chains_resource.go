@@ -10,6 +10,11 @@ import (
 // model wire, including embedded timestamps. The RPC URL and threshold fields
 // stay off the wire. A nil page stays nil; an empty page stays empty. A nil
 // chain stays null. A non-nil empty icon URL stays "".
+//
+// Finality is the rule that confirms the chain's transactions: "confirmations"
+// (RequiredConfirmations of them), or the chain's own finality, "finalized_tag"
+// (EVM) or "solidified" (TRON), under which RequiredConfirmations is only the
+// typical finality lag, kept for clients that show "n/N confirmations".
 type Chain struct {
 	CreatedAt             *carbon.DateTime `json:"created_at"`
 	UpdatedAt             *carbon.DateTime `json:"updated_at"`
@@ -22,6 +27,7 @@ type Chain struct {
 	IsTestnet             bool             `json:"is_testnet"`
 	MainnetChainID        *string          `json:"mainnet_chain_id,omitempty"`
 	RequiredConfirmations int              `json:"required_confirmations"`
+	Finality              string           `json:"finality"`
 	IconURL               *string          `json:"icon_url,omitempty"`
 	DisplayOrder          int              `json:"display_order"`
 	Status                string           `json:"status"`
@@ -41,6 +47,7 @@ func ChainFrom(chain models.Chain) Chain {
 		IsTestnet:             chain.IsTestnet,
 		MainnetChainID:        chain.MainnetChainID,
 		RequiredConfirmations: chain.RequiredConfirmations,
+		Finality:              chain.FinalityPolicy(),
 		IconURL:               chain.IconURL,
 		DisplayOrder:          chain.DisplayOrder,
 		Status:                chain.Status,

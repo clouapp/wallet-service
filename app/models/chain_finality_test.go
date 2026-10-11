@@ -41,3 +41,14 @@ func TestTransaction_FinalityPolicy_ARowWithoutOneCountsConfirmations(t *testing
 		t.Fatalf("stored finality reads %q", got)
 	}
 }
+
+func TestChain_FinalityPolicy_ARowWithoutOneCountsConfirmations(t *testing.T) {
+	t.Parallel()
+
+	if got := (&Chain{}).FinalityPolicy(); got != FinalityConfirmations {
+		t.Fatalf("empty finality reads %q, want %q", got, FinalityConfirmations)
+	}
+	if got := (&Chain{Finality: FinalityFinalizedTag}).FinalityPolicy(); got != FinalityFinalizedTag {
+		t.Fatalf("stored finality reads %q", got)
+	}
+}

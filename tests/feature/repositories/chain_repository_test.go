@@ -69,3 +69,31 @@ func (s *ChainRepositoryTestSuite) TestFind_Active_AndByTestnet() {
 	s.Require().Len(testnets, 1)
 	s.Equal("teth", testnets[0].ID)
 }
+
+func (s *ChainRepositoryTestSuite) TestCreate_DefaultsTheFinalityToConfirmations() {
+	s.Require().NoError(s.repo.Create(context.Background(), s.chain("eth", false, "active")))
+
+	found, err := s.repo.FindByID(context.Background(), "eth")
+	s.Require().NoError(err)
+	s.Equal(models.FinalityConfirmations, found.Finality)
+}
+
+func (s *ChainRepositoryTestSuite) TestUpdate_Thresholds_WritesTheCountAndAFinalityTheAdapterCanRead() {
+	ctx := context.Background()
+	s.Require().NoError(s.repo.Create(ctx, s.chain("tpolygon", true, "active")))
+	finalized := models.FinalityFinalizedTag
+	lag := 3
+	s.Require().NoError(s.repo.UpdateThresholds(ctx, "tpolygon", models.ChainThresholdWrite{Finality: &finalized, RequiredConfirmations: &lag}))
+
+	found, err := s.repo.FindByID(ctx, "tpolygon")
+	s.Require().NoError(err)
+	s.Equal(models.FinalityFinalizedTag, found.Finality)
+	s.Equal(3, found.RequiredConfirmations)
+
+	solidified := models.FinalitySolidified
+	s.Error(s.repo.UpdateThresholds(ctx, "tpolygon", models.ChainThresholdWrite{Finality: &solidified}),
+		"an EVM chain cannot read the solidified block")
+	found, err = s.repo.FindByID(ctx, "tpolygon")
+	s.Require().NoError(err)
+	s.Equal(models.FinalityFinalizedTag, found.Finality)
+}

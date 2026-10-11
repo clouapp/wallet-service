@@ -60,15 +60,17 @@ func (r *ChainRepository) FindByTestnet(ctx context.Context, isTestnet bool) ([]
 	return chains, nil
 }
 
-// UpdateThresholds writes only the threshold columns whose pointers are set.
-// A nil pointer leaves that column as it is. The statement matches one chain.
+// UpdateThresholds writes only the columns whose pointers are set (the sweep
+// thresholds, required_confirmations and finality). A nil pointer leaves that
+// column as it is. The statement matches one chain; a finality the chain's adapter
+// cannot read is refused by chains_finality_fits_adapter.
 func (r *ChainRepository) UpdateThresholds(ctx context.Context, id string, write models.ChainThresholdWrite) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return fmt.Errorf("update chain thresholds: chain id is required")
 	}
-	assignments := make([]string, 0, 4)
-	args := make([]any, 0, 4)
+	assignments := make([]string, 0, 6)
+	args := make([]any, 0, 6)
 	if write.GasReadinessThresholdRaw != nil {
 		assignments = append(assignments, "gas_readiness_threshold_raw = ?")
 		args = append(args, *write.GasReadinessThresholdRaw)
@@ -80,6 +82,14 @@ func (r *ChainRepository) UpdateThresholds(ctx context.Context, id string, write
 	if write.DustThresholdUSD != nil {
 		assignments = append(assignments, "dust_threshold_usd = ?")
 		args = append(args, *write.DustThresholdUSD)
+	}
+	if write.RequiredConfirmations != nil {
+		assignments = append(assignments, "required_confirmations = ?")
+		args = append(args, *write.RequiredConfirmations)
+	}
+	if write.Finality != nil {
+		assignments = append(assignments, "finality = ?")
+		args = append(args, *write.Finality)
 	}
 	if len(assignments) == 0 {
 		return nil

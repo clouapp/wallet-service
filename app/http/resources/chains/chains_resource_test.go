@@ -31,6 +31,7 @@ func TestChain_Keeps_TheModelWire(t *testing.T) {
 		NativeDecimals: 18, NetworkID: &network, RpcURL: "rpc-secret-value", IsTestnet: false,
 		MainnetChainID: &mainnet, RequiredConfirmations: 12, IconURL: &icon, DisplayOrder: 1,
 		Status: "active", GasReadinessThresholdRaw: &threshold, DustThresholdNativeRaw: &dust, DustThresholdUSD: usd,
+		Finality: models.FinalityConfirmations,
 	}
 	full.CreatedAt = created
 	full.UpdatedAt = updated
@@ -41,15 +42,20 @@ func TestChain_Keeps_TheModelWire(t *testing.T) {
 	}{
 		{
 			chain: models.Chain{},
-			want:  `{"created_at":null,"updated_at":null,"id":"","name":"","adapter_type":"","native_symbol":"","native_decimals":0,"is_testnet":false,"required_confirmations":0,"display_order":0,"status":""}`,
+			want:  `{"created_at":null,"updated_at":null,"id":"","name":"","adapter_type":"","native_symbol":"","native_decimals":0,"is_testnet":false,"required_confirmations":0,"finality":"confirmations","display_order":0,"status":""}`,
 		},
 		{
 			chain: models.Chain{NetworkID: &zeroNetwork, IconURL: &empty, RpcURL: "rpc-secret-value"},
-			want:  `{"created_at":null,"updated_at":null,"id":"","name":"","adapter_type":"","native_symbol":"","native_decimals":0,"network_id":0,"is_testnet":false,"required_confirmations":0,"icon_url":"","display_order":0,"status":""}`,
+			want:  `{"created_at":null,"updated_at":null,"id":"","name":"","adapter_type":"","native_symbol":"","native_decimals":0,"network_id":0,"is_testnet":false,"required_confirmations":0,"finality":"confirmations","icon_url":"","display_order":0,"status":""}`,
 		},
 		{
 			chain: full,
-			want:  `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10","id":"eth","name":"Ethereum","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":1,"is_testnet":false,"mainnet_chain_id":"eth","required_confirmations":12,"icon_url":"https://example.test/icon.png","display_order":1,"status":"active"}`,
+			want:  `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10","id":"eth","name":"Ethereum","adapter_type":"evm","native_symbol":"eth","native_decimals":18,"network_id":1,"is_testnet":false,"mainnet_chain_id":"eth","required_confirmations":12,"finality":"confirmations","icon_url":"https://example.test/icon.png","display_order":1,"status":"active"}`,
+		},
+		{
+			// Under the chain's own finality, required_confirmations is the typical lag.
+			chain: models.Chain{ID: "tpolygon", AdapterType: models.AdapterTypeEVM, RequiredConfirmations: 3, Finality: models.FinalityFinalizedTag},
+			want:  `{"created_at":null,"updated_at":null,"id":"tpolygon","name":"","adapter_type":"evm","native_symbol":"","native_decimals":0,"is_testnet":false,"required_confirmations":3,"finality":"finalized_tag","display_order":0,"status":""}`,
 		},
 	}
 	for _, tc := range cases {
