@@ -144,6 +144,11 @@ func (r *WalletRepository) SetMPCChainCode(ctx context.Context, id uuid.UUID, ch
 	return r.updateColumn(ctx, id, "mpc_chain_code", chainCode, "set wallet chain code")
 }
 
+// SetMPCSecretARN sets wallets.mpc_secret_arn, where the wallet's share B is read from.
+func (r *WalletRepository) SetMPCSecretARN(ctx context.Context, id uuid.UUID, arn string) error {
+	return r.updateColumn(ctx, id, "mpc_secret_arn", arn, "set wallet secret arn")
+}
+
 // Activate sets status and clears activation_code together.
 func (r *WalletRepository) Activate(ctx context.Context, id uuid.UUID, status string) error {
 	if _, err := r.Query(ctx).Model(&models.Wallet{}).Where("id = ?", id).Update(map[string]any{

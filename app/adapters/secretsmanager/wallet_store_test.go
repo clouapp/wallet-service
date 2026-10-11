@@ -212,3 +212,13 @@ func TestLookup_Forwards_AnyOtherAPIError(t *testing.T) {
 		t.Fatal("an access error was taken for a missing secret")
 	}
 }
+
+func TestNew_Share_StoreWithoutAClientReportsIt(t *testing.T) {
+	store := NewShareStore(nil, "alias/waas-dev-master")
+	if _, _, err := store.Lookup(context.Background(), "vault/wallet/x/share-b"); err == nil {
+		t.Fatal("expected error for a nil client")
+	}
+	if _, err := store.Create(context.Background(), "vault/wallet/x/share-b", []byte{0x01}); err == nil {
+		t.Fatal("expected error for a nil client")
+	}
+}

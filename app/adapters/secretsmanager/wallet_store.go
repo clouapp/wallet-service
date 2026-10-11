@@ -39,6 +39,16 @@ func NewWalletStore(client *awssm.Client, kmsKeyID string) wallet.SecretStore {
 	return &WalletStore{api: client, kmsKeyID: kmsKeyID}
 }
 
+// NewShareStore is NewWalletStore with the concrete type, for callers that also look a
+// share up by name (secrets:migrate-shares). A nil client gives a store whose calls
+// report the missing client.
+func NewShareStore(client *awssm.Client, kmsKeyID string) *WalletStore {
+	if client == nil {
+		return &WalletStore{}
+	}
+	return &WalletStore{api: client, kmsKeyID: kmsKeyID}
+}
+
 // Create stores secretBinary under name and returns the ARN. The name, the bytes, and the AWS error are unchanged.
 func (s *WalletStore) Create(ctx context.Context, name string, secretBinary []byte) (string, error) {
 	if s == nil || s.api == nil {

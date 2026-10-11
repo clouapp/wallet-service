@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/console"
@@ -27,6 +28,7 @@ import (
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/app/services/sharemigration"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 )
@@ -104,6 +106,13 @@ func Commands() []console.Command {
 			DecryptRPC: decryptChainRPC,
 			AppEnv:     appfacades.Config().GetString("app.env"),
 		}),
+		commands.NewSecretsMigrateShares(commands.SecretsMigrateSharesDeps{
+			Migration: sharemigration.NewService(sharemigration.Deps{
+				Wallets: container.MustMake[*repositories.WalletRepository](),
+				Target:  appShareStore(),
+			}),
+			SourceFor: shareSourceAt,
+		}),
 		commands.NewTransactionsBackfillFees(deposits, registry),
 	})
 }
@@ -154,6 +163,26 @@ func exportShareB() (keyexport.ShareBSource, error) {
 		return nil, errors.New("secrets manager is not configured; share B cannot be fetched")
 	}
 	return secretsadapter.NewShareB(secrets), nil
+}
+
+// appShareStore is the Secrets Manager the app itself uses, sealing new shares with
+// the master key: the target of secrets:migrate-shares.
+func appShareStore() *secretsadapter.WalletStore {
+	secrets, err := container.Make[*secretsmanager.Client]()
+	if err != nil {
+		return secretsadapter.NewShareStore(nil, "")
+	}
+	return secretsadapter.NewShareStore(secrets, secretsadapter.KMSKeyID(appfacades.Config().GetString("vault.master_key_ref")))
+}
+
+// shareSourceAt is a Secrets Manager at endpoint (empty: AWS) with the app's AWS
+// credentials and region: the source of secrets:migrate-shares. It never writes.
+func shareSourceAt(endpoint string) (sharemigration.Source, error) {
+	cfg, err := container.Make[*aws.Config]()
+	if err != nil {
+		return nil, fmt.Errorf("aws config: %w", err)
+	}
+	return secretsadapter.NewShareStore(secretsadapter.NewClient(*cfg, endpoint), ""), nil
 }
 
 func configuredChainProfile() string {
