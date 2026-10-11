@@ -10,6 +10,8 @@ import (
 	"github.com/gin-gonic/gin"
 	ginpkg "github.com/goravel/gin"
 
+	"github.com/macrowallets/waas/app/http/pagination"
+	transactionsrequests "github.com/macrowallets/waas/app/http/requests/external/transactions"
 	"github.com/macrowallets/waas/app/services/withdraw"
 )
 
@@ -37,6 +39,50 @@ func TestMapError_Show(t *testing.T) {
 			ginCtx.Request = httptest.NewRequest(nethttp.MethodGet, "/", nil)
 
 			if err := mapError(ginpkg.NewContext(ginCtx), tc.err, actionShow).Render(); err != nil {
+				t.Fatal(err)
+			}
+			rec.Flush()
+
+			if rec.Code != tc.status {
+				t.Errorf("status = %d, want %d", rec.Code, tc.status)
+			}
+			if got := rec.Body.String(); got != tc.body {
+				t.Errorf("body = %s, want %s", got, tc.body)
+			}
+		})
+	}
+}
+
+// TestMapQueryError pins what a changes feed query the list cannot read
+// answers: each refusal is a 400 with its sentence, wrapped or not; anything
+// else is a 500 that names no cause.
+func TestMapQueryError(t *testing.T) {
+	cases := []struct {
+		name   string
+		err    error
+		status int
+		body   string
+	}{
+		{"updated_since", transactionsrequests.ErrInvalidUpdatedSince, nethttp.StatusBadRequest,
+			`{"error":{"code":"invalid_request","message":"updated_since must be an RFC 3339 timestamp"}}`},
+		{"cursor, wrapped", fmt.Errorf("parse: %w", pagination.ErrInvalidCursor), nethttp.StatusBadRequest,
+			`{"error":{"code":"invalid_request","message":"cursor is invalid"}}`},
+		{"offset with a cursor", transactionsrequests.ErrOffsetWithCursor, nethttp.StatusBadRequest,
+			`{"error":{"code":"invalid_request","message":"offset cannot be combined with updated_since or cursor"}}`},
+		{"limit", pagination.ErrInvalidLimit, nethttp.StatusBadRequest,
+			`{"error":{"code":"invalid_request","message":"limit must be a positive integer"}}`},
+		{"offset", pagination.ErrInvalidOffset, nethttp.StatusBadRequest,
+			`{"error":{"code":"invalid_request","message":"offset must be a non-negative integer"}}`},
+		{"anything else", errors.New("bounds misconfigured"), nethttp.StatusInternalServerError,
+			`{"error":{"code":"internal_error","message":"internal_error"}}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			ginCtx, _ := gin.CreateTestContext(rec)
+			ginCtx.Request = httptest.NewRequest(nethttp.MethodGet, "/", nil)
+
+			if err := mapQueryError(ginpkg.NewContext(ginCtx), tc.err).Render(); err != nil {
 				t.Fatal(err)
 			}
 			rec.Flush()

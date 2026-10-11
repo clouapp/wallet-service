@@ -219,6 +219,10 @@ func newWithdrawalService(app foundation.Application) (*withdraw.Service, error)
 	if err != nil {
 		return nil, fmt.Errorf("vault: withdrawal events: %w", err)
 	}
+	decimals, err := newAssetDecimals(app)
+	if err != nil {
+		return nil, err
+	}
 	service := withdraw.NewService(withdraw.Deps{
 		Registry:     registry,
 		Webhook:      webhookService,
@@ -231,6 +235,7 @@ func newWithdrawalService(app foundation.Application) (*withdraw.Service, error)
 		Flags: func(ctx context.Context, accountID uuid.UUID) error {
 			return flags.Gate(ctx, accountID, features.FlagWithdrawalsEnabled, features.CodeWithdrawalsPaused)
 		},
+		Decimals: decimals,
 	})
 	service.UseUSDQuote(prices)
 	service.UseCreate(users, verifier, withdrawalRows, chains)

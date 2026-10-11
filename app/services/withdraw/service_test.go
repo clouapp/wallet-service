@@ -243,7 +243,7 @@ func TestService_GetTransactionForAccount(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetTransactionForAccount: %v", err)
 		}
-		if got.ID != inserted.ID {
+		if got.Transaction.ID != inserted.ID {
 			t.Error("ID mismatch")
 		}
 	})
