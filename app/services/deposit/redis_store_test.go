@@ -2,6 +2,7 @@ package deposit
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -13,8 +14,15 @@ type redisStore struct {
 	client *redis.Client
 }
 
-func (s redisStore) Uint64(ctx context.Context, key string) (uint64, error) {
-	return s.client.Get(ctx, key).Uint64()
+func (s redisStore) Uint64(ctx context.Context, key string) (uint64, bool, error) {
+	value, err := s.client.Get(ctx, key).Uint64()
+	if errors.Is(err, redis.Nil) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return value, true, nil
 }
 
 func (s redisStore) Set(ctx context.Context, key string, value uint64, expiration time.Duration) error {

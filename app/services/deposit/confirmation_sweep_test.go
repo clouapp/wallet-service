@@ -45,6 +45,9 @@ func (s *sweepConfirmMemory) MarkFailed(context.Context, uuid.UUID, string) erro
 func (s *sweepConfirmMemory) FindConfirmedOutboundWithoutFee(context.Context, string, int) ([]models.Transaction, error) {
 	return nil, nil
 }
+func (s *sweepConfirmMemory) FindConfirmedDepositsMissingEvent(context.Context, string, time.Time, time.Time, []string, int) ([]models.Transaction, error) {
+	return nil, nil
+}
 
 func (s *sweepConfirmMemory) RecordConfirmations(_ context.Context, id uuid.UUID, _ int, status string, _ *time.Time) error {
 	s.rows = append(s.rows, sweepConfirmRow{
@@ -144,6 +147,15 @@ func (f *sweepConfirmEventRepo) FindDueForDelivery(context.Context, int, time.Du
 	return nil, nil
 }
 func (f *sweepConfirmEventRepo) MarkFailed(context.Context, string, string) error { return nil }
+func (f *sweepConfirmEventRepo) ClaimStaleForRedispatch(context.Context, time.Duration, int) ([]models.WebhookEvent, error) {
+	return nil, nil
+}
+func (f *sweepConfirmEventRepo) FindForRedelivery(context.Context, uuid.UUID, time.Time, time.Time, []string, int) ([]uuid.UUID, error) {
+	return nil, nil
+}
+func (f *sweepConfirmEventRepo) RequeueForRedelivery(context.Context, uuid.UUID, []uuid.UUID, time.Time, time.Time) ([]models.WebhookEvent, error) {
+	return nil, nil
+}
 
 func newSweepConfirmSender(t *testing.T, onSend func()) (sender *mocks.MockSender, sent *int) {
 	t.Helper()
@@ -303,6 +315,11 @@ func TestApply_Confirmations_ConfirmsASweepWithoutAWebhookWriter(t *testing.T) {
 type sweepConfirmDeposits struct{ n int }
 
 func (r *sweepConfirmDeposits) Publish(context.Context, types.EventType, models.Transaction) error {
+	r.n++
+	return nil
+}
+
+func (r *sweepConfirmDeposits) Republish(context.Context, types.EventType, models.Transaction, time.Time) error {
 	r.n++
 	return nil
 }

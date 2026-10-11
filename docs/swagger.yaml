@@ -1666,6 +1666,34 @@ definitions:
         example: https://example.com/hook
         type: string
     type: object
+  webhooks.RedeliverRequest:
+    properties:
+      event_ids:
+        example:
+        - 3f2b8c1e-0d4a-4f6b-9e2a-7c5d1b8e9f00
+        items:
+          type: string
+        type: array
+      since:
+        example: "2026-10-10T00:00:00Z"
+        type: string
+      types:
+        example:
+        - deposit.confirmed
+        items:
+          type: string
+        type: array
+      until:
+        example: "2026-10-11T00:00:00Z"
+        type: string
+    type: object
+  webhooks.Redelivery:
+    properties:
+      requeued:
+        type: integer
+      webhook_id:
+        type: string
+    type: object
   webhooks.UpdateRequest:
     properties:
       events:
@@ -2926,6 +2954,78 @@ paths:
       - ApiKeyAuth: []
       - SignatureAuth: []
       summary: Update a webhook subscription
+      tags:
+      - Webhooks
+  /api/v1/webhooks/{webhookId}/redeliver:
+    post:
+      consumes:
+      - application/json
+      description: 'Queues again events of one of the account''s webhooks, whatever
+        their delivery status: the events named in `event_ids` (at most 500), or every
+        event created from `since` (RFC 3339, at most 7 days ago) up to `until` (default
+        now), optionally only of `types`. Only events created in the last 7 days are
+        redelivered, at most 500 per request (a larger window is refused: narrow `since`,
+        `until` or `types`), and an event already pending that was queued in the last
+        minute is left alone. A requeued event is delivered again with the same `X-Vault-Delivery-Id`,
+        so receivers deduplicate on it. A legacy webhook is claimed with PATCH before
+        it can be redelivered.'
+      parameters:
+      - description: Webhook UUID
+        in: path
+        name: webhookId
+        required: true
+        type: string
+      - description: 'Events to redeliver: event_ids, or since with optional until
+          and types'
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/webhooks.RedeliverRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/webhooks.Redelivery'
+        "400":
+          description: Invalid webhook id
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "403":
+          description: Token lacks webhooks.write, or a legacy webhook not claimed
+            yet
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "404":
+          description: webhook not found
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "409":
+          description: webhook is inactive
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "422":
+          description: Invalid selection (validation_failed with errors)
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "429":
+          description: Rate limit exceeded (too_many_requests, Retry-After header)
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: Redeliver webhook events
       tags:
       - Webhooks
   /auth/2fa/verify:

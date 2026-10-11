@@ -201,12 +201,41 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 |---|---|---|
 | Goravel queue, `sync` connection (`QUEUE_CONNECTION`, default `sync`; `config/queue.go`) | credential mail (`jobs.SendCredentialMailJob`, always `DispatchSync`) | runs in the dispatching process. The `database` connection (queue `blockchain`) is configured but nothing runs `queue:work` and no job uses it |
 | AWS SQS (`app/adapters/queue/sqs`, port `queue.Sender`) | outbound webhook delivery | `webhook_worker` Lambda, or on a host without Lambda the `webhook_poller` process (same handler) |
-| `app/services/localworkers` | local stand-in for `confirmation_tracker` and `webhook_worker`, the wallet balance refresh loop (and optional deposit scan), and the MPC keygen pre-parameters pool | started from `main.go` in local mode only |
+| `app/services/localworkers` | local stand-in for `confirmation_tracker` and `webhook_worker` (with a webhook queue, the outbox re-dispatch instead of local delivery), the wallet balance refresh loop (and optional deposit scan, with the deposit event backfill of the scanned chains), and the MPC keygen pre-parameters pool | started from `main.go` in local mode only |
 
 - Local webhook delivery from the outbox runs only when no SQS webhook queue is
   configured, so a message is never drained twice. — guarded by
   `TestStart_Skips_OutboxWhenAQueueDelivers` (`app/services/localworkers`) and
   `TestOne_Consumer_PerQueue` (`tests/architecture`).
+- Webhook delivery is at least once. An event is a `webhook_events` row (one per config, type
+  and subject: the partial unique index of migration 260) written before the queue send, and
+  receivers deduplicate on `X-Vault-Delivery-Id` (the row id), which every resend keeps. Three
+  repairs keep a row from being lost:
+  - **Deposit events.** The tracker persists a deposit's status, then publishes; a failed publish
+    is only logged, and the client credits a deposit only on `deposit.confirmed`. The
+    `confirmation_tracker` (every chain) and the local confirmation loop (the locally scanned
+    chains) run `deposit.Service.BackfillDepositEvents`: a deposit confirmed between 48 h and
+    1 min ago is republished when an active config that subscribes to `deposit.confirmed`, may
+    see the wallet and was created no later than the confirmation has no row for (config,
+    `deposit.confirmed`, deposit id). The event carries `OccurredAt` = the confirmation, so a
+    config created later is left out, and the unique index keeps reruns idempotent; at most 50
+    deposits per run. `deposit.pending` and `deposit.confirming` are not backfilled. — guarded
+    by `TestBackfill_DepositEvents_*`, `TestRun_ConfirmationCheck_RepairsADepositConfirmedWhosePublishFailed`
+    (`app/services/deposit`) and `TestFind_ConfirmedDepositsMissingEvent_*` (`tests/feature/repositories`).
+  - **Queue mode.** An outbox row whose SQS send failed, or whose message left the queue without
+    a recorded attempt, stays `pending`. `webhook.Service.RedispatchStale` claims pending rows of
+    active configs untouched for 5 minutes (`FOR UPDATE SKIP LOCKED`, 50 per run), counts the
+    claim as one attempt (so a row is sent at most `max_attempts` times) and sends them again. It
+    runs from the `confirmation_tracker` Lambda when `vault.queues.webhook` is set and from the
+    local workers when a queue is configured (`RedispatchOutbox`), never beside the local outbox.
+    — guarded by `TestRedispatch_Stale_*`, `TestWebhookEventRepository_ClaimStaleForRedispatch_*`
+    and `TestStart_Redispatches_TheOutboxWhenAQueueDelivers`.
+  - **On request.** `POST /api/v1/webhooks/{webhookId}/redeliver` (`webhooks.write`) requeues
+    `event_ids`, or the events created from `since` to `until` of `types`, of one webhook the
+    token's account owns: only events of the last 7 days, at most 500 per request, an event
+    pending and queued in the last minute left alone. — guarded by
+    `tests/feature/api/external/webhooks` (`TestRedeliver_Webhook_*`) and `TestRedeliver_*`
+    (`app/services/webhook`).
 - `webhook_poller` replaces the `webhook_worker` Lambda where none runs; the two never consume
   one queue together. — **UNGUARDED**: `TestOne_Consumer_PerQueue` reads the consumers from
   `template.yaml` and cannot see where the poller runs; this rests on the deployment.
@@ -214,6 +243,23 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   carries `(subject_id, purpose)` and mints the token when it runs. — guarded by
   `app/jobs/send_credential_mail_test.go` and `TestJob_Payload_IsDecodedNotPositional`.
 - The app registers no events or listeners; add an event only together with a listener.
+- The deposit scan checkpoint of each chain lives in Postgres (`deposit_scan_checkpoints`)
+  and never moves back; Redis (`vault:checkpoint:<chain>`) is a copy written after the
+  database. A read falls back from Redis to the database on a miss or an error. Only a chain
+  the database does not hold, with Redis answering a clean miss (or not configured), starts
+  at the head; a Redis error with no row, or a database error, skips the cycle and moves
+  nothing. — guarded by `app/services/deposit/checkpoint_test.go` and
+  `TestDeposit_Scan_CheckpointRepositorySuite`.
+- One scanner per chain: a `ScanLatestBlocks` cycle holds `vault:lock:deposit_scan:<chain>`
+  (`cacheguard.Acquire`, TTL 2 min, above the 60 s `deposit_scanner` Lambda timeout). A held
+  lock skips the cycle; a lock store that is down or missing fails it. `scan:deposits
+  --block|--tx|--pending|--retry-pending` take no lock and never move the checkpoint. —
+  guarded by `app/services/deposit/scan_lock_test.go`.
+- A block is never marked scanned while its deposits are not all read and recorded: it is
+  retried, then kept in the pending-blocks store. On every EVM chain a failed `eth_getLogs`
+  fails the block. — guarded by `app/services/deposit/failure_test.go`,
+  `TestScan_Block_FailsTheBlockWhenGetLogsFailsOnEveryEVMChain` and
+  `TestRegister_ActiveChains_EVMBlockWhoseLogsFailGoesPending`.
 
 ### 8. Database and migrations
 
@@ -222,15 +268,16 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `Migrations()` in `bootstrap/migrations.go`. A migration never edits an applied one; it adds
   the next number. — guarded by the migration tests in `tests/migrations` (e.g.
   `non_negative_amounts_test.go`).
-- A NEW migration uses the schema builder, `facades.Schema()` from `app/facades`
-  (`Create`, `Table`, `DropIfExists`), unless it needs a Postgres feature the builder does not
-  express (CHECK or partial-unique constraints, `USING` casts, enum types, data backfills):
-  then it runs raw SQL. The applied migrations keep their raw SQL; do not rewrite them. A
-  migration imports no app code (`app/models`, `app/services`, `pkg/*`): copy what it needs
-  into the migration, so a later change there cannot change what a fresh database gets.
-  `artisan make:migration` creates the file and appends it to `Migrations()`, but the
-  framework drops the host and organisation of the module path, so the generated import
-  reads `waas/app/facades`: change it to `github.com/macrowallets/waas/app/facades`.
+- A NEW migration uses the schema builder, `migrationSchema()` from
+  `database/migrations/orm.go` (`Create`, `Table`, `DropIfExists`), unless it needs a Postgres
+  feature the builder does not express (CHECK or partial-unique constraints, `USING` casts,
+  enum types, data backfills): then it runs raw SQL. The applied migrations keep their raw
+  SQL; do not rewrite them. A migration imports no app code (`app/models`, `app/services`,
+  `pkg/*`, `app/facades`): copy what it needs into the migration, so a later change there
+  cannot change what a fresh database gets. The database layer may not import `app/facades`
+  (`TestImports_Import_Direction`), so `orm.go` is the one file that reaches the framework
+  facades. `artisan make:migration` creates the file and appends it to `Migrations()`; replace
+  the facades import it generates with `migrationSchema()`.
 - Amounts are base-unit integers/strings (`pkg/amount`, `numeric` columns), never floats,
   and never negative. — guarded by `TestEnforce_Non_NegativeAmounts*`.
 - Seed data is test-only (`database/seeders`, registered by `WithSeeders(seeders.All)`;
@@ -515,8 +562,10 @@ BTC_RPC_URL=https://blockstream.info/testnet/api
 API_KEY_SECRET=dev-secret-key-not-for-production
 ```
 
-Redis is the cache driver (rate limits, locks, settings cache, deposit scanner state): the app needs
-it reachable. `.env.dev.example` / `.env.example` carry the full lists, with the throttle variables.
+Redis is the cache driver (rate limits, locks including the per-chain deposit scan lock, settings
+cache, the deposit scanner's watched addresses and its copy of the scan checkpoint, which lives in
+Postgres): the app needs it reachable. `.env.dev.example` / `.env.example` carry the full lists,
+with the throttle variables.
 
 ### Bitcoin-family provider failover
 

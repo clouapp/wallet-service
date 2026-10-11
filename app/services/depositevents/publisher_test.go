@@ -210,6 +210,49 @@ func TestPublish_Wallet_WithoutAccountIsNotScopedToAnyAccount(t *testing.T) {
 	}
 }
 
+func TestRepublish_Sends_TheSameEventStampedWithWhenItOccurred(t *testing.T) {
+	f := newFixture()
+	tx := f.deposit("eth", "ETH", "500000000000000000")
+	occurredAt := tx.ConfirmedAt.Add(-time.Second)
+
+	if err := f.publisher.Republish(context.Background(), types.EventDepositConfirmed, tx, occurredAt); err != nil {
+		t.Fatalf("Republish: %v", err)
+	}
+
+	event, payload := onlyPayload(t, f.enqueuer)
+	if !event.OccurredAt.Equal(occurredAt) {
+		t.Fatalf("occurred at = %v, want %v", event.OccurredAt, occurredAt)
+	}
+	if event.SubjectID != tx.ID.String() || event.EventType != types.EventDepositConfirmed {
+		t.Fatalf("unexpected event identity %+v", event)
+	}
+	if payload.Amount != "0.5" || payload.Status != tx.Status || payload.ConfirmedAt == nil {
+		t.Fatalf("payload = %+v", payload)
+	}
+}
+
+func TestRepublish_Refuses_AnEventWithoutItsInstant(t *testing.T) {
+	f := newFixture()
+	err := f.publisher.Republish(context.Background(), types.EventDepositConfirmed, f.deposit("eth", "ETH", "1"), time.Time{})
+	if err == nil {
+		t.Fatal("a republished event must say when it occurred")
+	}
+	if len(f.enqueuer.events) != 0 {
+		t.Fatalf("nothing may be enqueued, got %d", len(f.enqueuer.events))
+	}
+}
+
+func TestPublish_Live_EventCarriesNoOccurredAt(t *testing.T) {
+	f := newFixture()
+	if err := f.publisher.Publish(context.Background(), types.EventDepositConfirmed, f.deposit("eth", "ETH", "1")); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	event, _ := onlyPayload(t, f.enqueuer)
+	if !event.OccurredAt.IsZero() {
+		t.Fatalf("a live event reaches every config, got occurred at %v", event.OccurredAt)
+	}
+}
+
 // payloadJSON is the deposit webhook data object as a receiver decodes it.
 func payloadJSON(t *testing.T, payload Payload) map[string]any {
 	t.Helper()

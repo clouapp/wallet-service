@@ -131,3 +131,48 @@ func (c *WebhookController) Update(ctx http.Context) http.Response {
 
 	return ctx.Response().Success().Json(resources.WebhookConfigPtr(config))
 }
+
+// Redeliver godoc
+//
+//	@Summary		Redeliver webhook events
+//	@Description	Queues again events of one of the account's webhooks, whatever their delivery status: the events named in `event_ids` (at most 500), or every event created from `since` (RFC 3339, at most 7 days ago) up to `until` (default now), optionally only of `types`. Only events created in the last 7 days are redelivered, at most 500 per request (a larger window is refused: narrow `since`, `until` or `types`), and an event already pending that was queued in the last minute is left alone. A requeued event is delivered again with the same `X-Vault-Delivery-Id`, so receivers deduplicate on it. A legacy webhook is claimed with PATCH before it can be redelivered.
+//	@Tags			Webhooks
+//	@Accept			json
+//	@Produce		json
+//	@Security		ApiKeyAuth
+//	@Security		SignatureAuth
+//	@Param			webhookId	path		string								true	"Webhook UUID"
+//	@Param			body		body		webhooksrequests.RedeliverRequest	true	"Events to redeliver: event_ids, or since with optional until and types"
+//	@Success		202			{object}	resources.Redelivery
+//	@Failure		400			{object}	responses.ErrorBody	"Invalid webhook id"
+//	@Failure		401			{object}	responses.ErrorBody
+//	@Failure		403			{object}	responses.ErrorBody	"Token lacks webhooks.write, or a legacy webhook not claimed yet"
+//	@Failure		404			{object}	responses.ErrorBody	"webhook not found"
+//	@Failure		409			{object}	responses.ErrorBody	"webhook is inactive"
+//	@Failure		422			{object}	responses.ErrorBody	"Invalid selection (validation_failed with errors)"
+//	@Failure		429			{object}	responses.ErrorBody	"Rate limit exceeded (too_many_requests, Retry-After header)"
+//	@Failure		500			{object}	responses.ErrorBody
+//	@Router			/api/v1/webhooks/{webhookId}/redeliver [post]
+func (c *WebhookController) Redeliver(ctx http.Context) http.Response {
+	accountID, ok := requestctx.AccountID(ctx)
+	if !ok || accountID == uuid.Nil {
+		return responses.Fail(ctx, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
+	}
+
+	webhookID, err := requests.RouteUUID(ctx, "webhookId")
+	if err != nil {
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid webhook id")
+	}
+
+	var req webhooksrequests.RedeliverRequest
+	if response := requests.Validate(ctx, &req); response != nil {
+		return response
+	}
+
+	requeued, err := c.webhooks.Redeliver(ctx.Context(), accountID, webhookID, req.Selection())
+	if err != nil {
+		return mapRedeliveryError(ctx, err)
+	}
+
+	return ctx.Response().Status(http.StatusAccepted).Json(resources.NewRedelivery(webhookID, requeued))
+}

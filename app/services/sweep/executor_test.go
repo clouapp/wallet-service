@@ -1104,6 +1104,15 @@ func (f *fakeWebhookEventRepo) FindDueForDelivery(_ context.Context, limit int, 
 func (f *fakeWebhookEventRepo) MarkFailed(_ context.Context, eventID, errMsg string) error {
 	return nil
 }
+func (f *fakeWebhookEventRepo) ClaimStaleForRedispatch(context.Context, time.Duration, int) ([]models.WebhookEvent, error) {
+	return nil, nil
+}
+func (f *fakeWebhookEventRepo) FindForRedelivery(context.Context, uuid.UUID, time.Time, time.Time, []string, int) ([]uuid.UUID, error) {
+	return nil, nil
+}
+func (f *fakeWebhookEventRepo) RequeueForRedelivery(context.Context, uuid.UUID, []uuid.UUID, time.Time, time.Time) ([]models.WebhookEvent, error) {
+	return nil, nil
+}
 
 // TestExecute_MultiSweep_WebhookEmittedPerSweep verifies that for a multi-leg
 // plan the executor emits exactly one sweep.broadcast event per leg (never per

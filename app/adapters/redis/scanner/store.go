@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -26,12 +27,20 @@ func New(client redis.UniversalClient) deposit.RedisStore {
 	return &Store{client: client}
 }
 
-// Uint64 reads key with GET and parses it as uint64. The Redis error is returned unchanged.
-func (s *Store) Uint64(ctx context.Context, key string) (uint64, error) {
+// Uint64 reads key with GET and parses it as uint64. A missing key is found=false
+// with no error; any other Redis or parse error is returned unchanged.
+func (s *Store) Uint64(ctx context.Context, key string) (uint64, bool, error) {
 	if s == nil || s.client == nil {
-		return 0, fmt.Errorf("redis scanner: client is nil")
+		return 0, false, fmt.Errorf("redis scanner: client is nil")
 	}
-	return s.client.Get(ctx, key).Uint64()
+	value, err := s.client.Get(ctx, key).Uint64()
+	if errors.Is(err, redis.Nil) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return value, true, nil
 }
 
 // Set writes key with SET and the given TTL. The Redis error is returned unchanged.
