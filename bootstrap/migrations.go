@@ -69,5 +69,6 @@ func Migrations() []schema.Migration {
 		&migrations.M00000000000570AccessTokensPermissionsJsonb{},
 		&migrations.M00000000000580ChainsThresholdsNotNull{},
 		&migrations.M00000000000590SeedPlatformSettingsFromEnv{},
+		&migrations.M00000000000600AddDestinationTag{},
 	}
 }

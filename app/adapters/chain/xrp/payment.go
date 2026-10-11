@@ -36,6 +36,7 @@ const (
 
 	xrpFieldTransactionType    = 2
 	xrpFieldSequence           = 4
+	xrpFieldDestinationTag     = 14
 	xrpFieldLastLedgerSequence = 27
 	xrpFieldAmount             = 1
 	xrpFieldFee                = 8
@@ -67,13 +68,15 @@ var (
 var _ types.MPCSignatureFinalizer = (*Live)(nil)
 
 // xrpPayment is a native Payment. Flags and NetworkID are omitted: flags
-// default to 0, and network id 1 must not carry a NetworkID field.
+// default to 0, and network id 1 must not carry a NetworkID field. A nil
+// DestinationTag omits the field.
 type xrpPayment struct {
 	Account            []byte
 	Destination        []byte
 	Amount             uint64
 	Fee                uint64
 	Sequence           uint32
+	DestinationTag     *uint32
 	LastLedgerSequence uint32
 	SigningPubKey      []byte
 	TxnSignature       []byte
@@ -185,7 +188,7 @@ func (a *Live) BuildTransfer(ctx context.Context, req types.TransferRequest) (*t
 	if err = xrpReserveAllows(funds.Balance, req.Amount, fee, funds.Reserve); err != nil {
 		return nil, err
 	}
-	if err = funds.CheckDestination(req.Amount); err != nil {
+	if err = funds.CheckDestination(req.Amount, req.DestinationTag != nil); err != nil {
 		return nil, fmt.Errorf("xrp payment to %s: %w", req.To, err)
 	}
 	sequence := state.source.Sequence
@@ -212,24 +215,49 @@ func (a *Live) BuildTransfer(ctx context.Context, req types.TransferRequest) (*t
 		Sequence:           uint32(sequence),
 		LastLedgerSequence: uint32(last),
 	}
+	metadata := map[string]interface{}{
+		"account":      req.From,
+		"destination":  req.To,
+		"amount_drops": req.Amount.String(),
+		"sequence":     fmt.Sprintf("%d", sequence),
+		"fee_drops":    fee.String(),
+		"last_ledger":  fmt.Sprintf("%d", last),
+	}
+	if req.DestinationTag != nil {
+		tag := *req.DestinationTag
+		payment.DestinationTag = &tag
+		metadata["destination_tag"] = fmt.Sprintf("%d", tag)
+	}
 	unsignedBlob, err := payment.serialize(false, false)
 	if err != nil {
 		return nil, err
 	}
+	metadata["unsigned_hex"] = hex.EncodeToString(unsignedBlob)
 	return &types.UnsignedTx{
 		ChainID:        a.cfg.ChainIDStr,
 		RawBytes:       unsignedBlob,
 		TransferAmount: new(big.Int).SetUint64(amount),
-		Metadata: map[string]interface{}{
-			"unsigned_hex": hex.EncodeToString(unsignedBlob),
-			"account":      req.From,
-			"destination":  req.To,
-			"amount_drops": req.Amount.String(),
-			"sequence":     fmt.Sprintf("%d", sequence),
-			"fee_drops":    fee.String(),
-			"last_ledger":  fmt.Sprintf("%d", last),
-		},
+		Metadata:       metadata,
 	}, nil
+}
+
+// SupportsDestinationTag reports that payments carry TransferRequest.DestinationTag.
+func (a *Live) SupportsDestinationTag() bool { return true }
+
+// LastValidBlock is the LastLedgerSequence of a signed payment: past that validated
+// ledger it can no longer be included.
+func (a *Live) LastValidBlock(signed *types.SignedTx) (uint64, error) {
+	if signed == nil {
+		return 0, fmt.Errorf("xrp: signed transaction is required")
+	}
+	payment, err := parseXRPPayment(signed.RawBytes)
+	if err != nil {
+		return 0, fmt.Errorf("xrp last ledger sequence: %w", err)
+	}
+	if payment.LastLedgerSequence == 0 {
+		return 0, fmt.Errorf("xrp payment has no LastLedgerSequence")
+	}
+	return uint64(payment.LastLedgerSequence), nil
 }
 
 func (a *Live) SignTransaction(_ context.Context, unsigned *types.UnsignedTx, privateKey []byte) (*types.SignedTx, error) {
@@ -425,6 +453,13 @@ func (a *Live) VerifySignedTransaction(unsigned *types.UnsignedTx, signed *types
 			return fmt.Errorf("xrp verify: destination does not match the unsigned payment")
 		}
 	}
+	signedTag := ""
+	if payment.DestinationTag != nil {
+		signedTag = fmt.Sprintf("%d", *payment.DestinationTag)
+	}
+	if signedTag != metadataString(unsigned.Metadata, "destination_tag") {
+		return fmt.Errorf("xrp verify: destination tag does not match the unsigned payment")
+	}
 	pub, err := btcec.ParsePubKey(payment.SigningPubKey)
 	if err != nil {
 		return fmt.Errorf("xrp verify: signing public key")
@@ -435,8 +470,8 @@ func (a *Live) VerifySignedTransaction(unsigned *types.UnsignedTx, signed *types
 	}
 	preimage, err := xrpPayment{
 		Account: payment.Account, Destination: payment.Destination, Amount: payment.Amount,
-		Fee: payment.Fee, Sequence: payment.Sequence, LastLedgerSequence: payment.LastLedgerSequence,
-		SigningPubKey: payment.SigningPubKey,
+		Fee: payment.Fee, Sequence: payment.Sequence, DestinationTag: payment.DestinationTag,
+		LastLedgerSequence: payment.LastLedgerSequence, SigningPubKey: payment.SigningPubKey,
 	}.serialize(true, false)
 	if err != nil {
 		return fmt.Errorf("xrp verify: %w", err)
@@ -522,6 +557,9 @@ func (p xrpPayment) serialize(includePub, includeSignature bool) ([]byte, error)
 	var out []byte
 	out = appendField(out, xrpTypeUInt16, xrpFieldTransactionType, putU16(xrpPaymentType))
 	out = appendField(out, xrpTypeUInt32, xrpFieldSequence, putU32(p.Sequence))
+	if p.DestinationTag != nil {
+		out = appendField(out, xrpTypeUInt32, xrpFieldDestinationTag, putU32(*p.DestinationTag))
+	}
 	out = appendField(out, xrpTypeUInt32, xrpFieldLastLedgerSequence, putU32(p.LastLedgerSequence))
 	out = appendField(out, xrpTypeAmount, xrpFieldAmount, putXRP(p.Amount))
 	out = appendField(out, xrpTypeAmount, xrpFieldFee, putXRP(p.Fee))
@@ -570,6 +608,9 @@ func parseXRPPayment(blob []byte) (xrpPayment, error) {
 			}
 		case typ == xrpTypeUInt32 && nth == xrpFieldSequence:
 			payment.Sequence = binary.BigEndian.Uint32(payload)
+		case typ == xrpTypeUInt32 && nth == xrpFieldDestinationTag:
+			tag := binary.BigEndian.Uint32(payload)
+			payment.DestinationTag = &tag
 		case typ == xrpTypeUInt32 && nth == xrpFieldLastLedgerSequence:
 			payment.LastLedgerSequence = binary.BigEndian.Uint32(payload)
 		case typ == xrpTypeAmount && nth == xrpFieldAmount:

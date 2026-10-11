@@ -460,6 +460,10 @@ func (s *service) broadcastWithdrawal(
 	if err != nil {
 		return nil, err
 	}
+	rawPayload, err := broadcastRawPayload(adapter, signed)
+	if err != nil {
+		return nil, fmt.Errorf("record last valid block: %w", err)
+	}
 	hash, err := adapter.BroadcastTransaction(ctx, signed)
 	if err != nil {
 		return nil, fmt.Errorf("broadcast: %w", err)
@@ -476,6 +480,7 @@ func (s *service) broadcastWithdrawal(
 		TxHash:         hash,
 		FromAddress:    source.Address,
 		ToAddress:      toAddress,
+		DestinationTag: copyTag(plan.DestinationTag),
 		Amount:         plan.Amount.String(),
 		Asset:          plan.Asset,
 		Status:         string(types.TxStatusConfirming),
@@ -483,7 +488,7 @@ func (s *service) broadcastWithdrawal(
 		Direction:      models.TxDirectionOutbound,
 		Source:         models.TxSourceWithdrawalFlow,
 		Origin:         models.TxOriginUserRequest,
-		RawPayload:     "{}",
+		RawPayload:     rawPayload,
 	}
 	if token != nil {
 		tx.TokenContract = token.Contract
@@ -532,12 +537,16 @@ func (s *service) signWithdrawalTransfer(
 	if err != nil {
 		return nil, nil, err
 	}
+	if plan.DestinationTag != nil && !supportsDestinationTag(adapter) {
+		return nil, nil, ErrDestinationTagUnsupported
+	}
 	unsigned, err := adapter.BuildTransfer(ctx, types.TransferRequest{
-		From:   source.Address,
-		To:     toAddress,
-		Amount: plan.Amount,
-		Asset:  plan.Asset,
-		Token:  token,
+		From:           source.Address,
+		To:             toAddress,
+		Amount:         plan.Amount,
+		Asset:          plan.Asset,
+		Token:          token,
+		DestinationTag: copyTag(plan.DestinationTag),
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("build transfer: %w", err)

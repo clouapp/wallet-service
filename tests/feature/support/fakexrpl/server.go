@@ -49,6 +49,8 @@ type Server struct {
 	StateReserveInc  string
 	OpenLedgerFee    string
 	LedgerIndex      uint64
+	// CompleteLedgers is server_info complete_ledgers; "" reports "1-LedgerIndex".
+	CompleteLedgers string
 
 	t          testing.TB
 	mu         sync.Mutex
@@ -56,6 +58,25 @@ type Server struct {
 	txs        map[string]Tx
 	calls      []string
 	ledgerUsed map[string]string
+	searches   [][2]uint64
+}
+
+// Searches lists the min_ledger..max_ledger ranges of tx lookups that found nothing.
+func (s *Server) Searches() [][2]uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([][2]uint64(nil), s.searches...)
+}
+
+func numberParam(params []map[string]any, key string) uint64 {
+	if len(params) == 0 {
+		return 0
+	}
+	value, _ := params[0][key].(float64)
+	if value < 0 {
+		return 0
+	}
+	return uint64(value)
 }
 
 // New starts a fake altnet server: network id 1, 1 XRP base reserve, 0.2 XRP owner
@@ -138,7 +159,11 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			fields = append(fields, `"reserve_inc_xrp":`+s.ReserveIncXRP)
 		}
 		fields = append(fields, fmt.Sprintf(`"seq":%d`, s.LedgerIndex))
-		result = fmt.Sprintf(`{"status":"success","info":{"network_id":%d,"validated_ledger":{%s}}}`, s.NetworkID, strings.Join(fields, ","))
+		complete := s.CompleteLedgers
+		if complete == "" {
+			complete = fmt.Sprintf("1-%d", s.LedgerIndex)
+		}
+		result = fmt.Sprintf(`{"status":"success","info":{"network_id":%d,"complete_ledgers":%q,"validated_ledger":{%s}}}`, s.NetworkID, complete, strings.Join(fields, ","))
 	case "server_state":
 		if s.StateReserveBase == "" {
 			result = `{"status":"error","error":"noNetwork"}`
@@ -162,7 +187,15 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		hash := strings.ToUpper(param("transaction"))
 		tx, ok := s.txs[hash]
 		if !ok {
-			result = `{"status":"error","error":"txnNotFound"}`
+			// rippled sets searched_all when min_ledger..max_ledger is inside its
+			// complete ledgers; this fake keeps one range from 1 to LedgerIndex unless
+			// CompleteLedgers says otherwise.
+			searched := false
+			if minLedger, maxLedger := numberParam(req.Params, "min_ledger"), numberParam(req.Params, "max_ledger"); minLedger > 0 && maxLedger >= minLedger {
+				searched = s.CompleteLedgers == "" && maxLedger <= s.LedgerIndex
+			}
+			result = fmt.Sprintf(`{"status":"error","error":"txnNotFound","searched_all":%t}`, searched)
+			s.searches = append(s.searches, [2]uint64{numberParam(req.Params, "min_ledger"), numberParam(req.Params, "max_ledger")})
 			break
 		}
 		fee := fmt.Sprintf(`"Fee":%q,`, tx.Fee)

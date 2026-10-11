@@ -66,6 +66,7 @@ type transactionStore interface {
 	SetBlockNumber(ctx context.Context, id uuid.UUID, block uint64) error
 	SetFee(ctx context.Context, id uuid.UUID, fee string) error
 	RecordConfirmations(ctx context.Context, id uuid.UUID, confirmations int, status string, confirmedAt *time.Time) error
+	MarkFailed(ctx context.Context, id uuid.UUID, reason string) error
 }
 
 // DepositEvents publishes deposit webhooks scoped to the wallet's account with the

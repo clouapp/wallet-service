@@ -33,6 +33,9 @@ func TestFailure_Codes_TheServicePersistsAreThePublicList(t *testing.T) {
 		{withdraw.FailureSpendingQuote, resources.CodeSpendingLimitQuoteUnavailable},
 		{withdraw.FailureDestinationReserve, resources.CodeDestinationBelowReserve},
 		{withdraw.FailureDestinationTag, resources.CodeDestinationTagRequired},
+		{withdraw.FailureDestinationTagUnsupported, resources.CodeDestinationTagUnsupported},
+		{withdraw.FailureExpired, resources.CodeExpired},
+		{withdraw.FailureOnChainPrefix, resources.CodeOnChainPrefix},
 		{withdraw.FailureInternalError, resources.CodeInternalError},
 	}
 	seen := map[string]struct{}{}
@@ -185,5 +188,32 @@ func TestFeeEstimate_Keeps_TheTypesWire(t *testing.T) {
 		if string(got) != string(want) {
 			t.Fatalf("wire = %s, want %s", got, want)
 		}
+	}
+}
+
+func TestWithdrawal_DestinationTag_IsOnTheWireOnlyWhenSet(t *testing.T) {
+	t.Parallel()
+
+	tag := uint32(0)
+	tagged, err := json.Marshal(withdrawals.WithdrawalFrom(models.Withdrawal{DestinationAddress: "rDest", DestinationTag: &tag}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(tagged), `"destination_address":"rDest","destination_tag":0`) {
+		t.Fatalf("tagged %s", tagged)
+	}
+	lookup, err := json.Marshal(withdrawals.NewLookup(&models.Withdrawal{DestinationAddress: "rDest", DestinationTag: &tag}, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(lookup), `"destination_tag":0`) {
+		t.Fatalf("lookup %s", lookup)
+	}
+	untagged, err := json.Marshal(withdrawals.WithdrawalFrom(models.Withdrawal{DestinationAddress: "0xdest"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(untagged), "destination_tag") {
+		t.Fatalf("untagged %s", untagged)
 	}
 }

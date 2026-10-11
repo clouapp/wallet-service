@@ -61,6 +61,7 @@ const (
 	CodeSpendingLimitQuoteUnavailable = resources.CodeSpendingLimitQuoteUnavailable
 	CodeDestinationBelowReserve       = resources.CodeDestinationBelowReserve
 	CodeDestinationTagRequired        = resources.CodeDestinationTagRequired
+	CodeDestinationTagUnsupported     = resources.CodeDestinationTagUnsupported
 )
 
 const contentTypeJSON = "application/json"

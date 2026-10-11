@@ -14,6 +14,7 @@ import (
 	"github.com/goravel/framework/contracts/console/command"
 
 	"github.com/macrowallets/waas/app/services/sweep"
+	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -68,6 +69,9 @@ type preflightRequest struct {
 	Amount     string `json:"amount"`
 	To         string `json:"to"`
 	Passphrase string `json:"passphrase"`
+	// DestinationTag is the optional XRP destination tag (0..4294967295).
+	DestinationTag *json.Number `json:"destination_tag"`
+	destinationTag *uint32
 }
 
 type preflightTxOutput struct {
@@ -150,6 +154,15 @@ func readPreflightRequest(input io.Reader) (preflightRequest, error) {
 		if request.To == "" {
 			return preflightRequest{}, fmt.Errorf("to is required for a withdrawal")
 		}
+		if request.DestinationTag != nil {
+			tag, ok := numeric.ParseUint32(*request.DestinationTag)
+			if !ok {
+				return preflightRequest{}, fmt.Errorf("destination_tag must be an integer from 0 to 4294967295")
+			}
+			request.destinationTag = &tag
+		}
+	} else if request.DestinationTag != nil {
+		return preflightRequest{}, fmt.Errorf("destination_tag applies to a withdrawal only")
 	}
 	return request, nil
 }
@@ -188,7 +201,7 @@ func (r preflightRunner) preflightWithdrawal(ctx context.Context, preflighter sw
 		return nil, fmt.Errorf("invalid address for chain %s", chainID)
 	}
 	amount, _ := new(big.Int).SetString(request.Amount, 10)
-	plan, err := r.sweep.PlanForWithdrawal(ctx, walletID, request.Asset, amount, request.To, uuid.Nil)
+	plan, err := r.sweep.PlanForWithdrawalTo(ctx, walletID, request.Asset, amount, sweep.Destination{Address: request.To, Tag: request.destinationTag}, uuid.Nil)
 	if err != nil {
 		return nil, fmt.Errorf("plan withdrawal: %w", err)
 	}

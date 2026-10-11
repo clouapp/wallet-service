@@ -2,6 +2,7 @@ package deposit
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -135,11 +136,21 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 				continue
 			}
 			block, berr := adapter.GetTransactionBlock(ctx, tx.TxHash)
+			var onChain *chain.TransactionFailedError
+			if errors.As(berr, &onChain) {
+				if s.failOnChain(ctx, adapter, tx, onChainFailureCode(onChain.Result), onChain.Block) {
+					confirmedWallets.add(tx.WalletID)
+				}
+				continue
+			}
 			if berr != nil {
 				slog.Warn("reconcile block number", "tx_id", tx.ID, "tx_hash", tx.TxHash, "error", berr)
 				continue
 			}
 			if block == 0 {
+				if s.transactionExpired(ctx, adapter, tx) && s.failOnChain(ctx, adapter, tx, models.WithdrawalFailureExpired, 0) {
+					confirmedWallets.add(tx.WalletID)
+				}
 				continue
 			}
 			tx.BlockNumber = int64(block)
@@ -206,6 +217,91 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 		}
 	}
 	return nil
+}
+
+// WithdrawalFailures publishes withdrawal.failed for a withdrawal whose transaction
+// failed on chain and marks the withdrawal row failed with failureCode. The
+// withdrawal lifecycle publisher implements it next to WithdrawalConfirmations.
+type WithdrawalFailures interface {
+	MarkFailed(ctx context.Context, tx *models.Transaction, failureCode string) error
+}
+
+// maxFailureCodeLength is withdrawals.failure_reason varchar(64).
+const maxFailureCodeLength = 64
+
+// onChainFailureCode is the public failure code of an on-chain result:
+// onchain_ + the result in lowercase (tecNO_DST_INSUF_XRP → onchain_tecno_dst_insuf_xrp).
+func onChainFailureCode(result string) string {
+	code := models.WithdrawalFailureOnChainPrefix + strings.ToLower(strings.TrimSpace(result))
+	if len(code) == len(models.WithdrawalFailureOnChainPrefix) || len(code) > maxFailureCodeLength || strings.Trim(code, "abcdefghijklmnopqrstuvwxyz0123456789_") != "" {
+		return models.WithdrawalFailureOnChainPrefix + "failed"
+	}
+	return code
+}
+
+// transactionExpired asks an adapter that can prove expiry (XRP) whether the
+// transaction is past its last valid block, read from raw_payload. Every other
+// adapter, or a row without that block, is never expired.
+func (s *Service) transactionExpired(ctx context.Context, adapter types.Chain, tx models.Transaction) bool {
+	checker, ok := adapter.(chain.TransactionExpiryChecker)
+	if !ok {
+		return false
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(tx.RawPayload), &payload); err != nil {
+		return false
+	}
+	var lastValid uint64
+	if err := json.Unmarshal(payload[chain.LastValidBlockPayloadKey], &lastValid); err != nil || lastValid == 0 {
+		return false
+	}
+	expired, err := checker.TransactionExpired(ctx, tx.TxHash, lastValid)
+	if err != nil {
+		slog.Warn("check transaction expiry", "tx_id", tx.ID, "tx_hash", tx.TxHash, "error", err)
+		return false
+	}
+	return expired
+}
+
+// failOnChain records a transaction that failed on chain: the fee a validated
+// failure still paid (block > 0), the block, withdrawal.failed and the withdrawal
+// row (through WithdrawalFailures), then the transaction's failed status, last, so
+// a failed publish leaves the row pending and the next cycle retries. It reports
+// whether the transaction is now failed.
+func (s *Service) failOnChain(ctx context.Context, adapter types.Chain, tx models.Transaction, failureCode string, block uint64) bool {
+	if block > 0 {
+		if needsPaidFee(tx) {
+			if fee, ok := paidFee(ctx, adapter, tx); ok {
+				if err := s.txRepo.SetFee(ctx, tx.ID, fee); err != nil {
+					slog.Error("persist failed transaction fee", "tx_id", tx.ID, "error", err)
+					return false
+				}
+				tx.Fee = fee
+			}
+		}
+		if err := s.txRepo.SetBlockNumber(ctx, tx.ID, block); err != nil {
+			slog.Error("persist failed transaction block", "tx_id", tx.ID, "error", err)
+			return false
+		}
+		tx.BlockNumber = int64(block)
+	}
+	tx.Status = string(types.TxStatusFailed)
+	if tx.TxType == models.TxTypeWithdrawal {
+		if failures, ok := s.withdrawals.(WithdrawalFailures); ok {
+			if err := failures.MarkFailed(ctx, &tx, failureCode); err != nil {
+				slog.Error("publish withdrawal failed on chain", "tx_id", tx.ID, "error", err)
+				return false
+			}
+		} else if s.webhookSvc != nil {
+			s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventWithdrawalFailed, tx)
+		}
+	}
+	if err := s.txRepo.MarkFailed(ctx, tx.ID, failureCode); err != nil {
+		slog.Error("mark transaction failed", "tx_id", tx.ID, "error", err)
+		return false
+	}
+	slog.Warn("transaction failed on chain", "tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "failure_code", failureCode)
+	return true
 }
 
 // confirmationTx opens one transaction. Queries that use the callback context

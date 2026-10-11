@@ -13,6 +13,7 @@ import (
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/pkg/mpcshare"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -96,7 +97,7 @@ type WithdrawalRows interface {
 	Within(ctx context.Context, fn func(context.Context) error) error
 	FindByIDAndWallet(ctx context.Context, withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error)
 	Create(ctx context.Context, withdrawal *models.Withdrawal) error
-	RetryBroadcast(ctx context.Context, id uuid.UUID, amount, destination, feeEstimate, note string) error
+	RetryBroadcast(ctx context.Context, id uuid.UUID, amount, destination string, destinationTag *uint32, feeEstimate, note string) error
 }
 
 // ChainCatalog reads the chain row whose native decimals size the amount.
@@ -115,8 +116,10 @@ type CreateInput struct {
 	Asset              string
 	Amount             string
 	DestinationAddress string
-	Note               string
-	IdempotencyKey     string
+	// DestinationTag is the XRP destination tag; nil sends none. Other chains refuse one.
+	DestinationTag *uint32
+	Note           string
+	IdempotencyKey string
 }
 
 // CreateResult is the withdrawal row after the idempotent write. Replayed
@@ -252,6 +255,9 @@ func (s *Service) resolveCreateAmount(ctx context.Context, in CreateInput) (*Res
 	if chainErr != nil || chainEntity == nil {
 		return nil, nil, &CreateRefusal{Status: CreateStatusUnprocessable, Message: "chain not found"}
 	}
+	if in.DestinationTag != nil && chainEntity.AdapterType != models.AdapterTypeXRP {
+		return nil, nil, &CreateRefusal{Status: CreateStatusUnprocessable, Message: FailureDestinationTagUnsupported, cause: sweep.ErrDestinationTagUnsupported}
+	}
 	resolved, resolveErr := ResolveWithdrawalAmount(
 		in.Wallet.Chain,
 		adapter.NativeAsset(),
@@ -320,6 +326,7 @@ func (s *Service) persistCreate(ctx context.Context, in CreateInput, withdrawalI
 			Status:             models.WithdrawalStatusBroadcasting,
 			Amount:             in.Amount,
 			DestinationAddress: in.DestinationAddress,
+			DestinationTag:     in.DestinationTag,
 			FeeEstimate:        feeEstimate,
 			Note:               in.Note,
 		}
@@ -336,11 +343,12 @@ func (s *Service) persistCreate(ctx context.Context, in CreateInput, withdrawalI
 			return nil, &CreateRowError{Endpoint: "create_broadcasting_withdrawal", Err: createErr}
 		}
 	} else if updateErr := s.createRows.Within(ctx, func(txCtx context.Context) error {
-		return s.createRows.RetryBroadcast(txCtx, w.ID, in.Amount, in.DestinationAddress, feeEstimate, in.Note)
+		return s.createRows.RetryBroadcast(txCtx, w.ID, in.Amount, in.DestinationAddress, in.DestinationTag, feeEstimate, in.Note)
 	}); updateErr != nil {
 		return nil, &CreateRowError{Endpoint: "retry_broadcasting_withdrawal", Err: updateErr}
 	} else {
 		w.Status = models.WithdrawalStatusBroadcasting
+		w.DestinationTag = in.DestinationTag
 	}
 	return &CreateResult{
 		Withdrawal:     w,

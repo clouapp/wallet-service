@@ -41,7 +41,7 @@ func newXRPAdapter(t *testing.T, node *fakexrpl.Server, broadcasts *[]*types.Sig
 }
 
 func xrpChainEntity() *models.Chain {
-	return &models.Chain{ID: models.ChainTXRP, AdapterType: models.AdapterTypeXRP, NativeDecimals: 6}
+	return &models.Chain{ID: models.ChainTXRP, AdapterType: models.AdapterTypeXRP, NativeSymbol: models.NativeXRP, NativeDecimals: 6}
 }
 
 // xrpPlannerFixture is an XRP wallet whose base and child addresses are funded on
@@ -267,5 +267,74 @@ func TestPreflight_Withdrawal_XRPBaseIsSignedVerifiedAndNotBroadcast(t *testing.
 		if call == "submit" {
 			t.Fatal("preflight submitted a payment")
 		}
+	}
+}
+
+func TestPlan_XRP_ATaggedWithdrawalReachesAnAccountThatRequiresATag(t *testing.T) {
+	f := newXRPPlannerFixture(t, "50000000", 0)
+	exchange := randomXRPAddress(t)
+	f.node.Fund(exchange, fakexrpl.Account{Balance: "30000000", Sequence: 1, Flags: fakexrpl.RequireDestTag})
+	tag := uint32(0)
+
+	plan, err := f.svc.PlanForWithdrawalTo(context.Background(), f.wallet.ID, models.NativeXRP, big.NewInt(5_000_000),
+		Destination{Address: exchange, Tag: &tag}, uuid.Nil)
+	if err != nil {
+		t.Fatalf("tag 0 is a tag: %v", err)
+	}
+	if plan.Strategy != StrategyDirectFromBase || plan.DestinationTag == nil || *plan.DestinationTag != 0 {
+		t.Fatalf("plan %+v", plan)
+	}
+	quoted, err := f.svc.QuoteWithdrawalFee(context.Background(), FeeQuoteRequest{
+		WalletID: f.wallet.ID, Asset: models.NativeXRP, Amount: big.NewInt(5_000_000), ToAddress: exchange, DestinationTag: &tag,
+	})
+	if err != nil || quoted.Fee.Int64() != xrpTestFee {
+		t.Fatalf("tagged quote %+v err %v", quoted, err)
+	}
+}
+
+func TestPlan_ADestinationTagOnAnotherChainIsRefused(t *testing.T) {
+	walletID := uuid.New()
+	base := models.Address{ID: uuid.New(), WalletID: walletID, Address: "BASE"}
+	wallet := &models.Wallet{ID: walletID, Chain: "eth", DepositAddress: &base}
+	mockChain := balanceMapChain("eth", models.NativeETH, map[string]*big.Int{"BASE": big.NewInt(1_000_000)})
+	svc := newPlannerService(t, wallet, nil, mockChain, evmChainEntity("eth"))
+	tag := uint32(7)
+
+	_, err := svc.PlanForWithdrawalTo(context.Background(), walletID, models.NativeETH, big.NewInt(10), Destination{Address: "0xdest", Tag: &tag}, uuid.Nil)
+	if !errors.Is(err, ErrDestinationTagUnsupported) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestExecutePlan_XRPTaggedPaymentRecordsTheTagAndItsLastLedger(t *testing.T) {
+	fixture, adapter, node, broadcasts := newXRPSigningFixture(t)
+	base := *fixture.wallet.DepositAddress
+	exchange := randomXRPAddress(t)
+	node.Fund(exchange, fakexrpl.Account{Balance: "30000000", Sequence: 1, Flags: fakexrpl.RequireDestTag})
+	tag := uint32(98765)
+	plan := &Plan{WalletID: fixture.wallet.ID, Chain: models.ChainTXRP, Asset: models.NativeXRP,
+		Amount: big.NewInt(3_000_000), Strategy: StrategyDirectFromBase, SourceAddress: &base, DestinationTag: &tag}
+
+	result, err := fixture.executor(adapter).ExecutePlan(context.Background(), plan, fixture.credentials(), uuid.New(), exchange, "user-3119")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(*broadcasts) != 1 {
+		t.Fatalf("broadcasts %d", len(*broadcasts))
+	}
+	signed := (*broadcasts)[0]
+	tagged, err := adapter.BuildTransfer(context.Background(), types.TransferRequest{From: base.Address, To: exchange, Amount: big.NewInt(3_000_000), DestinationTag: &tag})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.VerifySignedTransaction(tagged, signed, base.Address); err != nil {
+		t.Fatalf("the broadcast payment is not the tagged one: %v", err)
+	}
+	row := result.FinalWithdrawTx
+	if row.DestinationTag == nil || *row.DestinationTag != tag {
+		t.Fatalf("row tag %v", row.DestinationTag)
+	}
+	if row.RawPayload != `{"last_ledger_sequence":120}` {
+		t.Fatalf("raw payload %s", row.RawPayload)
 	}
 }

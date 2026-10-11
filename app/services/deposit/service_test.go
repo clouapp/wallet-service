@@ -11,6 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 	"github.com/macrowallets/waas/tests/mocks"
@@ -20,6 +21,16 @@ func newWebhookSvc() *webhook.Service {
 	return webhook.NewService(webhook.Deps{
 		Configs: repositories.NewWebhookConfigRepository(nil, facades.Crypt()),
 		Events:  repositories.NewWebhookEventRepository(nil),
+	})
+}
+
+// newWithdrawalPublisher is the production withdrawal lifecycle publisher on the test database.
+func newWithdrawalPublisher() *withdrawalevents.Publisher {
+	return withdrawalevents.NewPublisher(withdrawalevents.PublisherDeps{
+		Enqueuer:     newWebhookSvc(),
+		Withdrawals:  repositories.NewWithdrawalRepository(nil),
+		Transactions: repositories.NewTransactionRepository(nil),
+		Wallets:      repositories.NewWalletRepository(nil),
 	})
 }
 

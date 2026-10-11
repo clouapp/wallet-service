@@ -50,8 +50,10 @@ func MapSweepError(ctx http.Context, err error) http.Response {
 		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeUnsupportedChain, "unsupported_chain")
 	case errors.Is(err, sweep.ErrDestinationBelowReserve):
 		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeDestinationBelowReserve, "the destination account does not exist and the amount is below the base reserve it needs")
+	case errors.Is(err, sweep.ErrDestinationTagUnsupported):
+		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeDestinationTagUnsupported, "destination tags are only supported on XRP")
 	case errors.Is(err, sweep.ErrDestinationTagRequired):
-		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeDestinationTagRequired, "the destination account requires a destination tag, which this API does not send")
+		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeDestinationTagRequired, "the destination account requires a destination tag; send destination_tag")
 	case errors.Is(err, sweep.ErrGasEstimateFailed):
 		return responses.Fail(ctx, http.StatusUnprocessableEntity, "gas_estimate_failed", "gas_estimate_failed")
 	}

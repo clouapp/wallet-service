@@ -33,10 +33,12 @@ var (
 // FeeQuoteRequest asks what a withdrawal of Amount (base units) of Asset to
 // ToAddress would pay in fees. An empty ToAddress prices a probe recipient.
 type FeeQuoteRequest struct {
-	WalletID        uuid.UUID
-	Asset           string
-	Amount          *big.Int
-	ToAddress       string
+	WalletID  uuid.UUID
+	Asset     string
+	Amount    *big.Int
+	ToAddress string
+	// DestinationTag is the XRP destination tag the withdrawal would carry.
+	DestinationTag  *uint32
 	CallerAccountID uuid.UUID
 }
 
@@ -156,7 +158,7 @@ func (s *service) QuoteWithdrawalFee(ctx context.Context, req FeeQuoteRequest) (
 	}
 
 	recipient := quoteRecipient(chainEntity.AdapterType, req.ToAddress)
-	plan, err := s.PlanForWithdrawal(ctx, req.WalletID, req.Asset, req.Amount, recipient, req.CallerAccountID)
+	plan, err := s.PlanForWithdrawalTo(ctx, req.WalletID, req.Asset, req.Amount, Destination{Address: recipient, Tag: req.DestinationTag}, req.CallerAccountID)
 	if err != nil {
 		return nil, err
 	}

@@ -110,7 +110,15 @@ func TestError_Mappers_KeepTheirBytes(t *testing.T) {
 		{"xrp destination tag required", func(ctx http.Context) http.Response {
 			return MapSweepError(ctx, fmt.Errorf("plan: %w", sweep.ErrDestinationTagRequired))
 		},
-			422, legacyJSON, `{"error":{"code":"destination_tag_required","message":"the destination account requires a destination tag, which this API does not send"}}`},
+			422, legacyJSON, `{"error":{"code":"destination_tag_required","message":"the destination account requires a destination tag; send destination_tag"}}`},
+		{"destination tag off xrp", func(ctx http.Context) http.Response {
+			return MapSweepError(ctx, fmt.Errorf("plan: %w", sweep.ErrDestinationTagUnsupported))
+		},
+			422, legacyJSON, `{"error":{"code":"destination_tag_not_supported","message":"destination tags are only supported on XRP"}}`},
+		{"destination tag refusal before the row", func(ctx http.Context) http.Response {
+			return MapWithdrawalError(ctx, &withdraw.CreateRefusal{Status: withdraw.CreateStatusUnprocessable, Message: withdraw.FailureDestinationTagUnsupported})
+		},
+			422, legacyJSON, `{"error":{"code":"destination_tag_not_supported","message":"destination_tag_not_supported"}}`},
 		{"gas estimate failed", func(ctx http.Context) http.Response { return MapSweepError(ctx, sweep.ErrGasEstimateFailed) },
 			422, legacyJSON, `{"error":{"code":"gas_estimate_failed","message":"gas_estimate_failed"}}`},
 		{"spending limit exceeded", func(ctx http.Context) http.Response {

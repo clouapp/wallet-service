@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/macrowallets/waas/app/services/chain"
@@ -291,17 +292,113 @@ func (a *Live) transactionLedger(ctx context.Context, txHash string) (uint64, er
 	if err != nil || !found || !result.Validated {
 		return 0, err
 	}
-	if outcome := result.Meta.TransactionResult; outcome != xrpSuccessResult {
-		if outcome == "" {
-			outcome = "no TransactionResult"
-		}
-		return 0, fmt.Errorf("xrp tx %s: %s: %w", txHash, outcome, chain.ErrTransactionFailed)
-	}
 	ledger, err := nonNegativeJSON(result.LedgerIndex)
 	if err != nil {
 		return 0, fmt.Errorf("xrp tx ledger: %w", err)
 	}
+	if outcome := result.Meta.TransactionResult; outcome != xrpSuccessResult {
+		if outcome == "" {
+			return 0, fmt.Errorf("xrp tx %s is validated without a TransactionResult", txHash)
+		}
+		return 0, fmt.Errorf("xrp tx %s: %w", txHash, &chain.TransactionFailedError{Result: outcome, Block: ledger})
+	}
 	return ledger, nil
+}
+
+var _ chain.TransactionExpiryChecker = (*Live)(nil)
+
+// TransactionExpired reports that txHash can never be included: the validated ledger
+// is past lastLedger (its LastLedgerSequence), the server holds every ledger from the
+// one it was built on to lastLedger (complete_ledgers), and the tx method searched
+// that whole range without finding it (searched_all). Anything less is "not yet".
+func (a *Live) TransactionExpired(ctx context.Context, txHash string, lastLedger uint64) (bool, error) {
+	if txHash == "" || lastLedger == 0 {
+		return false, fmt.Errorf("xrp expiry: tx hash and last ledger are required")
+	}
+	minLedger := uint64(1)
+	if lastLedger > xrpLastLedgerWindow {
+		minLedger = lastLedger - xrpLastLedgerWindow
+	}
+	validated, complete, err := a.completeLedgers(ctx)
+	if err != nil {
+		return false, err
+	}
+	if validated <= lastLedger || !complete.covers(minLedger, lastLedger) {
+		return false, nil
+	}
+	var result struct {
+		xrpRPCError
+		Validated   bool `json:"validated"`
+		SearchedAll bool `json:"searched_all"`
+	}
+	err = a.call(ctx, "tx", []any{map[string]any{
+		"transaction": txHash, "binary": false, "min_ledger": minLedger, "max_ledger": lastLedger,
+	}}, &result)
+	if err != nil {
+		return false, err
+	}
+	if result.Status == "error" && result.Error == "txnNotFound" {
+		return result.SearchedAll, nil
+	}
+	if result.Status != "success" {
+		return false, fmt.Errorf("xrp tx: %s", xrpErrorCode(result.xrpRPCError))
+	}
+	return false, nil
+}
+
+// ledgerRanges is server_info complete_ledgers, e.g. "32570-62000000,62000002-62000100".
+type ledgerRanges [][2]uint64
+
+func (r ledgerRanges) covers(from, to uint64) bool {
+	for _, span := range r {
+		if span[0] <= from && to <= span[1] {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *Live) completeLedgers(ctx context.Context) (uint64, ledgerRanges, error) {
+	var result struct {
+		xrpRPCError
+		Info struct {
+			CompleteLedgers string `json:"complete_ledgers"`
+			ValidatedLedger struct {
+				Seq json.Number `json:"seq"`
+			} `json:"validated_ledger"`
+		} `json:"info"`
+	}
+	if err := a.call(ctx, "server_info", []any{map[string]any{}}, &result); err != nil {
+		return 0, nil, err
+	}
+	if result.Status != "success" {
+		return 0, nil, fmt.Errorf("xrp server_info: %s", xrpErrorCode(result.xrpRPCError))
+	}
+	validated, err := nonNegativeJSON(result.Info.ValidatedLedger.Seq)
+	if err != nil {
+		return 0, nil, fmt.Errorf("xrp server_info ledger: %w", err)
+	}
+	return validated, parseLedgerRanges(result.Info.CompleteLedgers), nil
+}
+
+// parseLedgerRanges reads complete_ledgers; "empty" or anything unreadable is no range.
+func parseLedgerRanges(text string) ledgerRanges {
+	var ranges ledgerRanges
+	for _, part := range strings.Split(strings.TrimSpace(text), ",") {
+		bounds := strings.SplitN(strings.TrimSpace(part), "-", 2)
+		low, err := strconv.ParseUint(bounds[0], 10, 64)
+		if err != nil {
+			continue
+		}
+		high := low
+		if len(bounds) == 2 {
+			if high, err = strconv.ParseUint(bounds[1], 10, 64); err != nil || high < low {
+				continue
+			}
+		}
+		ranges = append(ranges, [2]uint64{low, high})
+	}
+	return ranges
 }
 
 // optionalNonNegativeJSON is nonNegativeJSON with a missing field read as 0.

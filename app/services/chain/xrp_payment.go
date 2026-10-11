@@ -1,6 +1,7 @@
 package chain
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/big"
@@ -39,12 +40,13 @@ func orZero(value *big.Int) *big.Int {
 }
 
 // CheckDestination refuses a payment of amount drops that the destination would
-// reject on the ledger. It passes when no destination was checked.
-func (f XRPPaymentFunds) CheckDestination(amount *big.Int) error {
+// reject on the ledger. tagged says the payment carries a destination tag. It
+// passes when no destination was checked.
+func (f XRPPaymentFunds) CheckDestination(amount *big.Int, tagged bool) error {
 	if !f.DestinationChecked {
 		return nil
 	}
-	if f.DestinationRequiresTag {
+	if f.DestinationRequiresTag && !tagged {
 		return ErrDestinationTagRequired
 	}
 	if !f.DestinationFunded && (amount == nil || f.BaseReserve == nil || amount.Cmp(f.BaseReserve) < 0) {
@@ -64,3 +66,29 @@ var (
 	// result (an XRP Ledger tec code): its fee was paid, its payment was not made.
 	ErrTransactionFailed = errors.New("transaction failed on chain")
 )
+
+// TransactionFailedError is ErrTransactionFailed with the chain's result code and the
+// ledger (block) that includes the transaction.
+type TransactionFailedError struct {
+	Result string
+	Block  uint64
+}
+
+func (e *TransactionFailedError) Error() string {
+	return fmt.Sprintf("%s: %s in block %d", ErrTransactionFailed, e.Result, e.Block)
+}
+
+func (e *TransactionFailedError) Is(target error) bool {
+	return target == ErrTransactionFailed
+}
+
+// LastValidBlockPayloadKey is the transactions.raw_payload key holding the last
+// block a broadcast transaction can be included in (XRP LastLedgerSequence).
+const LastValidBlockPayloadKey = "last_ledger_sequence"
+
+// TransactionExpiryChecker is an adapter that can prove a broadcast transaction will
+// never be included: the chain is past lastValidBlock and the node searched every
+// block the transaction could be in. Only the XRP adapter implements it.
+type TransactionExpiryChecker interface {
+	TransactionExpired(ctx context.Context, txHash string, lastValidBlock uint64) (bool, error)
+}

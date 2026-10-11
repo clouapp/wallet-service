@@ -130,12 +130,13 @@ func (r *WithdrawalRepository) SetStatus(ctx context.Context, id uuid.UUID, stat
 }
 
 // RetryBroadcast moves a failed withdrawal back to broadcasting and clears the failure.
-func (r *WithdrawalRepository) RetryBroadcast(ctx context.Context, id uuid.UUID, amount, destination, feeEstimate, note string) error {
+func (r *WithdrawalRepository) RetryBroadcast(ctx context.Context, id uuid.UUID, amount, destination string, destinationTag *uint32, feeEstimate, note string) error {
 	return r.updateColumns(ctx, id, map[string]any{
 		"status":              "broadcasting",
 		"failure_reason":      nil,
 		"amount":              amount,
 		"destination_address": destination,
+		"destination_tag":     destinationTag,
 		"fee_estimate":        feeEstimate,
 		"note":                note,
 	}, "retry withdrawal broadcast")

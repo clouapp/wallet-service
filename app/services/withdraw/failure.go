@@ -3,6 +3,8 @@ package withdraw
 import (
 	"errors"
 
+	"github.com/macrowallets/waas/app/models"
+
 	"github.com/macrowallets/waas/app/services/sweep"
 )
 
@@ -23,7 +25,14 @@ const (
 	FailureSpendingQuote        = "spending_limit_quote_unavailable"
 	FailureDestinationReserve   = "destination_below_reserve"
 	FailureDestinationTag       = "destination_tag_required"
-	FailureInternalError        = "internal_error"
+	// FailureDestinationTagUnsupported is a destination_tag sent for a chain other than XRP.
+	FailureDestinationTagUnsupported = "destination_tag_not_supported"
+	// FailureExpired is an XRP payment that can no longer be included in a ledger.
+	FailureExpired = models.WithdrawalFailureExpired
+	// FailureOnChainPrefix starts the code of an XRP payment a validated ledger
+	// includes with a failure result: onchain_ + the lowercase result code.
+	FailureOnChainPrefix = models.WithdrawalFailureOnChainPrefix
+	FailureInternalError = "internal_error"
 )
 
 // FailureCode is the failure_reason a failed Request leaves on the row.
@@ -41,6 +50,8 @@ func FailureCode(err error) string {
 		return FailureDestinationReserve
 	case errors.Is(err, sweep.ErrDestinationTagRequired):
 		return FailureDestinationTag
+	case errors.Is(err, sweep.ErrDestinationTagUnsupported):
+		return FailureDestinationTagUnsupported
 	case errors.Is(err, sweep.ErrInFlightConsolidation),
 		errors.Is(err, sweep.ErrDailyQuotaExceeded),
 		errors.Is(err, sweep.ErrTooManyAddresses):

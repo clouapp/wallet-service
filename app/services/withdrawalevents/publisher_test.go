@@ -2,8 +2,10 @@ package withdrawalevents
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,6 +78,18 @@ func (f *fakeWithdrawals) MarkConfirmed(_ context.Context, id, transactionID uui
 	f.updates[id] = map[string]any{
 		"status":         models.WithdrawalStatusConfirmed,
 		"transaction_id": transactionID,
+	}
+	return nil
+}
+
+func (f *fakeWithdrawals) MarkFailed(_ context.Context, id uuid.UUID, failureReason string) error {
+	f.updates[id] = map[string]any{
+		"status":         models.WithdrawalStatusFailed,
+		"failure_reason": failureReason,
+	}
+	if w := f.byID[id]; w != nil {
+		w.Status = models.WithdrawalStatusFailed
+		w.FailureReason = &failureReason
 	}
 	return nil
 }
@@ -368,5 +382,64 @@ func TestBackfill_Confirms_BroadcastWithdrawalsWithConfirmedTransactions(t *test
 
 	if _, err := f.publisher.Backfill(context.Background(), 0); err == nil {
 		t.Fatal("a non-positive limit must be rejected")
+	}
+}
+
+func TestMarkFailed_PublishesOnceWithTheTransactionAndMarksTheRow(t *testing.T) {
+	f := newFixture()
+	tag := uint32(98765)
+	f.tx.DestinationTag = &tag
+	f.tx.Status = string(types.TxStatusFailed)
+
+	if err := f.publisher.MarkFailed(context.Background(), f.tx, "onchain_tecno_dst_insuf_xrp"); err != nil {
+		t.Fatalf("MarkFailed: %v", err)
+	}
+	event, payload := onlyPayload(t, f.enqueuer)
+	if event.EventType != types.EventWithdrawalFailed || event.TransactionID == nil || *event.TransactionID != f.tx.ID || event.SubjectID != f.withdrawal.ID.String() {
+		t.Fatalf("event = %+v", event)
+	}
+	if payload.FailureCode == nil || *payload.FailureCode != "onchain_tecno_dst_insuf_xrp" || payload.Status != models.WithdrawalStatusFailed {
+		t.Fatalf("failure = %v / %s", payload.FailureCode, payload.Status)
+	}
+	if payload.TxHash == nil || *payload.TxHash != testTxHash || payload.DestinationAddress != destination || payload.DestinationTag == nil || *payload.DestinationTag != tag {
+		t.Fatalf("payload = %+v", payload)
+	}
+	if update := f.withdrawals.updates[f.withdrawal.ID]; update["status"] != models.WithdrawalStatusFailed || update["failure_reason"] != "onchain_tecno_dst_insuf_xrp" {
+		t.Fatalf("row update = %v", update)
+	}
+
+	if err := f.publisher.MarkFailed(context.Background(), f.tx, "onchain_tecno_dst_insuf_xrp"); err != nil {
+		t.Fatalf("second MarkFailed: %v", err)
+	}
+	if len(f.enqueuer.events) != 1 {
+		t.Fatalf("withdrawal.failed published %d times", len(f.enqueuer.events))
+	}
+}
+
+func TestMarkFailed_RefusesAnythingButAWithdrawalWithACode(t *testing.T) {
+	f := newFixture()
+	if err := f.publisher.MarkFailed(context.Background(), f.tx, " "); err == nil {
+		t.Fatal("an empty failure code was accepted")
+	}
+	f.tx.TxType = models.TxTypeSweep
+	if err := f.publisher.MarkFailed(context.Background(), f.tx, "expired"); err == nil {
+		t.Fatal("a sweep was marked as a failed withdrawal")
+	}
+	if len(f.enqueuer.events) != 0 {
+		t.Fatalf("events = %d", len(f.enqueuer.events))
+	}
+}
+
+func TestPublish_Broadcast_CarriesTheDestinationTagOnlyWhenSet(t *testing.T) {
+	f := newFixture()
+	if err := f.publisher.PublishBroadcast(context.Background(), f.withdrawal, f.tx); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(f.enqueuer.events[0].Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "destination_tag") {
+		t.Fatalf("an untagged payload names a destination tag: %s", encoded)
 	}
 }

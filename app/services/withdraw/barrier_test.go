@@ -80,7 +80,7 @@ func (o *oneWithdrawalRow) Create(_ context.Context, withdrawal *models.Withdraw
 	return nil
 }
 
-func (o *oneWithdrawalRow) RetryBroadcast(context.Context, uuid.UUID, string, string, string, string) error {
+func (o *oneWithdrawalRow) RetryBroadcast(context.Context, uuid.UUID, string, string, *uint32, string, string) error {
 	o.mu.Lock()
 	o.retries++
 	o.mu.Unlock()

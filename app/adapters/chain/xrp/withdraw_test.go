@@ -3,6 +3,7 @@ package xrp
 import (
 	"context"
 	"encoding/asn1"
+	"encoding/hex"
 	"errors"
 	"math/big"
 	"strings"
@@ -282,5 +283,134 @@ func TestTransactionFee_IsTheValidatedFeeInDrops(t *testing.T) {
 		if _, err := adapter.TransactionFee(ctx, hash); !errors.Is(err, chain.ErrTransactionFeeUnknown) {
 			t.Fatalf("%s: %v", hash, err)
 		}
+	}
+}
+
+func TestBuildTransfer_DestinationTagIsSerializedSignedAndVerified(t *testing.T) {
+	t.Parallel()
+	node := fakexrpl.New(t)
+	source, exchange := newXRPTestAccount(t), newXRPTestAccount(t)
+	node.Fund(source.address, fakexrpl.Account{Balance: "10000000", Sequence: 7})
+	node.Fund(exchange.address, fakexrpl.Account{Balance: "50000000", Sequence: 1, Flags: fakexrpl.RequireDestTag})
+	adapter := altnetAdapter(node)
+	tag := uint32(4294967295)
+
+	unsigned, err := adapter.BuildTransfer(context.Background(), types.TransferRequest{
+		From: source.address, To: exchange.address, Amount: big.NewInt(2_000_000), DestinationTag: &tag,
+	})
+	if err != nil {
+		t.Fatalf("a tagged payment to an account requiring a tag: %v", err)
+	}
+	if unsigned.Metadata["destination_tag"] != "4294967295" {
+		t.Fatalf("metadata %+v", unsigned.Metadata)
+	}
+	// DestinationTag is UInt32 field 14 (header 0x2E), between Sequence (0x24) and
+	// LastLedgerSequence (0x20 0x1B), as the canonical field order requires.
+	blob := hex.EncodeToString(unsigned.RawBytes)
+	sequenceAt := strings.Index(blob, "2400000007")
+	tagAt := strings.Index(blob, "2effffffff")
+	lastLedgerAt := strings.Index(blob, "201b")
+	if sequenceAt < 0 || tagAt < 0 || lastLedgerAt < 0 || sequenceAt >= tagAt || tagAt >= lastLedgerAt {
+		t.Fatalf("field order in %s", blob)
+	}
+
+	signed, err := adapter.SignTransaction(context.Background(), unsigned, source.key.Serialize())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = adapter.VerifySignedTransaction(unsigned, signed, source.address); err != nil {
+		t.Fatal(err)
+	}
+	payment, err := parseXRPPayment(signed.RawBytes)
+	if err != nil || payment.DestinationTag == nil || *payment.DestinationTag != tag {
+		t.Fatalf("signed payment tag %v err %v", payment.DestinationTag, err)
+	}
+	if last, lastErr := adapter.LastValidBlock(signed); lastErr != nil || last != 100+xrpLastLedgerWindow {
+		t.Fatalf("last valid block %d err %v", last, lastErr)
+	}
+
+	untagged, err := adapter.BuildTransfer(context.Background(), types.TransferRequest{
+		From: source.address, To: newXRPTestAccount(t).address, Amount: big.NewInt(2_000_000),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed, err := parseXRPPayment(untagged.RawBytes); err != nil || parsed.DestinationTag != nil || untagged.Metadata["destination_tag"] != nil {
+		t.Fatalf("an untagged payment carries a tag: %x", untagged.RawBytes)
+	}
+	// The signed bytes must carry the tag the caller asked for, no other.
+	tampered := *unsigned
+	tampered.Metadata = map[string]interface{}{}
+	for k, v := range unsigned.Metadata {
+		tampered.Metadata[k] = v
+	}
+	tampered.Metadata["destination_tag"] = "1"
+	if err := adapter.VerifySignedTransaction(&tampered, signed, source.address); err == nil {
+		t.Fatal("a payment signed with another destination tag verified")
+	}
+	delete(tampered.Metadata, "destination_tag")
+	if err := adapter.VerifySignedTransaction(&tampered, signed, source.address); err == nil {
+		t.Fatal("a tagged payment verified against an untagged request")
+	}
+}
+
+func TestGetTransactionBlock_ReportsTheFailureResultAndLedger(t *testing.T) {
+	t.Parallel()
+	node := fakexrpl.New(t)
+	node.SetTx("CC01", fakexrpl.Tx{Validated: true, LedgerIndex: 96, Result: "tecNO_DST_INSUF_XRP", Fee: "12"})
+
+	_, err := altnetAdapter(node).GetTransactionBlock(context.Background(), "CC01")
+	var failed *chain.TransactionFailedError
+	if !errors.As(err, &failed) || failed.Result != "tecNO_DST_INSUF_XRP" || failed.Block != 96 {
+		t.Fatalf("err %v", err)
+	}
+}
+
+func TestTransactionExpired_OnlyWhenTheServerSearchedEveryLedgerPastTheLastOne(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	const lastLedger = 120
+
+	node := fakexrpl.New(t)
+	node.LedgerIndex = lastLedger
+	adapter := altnetAdapter(node)
+	if expired, err := adapter.TransactionExpired(ctx, "DD01", lastLedger); err != nil || expired {
+		t.Fatalf("at the last ledger itself: expired %v err %v", expired, err)
+	}
+	if searches := node.Searches(); len(searches) != 0 {
+		t.Fatalf("searched before the validated ledger passed the last one: %v", searches)
+	}
+
+	node.LedgerIndex = lastLedger + 1
+	if expired, err := adapter.TransactionExpired(ctx, "DD01", lastLedger); err != nil || !expired {
+		t.Fatalf("past the last ledger and searched: expired %v err %v", expired, err)
+	}
+	if searches := node.Searches(); len(searches) != 1 || searches[0] != [2]uint64{lastLedger - xrpLastLedgerWindow, lastLedger} {
+		t.Fatalf("searched %v", searches)
+	}
+
+	gap := fakexrpl.New(t)
+	gap.LedgerIndex = lastLedger + 50
+	gap.CompleteLedgers = "1-105,110-170"
+	if expired, err := altnetAdapter(gap).TransactionExpired(ctx, "DD01", lastLedger); err != nil || expired {
+		t.Fatalf("a server missing ledgers 106-109: expired %v err %v", expired, err)
+	}
+
+	found := fakexrpl.New(t)
+	found.LedgerIndex = lastLedger + 5
+	found.SetTx("DD02", fakexrpl.Tx{Validated: true, LedgerIndex: 110, Result: "tesSUCCESS", Fee: "12"})
+	if expired, err := altnetAdapter(found).TransactionExpired(ctx, "DD02", lastLedger); err != nil || expired {
+		t.Fatalf("an included payment: expired %v err %v", expired, err)
+	}
+}
+
+func TestParseLedgerRanges(t *testing.T) {
+	t.Parallel()
+	ranges := parseLedgerRanges("32570-62000000,62000002-62000100,62000105")
+	if !ranges.covers(32570, 62000000) || ranges.covers(61999999, 62000002) || !ranges.covers(62000105, 62000105) {
+		t.Fatalf("ranges %v", ranges)
+	}
+	if parseLedgerRanges("empty").covers(1, 1) {
+		t.Fatal("\"empty\" covers a ledger")
 	}
 }

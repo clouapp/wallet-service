@@ -43,6 +43,13 @@ const (
 // false pauses even when the account row is true. A missing row uses the
 // catalog default (on); a row stored true also lets the plan continue.
 func (s *service) PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int, toAddress string, callerAccountID uuid.UUID) (*Plan, error) {
+	return s.PlanForWithdrawalTo(ctx, walletID, asset, amount, Destination{Address: toAddress}, callerAccountID)
+}
+
+// PlanForWithdrawalTo is PlanForWithdrawal to a Destination that may carry an XRP
+// destination tag. A tag on any other chain is ErrDestinationTagUnsupported.
+func (s *service) PlanForWithdrawalTo(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int, to Destination, callerAccountID uuid.UUID) (*Plan, error) {
+	toAddress := to.Address
 	if amount == nil {
 		return nil, fmt.Errorf("sweep: amount must not be nil")
 	}
@@ -80,13 +87,19 @@ func (s *service) PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, ass
 	if !supportedWithdrawalAdapter(chainEntity.AdapterType) {
 		return nil, ErrUnsupportedChain
 	}
+	if chainEntity.AdapterType == models.AdapterTypeXRP && !types.SameAssetSymbol(asset, chainEntity.NativeSymbol) {
+		return nil, fmt.Errorf("%w: XRP withdrawals send native %s only", ErrUnsupportedChain, chainEntity.NativeSymbol)
+	}
 
 	adapter, err := s.registry.ChainForWallet(wallet)
 	if err != nil {
 		return nil, fmt.Errorf("sweep: adapter for %q: %w", wallet.Chain, err)
 	}
 	if chainEntity.AdapterType == models.AdapterTypeXRP {
-		return planXRPWithdrawal(ctx, adapter, wallet, asset, amount, toAddress)
+		return planXRPWithdrawal(ctx, adapter, wallet, asset, amount, to)
+	}
+	if to.Tag != nil {
+		return nil, ErrDestinationTagUnsupported
 	}
 
 	reserve, err := loadNativeReserve(ctx, adapter, asset)
