@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
+	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/memcache"
 )
 
@@ -67,14 +68,21 @@ func (e *submitEvents) PublishFailed(_ context.Context, _ *models.Withdrawal, co
 // planSweep plans a withdrawal and executes it the way the test says.
 type planSweep struct {
 	mockSweepSvc
-	strategy sweep.Strategy
-	result   *sweep.Result
-	planned  uuid.UUID
+	strategy  sweep.Strategy
+	shortfall error
+	planErr   error
+	result    *sweep.Result
+	planned   uuid.UUID
+	plannedTo sweep.Destination
 }
 
-func (p *planSweep) PlanForWithdrawal(_ context.Context, walletID uuid.UUID, asset string, amount *big.Int, _ string, callerAccountID uuid.UUID) (*sweep.Plan, error) {
+func (p *planSweep) PlanForWithdrawalTo(_ context.Context, walletID uuid.UUID, asset string, amount *big.Int, to sweep.Destination, callerAccountID uuid.UUID) (*sweep.Plan, error) {
 	p.planned = callerAccountID
-	return &sweep.Plan{WalletID: walletID, Asset: asset, Amount: amount, Strategy: p.strategy}, nil
+	p.plannedTo = to
+	if p.planErr != nil {
+		return nil, p.planErr
+	}
+	return &sweep.Plan{WalletID: walletID, Asset: asset, Amount: amount, Strategy: p.strategy, Shortfall: p.shortfall}, nil
 }
 
 func (p *planSweep) ExecutePlan(context.Context, *sweep.Plan, sweep.SigningCredentials, uuid.UUID, string, string) (*sweep.Result, error) {
@@ -213,6 +221,46 @@ func TestSubmit_Marks_TheRowFailedAndPublishesWhenTheRequestFails(t *testing.T) 
 	}
 }
 
+func TestSubmit_Returns_TheXRPBaseShortfallAsInsufficientFunds(t *testing.T) {
+	wallet := sealedCreateWallet(t, "eth", nil)
+	rows := newSubmitRows()
+	events := &submitEvents{}
+	shortfall := &sweep.BaseReserveShortfallError{Address: "rBase", Amount: big.NewInt(9_000_000)}
+	svc := newSubmitService(t, wallet, &planSweep{strategy: sweep.StrategyInsufficient, shortfall: shortfall}, rows, events)
+
+	_, err := svc.Submit(context.Background(), submitInput(wallet))
+	var got *sweep.BaseReserveShortfallError
+	if !errors.As(err, &got) || got != shortfall || !errors.Is(err, sweep.ErrInsufficientFunds) {
+		t.Fatalf("err = %v", err)
+	}
+	if row := rows.created[0]; rows.failed[row.ID] != FailureInsufficientFunds {
+		t.Fatalf("failed = %v", rows.failed)
+	}
+	if len(events.failures) != 1 || events.failures[0] != FailureInsufficientFunds {
+		t.Fatalf("published = %v", events.failures)
+	}
+}
+
+func TestSubmit_Marks_AnXRPDestinationRefusalWithItsOwnCode(t *testing.T) {
+	for planErr, code := range map[error]string{
+		sweep.ErrDestinationBelowReserve: FailureDestinationReserve,
+		sweep.ErrDestinationTagRequired:  FailureDestinationTag,
+	} {
+		wallet := sealedCreateWallet(t, "eth", nil)
+		rows := newSubmitRows()
+		events := &submitEvents{}
+		svc := newSubmitService(t, wallet, &planSweep{planErr: planErr}, rows, events)
+
+		_, err := svc.Submit(context.Background(), submitInput(wallet))
+		if !errors.Is(err, planErr) {
+			t.Fatalf("err = %v", err)
+		}
+		if row := rows.created[0]; rows.failed[row.ID] != code || len(events.failures) != 1 || events.failures[0] != code {
+			t.Fatalf("%s: failed = %v published = %v", code, rows.failed, events.failures)
+		}
+	}
+}
+
 func TestSubmit_Reports_AFailedMarkAsARowErrorNotTheRequestError(t *testing.T) {
 	wallet := sealedCreateWallet(t, "eth", nil)
 	rows := newSubmitRows()
@@ -299,5 +347,102 @@ func TestSubmit_Works_WithoutAnEventPublisher(t *testing.T) {
 	_, err := svc.Submit(context.Background(), submitInput(wallet))
 	if !errors.Is(err, sweep.ErrInsufficientFunds) || len(rows.failed) != 1 {
 		t.Fatalf("err = %v failed = %v", err, rows.failed)
+	}
+}
+
+func TestSubmit_Carries_TheXRPDestinationTagToTheRowAndThePlanner(t *testing.T) {
+	wallet := sealedCreateWallet(t, "eth", nil)
+	rows := newSubmitRows()
+	runner := &planSweep{strategy: sweep.StrategyDirectFromBase, result: &sweep.Result{FinalWithdrawTx: &models.Transaction{ID: uuid.New(), TxHash: "ABC"}}}
+	svc := newSubmitService(t, wallet, runner, rows, &submitEvents{})
+	svc.createChains = &memChains{decimals: 6, adapterType: models.AdapterTypeXRP}
+	in := submitInput(wallet)
+	tag := uint32(4294967295)
+	in.DestinationTag = &tag
+
+	result, err := svc.Submit(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runner.plannedTo.Tag == nil || *runner.plannedTo.Tag != tag || runner.plannedTo.Address != in.DestinationAddress {
+		t.Fatalf("planned to %+v", runner.plannedTo)
+	}
+	if len(rows.created) != 1 || rows.created[0].DestinationTag == nil || *rows.created[0].DestinationTag != tag {
+		t.Fatalf("row %+v", rows.created)
+	}
+	if result.Withdrawal.DestinationTag == nil || *result.Withdrawal.DestinationTag != tag {
+		t.Fatalf("withdrawal %+v", result.Withdrawal)
+	}
+}
+
+func TestSubmit_Refuses_ADestinationTagOnAChainOtherThanXRP(t *testing.T) {
+	wallet := sealedCreateWallet(t, "eth", nil)
+	rows := newSubmitRows()
+	runner := &planSweep{strategy: sweep.StrategyDirectFromBase}
+	svc := newSubmitService(t, wallet, runner, rows, &submitEvents{})
+	svc.createChains = &memChains{decimals: 18, adapterType: models.AdapterTypeEVM}
+	in := submitInput(wallet)
+	tag := uint32(5)
+	in.DestinationTag = &tag
+
+	_, err := svc.Submit(context.Background(), in)
+	var refusal *CreateRefusal
+	if !errors.As(err, &refusal) || refusal.Status != CreateStatusUnprocessable || refusal.Message != FailureDestinationTagUnsupported {
+		t.Fatalf("err = %v", err)
+	}
+	if !errors.Is(err, sweep.ErrDestinationTagUnsupported) || rows.creates != 0 || runner.plannedTo.Address != "" {
+		t.Fatalf("a refused tag wrote %d rows or reached the planner", rows.creates)
+	}
+}
+
+func TestSubmit_Retries_AFailedRowWithTheNewDestinationTag(t *testing.T) {
+	wallet := sealedCreateWallet(t, "eth", nil)
+	existingID := uuid.New()
+	reason := FailureExpired
+	rows := newSubmitRows()
+	rows.byID = map[uuid.UUID]*models.Withdrawal{existingID: {ID: existingID, WalletID: wallet.ID, Status: models.WithdrawalStatusFailed, FailureReason: &reason}}
+	runner := &planSweep{strategy: sweep.StrategyDirectFromBase, result: &sweep.Result{FinalWithdrawTx: &models.Transaction{ID: uuid.New(), TxHash: "ABC"}}}
+	svc := newSubmitService(t, wallet, runner, rows, &submitEvents{})
+	svc.createChains = &memChains{decimals: 6, adapterType: models.AdapterTypeXRP}
+	in := submitInput(wallet)
+	in.IdempotencyKey = existingID.String()
+	tag := uint32(12)
+	in.DestinationTag = &tag
+
+	if _, err := svc.Submit(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	if rows.retries != 1 || rows.retryTag == nil || *rows.retryTag != tag {
+		t.Fatalf("retries %d tag %v", rows.retries, rows.retryTag)
+	}
+}
+
+func TestSubmit_Retry_SendsAgainWhenTheKeysTransactionFailedOnChain(t *testing.T) {
+	for status, wantNew := range map[string]bool{
+		string(types.TxStatusFailed):     true,
+		string(types.TxStatusConfirming): false,
+	} {
+		wallet := sealedCreateWallet(t, "eth", nil)
+		existingID := uuid.New()
+		reason := FailureOnChainPrefix + "tecno_dst_insuf_xrp"
+		rows := newSubmitRows()
+		rows.byID = map[uuid.UUID]*models.Withdrawal{existingID: {ID: existingID, WalletID: wallet.ID, Status: models.WithdrawalStatusFailed, FailureReason: &reason}}
+		fresh := &models.Transaction{ID: uuid.New(), TxHash: "NEW"}
+		runner := &planSweep{strategy: sweep.StrategyDirectFromBase, result: &sweep.Result{FinalWithdrawTx: fresh}}
+		svc := newSubmitService(t, wallet, runner, rows, &submitEvents{})
+		old := &models.Transaction{ID: uuid.New(), TxHash: "OLD", Status: status}
+		txs := newMemTransactions()
+		txs.byKey = map[string]*models.Transaction{existingID.String(): old}
+		svc.transactionRepo = txs
+		in := submitInput(wallet)
+		in.IdempotencyKey = existingID.String()
+
+		result, err := svc.Submit(context.Background(), in)
+		if err != nil {
+			t.Fatalf("%s: %v", status, err)
+		}
+		if gotNew := result.Withdrawal.TxHash == "NEW"; gotNew != wantNew {
+			t.Fatalf("existing transaction %s: withdrawal now carries %s", status, result.Withdrawal.TxHash)
+		}
 	}
 }

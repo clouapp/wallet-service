@@ -20,6 +20,7 @@ import (
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/pkg/amount"
+	"github.com/macrowallets/waas/pkg/numeric"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -62,10 +63,12 @@ type minimumTransferAmounter interface {
 // Request asks for the fee of withdrawing Amount (human decimal, optional) of Asset
 // (optional, native by default) from Wallet to To (optional).
 type Request struct {
-	Wallet          *models.Wallet
-	Asset           string
-	Amount          string
-	To              string
+	Wallet *models.Wallet
+	Asset  string
+	Amount string
+	To     string
+	// DestinationTag is the raw destination_tag query value; "" means none.
+	DestinationTag  string
 	CallerAccountID uuid.UUID
 }
 
@@ -120,6 +123,7 @@ type resolvedRequest struct {
 	baseUnits   *big.Int
 	isReference bool
 	to          string
+	tag         *uint32
 }
 
 // Estimate validates req, then returns a cached or fresh estimate. Every failure is an *Error.
@@ -137,6 +141,7 @@ func (s *Service) Estimate(ctx context.Context, req Request) (*Estimate, error) 
 		Asset:           resolved.asset.WalletAsset,
 		Amount:          resolved.baseUnits,
 		ToAddress:       resolved.to,
+		DestinationTag:  resolved.tag,
 		CallerAccountID: callerAccount(req),
 	})
 	if err != nil {
@@ -171,7 +176,11 @@ func (s *Service) resolve(req Request) (*resolvedRequest, error) {
 		return nil, classifyAssetError(err)
 	}
 
-	resolved := &resolvedRequest{wallet: req.Wallet, chain: chainRow, asset: asset, to: to}
+	tag, tagErr := resolveDestinationTag(chainRow, req.DestinationTag)
+	if tagErr != nil {
+		return nil, tagErr
+	}
+	resolved := &resolvedRequest{wallet: req.Wallet, chain: chainRow, asset: asset, to: to, tag: tag}
 	minimum := minimumTransfer(adapter, asset)
 	if strings.TrimSpace(req.Amount) == "" {
 		resolved.baseUnits, resolved.isReference = minimum, true
@@ -187,6 +196,22 @@ func (s *Service) resolve(req Request) (*resolvedRequest, error) {
 	}
 	resolved.baseUnits = baseUnits
 	return resolved, nil
+}
+
+// resolveDestinationTag reads the destination_tag query value: an integer from 0 to
+// 4294967295, accepted only on XRP.
+func resolveDestinationTag(chainRow *models.Chain, raw string) (*uint32, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	tag, ok := numeric.ParseUint32(raw)
+	if !ok {
+		return nil, newError(KindInvalidInput, CodeInvalidDestinationTag, "destination_tag must be an integer from 0 to 4294967295", nil)
+	}
+	if chainRow.AdapterType != models.AdapterTypeXRP {
+		return nil, newError(KindUnprocessable, CodeDestinationTagUnsupported, "destination tags are only supported on XRP", sweep.ErrDestinationTagUnsupported)
+	}
+	return &tag, nil
 }
 
 // minimumTransfer is the smallest amount the adapter builds a transfer for.
@@ -206,8 +231,12 @@ func cacheKey(req *resolvedRequest) string {
 	if to == "" {
 		to = recipientProbe
 	}
-	return fmt.Sprintf("%s:%s:%s:%s:%s:%s", cacheKeyPrefix, req.wallet.ID, chain.FeePolicyFingerprint(req.wallet),
+	key := fmt.Sprintf("%s:%s:%s:%s:%s:%s", cacheKeyPrefix, req.wallet.ID, chain.FeePolicyFingerprint(req.wallet),
 		strings.ToUpper(req.asset.WalletAsset), req.baseUnits, to)
+	if req.tag != nil {
+		key = fmt.Sprintf("%s:tag%d", key, *req.tag)
+	}
+	return key
 }
 
 // cached returns a stored estimate. An unreadable entry is logged and treated as a miss.

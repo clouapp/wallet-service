@@ -413,9 +413,10 @@ func refusalScenario(apiRate *apiRateLimit) []step {
 		{name: "test an undeliverable webhook", method: "POST", path: "/v1/wallets/{{wallet}}/webhooks/{{webhook}}/test",
 			bearer: "adminSession", account: "account", before: insertUndeliverableWebhook},
 
-		// A domain code: XRP cannot be swept.
-		{name: "withdraw preview on an unsupported chain", method: "POST", path: "/v1/wallets/{{xrpWallet}}/withdraw/preview",
-			bearer: "adminSession", account: "account", body: `{"asset":"xrp","amount":"1"}`, before: insertXRPWallet},
+		// A domain code: XRP withdrawals send native XRP only, never an issued currency.
+		// The planner refuses before it reads the ledger.
+		{name: "withdraw preview of an XRP issued currency", method: "POST", path: "/v1/wallets/{{xrpWallet}}/withdraw/preview",
+			bearer: "adminSession", account: "account", body: `{"asset":"usdt","amount":"1"}`, before: insertXRPWallet},
 
 		// A 400 with a sentence.
 		{name: "convert a negative amount", method: "GET", path: "/v1/convert?from=USD&to=BRL&amount=-1", bearer: "adminSession"},
@@ -426,8 +427,8 @@ func refusalScenario(apiRate *apiRateLimit) []step {
 			capture: map[string]string{"scopedToken": "token"}, before: apiRate.restore},
 		{name: "external wallets outside the token scope", method: "GET", path: "/api/v1/wallets", bearer: "scopedToken"},
 		{name: "external transaction with a malformed id", method: "GET", path: "/api/v1/transactions/not-a-uuid", bearer: "scopedToken"},
-		{name: "external withdraw preview on an unsupported chain", method: "POST", path: "/api/v1/wallets/{{xrpWallet}}/withdraw/preview",
-			bearer: "scopedToken", body: `{"asset":"xrp","amount":"1"}`},
+		{name: "external withdraw preview of an XRP issued currency", method: "POST", path: "/api/v1/wallets/{{xrpWallet}}/withdraw/preview",
+			bearer: "scopedToken", body: `{"asset":"usdt","amount":"1"}`},
 	}
 }
 

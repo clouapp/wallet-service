@@ -73,12 +73,14 @@ func TestRead_PreflightRequest_ErrorsNeverEchoThePassphrase(t *testing.T) {
 type preflightSweepFake struct {
 	sweep.Service
 	planned         bool
+	plannedTo       sweep.Destination
 	consolidatedFor uuid.UUID
 	result          *sweep.Preflight
 }
 
-func (f *preflightSweepFake) PlanForWithdrawal(context.Context, uuid.UUID, string, *big.Int, string, uuid.UUID) (*sweep.Plan, error) {
+func (f *preflightSweepFake) PlanForWithdrawalTo(_ context.Context, _ uuid.UUID, _ string, _ *big.Int, to sweep.Destination, _ uuid.UUID) (*sweep.Plan, error) {
 	f.planned = true
+	f.plannedTo = to
 	return &sweep.Plan{}, nil
 }
 

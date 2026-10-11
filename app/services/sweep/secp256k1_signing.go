@@ -116,11 +116,25 @@ func sameChainAddress(a, b string) bool {
 	return a == b
 }
 
+// mpcSigningDigester is implemented by chains whose signed digest covers the signing
+// public key (XRP: SigningPubKey is part of the signed payment), so RawBytes cannot
+// be the digest.
+type mpcSigningDigester interface {
+	MPCSigningDigest(unsigned *types.UnsignedTx, publicKey []byte) ([]byte, error)
+}
+
 // signSecp256k1MPC runs the threshold ceremony; for a child the parties apply the
 // tweak to their shares, so neither the wallet key nor the child key is assembled.
 func (s *service) signSecp256k1MPC(ctx context.Context, adapter types.Chain, keys walletKeys, key *secp256k1Signer, unsigned *types.UnsignedTx) (*types.SignedTx, error) {
+	digest := unsigned.RawBytes
+	if digester, ok := adapter.(mpcSigningDigester); ok {
+		var err error
+		if digest, err = digester.MPCSigningDigest(unsigned, key.publicKey); err != nil {
+			return nil, err
+		}
+	}
 	signature, err := s.mpc.Sign(ctx, mpcpkg.CurveSecp256k1, keys.shareA, keys.shareB, mpcpkg.SignInputs{
-		TxHashes:           [][]byte{unsigned.RawBytes},
+		TxHashes:           [][]byte{digest},
 		KeyDerivationDelta: key.tweak,
 		ExpectedPublicKey:  key.publicKey,
 	})

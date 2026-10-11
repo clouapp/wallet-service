@@ -45,16 +45,18 @@ const ScannerDepositLogIndex = -1
 
 type Transaction struct {
 	orm.Model
-	ID                  uuid.UUID  `gorm:"type:uuid;primary_key"`
-	AddressID           *uuid.UUID `gorm:"type:uuid;index"`
-	WalletID            uuid.UUID  `gorm:"type:uuid;not null;index"`
-	ExternalUserID      string     `gorm:"type:varchar(255);not null;index"`
-	Chain               string     `gorm:"type:varchar(50);not null;index"`
-	TxType              string     `gorm:"type:transaction_type;not null;index"`
-	TxHash              string     `gorm:"type:varchar(255);index"`
-	LogIndex            int        `gorm:"type:int;default:-1"`
-	FromAddress         string     `gorm:"type:varchar(255)"`
-	ToAddress           string     `gorm:"type:varchar(255);not null"`
+	ID             uuid.UUID  `gorm:"type:uuid;primary_key"`
+	AddressID      *uuid.UUID `gorm:"type:uuid;index"`
+	WalletID       uuid.UUID  `gorm:"type:uuid;not null;index"`
+	ExternalUserID string     `gorm:"type:varchar(255);not null;index"`
+	Chain          string     `gorm:"type:varchar(50);not null;index"`
+	TxType         string     `gorm:"type:transaction_type;not null;index"`
+	TxHash         string     `gorm:"type:varchar(255);index"`
+	LogIndex       int        `gorm:"type:int;default:-1"`
+	FromAddress    string     `gorm:"type:varchar(255)"`
+	ToAddress      string     `gorm:"type:varchar(255);not null"`
+	// DestinationTag is the XRP Ledger destination tag the payment carried; nil means none.
+	DestinationTag      *uint32    `gorm:"type:bigint"`
 	Amount              string     `gorm:"type:varchar(100);not null"`
 	Asset               string     `gorm:"type:varchar(50);not null"`
 	TokenContract       string     `gorm:"type:varchar(255)"`

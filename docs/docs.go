@@ -1218,7 +1218,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Prices the withdrawal POST /withdrawals would send, with the same planner and chain adapters, without signing or broadcasting. The fee is always in the chain's native coin (ETH, POL, BTC, LTC, SOL, TRX), also for tokens. EVM transfers are legacy transactions paying gas_price_wei for every unit of gas (plus the L1 data fee on OP-stack networks); Bitcoin and Litecoin use the node's fee rate and the coin selection the builder runs; Solana pays 5000 lamports per signature plus the recipient's token account when it must be created; TRON is priced as burned TRX with no free or staked resources (bandwidth per signed byte, 1.1 TRX to activate a new recipient, TRC-20 energy from estimateenergy at the chain's energy price), broken down in details.tron. When the wallet cannot cover the amount, the fee of the transfer from the base address is returned with insufficient_funds=true. Answers are cached for FEE_ESTIMATE_CACHE_TTL_SECONDS (default 15). Node failures answer 503; no value is guessed.",
+                "description": "Prices the withdrawal POST /withdrawals would send, with the same planner and chain adapters, without signing or broadcasting. The fee is always in the chain's native coin (ETH, POL, BTC, LTC, SOL, TRX, XRP), also for tokens. EVM transfers are legacy transactions paying gas_price_wei for every unit of gas (plus the L1 data fee on OP-stack networks); Bitcoin and Litecoin use the node's fee rate and the coin selection the builder runs; Solana pays 5000 lamports per signature plus the recipient's token account when it must be created; TRON is priced as burned TRX with no free or staked resources (bandwidth per signed byte, 1.1 TRX to activate a new recipient, TRC-20 energy from estimateenergy at the chain's energy price), broken down in details.tron; XRP (altnet only) is one native Payment from the base address paying the open-ledger fee in drops, never swept from child addresses: the base address keeps its account reserve (base + owner reserve, read from the validated ledger, in minimum_remaining_base_units and details.xrp), and a destination that does not exist yet must receive at least the base reserve (422 destination_below_reserve) and one requiring a destination tag needs destination_tag (else 422 destination_tag_required). When the wallet cannot cover the amount, the fee of the transfer from the base address is returned with insufficient_funds=true. Answers are cached for FEE_ESTIMATE_CACHE_TTL_SECONDS (default 15). Node failures answer 503; no value is guessed.",
                 "produces": [
                     "application/json"
                 ],
@@ -1251,6 +1251,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Destination address; a probe recipient when omitted",
                         "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "XRP destination tag (0..4294967295); other chains answer 422 destination_tag_not_supported",
+                        "name": "destination_tag",
                         "in": "query"
                     }
                 ],
@@ -5853,7 +5859,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Initiates a new withdrawal. The withdrawal is created in 'pending' status and queued for approval/processing.\nThe access token itself is the authentication factor (reinforced by HMAC signing when the token has require_signature=true), so no TOTP is required. The withdrawal is attributed to the token's account. The wallet passphrase is verified before the withdrawal row is persisted.",
+                "description": "Initiates a new withdrawal. The withdrawal is created in 'pending' status and queued for approval/processing.\nThe access token itself is the authentication factor (reinforced by HMAC signing when the token has require_signature=true), so no TOTP is required. The withdrawal is attributed to the token's account. The wallet passphrase is verified before the withdrawal row is persisted.\nXRP: destination_tag (integer 0..4294967295) is optional, persisted and returned next to destination_address; a destination that requires a tag answers 422 destination_tag_required without one, and any other chain answers 422 destination_tag_not_supported when one is sent. A withdrawal whose XRP payment fails on chain ends failed with failure_reason onchain_\u003cresult in lowercase\u003e (e.g. onchain_tecno_dst_insuf_xrp) or expired, and withdrawal.failed is sent once.",
                 "consumes": [
                     "application/json"
                 ],
@@ -5897,6 +5903,12 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "destination_tag_not_supported, destination_tag_required, destination_below_reserve, insufficient_funds, validation_failed",
                         "schema": {
                             "$ref": "#/definitions/responses.ErrorBody"
                         }
@@ -6922,6 +6934,9 @@ const docTemplate = `{
                 },
                 "tron": {
                     "$ref": "#/definitions/feeestimate.TronDetails"
+                },
+                "xrp": {
+                    "$ref": "#/definitions/feeestimate.XRPDetails"
                 }
             }
         },
@@ -7095,6 +7110,23 @@ const docTemplate = `{
                 "sun_per_energy": {
                     "type": "integer",
                     "example": 100
+                }
+            }
+        },
+        "feeestimate.XRPDetails": {
+            "type": "object",
+            "properties": {
+                "account_reserve_drops": {
+                    "type": "string",
+                    "example": "1000000"
+                },
+                "base_reserve_drops": {
+                    "type": "string",
+                    "example": "1000000"
+                },
+                "fee_drops": {
+                    "type": "string",
+                    "example": "12"
                 }
             }
         },
@@ -7675,6 +7707,9 @@ const docTemplate = `{
                 "created_at": {
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
+                "destination_tag": {
+                    "type": "integer"
+                },
                 "direction": {
                     "type": "string",
                     "enum": [
@@ -8216,6 +8251,9 @@ const docTemplate = `{
                 "decimals": {
                     "type": "integer"
                 },
+                "destination_tag": {
+                    "type": "integer"
+                },
                 "direction": {
                     "type": "string",
                     "enum": [
@@ -8649,6 +8687,10 @@ const docTemplate = `{
                 "destination_address": {
                     "type": "string"
                 },
+                "destination_tag": {
+                    "type": "integer",
+                    "example": 12345
+                },
                 "failure_reason": {
                     "type": "string",
                     "example": "insufficient_funds"
@@ -8695,6 +8737,13 @@ const docTemplate = `{
                     "type": "string",
                     "example": "bc1q..."
                 },
+                "destination_tag": {
+                    "description": "DestinationTag is the XRP Ledger destination tag (0..4294967295). Only XRP\nwallets accept it; any other chain answers 422 destination_tag_not_supported.",
+                    "type": "integer",
+                    "maximum": 4294967295,
+                    "minimum": 0,
+                    "example": 12345
+                },
                 "idempotency_key": {
                     "type": "string",
                     "example": "80571fff-8d0b-5c1e-9a3f-2b6f0f7c1a11"
@@ -8730,6 +8779,10 @@ const docTemplate = `{
                 },
                 "destination_address": {
                     "type": "string"
+                },
+                "destination_tag": {
+                    "type": "integer",
+                    "example": 12345
                 },
                 "failure_reason": {
                     "type": "string"

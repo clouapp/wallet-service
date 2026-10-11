@@ -21,6 +21,7 @@ type Withdrawal struct {
 	Status             string           `json:"status"`
 	Amount             string           `json:"amount"`
 	DestinationAddress string           `json:"destination_address"`
+	DestinationTag     *uint32          `json:"destination_tag,omitempty" example:"12345"`
 	FeeEstimate        string           `json:"fee_estimate,omitempty"`
 	Note               string           `json:"note,omitempty"`
 	CreatedBy          *uuid.UUID       `json:"created_by,omitempty"`
@@ -49,6 +50,7 @@ func WithdrawalFrom(withdrawal models.Withdrawal) Withdrawal {
 		Status:             withdrawal.Status,
 		Amount:             withdrawal.Amount,
 		DestinationAddress: withdrawal.DestinationAddress,
+		DestinationTag:     withdrawal.DestinationTag,
 		FeeEstimate:        withdrawal.FeeEstimate,
 		Note:               withdrawal.Note,
 		CreatedBy:          withdrawal.CreatedBy,
@@ -88,6 +90,7 @@ type Lookup struct {
 	Status             string           `json:"status" example:"broadcast"`
 	Amount             string           `json:"amount" example:"4"`
 	DestinationAddress string           `json:"destination_address"`
+	DestinationTag     *uint32          `json:"destination_tag,omitempty" example:"12345"`
 	TxHash             *string          `json:"tx_hash"`
 	TransactionStatus  *string          `json:"transaction_status" example:"confirming"`
 	FailureReason      *string          `json:"failure_reason" example:"insufficient_funds"`
@@ -105,6 +108,7 @@ func NewLookup(withdrawal *models.Withdrawal, tx *models.Transaction) Lookup {
 		Status:             withdrawal.Status,
 		Amount:             withdrawal.Amount,
 		DestinationAddress: withdrawal.DestinationAddress,
+		DestinationTag:     withdrawal.DestinationTag,
 		FailureReason:      withdrawal.FailureReason,
 		CreatedAt:          withdrawal.CreatedAt,
 		UpdatedAt:          withdrawal.UpdatedAt,

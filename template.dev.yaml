@@ -1,0 +1,221 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Macro Wallets dev stack (waas-dev): the AWS resources of an environment that runs
+  on one host outside AWS (the Forge server) instead of Lambda. The webhook and
+  withdrawal queues with their dead-letter queues (same names and settings as
+  template.yaml), the master KMS key, and an IAM user for that host, scoped to these
+  resources and to the vault/* wallet secrets.
+  Deployed with `make deploy ENV=dev`; see docs/AWS_DEV_STACK.md.
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [dev, staging, prod]
+    Default: dev
+    Description: Suffix of every resource name; also the Makefile ENV.
+  CreateServerUser:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: >
+      Create the IAM user a host outside AWS runs with. Its access key is kept in
+      Secrets Manager (waas/<env>/server-access-key); `make server-credentials`
+      installs it on the host. Not needed once the service runs as Lambda.
+
+Conditions:
+  HasServerUser: !Equals [!Ref CreateServerUser, "true"]
+
+Resources:
+  # ---------------------------------------------------------------------------
+  # SQS — same names and settings as template.yaml
+  # ---------------------------------------------------------------------------
+
+  WebhookDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "vault-webhooks-dlq-${Environment}"
+      MessageRetentionPeriod: 1209600 # 14 days
+      SqsManagedSseEnabled: true
+
+  WebhookQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "vault-webhooks-${Environment}"
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 86400 # 24 hours
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt WebhookDeadLetterQueue.Arn
+        maxReceiveCount: 10
+
+  WithdrawalDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "vault-withdrawals-dlq-${Environment}"
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  WithdrawalQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "vault-withdrawals-${Environment}"
+      VisibilityTimeout: 120 # signing + broadcast can be slow
+      MessageRetentionPeriod: 86400
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt WithdrawalDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  # ---------------------------------------------------------------------------
+  # KMS — the master key MASTER_KEY_REF names. Retained when the stack is
+  # deleted: whatever it sealed would be unreadable once the key is gone.
+  # ---------------------------------------------------------------------------
+
+  MasterKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: !Sub "Macro Wallets master key (${Environment})"
+      KeySpec: SYMMETRIC_DEFAULT
+      KeyUsage: ENCRYPT_DECRYPT
+      EnableKeyRotation: true
+      PendingWindowInDays: 30
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          # Access is granted through IAM policies, as for every other resource here.
+          - Sid: EnableIamPolicies
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+
+  MasterKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub "alias/waas-${Environment}-master"
+      TargetKeyId: !Ref MasterKey
+
+  # ---------------------------------------------------------------------------
+  # IAM — a programmatic user for a host outside AWS. No console access.
+  # ---------------------------------------------------------------------------
+
+  ServerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Condition: HasServerUser
+    Properties:
+      ManagedPolicyName: !Sub "WaasServer-${Environment}"
+      Description: !Sub "Macro Wallets ${Environment} runtime: queues, master key and vault/* wallet secrets"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: Queues
+            Effect: Allow
+            Action:
+              - "sqs:SendMessage"
+              - "sqs:ReceiveMessage"
+              - "sqs:DeleteMessage"
+              - "sqs:ChangeMessageVisibility"
+              - "sqs:GetQueueAttributes"
+              - "sqs:GetQueueUrl"
+            Resource:
+              - !GetAtt WebhookQueue.Arn
+              - !GetAtt WebhookDeadLetterQueue.Arn
+              - !GetAtt WithdrawalQueue.Arn
+              - !GetAtt WithdrawalDeadLetterQueue.Arn
+          # Scratch queues `make verify-aws` creates and deletes to prove the
+          # dead-letter redrive without touching the real ones.
+          - Sid: VerifyQueues
+            Effect: Allow
+            Action:
+              - "sqs:CreateQueue"
+              - "sqs:DeleteQueue"
+              - "sqs:SetQueueAttributes"
+              - "sqs:GetQueueAttributes"
+              - "sqs:GetQueueUrl"
+              - "sqs:SendMessage"
+              - "sqs:ReceiveMessage"
+              - "sqs:DeleteMessage"
+              - "sqs:ChangeMessageVisibility"
+            Resource: !Sub "arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:waas-verify-${Environment}-*"
+          # MPC share B (vault/wallet/<id>/share-b). No DeleteSecret: losing a
+          # share loses the wallet.
+          - Sid: WalletSecrets
+            Effect: Allow
+            Action:
+              - "secretsmanager:CreateSecret"
+              - "secretsmanager:GetSecretValue"
+              - "secretsmanager:PutSecretValue"
+              - "secretsmanager:DescribeSecret"
+              - "secretsmanager:TagResource"
+            Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vault/*"
+          # The probes `make verify-aws` creates and deletes.
+          - Sid: VerifySecrets
+            Effect: Allow
+            Action: "secretsmanager:DeleteSecret"
+            Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vault/verify/*"
+          - Sid: MasterKeyUse
+            Effect: Allow
+            Action:
+              - "kms:Encrypt"
+              - "kms:Decrypt"
+              - "kms:ReEncrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:DescribeKey"
+            Resource: !GetAtt MasterKey.Arn
+
+  ServerUser:
+    Type: AWS::IAM::User
+    Condition: HasServerUser
+    Properties:
+      UserName: !Sub "waas-${Environment}-server"
+      ManagedPolicyArns:
+        - !Ref ServerPolicy
+
+  ServerAccessKey:
+    Type: AWS::IAM::AccessKey
+    Condition: HasServerUser
+    Properties:
+      UserName: !Ref ServerUser
+
+  # Outside vault/*: the server user cannot read its own key back.
+  ServerAccessKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Condition: HasServerUser
+    Properties:
+      Name: !Sub "waas/${Environment}/server-access-key"
+      Description: !Sub "Access key of IAM user waas-${Environment}-server (make server-credentials)"
+      SecretString: !Sub '{"aws_access_key_id":"${ServerAccessKey}","aws_secret_access_key":"${ServerAccessKey.SecretAccessKey}"}'
+
+Outputs:
+  WebhookQueueUrl:
+    Value: !Ref WebhookQueue
+    Export: { Name: !Sub "${AWS::StackName}-WebhookQueueUrl" }
+  WebhookQueueArn:
+    Value: !GetAtt WebhookQueue.Arn
+    Export: { Name: !Sub "${AWS::StackName}-WebhookQueueArn" }
+  WebhookDeadLetterQueueUrl:
+    Value: !Ref WebhookDeadLetterQueue
+  WithdrawalQueueUrl:
+    Value: !Ref WithdrawalQueue
+    Export: { Name: !Sub "${AWS::StackName}-WithdrawalQueueUrl" }
+  WithdrawalQueueArn:
+    Value: !GetAtt WithdrawalQueue.Arn
+    Export: { Name: !Sub "${AWS::StackName}-WithdrawalQueueArn" }
+  WithdrawalDeadLetterQueueUrl:
+    Value: !Ref WithdrawalDeadLetterQueue
+  MasterKeyArn:
+    Description: MASTER_KEY_REF for this environment
+    Value: !GetAtt MasterKey.Arn
+    Export: { Name: !Sub "${AWS::StackName}-MasterKeyArn" }
+  MasterKeyAlias:
+    Value: !Ref MasterKeyAlias
+  ServerUserArn:
+    Condition: HasServerUser
+    Value: !GetAtt ServerUser.Arn
+  ServerAccessKeySecretArn:
+    Condition: HasServerUser
+    Description: Read by `make server-credentials`; never print its value
+    Value: !Ref ServerAccessKeySecret

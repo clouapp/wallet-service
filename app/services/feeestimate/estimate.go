@@ -45,6 +45,18 @@ type Details struct {
 	Bitcoin *BitcoinDetails `json:"bitcoin,omitempty"`
 	Solana  *SolanaDetails  `json:"solana,omitempty"`
 	Tron    *TronDetails    `json:"tron,omitempty"`
+	XRP     *XRPDetails     `json:"xrp,omitempty"`
+}
+
+// XRPDetails: fee = fee_drops, the open-ledger fee of one payment from the base
+// address (XRP withdrawals never sweep child addresses). The base address keeps
+// account_reserve_drops (base reserve + owner reserve, also in
+// minimum_remaining_base_units); a payment to an account that does not exist yet
+// must deliver at least base_reserve_drops.
+type XRPDetails struct {
+	FeeDrops            string `json:"fee_drops" example:"12"`
+	AccountReserveDrops string `json:"account_reserve_drops" example:"1000000"`
+	BaseReserveDrops    string `json:"base_reserve_drops" example:"1000000"`
 }
 
 // EVMDetails: legacy transactions pay GasPriceWei for every unit of gas used, so
@@ -168,6 +180,13 @@ func buildDetails(quote *sweep.FeeQuote) Details {
 			SunPerEnergy:            quote.Tron.SunPerEnergy,
 			EnergyFeeLimitSun:       nonNegativeString(quote.Tron.EnergyFeeLimit),
 			EnergyIsReference:       quote.Tron.EnergyIsReference,
+		}
+	}
+	if quote.XRP != nil {
+		details.XRP = &XRPDetails{
+			FeeDrops:            nonNegativeString(quote.XRP.FeeDrops),
+			AccountReserveDrops: nonNegativeString(quote.XRP.AccountReserve),
+			BaseReserveDrops:    nonNegativeString(quote.XRP.BaseReserve),
 		}
 	}
 	return details

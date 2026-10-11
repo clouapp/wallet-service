@@ -570,6 +570,8 @@ definitions:
         $ref: '#/definitions/feeestimate.SolanaDetails'
       tron:
         $ref: '#/definitions/feeestimate.TronDetails'
+      xrp:
+        $ref: '#/definitions/feeestimate.XRPDetails'
     type: object
   feeestimate.EVMDetails:
     properties:
@@ -696,6 +698,18 @@ definitions:
       sun_per_energy:
         example: 100
         type: integer
+    type: object
+  feeestimate.XRPDetails:
+    properties:
+      account_reserve_drops:
+        example: "1000000"
+        type: string
+      base_reserve_drops:
+        example: "1000000"
+        type: string
+      fee_drops:
+        example: "12"
+        type: string
     type: object
   github_com_goravel_framework_support_carbon.DateTime:
     properties:
@@ -1086,6 +1100,8 @@ definitions:
         type: string
       created_at:
         $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      destination_tag:
+        type: integer
       direction:
         enum:
         - incoming
@@ -1451,6 +1467,8 @@ definitions:
         type: string
       decimals:
         type: integer
+      destination_tag:
+        type: integer
       direction:
         enum:
         - incoming
@@ -1749,6 +1767,9 @@ definitions:
         type: string
       destination_address:
         type: string
+      destination_tag:
+        example: 12345
+        type: integer
       failure_reason:
         example: insufficient_funds
         type: string
@@ -1782,6 +1803,14 @@ definitions:
       destination_address:
         example: bc1q...
         type: string
+      destination_tag:
+        description: |-
+          DestinationTag is the XRP Ledger destination tag (0..4294967295). Only XRP
+          wallets accept it; any other chain answers 422 destination_tag_not_supported.
+        example: 12345
+        maximum: 4294967295
+        minimum: 0
+        type: integer
       idempotency_key:
         example: 80571fff-8d0b-5c1e-9a3f-2b6f0f7c1a11
         type: string
@@ -1807,6 +1836,9 @@ definitions:
         type: string
       destination_address:
         type: string
+      destination_tag:
+        example: 12345
+        type: integer
       failure_reason:
         type: string
       fee_estimate:
@@ -2652,19 +2684,26 @@ paths:
       - Accounts
   /api/v1/wallets/{walletId}/fee-estimate:
     get:
-      description: Prices the withdrawal POST /withdrawals would send, with the same
+      description: 'Prices the withdrawal POST /withdrawals would send, with the same
         planner and chain adapters, without signing or broadcasting. The fee is always
-        in the chain's native coin (ETH, POL, BTC, LTC, SOL, TRX), also for tokens.
-        EVM transfers are legacy transactions paying gas_price_wei for every unit
-        of gas (plus the L1 data fee on OP-stack networks); Bitcoin and Litecoin use
-        the node's fee rate and the coin selection the builder runs; Solana pays 5000
-        lamports per signature plus the recipient's token account when it must be
-        created; TRON is priced as burned TRX with no free or staked resources (bandwidth
-        per signed byte, 1.1 TRX to activate a new recipient, TRC-20 energy from estimateenergy
-        at the chain's energy price), broken down in details.tron. When the wallet
-        cannot cover the amount, the fee of the transfer from the base address is
-        returned with insufficient_funds=true. Answers are cached for FEE_ESTIMATE_CACHE_TTL_SECONDS
-        (default 15). Node failures answer 503; no value is guessed.
+        in the chain''s native coin (ETH, POL, BTC, LTC, SOL, TRX, XRP), also for
+        tokens. EVM transfers are legacy transactions paying gas_price_wei for every
+        unit of gas (plus the L1 data fee on OP-stack networks); Bitcoin and Litecoin
+        use the node''s fee rate and the coin selection the builder runs; Solana pays
+        5000 lamports per signature plus the recipient''s token account when it must
+        be created; TRON is priced as burned TRX with no free or staked resources
+        (bandwidth per signed byte, 1.1 TRX to activate a new recipient, TRC-20 energy
+        from estimateenergy at the chain''s energy price), broken down in details.tron;
+        XRP (altnet only) is one native Payment from the base address paying the open-ledger
+        fee in drops, never swept from child addresses: the base address keeps its
+        account reserve (base + owner reserve, read from the validated ledger, in
+        minimum_remaining_base_units and details.xrp), and a destination that does
+        not exist yet must receive at least the base reserve (422 destination_below_reserve)
+        and one requiring a destination tag needs destination_tag (else 422 destination_tag_required).
+        When the wallet cannot cover the amount, the fee of the transfer from the
+        base address is returned with insufficient_funds=true. Answers are cached
+        for FEE_ESTIMATE_CACHE_TTL_SECONDS (default 15). Node failures answer 503;
+        no value is guessed.'
       parameters:
       - description: Wallet UUID
         format: uuid
@@ -2684,6 +2723,11 @@ paths:
         in: query
         name: to
         type: string
+      - description: XRP destination tag (0..4294967295); other chains answer 422
+          destination_tag_not_supported
+        in: query
+        name: destination_tag
+        type: integer
       produces:
       - application/json
       responses:
@@ -5795,6 +5839,7 @@ paths:
       description: |-
         Initiates a new withdrawal. The withdrawal is created in 'pending' status and queued for approval/processing.
         The access token itself is the authentication factor (reinforced by HMAC signing when the token has require_signature=true), so no TOTP is required. The withdrawal is attributed to the token's account. The wallet passphrase is verified before the withdrawal row is persisted.
+        XRP: destination_tag (integer 0..4294967295) is optional, persisted and returned next to destination_address; a destination that requires a tag answers 422 destination_tag_required without one, and any other chain answers 422 destination_tag_not_supported when one is sent. A withdrawal whose XRP payment fails on chain ends failed with failure_reason onchain_<result in lowercase> (e.g. onchain_tecno_dst_insuf_xrp) or expired, and withdrawal.failed is sent once.
       parameters:
       - description: Wallet UUID
         in: path
@@ -5820,6 +5865,11 @@ paths:
             $ref: '#/definitions/responses.ErrorBody'
         "403":
           description: Forbidden
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "422":
+          description: destination_tag_not_supported, destination_tag_required, destination_below_reserve,
+            insufficient_funds, validation_failed
           schema:
             $ref: '#/definitions/responses.ErrorBody'
         "429":

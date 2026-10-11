@@ -439,7 +439,7 @@ status: 502
 content-type: application/json; charset=utf-8
 {"error":{"code":"provider_unavailable","message":"webhook test delivery failed"}}
 
-### 88 withdraw preview on an unsupported chain: POST /v1/wallets/{{xrpWallet}}/withdraw/preview
+### 88 withdraw preview of an XRP issued currency: POST /v1/wallets/{{xrpWallet}}/withdraw/preview
 status: 422
 content-type: application/json; charset=utf-8
 {"error":{"code":"unsupported_chain","message":"unsupported_chain"}}
@@ -464,7 +464,7 @@ status: 400
 content-type: application/json; charset=utf-8
 {"error":{"code":"invalid_request","message":"invalid tx id"}}
 
-### 93 external withdraw preview on an unsupported chain: POST /api/v1/wallets/{{xrpWallet}}/withdraw/preview
+### 93 external withdraw preview of an XRP issued currency: POST /api/v1/wallets/{{xrpWallet}}/withdraw/preview
 status: 422
 content-type: application/json; charset=utf-8
 {"error":{"code":"unsupported_chain","message":"unsupported_chain"}}

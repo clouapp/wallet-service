@@ -36,6 +36,7 @@ type transactionRecord struct {
 	LogIndex            int                      `json:"log_index"`
 	FromAddress         string                   `json:"from_address"`
 	ToAddress           string                   `json:"to_address"`
+	DestinationTag      *uint32                  `json:"destination_tag,omitempty"`
 	Amount              string                   `json:"amount"`
 	Asset               string                   `json:"asset"`
 	TokenContract       string                   `json:"token_contract"`
@@ -82,6 +83,7 @@ func TransactionFrom(tx models.Transaction) Transaction {
 			LogIndex:              tx.LogIndex,
 			FromAddress:           tx.FromAddress,
 			ToAddress:             tx.ToAddress,
+			DestinationTag:        tx.DestinationTag,
 			Amount:                tx.Amount,
 			Asset:                 tx.Asset,
 			TokenContract:         tx.TokenContract,

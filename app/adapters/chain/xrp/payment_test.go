@@ -94,7 +94,7 @@ func TestBuildSignBroadcastOneAltnetPayment(t *testing.T) {
 		text := string(body)
 		switch {
 		case strings.Contains(text, "server_info"):
-			_, _ = io.WriteString(w, `{"result":{"status":"success","info":{"network_id":1,"validated_ledger":{"reserve_base_xrp":1,"seq":100}}}}`)
+			_, _ = io.WriteString(w, `{"result":{"status":"success","info":{"network_id":1,"validated_ledger":{"reserve_base_xrp":1,"reserve_inc_xrp":0.2,"seq":100}}}}`)
 		case strings.Contains(text, `"method":"fee"`):
 			_, _ = io.WriteString(w, `{"result":{"status":"success","drops":{"open_ledger_fee":"10","minimum_fee":"10"}}}`)
 		case strings.Contains(text, "account_info"):

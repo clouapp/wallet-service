@@ -126,6 +126,9 @@ type TransferRequest struct {
 	// where BuildSweep sizes amounts with one price and BuildTransfer encodes
 	// the tx with a drifted price. Currently honored by the EVM adapter only.
 	GasPrice *big.Int `json:"gas_price,omitempty"`
+	// DestinationTag is the XRP Ledger destination tag; nil sends none. Only the
+	// XRP adapter reads it.
+	DestinationTag *uint32 `json:"destination_tag,omitempty"`
 }
 
 // SweepRequest describes an intra-wallet sweep: move `Asset` from `From` to `To`

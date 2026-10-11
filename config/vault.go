@@ -20,6 +20,8 @@ func registerVault() {
 		"aws": map[string]any{
 			"region":       envString("AWS_REGION", "us-east-1"),
 			"endpoint_url": envString("AWS_ENDPOINT_URL", ""),
+			// Named profile in ~/.aws the SDK uses; empty keeps its default resolution.
+			"profile": envString("AWS_PROFILE", ""),
 		},
 		"rpc": map[string]any{
 			"eth":     envString("ETH_RPC_URL", ""),

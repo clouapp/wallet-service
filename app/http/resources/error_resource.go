@@ -42,7 +42,15 @@ const (
 	CodeSpendingLimitExceeded         = "spending_limit_exceeded"
 	CodeSpendingLimitInvalid          = "spending_limit_invalid"
 	CodeSpendingLimitQuoteUnavailable = "spending_limit_quote_unavailable"
-	CodeInternalError                 = "internal_error"
+	CodeDestinationBelowReserve       = "destination_below_reserve"
+	CodeDestinationTagRequired        = "destination_tag_required"
+	CodeDestinationTagUnsupported     = "destination_tag_not_supported"
+	// CodeExpired is an XRP payment that can no longer be included in a ledger. A
+	// payment a validated ledger includes with a failure result carries
+	// CodeOnChainPrefix + its lowercase result code (onchain_tecno_dst_insuf_xrp).
+	CodeExpired       = "expired"
+	CodeOnChainPrefix = "onchain_"
+	CodeInternalError = "internal_error"
 
 	// ValidationMessage is the human text on every HTTP 422 validation body.
 	ValidationMessage = "validation failed"

@@ -132,6 +132,7 @@ func newFixture(t *testing.T, ttl time.Duration) *fixture {
 			models.ChainETH:     evmAdapter(models.ChainETH, models.NativeETH),
 			models.ChainPolygon: evmAdapter(models.ChainPolygon, models.NativePOL),
 			models.ChainBTC:     dustChain{btc},
+			models.ChainTXRP:    xrpAdapter(),
 		},
 		tokens: map[string][]types.Token{models.ChainPolygon: {testUSDC}},
 	}
@@ -139,6 +140,7 @@ func newFixture(t *testing.T, ttl time.Duration) *fixture {
 		models.ChainETH:     {ID: models.ChainETH, NativeDecimals: 18, AdapterType: models.AdapterTypeEVM},
 		models.ChainPolygon: {ID: models.ChainPolygon, NativeDecimals: 18, AdapterType: models.AdapterTypeEVM},
 		models.ChainBTC:     {ID: models.ChainBTC, NativeDecimals: 8, AdapterType: models.AdapterTypeBitcoin},
+		models.ChainTXRP:    {ID: models.ChainTXRP, NativeDecimals: 6, AdapterType: models.AdapterTypeXRP},
 	}
 	quoter := &fakeQuoter{quote: sepoliaQuote()}
 	cache := newMemoryCache()
@@ -154,7 +156,7 @@ func newFixture(t *testing.T, ttl time.Duration) *fixture {
 		t.Fatal(err)
 	}
 	wallets := map[string]*models.Wallet{}
-	for _, chainID := range []string{models.ChainETH, models.ChainPolygon, models.ChainBTC, "unknown"} {
+	for _, chainID := range []string{models.ChainETH, models.ChainPolygon, models.ChainBTC, models.ChainTXRP, "unknown"} {
 		wallets[chainID] = &models.Wallet{ID: uuid.New(), Chain: chainID}
 	}
 	return &fixture{service: service, quoter: quoter, cache: cache, wallets: wallets}
@@ -350,17 +352,19 @@ func TestEstimate_Quote_ErrorsAreClassified(t *testing.T) {
 		kind Kind
 		code string
 	}{
-		sweep.ErrFeeQuoteUnavailable:                            {KindUnavailable, CodeUnavailable},
-		fmt.Errorf("rpc: %w", sweep.ErrGasEstimateFailed):       {KindUnavailable, CodeGasEstimateFailed},
-		errors.New("dial tcp: connection refused"):              {KindUnavailable, CodeUnavailable},
-		chain.Unavailable(errors.New("dial tcp: i/o timeout")):  {KindUnavailable, CodeUnavailable},
-		chain.InvalidAddress(errors.New("invalid checksum")):    {KindUnprocessable, CodeInvalidAddress},
-		chain.Insufficient(errors.New("balance 0")):             {KindUnprocessable, CodeGasEstimateFailed},
-		chain.Wrap(chain.ErrNonce, errors.New("nonce too low")): {KindUnavailable, CodeGasEstimateFailed},
-		chain.Wrap(chain.ErrFee, errors.New("underpriced")):     {KindUnavailable, CodeGasEstimateFailed},
-		sweep.ErrFeeQuoteNeedsTokenBalance:                      {KindUnprocessable, CodeTokenBalanceRequired},
-		fmt.Errorf("plan: %w", sweep.ErrTooManyAddresses):       {KindRateLimited, CodeTooManyAddresses},
-		fmt.Errorf("plan: %w", sweep.ErrUnsupportedChain):       {KindUnprocessable, CodeUnsupportedChain},
+		sweep.ErrFeeQuoteUnavailable:                             {KindUnavailable, CodeUnavailable},
+		fmt.Errorf("rpc: %w", sweep.ErrGasEstimateFailed):        {KindUnavailable, CodeGasEstimateFailed},
+		errors.New("dial tcp: connection refused"):               {KindUnavailable, CodeUnavailable},
+		chain.Unavailable(errors.New("dial tcp: i/o timeout")):   {KindUnavailable, CodeUnavailable},
+		chain.InvalidAddress(errors.New("invalid checksum")):     {KindUnprocessable, CodeInvalidAddress},
+		chain.Insufficient(errors.New("balance 0")):              {KindUnprocessable, CodeGasEstimateFailed},
+		chain.Wrap(chain.ErrNonce, errors.New("nonce too low")):  {KindUnavailable, CodeGasEstimateFailed},
+		chain.Wrap(chain.ErrFee, errors.New("underpriced")):      {KindUnavailable, CodeGasEstimateFailed},
+		sweep.ErrFeeQuoteNeedsTokenBalance:                       {KindUnprocessable, CodeTokenBalanceRequired},
+		fmt.Errorf("plan: %w", sweep.ErrTooManyAddresses):        {KindRateLimited, CodeTooManyAddresses},
+		fmt.Errorf("plan: %w", sweep.ErrUnsupportedChain):        {KindUnprocessable, CodeUnsupportedChain},
+		fmt.Errorf("plan: %w", sweep.ErrDestinationBelowReserve): {KindUnprocessable, CodeDestinationReserve},
+		fmt.Errorf("plan: %w", sweep.ErrDestinationTagRequired):  {KindUnprocessable, CodeDestinationTag},
 	}
 	for quoteErr, want := range cases {
 		t.Run(want.code+"/"+quoteErr.Error(), func(t *testing.T) {
@@ -486,5 +490,43 @@ func TestEstimate_JSON_Shape(t *testing.T) {
 func TestNew_Service_RequiresItsCollaborators(t *testing.T) {
 	if _, err := NewService(Deps{Registry: &fakeRegistry{}, Chains: fakeCatalog{}, CacheTTL: DefaultCacheTTL}); err == nil {
 		t.Fatal("expected an error without a quoter")
+	}
+}
+
+func xrpAdapter() types.Chain {
+	xrp := mocks.NewMockChain(models.ChainTXRP)
+	xrp.NativeAssetVal = models.NativeXRP
+	xrp.ValidateAddressFn = func(address string) bool { return strings.HasPrefix(address, "r") }
+	return xrp
+}
+
+func TestEstimate_DestinationTag_IsPassedOnXRPAndKeysTheCache(t *testing.T) {
+	f := newFixture(t, DefaultCacheTTL)
+	wallet := f.wallets[models.ChainTXRP]
+
+	f.estimate(t, Request{Wallet: wallet, Amount: "5", To: "rExchange", DestinationTag: "4294967295"})
+	f.estimate(t, Request{Wallet: wallet, Amount: "5", To: "rExchange"})
+
+	if len(f.quoter.requests) != 2 {
+		t.Fatalf("a tagged and an untagged estimate shared a cache entry: %d quotes", len(f.quoter.requests))
+	}
+	if tag := f.quoter.requests[0].DestinationTag; tag == nil || *tag != 4294967295 {
+		t.Fatalf("tagged quote request %+v", f.quoter.requests[0])
+	}
+	if f.quoter.requests[1].DestinationTag != nil {
+		t.Fatalf("untagged quote request %+v", f.quoter.requests[1])
+	}
+}
+
+func TestEstimate_DestinationTag_IsValidatedAndRefusedOffXRP(t *testing.T) {
+	f := newFixture(t, DefaultCacheTTL)
+	for _, raw := range []string{"abc", "-1", "4294967296", "1.5", " 7", "+7"} {
+		_, err := f.service.Estimate(context.Background(), Request{Wallet: f.wallets[models.ChainTXRP], Amount: "5", To: "rExchange", DestinationTag: raw})
+		_ = requireError(t, err, KindInvalidInput, CodeInvalidDestinationTag)
+	}
+	_, err := f.service.Estimate(context.Background(), Request{Wallet: f.wallets[models.ChainETH], Amount: "1", DestinationTag: "7"})
+	_ = requireError(t, err, KindUnprocessable, CodeDestinationTagUnsupported)
+	if len(f.quoter.requests) != 0 {
+		t.Fatalf("a refused tag was quoted: %d", len(f.quoter.requests))
 	}
 }

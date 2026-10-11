@@ -99,6 +99,26 @@ func TestError_Mappers_KeepTheirBytes(t *testing.T) {
 			422, legacyJSON, `{"error":{"code":"insufficient_funds","message":"insufficient_funds"}}`},
 		{"unsupported chain", func(ctx http.Context) http.Response { return MapSweepError(ctx, sweep.ErrUnsupportedChain) },
 			422, legacyJSON, `{"error":{"code":"unsupported_chain","message":"unsupported_chain"}}`},
+		{"xrp base reserve shortfall", func(ctx http.Context) http.Response {
+			return MapSweepError(ctx, fmt.Errorf("plan: %w", &sweep.BaseReserveShortfallError{}))
+		},
+			422, legacyJSON, `{"error":{"action":"fund_base_address","code":"insufficient_funds","message":"insufficient_funds"}}`},
+		{"xrp destination below reserve", func(ctx http.Context) http.Response {
+			return MapSweepError(ctx, fmt.Errorf("plan: %w", sweep.ErrDestinationBelowReserve))
+		},
+			422, legacyJSON, `{"error":{"code":"destination_below_reserve","message":"the destination account does not exist and the amount is below the base reserve it needs"}}`},
+		{"xrp destination tag required", func(ctx http.Context) http.Response {
+			return MapSweepError(ctx, fmt.Errorf("plan: %w", sweep.ErrDestinationTagRequired))
+		},
+			422, legacyJSON, `{"error":{"code":"destination_tag_required","message":"the destination account requires a destination tag; send destination_tag"}}`},
+		{"destination tag off xrp", func(ctx http.Context) http.Response {
+			return MapSweepError(ctx, fmt.Errorf("plan: %w", sweep.ErrDestinationTagUnsupported))
+		},
+			422, legacyJSON, `{"error":{"code":"destination_tag_not_supported","message":"destination tags are only supported on XRP"}}`},
+		{"destination tag refusal before the row", func(ctx http.Context) http.Response {
+			return MapWithdrawalError(ctx, &withdraw.CreateRefusal{Status: withdraw.CreateStatusUnprocessable, Message: withdraw.FailureDestinationTagUnsupported})
+		},
+			422, legacyJSON, `{"error":{"code":"destination_tag_not_supported","message":"destination_tag_not_supported"}}`},
 		{"gas estimate failed", func(ctx http.Context) http.Response { return MapSweepError(ctx, sweep.ErrGasEstimateFailed) },
 			422, legacyJSON, `{"error":{"code":"gas_estimate_failed","message":"gas_estimate_failed"}}`},
 		{"spending limit exceeded", func(ctx http.Context) http.Response {

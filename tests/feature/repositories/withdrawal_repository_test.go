@@ -153,7 +153,7 @@ func (s *WithdrawalRepositoryTestSuite) TestWithin_Rolls_BackARetry() {
 	}))
 
 	err := s.repo.Within(context.Background(), func(ctx context.Context) error {
-		updateErr := s.repo.RetryBroadcast(ctx, id, "2", "0xnew", "9", "again")
+		updateErr := s.repo.RetryBroadcast(ctx, id, "2", "0xnew", nil, "9", "again")
 		if updateErr != nil {
 			return updateErr
 		}

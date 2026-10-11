@@ -18,7 +18,9 @@ today and has a fix tracked elsewhere. Do not read either as permission.
 
 - The same binary serves every process; `vault.lambda_mode` (`LAMBDA_MODE`) picks the
   handler in `main.go`: empty → local Goravel HTTP server (+ `localworkers`), `api`,
-  `deposit_scanner`, `confirmation_tracker`, `webhook_reconciler`, `webhook_worker`.
+  `deposit_scanner`, `confirmation_tracker`, `webhook_reconciler`, `webhook_worker`, and
+  `webhook_poller` (a long-running process that stands in for the `webhook_worker` Lambda
+  on a host without Lambda, see `.ai/guidelines/queues-and-workers.md`).
   Deploy (SAM `template.yaml`, EventBridge, the Lambda modes) is out of scope for any
   reorganization: `main.go` only has to keep compiling. — guarded by `go build ./...`.
 - Goravel is assembled in `bootstrap/app.go` (`foundation.Setup()…Create()`): migrations,
@@ -168,6 +170,13 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   value is never in the database. — guarded by `app/services/mpc/*_test.go`
   (`TestEncrypt_Decrypt_RoundTrip`, `TestDecrypt_Wrong_Passphrase`, keygen and signing tests)
   and `TestValidate_Existing_SeedWalletSecret*` (`database/seeders`).
+- Share B is created sealed with the KMS key `MASTER_KEY_REF` names (`KmsKeyId`); a local
+  reference leaves Secrets Manager on its default key. `app/services/sharemigration`
+  (`secrets:migrate-shares`) is a custody service: it moves share B between two Secrets
+  Managers, holds the bytes only in memory, zeroes them, never writes the source, and moves
+  `MPCSecretARN` with a compare-and-swap only after the copy reads back equal. — guarded by
+  `app/adapters/secretsmanager/wallet_store_test.go`, `app/services/sharemigration/service_test.go`
+  and `TestWallet_Repository_Suite` (`TestSetMPCSecretARN_*`).
 - Key material (shares, passphrases, derived keys) is never returned after the one-time
   recovery material at creation, never logged, queued or cached. — guarded by
   `TestWallet_Recovery_MaterialSuite` (`tests/feature/api/external/wallets/wallets_recovery_material_test.go`).
@@ -191,13 +200,16 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 | Mechanism | Carries | Consumer |
 |---|---|---|
 | Goravel queue, `sync` connection (`QUEUE_CONNECTION`, default `sync`; `config/queue.go`) | credential mail (`jobs.SendCredentialMailJob`, always `DispatchSync`) | runs in the dispatching process. The `database` connection (queue `blockchain`) is configured but nothing runs `queue:work` and no job uses it |
-| AWS SQS (`app/adapters/queue/sqs`, port `queue.Sender`) | outbound webhook delivery | `webhook_worker` Lambda |
+| AWS SQS (`app/adapters/queue/sqs`, port `queue.Sender`) | outbound webhook delivery | `webhook_worker` Lambda, or on a host without Lambda the `webhook_poller` process (same handler) |
 | `app/services/localworkers` | local stand-in for `confirmation_tracker` and `webhook_worker`, the wallet balance refresh loop (and optional deposit scan), and the MPC keygen pre-parameters pool | started from `main.go` in local mode only |
 
 - Local webhook delivery from the outbox runs only when no SQS webhook queue is
   configured, so a message is never drained twice. — guarded by
   `TestStart_Skips_OutboxWhenAQueueDelivers` (`app/services/localworkers`) and
   `TestOne_Consumer_PerQueue` (`tests/architecture`).
+- `webhook_poller` replaces the `webhook_worker` Lambda where none runs; the two never consume
+  one queue together. — **UNGUARDED**: `TestOne_Consumer_PerQueue` reads the consumers from
+  `template.yaml` and cannot see where the poller runs; this rests on the deployment.
 - No job payload carries a credential (tokens, passphrases, shares): a credential mail job
   carries `(subject_id, purpose)` and mints the token when it runs. — guarded by
   `app/jobs/send_credential_mail_test.go` and `TestJob_Payload_IsDecodedNotPositional`.
@@ -533,7 +545,7 @@ One node answer is read up to a per-chain limit and refused past it with an expl
 
 ### Paid fees
 
-The confirmation tracker stores the fee actually paid (native base units) in `transactions.fee` when a withdrawal, sweep or gas_seed confirms: EVM gasUsed × effectiveGasPrice + L1 fee, BTC/LTC inputs − outputs, Solana `meta.fee`, TRON `fee` (energy + bandwidth burned). Older rows: `go run . artisan transactions:backfill-fees [--chain a,b] [--apply]` (dry run by default, idempotent, reads only).
+The confirmation tracker stores the fee actually paid (native base units) in `transactions.fee` when a withdrawal, sweep or gas_seed confirms: EVM gasUsed × effectiveGasPrice + L1 fee, BTC/LTC inputs − outputs, Solana `meta.fee`, TRON `fee` (energy + bandwidth burned), XRP `Fee` (drops) of the transaction in a validated ledger. An XRP transaction is confirmed only when validated with `meta.TransactionResult` `tesSUCCESS`. XRP only: a validated `tec…` result marks the transaction and its withdrawal `failed` with `onchain_<result in lowercase>` (e.g. `onchain_tecno_dst_insuf_xrp`), stores the fee it still burned, and sends `withdrawal.failed` once; a payment past its `LastLedgerSequence` (kept in `transactions.raw_payload`) that the node searched every ledger for (`tx` `min_ledger`/`max_ledger` → `searched_all`, inside `complete_ledgers`) is failed with `expired`, no fee. Other chains never mark an on-chain failure. Older rows: `go run . artisan transactions:backfill-fees [--chain a,b] [--apply]` (dry run by default, idempotent, reads only).
 
 ### TRON gas_seed
 

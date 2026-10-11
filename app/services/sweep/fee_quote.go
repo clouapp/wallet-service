@@ -33,10 +33,12 @@ var (
 // FeeQuoteRequest asks what a withdrawal of Amount (base units) of Asset to
 // ToAddress would pay in fees. An empty ToAddress prices a probe recipient.
 type FeeQuoteRequest struct {
-	WalletID        uuid.UUID
-	Asset           string
-	Amount          *big.Int
-	ToAddress       string
+	WalletID  uuid.UUID
+	Asset     string
+	Amount    *big.Int
+	ToAddress string
+	// DestinationTag is the XRP destination tag the withdrawal would carry.
+	DestinationTag  *uint32
 	CallerAccountID uuid.UUID
 }
 
@@ -71,6 +73,16 @@ type FeeQuote struct {
 	Bitcoin          *BitcoinFeeDetails
 	Solana           *SolanaFeeDetails
 	Tron             *TronFeeDetails
+	XRP              *XRPFeeDetails
+}
+
+// XRPFeeDetails: one payment from the base address paying FeeDrops. The base address
+// keeps AccountReserve (base reserve + owner reserve); a payment to an account that
+// does not exist yet must deliver at least BaseReserve. All in drops.
+type XRPFeeDetails struct {
+	FeeDrops       *big.Int
+	AccountReserve *big.Int
+	BaseReserve    *big.Int
 }
 
 // EVMFeeDetails: every transfer is a legacy transaction paying GasPrice per gas.
@@ -146,7 +158,7 @@ func (s *service) QuoteWithdrawalFee(ctx context.Context, req FeeQuoteRequest) (
 	}
 
 	recipient := quoteRecipient(chainEntity.AdapterType, req.ToAddress)
-	plan, err := s.PlanForWithdrawal(ctx, req.WalletID, req.Asset, req.Amount, recipient, req.CallerAccountID)
+	plan, err := s.PlanForWithdrawalTo(ctx, req.WalletID, req.Asset, req.Amount, Destination{Address: recipient, Tag: req.DestinationTag}, req.CallerAccountID)
 	if err != nil {
 		return nil, err
 	}
@@ -179,6 +191,8 @@ func (s *service) QuoteWithdrawalFee(ctx context.Context, req FeeQuoteRequest) (
 		err = s.quoteSolanaFee(ctx, adapter, quoted, target, quote)
 	case models.AdapterTypeTron:
 		err = s.quoteTronFee(ctx, adapter, quoted, target, quote)
+	case models.AdapterTypeXRP:
+		err = quoteXRPFee(ctx, adapter, quoted, target, quote)
 	default:
 		err = ErrUnsupportedChain
 	}

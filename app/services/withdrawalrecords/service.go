@@ -50,7 +50,7 @@ type Store interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Withdrawal, error)
 	FindByIDAndWallet(ctx context.Context, withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error)
 	Create(ctx context.Context, withdrawal *models.Withdrawal) error
-	RetryBroadcast(ctx context.Context, id uuid.UUID, amount, destination, feeEstimate, note string) error
+	RetryBroadcast(ctx context.Context, id uuid.UUID, amount, destination string, destinationTag *uint32, feeEstimate, note string) error
 	MarkFailed(ctx context.Context, id uuid.UUID, failureReason string) error
 	MarkBroadcast(ctx context.Context, id uuid.UUID, transactionID *uuid.UUID) error
 	SetStatus(ctx context.Context, id uuid.UUID, status string) error
@@ -136,11 +136,11 @@ func (s *Records) Create(ctx context.Context, withdrawal *models.Withdrawal) err
 	return s.store.Create(ctx, withdrawal)
 }
 
-func (s *Records) RetryBroadcast(ctx context.Context, id uuid.UUID, amount, destination, feeEstimate, note string) error {
+func (s *Records) RetryBroadcast(ctx context.Context, id uuid.UUID, amount, destination string, destinationTag *uint32, feeEstimate, note string) error {
 	if err := s.ready(ctx, "retry withdrawal broadcast"); err != nil {
 		return err
 	}
-	return s.store.RetryBroadcast(ctx, id, amount, destination, feeEstimate, note)
+	return s.store.RetryBroadcast(ctx, id, amount, destination, destinationTag, feeEstimate, note)
 }
 
 func (s *Records) MarkFailed(ctx context.Context, id uuid.UUID, failureReason string) error {

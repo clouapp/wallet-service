@@ -67,6 +67,7 @@ type SubmitInput struct {
 	Asset              string
 	Amount             string
 	DestinationAddress string
+	DestinationTag     *uint32
 	Note               string
 	IdempotencyKey     string
 }
@@ -121,6 +122,7 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (*SubmitResult, er
 		Asset:              in.Asset,
 		Amount:             in.Amount,
 		DestinationAddress: in.DestinationAddress,
+		DestinationTag:     in.DestinationTag,
 		Note:               in.Note,
 		IdempotencyKey:     in.IdempotencyKey,
 	})
@@ -139,6 +141,7 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (*SubmitResult, er
 	request := WithdrawRequest{
 		WalletID:        in.Wallet.ID,
 		ToAddress:       in.DestinationAddress,
+		DestinationTag:  in.DestinationTag,
 		Amount:          resolved.BaseUnits.String(),
 		Asset:           resolved.WalletAsset,
 		Passphrase:      in.Passphrase,

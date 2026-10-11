@@ -15,6 +15,8 @@ type memTransactions struct {
 	wallets map[uuid.UUID]uuid.UUID
 	// err, when set, fails FindByIDForAccount.
 	err error
+	// byKey answers FindByIdempotencyKey; a missing key is a lookup error.
+	byKey map[string]*models.Transaction
 }
 
 func newMemTransactions() *memTransactions {
@@ -29,7 +31,10 @@ func (m *memTransactions) add(tx *models.Transaction) {
 	m.rows = append(m.rows, tx)
 }
 
-func (m *memTransactions) FindByIdempotencyKey(context.Context, string) (*models.Transaction, error) {
+func (m *memTransactions) FindByIdempotencyKey(_ context.Context, key string) (*models.Transaction, error) {
+	if tx, ok := m.byKey[key]; ok {
+		return tx, nil
+	}
 	return nil, fmt.Errorf("idempotency lookup is not used by these tests")
 }
 

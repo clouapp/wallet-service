@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/goravel/framework/contracts/foundation"
 
 	alchemyingest "github.com/macrowallets/waas/app/adapters/ingest/alchemy"
@@ -91,7 +90,10 @@ func newWebhookService(app foundation.Application) (*webhook.Service, error) {
 		return nil, err
 	}
 	service := webhook.NewService(webhook.Deps{
-		SQS:     queuesqs.New(sqs.NewFromConfig(*awsCfg), facades.Config().GetString("vault.queues.webhook")),
+		SQS: queuesqs.New(
+			queuesqs.NewClient(*awsCfg, facades.Config().GetString("vault.aws.endpoint_url")),
+			facades.Config().GetString("vault.queues.webhook"),
+		),
 		Configs: configs,
 		Events:  events,
 	})

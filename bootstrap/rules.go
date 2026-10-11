@@ -14,6 +14,7 @@ func Rules() []validation.Rule {
 	return []validation.Rule{
 		&rules.RFC3339{},
 		&rules.DecimalString{},
+		&rules.Uint32{},
 		rules.NewBlockchainAddress(container.MustMake[*chainpkg.Registry]()),
 		rules.NewUnique(rows),
 		rules.NewDBExists(rows),
