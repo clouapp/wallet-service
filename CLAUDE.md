@@ -527,7 +527,7 @@ One node answer is read up to a per-chain limit and refused past it with an expl
 
 ### Paid fees
 
-The confirmation tracker stores the fee actually paid (native base units) in `transactions.fee` when a withdrawal, sweep or gas_seed confirms: EVM gasUsed × effectiveGasPrice + L1 fee, BTC/LTC inputs − outputs, Solana `meta.fee`, TRON `fee` (energy + bandwidth burned). Older rows: `go run . artisan transactions:backfill-fees [--chain a,b] [--apply]` (dry run by default, idempotent, reads only).
+The confirmation tracker stores the fee actually paid (native base units) in `transactions.fee` when a withdrawal, sweep or gas_seed confirms: EVM gasUsed × effectiveGasPrice + L1 fee, BTC/LTC inputs − outputs, Solana `meta.fee`, TRON `fee` (energy + bandwidth burned), XRP `Fee` (drops) of the transaction in a validated ledger. An XRP transaction is confirmed only when validated with `meta.TransactionResult` `tesSUCCESS`; a validated `tec…` result stays `confirming` and is logged. Older rows: `go run . artisan transactions:backfill-fees [--chain a,b] [--apply]` (dry run by default, idempotent, reads only).
 
 ### TRON gas_seed
 

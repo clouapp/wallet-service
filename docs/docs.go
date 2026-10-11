@@ -1218,7 +1218,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Prices the withdrawal POST /withdrawals would send, with the same planner and chain adapters, without signing or broadcasting. The fee is always in the chain's native coin (ETH, POL, BTC, LTC, SOL, TRX), also for tokens. EVM transfers are legacy transactions paying gas_price_wei for every unit of gas (plus the L1 data fee on OP-stack networks); Bitcoin and Litecoin use the node's fee rate and the coin selection the builder runs; Solana pays 5000 lamports per signature plus the recipient's token account when it must be created; TRON is priced as burned TRX with no free or staked resources (bandwidth per signed byte, 1.1 TRX to activate a new recipient, TRC-20 energy from estimateenergy at the chain's energy price), broken down in details.tron. When the wallet cannot cover the amount, the fee of the transfer from the base address is returned with insufficient_funds=true. Answers are cached for FEE_ESTIMATE_CACHE_TTL_SECONDS (default 15). Node failures answer 503; no value is guessed.",
+                "description": "Prices the withdrawal POST /withdrawals would send, with the same planner and chain adapters, without signing or broadcasting. The fee is always in the chain's native coin (ETH, POL, BTC, LTC, SOL, TRX, XRP), also for tokens. EVM transfers are legacy transactions paying gas_price_wei for every unit of gas (plus the L1 data fee on OP-stack networks); Bitcoin and Litecoin use the node's fee rate and the coin selection the builder runs; Solana pays 5000 lamports per signature plus the recipient's token account when it must be created; TRON is priced as burned TRX with no free or staked resources (bandwidth per signed byte, 1.1 TRX to activate a new recipient, TRC-20 energy from estimateenergy at the chain's energy price), broken down in details.tron; XRP (altnet only) is one native Payment from the base address paying the open-ledger fee in drops, never swept from child addresses: the base address keeps its account reserve (base + owner reserve, read from the validated ledger, in minimum_remaining_base_units and details.xrp), and a destination that does not exist yet must receive at least the base reserve (422 destination_below_reserve) and one requiring a destination tag is refused (422 destination_tag_required). When the wallet cannot cover the amount, the fee of the transfer from the base address is returned with insufficient_funds=true. Answers are cached for FEE_ESTIMATE_CACHE_TTL_SECONDS (default 15). Node failures answer 503; no value is guessed.",
                 "produces": [
                     "application/json"
                 ],
@@ -6922,6 +6922,9 @@ const docTemplate = `{
                 },
                 "tron": {
                     "$ref": "#/definitions/feeestimate.TronDetails"
+                },
+                "xrp": {
+                    "$ref": "#/definitions/feeestimate.XRPDetails"
                 }
             }
         },
@@ -7095,6 +7098,23 @@ const docTemplate = `{
                 "sun_per_energy": {
                     "type": "integer",
                     "example": 100
+                }
+            }
+        },
+        "feeestimate.XRPDetails": {
+            "type": "object",
+            "properties": {
+                "account_reserve_drops": {
+                    "type": "string",
+                    "example": "1000000"
+                },
+                "base_reserve_drops": {
+                    "type": "string",
+                    "example": "1000000"
+                },
+                "fee_drops": {
+                    "type": "string",
+                    "example": "12"
                 }
             }
         },
