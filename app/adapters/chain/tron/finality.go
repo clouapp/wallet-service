@@ -36,5 +36,8 @@ func (a *TronLive) SolidifiedBlock(ctx context.Context) (uint64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("tron %s solidified block: %w", a.cfg.ChainIDStr, err)
 	}
+	if head.number <= 0 {
+		return 0, fmt.Errorf("tron %s solidified block has no number", a.cfg.ChainIDStr)
+	}
 	return uint64(head.number), nil
 }

@@ -88,10 +88,8 @@ func TestTron_SolidifiedBlock_FailsWithoutAValidHeader(t *testing.T) {
 
 func TestTron_FinalityPolicy_IsTheChainRowPolicy(t *testing.T) {
 	adapter := NewTronLive(TronConfig{ChainIDStr: models.ChainTTron, Finality: models.FinalitySolidified})
-	var reporter chain.FinalityPolicyReporter = adapter
-	var reader chain.SolidifiedBlockReader = adapter
-	if reporter.FinalityPolicy() != models.FinalitySolidified || reader == nil {
-		t.Fatalf("policy %q", reporter.FinalityPolicy())
+	if got := chain.FinalityPolicyOf(adapter); got != models.FinalitySolidified {
+		t.Fatalf("policy %q", got)
 	}
 	if got := chain.FinalityPolicyOf(NewTronLive(TronConfig{ChainIDStr: models.ChainTron})); got != models.FinalityConfirmations {
 		t.Fatalf("a row without a policy reports %q", got)

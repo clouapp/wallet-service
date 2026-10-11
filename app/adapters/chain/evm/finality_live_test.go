@@ -34,7 +34,7 @@ func TestLive_FinalizedBlockTrailsTheTip(t *testing.T) {
 			if finalized > tip+5 || tip-finalized > 64 {
 				t.Fatalf("finalized %d, tip %d", finalized, tip)
 			}
-			t.Logf("tip %d, finalized %d, lag %d blocks", tip, finalized, int64(tip)-int64(finalized))
+			t.Logf("tip %d, finalized %d", tip, finalized)
 		})
 	}
 }
