@@ -175,3 +175,86 @@ func (s *WebhookEventRepositoryTestSuite) TestWebhookEventRepository_ClaimStaleF
 	_, err = s.repo.ClaimStaleForRedispatch(context.Background(), time.Minute, 0)
 	s.Error(err)
 }
+
+// outboxRowOf stores one event of type eventType for configID, created createdAgo
+// and last touched updatedAgo before now.
+func (s *WebhookEventRepositoryTestSuite) outboxRowOf(configID uuid.UUID, eventType, status string, createdAgo, updatedAgo time.Duration) models.WebhookEvent {
+	row := s.insertOutboxRow(&configID, status, 2, createdAgo, updatedAgo)
+	_, err := facades.Orm().Query().Exec(`UPDATE webhook_events SET event_type = ? WHERE id = ?`, eventType, row.ID)
+	s.Require().NoError(err)
+	if status == models.WebhookDeliveryDelivered {
+		_, err = facades.Orm().Query().Exec(`UPDATE webhook_events SET delivered_at = NOW() WHERE id = ?`, row.ID)
+		s.Require().NoError(err)
+	}
+	row.EventType = eventType
+	return row
+}
+
+func (s *WebhookEventRepositoryTestSuite) TestWebhookEventRepository_FindForRedelivery_SelectsTheConfigsEventsOfTheWindowAndTypes() {
+	ctx := context.Background()
+	cfg := fixtures.InsertWebhookConfig(s.T(), "https://owner.test/hook", "secret", []string{"deposit.confirmed"})
+	other := fixtures.InsertWebhookConfig(s.T(), "https://other.test/hook", "secret", []string{"deposit.confirmed"})
+	older := s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryDelivered, 90*time.Minute, 90*time.Minute)
+	newer := s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryFailed, time.Hour, time.Hour)
+	s.outboxRowOf(cfg.ID, "withdrawal.confirmed", models.WebhookDeliveryDelivered, time.Hour, time.Hour)
+	s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryDelivered, 3*time.Hour, 3*time.Hour)
+	s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryDelivered, time.Minute, time.Minute)
+	s.outboxRowOf(other.ID, "deposit.confirmed", models.WebhookDeliveryDelivered, time.Hour, time.Hour)
+
+	now := time.Now().UTC()
+	ids, err := s.repo.FindForRedelivery(ctx, cfg.ID, now.Add(-2*time.Hour), now.Add(-30*time.Minute), []string{"deposit.confirmed"}, 10)
+	s.Require().NoError(err)
+	s.Equal([]uuid.UUID{older.ID, newer.ID}, ids, "the config's deposit.confirmed of the window, oldest first")
+
+	all, err := s.repo.FindForRedelivery(ctx, cfg.ID, now.Add(-2*time.Hour), now, nil, 10)
+	s.Require().NoError(err)
+	s.Len(all, 4, "no type filter selects every type of the window")
+
+	limited, err := s.repo.FindForRedelivery(ctx, cfg.ID, now.Add(-2*time.Hour), now, nil, 1)
+	s.Require().NoError(err)
+	s.Equal([]uuid.UUID{older.ID}, limited)
+}
+
+func (s *WebhookEventRepositoryTestSuite) TestWebhookEventRepository_RequeueForRedelivery_ResetsOnlyTheConfigsSettledEvents() {
+	ctx := context.Background()
+	cfg := fixtures.InsertWebhookConfig(s.T(), "https://owner.test/hook", "secret", []string{"deposit.confirmed"})
+	other := fixtures.InsertWebhookConfig(s.T(), "https://other.test/hook", "secret", []string{"deposit.confirmed"})
+	delivered := s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryDelivered, time.Hour, time.Hour)
+	failed := s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryFailed, time.Hour, time.Hour)
+	stuck := s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryPending, time.Hour, time.Hour)
+	inFlight := s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryPending, time.Hour, 10*time.Second)
+	tooOld := s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryDelivered, 9*24*time.Hour, 9*24*time.Hour)
+	ofOther := s.outboxRowOf(other.ID, "deposit.confirmed", models.WebhookDeliveryDelivered, time.Hour, time.Hour)
+
+	now := time.Now().UTC()
+	requeued, err := s.repo.RequeueForRedelivery(ctx, cfg.ID,
+		[]uuid.UUID{delivered.ID, failed.ID, stuck.ID, inFlight.ID, tooOld.ID, ofOther.ID, uuid.New()},
+		now.Add(-7*24*time.Hour), now.Add(-time.Minute))
+	s.Require().NoError(err)
+	s.ElementsMatch([]uuid.UUID{delivered.ID, failed.ID, stuck.ID}, func() []uuid.UUID {
+		ids := make([]uuid.UUID, 0, len(requeued))
+		for _, row := range requeued {
+			ids = append(ids, row.ID)
+		}
+		return ids
+	}())
+	for _, row := range requeued {
+		s.Equal(models.WebhookDeliveryPending, row.DeliveryStatus)
+		s.Zero(row.Attempts)
+		s.Nil(row.DeliveredAt)
+		s.Equal(delivered.Payload, row.Payload)
+	}
+	for _, id := range []uuid.UUID{delivered.ID, failed.ID, stuck.ID} {
+		stored := s.storedOutboxRow(id)
+		s.Equal(models.WebhookDeliveryPending, stored.DeliveryStatus)
+		s.Zero(stored.Attempts)
+		s.Nil(stored.DeliveredAt)
+	}
+	s.Equal(2, s.storedOutboxRow(inFlight.ID).Attempts, "an event queued moments ago is left alone")
+	s.Equal(models.WebhookDeliveryDelivered, s.storedOutboxRow(tooOld.ID).DeliveryStatus, "an event past the window is left alone")
+	s.Equal(models.WebhookDeliveryDelivered, s.storedOutboxRow(ofOther.ID).DeliveryStatus, "another config's event is left alone")
+
+	none, err := s.repo.RequeueForRedelivery(ctx, cfg.ID, nil, now.Add(-7*24*time.Hour), now.Add(-time.Minute))
+	s.Require().NoError(err)
+	s.Empty(none)
+}

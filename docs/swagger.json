@@ -1541,6 +1541,103 @@
                 }
             }
         },
+        "/api/v1/webhooks/{webhookId}/redeliver": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "SignatureAuth": []
+                    }
+                ],
+                "description": "Queues again events of one of the account's webhooks, whatever their delivery status: the events named in `event_ids` (at most 500), or every event created from `since` (RFC 3339, at most 7 days ago) up to `until` (default now), optionally only of `types`. Only events created in the last 7 days are redelivered, at most 500 per request (a larger window is refused: narrow `since`, `until` or `types`), and an event already pending that was queued in the last minute is left alone. A requeued event is delivered again with the same `X-Vault-Delivery-Id`, so receivers deduplicate on it. A legacy webhook is claimed with PATCH before it can be redelivered.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Redeliver webhook events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Webhook UUID",
+                        "name": "webhookId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Events to redeliver: event_ids, or since with optional until and types",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/webhooks.RedeliverRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/webhooks.Redelivery"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid webhook id",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Token lacks webhooks.write, or a legacy webhook not claimed yet",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "webhook not found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "409": {
+                        "description": "webhook is inactive",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid selection (validation_failed with errors)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/2fa/verify": {
             "post": {
                 "description": "Validates a TOTP code or recovery code and returns full JWT tokens",
@@ -8528,6 +8625,48 @@
                 "url": {
                     "type": "string",
                     "example": "https://example.com/hook"
+                }
+            }
+        },
+        "webhooks.RedeliverRequest": {
+            "type": "object",
+            "properties": {
+                "event_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "3f2b8c1e-0d4a-4f6b-9e2a-7c5d1b8e9f00"
+                    ]
+                },
+                "since": {
+                    "type": "string",
+                    "example": "2026-10-10T00:00:00Z"
+                },
+                "types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "deposit.confirmed"
+                    ]
+                },
+                "until": {
+                    "type": "string",
+                    "example": "2026-10-11T00:00:00Z"
+                }
+            }
+        },
+        "webhooks.Redelivery": {
+            "type": "object",
+            "properties": {
+                "requeued": {
+                    "type": "integer"
+                },
+                "webhook_id": {
+                    "type": "string"
                 }
             }
         },

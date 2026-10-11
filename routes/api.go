@@ -91,6 +91,7 @@ func RegisterExternalAPI() {
 		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWebhooksWrite)).Post("/webhooks", webhookCtrl.Store)
 		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWebhooksRead)).Get("/webhooks", webhookCtrl.Index)
 		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWebhooksWrite)).Patch("/webhooks/{webhookId}", webhookCtrl.Update)
+		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWebhooksWrite)).Post("/webhooks/{webhookId}/redeliver", webhookCtrl.Redeliver)
 	})
 }
 

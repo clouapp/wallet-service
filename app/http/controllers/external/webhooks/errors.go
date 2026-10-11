@@ -40,3 +40,25 @@ func mapError(ctx http.Context, err error, action string) http.Response {
 	slog.Error(action+" failed", "error_type", fmt.Sprintf("%T", err))
 	return responses.Error(ctx, http.StatusInternalServerError, responses.CodeInternal, "internal error")
 }
+
+// mapRedeliveryError answers a refused redelivery: the webhook's scope and state as
+// statuses, a selection outside its bounds as the 422 field the request names.
+func mapRedeliveryError(ctx http.Context, err error) http.Response {
+	switch {
+	case errors.Is(err, webhook.ErrWebhookConfigNotFound):
+		return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, webhook.ErrWebhookConfigNotFound.Error())
+	case errors.Is(err, webhook.ErrWebhookRedeliveryUnclaimed):
+		return responses.Error(ctx, http.StatusForbidden, responses.CodeForbidden, webhook.ErrWebhookRedeliveryUnclaimed.Error())
+	case errors.Is(err, webhook.ErrWebhookInactive):
+		return responses.Error(ctx, http.StatusConflict, responses.CodeConflict, webhook.ErrWebhookInactive.Error())
+	case errors.Is(err, webhook.ErrRedeliverySelection):
+		return responses.FieldError(ctx, "event_ids", webhook.ErrRedeliverySelection.Error())
+	case errors.Is(err, webhook.ErrRedeliveryTooManyEvents):
+		return responses.FieldError(ctx, "since", webhook.ErrRedeliveryTooManyEvents.Error())
+	case errors.Is(err, webhook.ErrRedeliveryWindow):
+		return responses.FieldError(ctx, "since", webhook.ErrRedeliveryWindow.Error())
+	case errors.Is(err, webhook.ErrWebhookUnknownEvent):
+		return responses.FieldError(ctx, "types", webhook.ErrWebhookUnknownEvent.Error())
+	}
+	return responses.InternalError(ctx, fmt.Errorf("redeliver webhook events: %w", err))
+}
