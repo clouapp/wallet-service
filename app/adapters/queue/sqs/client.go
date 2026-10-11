@@ -20,7 +20,7 @@ type api interface {
 }
 
 // Client encodes a webhook delivery job as JSON and publishes it to the webhook
-// queue. The consumer is a Lambda on an event source mapping, so nothing here reads.
+// queue. The consumer is the webhook_worker Lambda, or the Poller on a host without one.
 type Client struct {
 	api        api
 	webhookURL string
@@ -28,6 +28,19 @@ type Client struct {
 
 var _ queue.Sender = (*Client)(nil)
 var _ api = (*awssqs.Client)(nil)
+
+// NewClient builds the SQS client. A non-empty endpoint takes every call
+// (LocalStack); an empty one is AWS itself, and an endpoint the process environment
+// or a profile set (AWS_ENDPOINT_URL) is dropped, as for the Secrets Manager client.
+func NewClient(cfg aws.Config, endpoint string) *awssqs.Client {
+	return awssqs.NewFromConfig(cfg, func(o *awssqs.Options) {
+		if endpoint == "" {
+			o.BaseEndpoint = nil
+			return
+		}
+		o.BaseEndpoint = aws.String(endpoint)
+	})
+}
 
 // New publishes webhook jobs to webhookURL with client. An empty webhookURL makes
 // SendWebhook log and skip, so a process without the queue still runs.

@@ -83,20 +83,81 @@ access keys. A dedicated deploy user needs, for this stack only (replace `ACCOUN
 }
 ```
 
-## What the service uses today
+## Running the service on these resources
 
-These resources exist ahead of the code that will use them:
+How the service uses each resource:
 
-- **Secrets Manager** is the only one in use. It holds MPC share B under
-  `vault/wallet/<id>/share-b`, and its ARN is stored in `wallets.mpc_secret_arn`. The
-  host's app still points at LocalStack (`AWS_ENDPOINT_URL`, `default` profile).
-  Moving it to AWS means copying every share into AWS and rewriting those ARNs;
-  without that, existing wallets cannot sign.
-- **SQS:** setting `WEBHOOK_QUEUE_URL` turns the local webhook outbox off, and only
-  the `webhook_worker` Lambda consumes the queue. Leave it empty on this host until a
-  local consumer exists, or webhooks stop being delivered. `WITHDRAWAL_QUEUE_URL` has
-  no producer or consumer.
-- **KMS:** nothing in the code calls it yet. `MASTER_KEY_REF` (the `MasterKeyArn`
-  output) is read and unused.
-- **Credentials:** the Forge supervisor process does not inherit `.env`, so the AWS SDK
-  reads `~/.aws` on the host.
+- **Credentials:** the AWS configuration comes from the app config:
+  - `vault.aws.profile` (`AWS_PROFILE`) and `vault.aws.region` (`AWS_REGION`);
+  - `vault.aws.endpoint_url` (`AWS_ENDPOINT_URL`, LocalStack when set) for both Secrets Manager and SQS.
+
+  A supervisor process does not inherit `.env`, so this is the only way those values reach the SDK.
+- **KMS:** when `MASTER_KEY_REF` names a KMS key (the `MasterKeyArn` output, or `alias/waas-dev-master`), every new share B is sealed with it.
+- **Secrets Manager:** `secrets:migrate-shares` moves the existing shares between two Secrets Managers.
+- **SQS:** `LAMBDA_MODE=webhook_poller` consumes the webhook queue on a host without Lambda. It runs the same handler as the `webhook_worker` Lambda and never runs beside it. `WITHDRAWAL_QUEUE_URL` still has no producer or consumer.
+
+### Cutover of the dev host (LocalStack → AWS)
+
+Run these on the host, in `~/macro-wallets-backend.on-forge.com/current`, in this order.
+
+1. **Freeze the wallet data.** Nothing may import or create wallets during the cutover.
+2. **Audit the environment.** Read `/proc/<pid>/environ` of each daemon and `env` in the shell that runs artisan.
+   - The environment outranks `.env`.
+   - A stray `AWS_PROFILE`, `AWS_ENDPOINT_URL`, `MASTER_KEY_REF` or `WEBHOOK_QUEUE_URL` there silently wins.
+3. **Deploy the new build on the current config.** That is LocalStack, with `MASTER_KEY_REF` still `local:…`. Check `/health` and the worker logs.
+4. **Point the app at AWS.** In `.env`: `AWS_PROFILE=waas-dev`, `AWS_ENDPOINT_URL=` (empty), `MASTER_KEY_REF=<MasterKeyArn>`.
+5. **Move the shares.**
+   - The API still runs on the old config until step 6. Keep the window short, or stop the daemon from Forge for it.
+   - Dry run, then apply:
+
+     ```bash
+     ./wallet-service artisan secrets:migrate-shares --from-endpoint=http://127.0.0.1:4566
+     ./wallet-service artisan secrets:migrate-shares --from-endpoint=http://127.0.0.1:4566 --apply
+     ```
+
+   - The first line must read `target: AWS, sealed with arn:aws:kms:…`.
+   - The command refuses a source equal to the target, an `--apply` into AWS without a KMS key, and empty shares.
+   - Each copy is read back before its row moves, and the row moves only if it still holds the old ARN.
+6. **Restart the service.** Run the dry run again: every wallet must be `in place`, which means the copy opens with the app's identity.
+7. **Prove it.**
+   - Spot-check one ARN: `aws secretsmanager describe-secret --secret-id <arn> --profile waas-dev --query '{arn:ARN,kms:KmsKeyId}'`. Expect account `430776404482` and the master key. (`list-secrets` needs a permission neither user has.)
+   - Sign without broadcasting, one wallet per curve: secp256k1 (EVM/BTC) and ed25519 (SOL). Use `./wallet-service artisan withdraw:preflight`.
+   - Run `make verify-aws` from the laptop. Do it before step 8: once the poller runs, it would be a second consumer of the webhook queue.
+8. **Hand the webhooks to SQS.**
+   1. Set `WEBHOOK_QUEUE_URL=<WebhookQueueUrl>` in `.env`. The running API keeps its outbox until it restarts.
+   2. Add the poller daemon in Forge, with `stopwaitsecs` at 70 or more (a batch may run 55 s):
+
+      ```bash
+      /bin/bash -c 'cd /home/forge/macro-wallets-backend.on-forge.com/current && exec env -u AWS_ENDPOINT_URL -u AWS_PROFILE LAMBDA_MODE=webhook_poller ./wallet-service'
+      ```
+
+   3. Wait for the outbox to drain: no `webhook_events` row left with `delivery_status` pending or retrying.
+   4. Restart the API. Webhooks now go API → SQS → poller.
+   5. `make dlq-check` should stay at 0.
+
+   A Forge deploy must restart both daemons. Otherwise the poller keeps running an old release, which release pruning may later delete.
+
+**Webhook rollback:**
+1. Let the queue drain (`ApproximateNumberOfMessages` 0).
+2. Stop the poller daemon.
+3. Empty `WEBHOOK_QUEUE_URL`.
+4. Restart the API.
+
+**Share rollback:**
+1. Keep the wallet data frozen and the API stopped, or at least the window short.
+2. In `.env`: `AWS_ENDPOINT_URL=http://127.0.0.1:4566`, `MASTER_KEY_REF=local:dev-master-key`. The `AWS_PROFILE` line may go.
+3. Dry run, then apply. The profile reads the AWS copies, and the rows point back at the equal LocalStack copies:
+
+   ```bash
+   ./wallet-service artisan secrets:migrate-shares --from-profile=waas-dev
+   ./wallet-service artisan secrets:migrate-shares --from-profile=waas-dev --apply
+   ```
+
+4. Restart, then run the same dry run: every wallet `in place`.
+
+**Known stops:**
+- **Conflict:** a copy under the share's name with other bytes is never overwritten.
+  - The server user cannot delete `vault/wallet/*`. An admin deletes it, and the name stays reserved during the recovery window.
+- **Unreadable source:** a wallet whose source share cannot be read stays `failed` on its source ARN, and nothing is written for it.
+  - This covers rows imported without their share.
+  - Decide per wallet, before the cutover, whether it is kept.

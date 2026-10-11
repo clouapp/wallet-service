@@ -229,3 +229,26 @@ func TestRefresh_Commands_HaveNoQueueFlag(t *testing.T) {
 		}
 	}
 }
+
+func TestSecrets_Migrate_SharesSignature(t *testing.T) {
+	cmd := NewSecretsMigrateShares(nil)
+	if cmd.Signature() != "secrets:migrate-shares" {
+		t.Fatalf("signature = %s", cmd.Signature())
+	}
+	ext := cmd.Extend()
+	if ext.Category != "secrets" {
+		t.Fatalf("category = %s", ext.Category)
+	}
+	names := map[string]bool{}
+	for _, flag := range ext.Flags {
+		switch f := flag.(type) {
+		case *command.StringFlag:
+			names[f.Name] = true
+		case *command.BoolFlag:
+			names[f.Name] = true
+		}
+	}
+	if !names["from-endpoint"] || !names["from-profile"] || !names["apply"] {
+		t.Fatalf("flags = %v, want from-endpoint, from-profile and apply", names)
+	}
+}

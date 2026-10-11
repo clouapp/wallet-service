@@ -191,8 +191,7 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 	code := fmt.Sprintf("%06d", n.Int64())
 
 	walletID := uuid.New()
-	secretName := fmt.Sprintf("vault/wallet/%s/share-b", walletID.String())
-	secretARN, err := s.secretsManager.Create(ctx, secretName, keygenResult.ShareB)
+	secretARN, err := s.secretsManager.Create(ctx, ShareBSecretName(walletID), keygenResult.ShareB)
 	if err != nil {
 		return nil, fmt.Errorf("store service share: %w", err)
 	}
@@ -576,4 +575,9 @@ func (s *Service) ListUserAddressesForAccount(ctx context.Context, externalUserI
 
 func (s *Service) ListWalletAddresses(ctx context.Context, walletID uuid.UUID) ([]models.Address, error) {
 	return s.addressRepo.FindByWalletID(ctx, walletID)
+}
+
+// ShareBSecretName is the Secrets Manager name of a wallet's share B.
+func ShareBSecretName(walletID uuid.UUID) string {
+	return fmt.Sprintf("vault/wallet/%s/share-b", walletID.String())
 }

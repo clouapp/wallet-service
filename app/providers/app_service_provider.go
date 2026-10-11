@@ -20,7 +20,10 @@ type AppServiceProvider struct{}
 
 func (receiver *AppServiceProvider) Register(app foundation.Application) {
 	app.Singleton((*aws.Config)(nil), func(foundation.Application) (any, error) {
-		cfg, err := awsconfig.LoadDefaultConfig(context.Background())
+		cfg, err := awsconfig.LoadDefaultConfig(context.Background(), awsLoadOptions(
+			facades.Config().GetString("vault.aws.region"),
+			facades.Config().GetString("vault.aws.profile"),
+		)...)
 		if err != nil {
 			return nil, fmt.Errorf("vault: aws config: %w", err)
 		}
