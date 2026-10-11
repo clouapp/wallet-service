@@ -83,20 +83,45 @@ access keys. A dedicated deploy user needs, for this stack only (replace `ACCOUN
 }
 ```
 
-## What the service uses today
+## Running the service on these resources
 
-These resources exist ahead of the code that will use them:
+How the service uses each resource:
 
-- **Secrets Manager** is the only one in use. It holds MPC share B under
-  `vault/wallet/<id>/share-b`, and its ARN is stored in `wallets.mpc_secret_arn`. The
-  host's app still points at LocalStack (`AWS_ENDPOINT_URL`, `default` profile).
-  Moving it to AWS means copying every share into AWS and rewriting those ARNs;
-  without that, existing wallets cannot sign.
-- **SQS:** setting `WEBHOOK_QUEUE_URL` turns the local webhook outbox off, and only
-  the `webhook_worker` Lambda consumes the queue. Leave it empty on this host until a
-  local consumer exists, or webhooks stop being delivered. `WITHDRAWAL_QUEUE_URL` has
-  no producer or consumer.
-- **KMS:** nothing in the code calls it yet. `MASTER_KEY_REF` (the `MasterKeyArn`
-  output) is read and unused.
-- **Credentials:** the Forge supervisor process does not inherit `.env`, so the AWS SDK
-  reads `~/.aws` on the host.
+- **Credentials:** the AWS configuration comes from the app config:
+  - `vault.aws.profile` (`AWS_PROFILE`) and `vault.aws.region` (`AWS_REGION`);
+  - `vault.aws.endpoint_url` (`AWS_ENDPOINT_URL`, LocalStack when set) for both Secrets Manager and SQS.
+
+  A supervisor process does not inherit `.env`, so this is the only way those values reach the SDK.
+- **KMS:** when `MASTER_KEY_REF` names a KMS key (the `MasterKeyArn` output, or `alias/waas-dev-master`), every new share B is sealed with it.
+- **Secrets Manager:** `secrets:migrate-shares` moves the existing shares between two Secrets Managers.
+- **SQS:** `LAMBDA_MODE=webhook_poller` consumes the webhook queue on a host without Lambda. It runs the same handler as the `webhook_worker` Lambda and never runs beside it. `WITHDRAWAL_QUEUE_URL` still has no producer or consumer.
+
+### Cutover of the dev host (LocalStack → AWS)
+
+1. **Point the app at AWS.** In `.env`: `AWS_PROFILE=waas-dev`, `AWS_ENDPOINT_URL=` (empty), `MASTER_KEY_REF=<MasterKeyArn>`.
+2. **Move the shares.** Check first, then apply, then check that nothing is left:
+
+   ```bash
+   ./wallet-service artisan secrets:migrate-shares --from-endpoint=http://127.0.0.1:4566
+   ./wallet-service artisan secrets:migrate-shares --from-endpoint=http://127.0.0.1:4566 --apply
+   ./wallet-service artisan secrets:migrate-shares --from-endpoint=http://127.0.0.1:4566
+   ```
+
+   - Each copy is sealed with the master key and read back before the wallet row moves to it.
+   - The last run must show every wallet `in place`.
+   - The LocalStack shares stay as they were.
+3. **Restart the service.**
+4. **Start the webhook poller as a second daemon:**
+
+   ```bash
+   /bin/bash -lc 'cd /home/forge/macro-wallets-backend.on-forge.com/current && LAMBDA_MODE=webhook_poller exec ./wallet-service'
+   ```
+
+   The daemon's `LAMBDA_MODE` outranks the one in `.env`.
+5. **Hand the webhooks to SQS.** Set `WEBHOOK_QUEUE_URL=<WebhookQueueUrl>` and restart the service. Its local outbox stops, and webhooks go through SQS to the poller. `make dlq-check` should stay at 0.
+
+**Rollback:**
+
+1. Restore the three keys in `.env` and point `WEBHOOK_QUEUE_URL` back to empty.
+2. Run `secrets:migrate-shares --apply` with the app on LocalStack and `--from-endpoint` empty. That run reads AWS and points the rows back at the LocalStack copies, which are equal.
+3. Restart.
