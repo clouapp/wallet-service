@@ -114,6 +114,7 @@ func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByC
 				ERC20Tokens:           tokensByChain[ch.ID],
 				GasReadinessThreshold: resolveGasReadinessThreshold(&ch),
 				DustThresholdNative:   resolveDustThresholdNative(&ch),
+				Finality:              ch.Finality,
 			})
 		case models.AdapterTypeBitcoin:
 			network := "mainnet"
@@ -163,6 +164,7 @@ func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByC
 				Tokens:                tokensByChain[ch.ID],
 				GasReadinessThreshold: resolveGasReadinessThreshold(&ch),
 				DustThresholdNative:   resolveDustThresholdNative(&ch),
+				Finality:              ch.Finality,
 			})
 		case models.AdapterTypeSolana:
 			adapter = solanachain.NewSolanaLive(solanachain.SolanaConfig{

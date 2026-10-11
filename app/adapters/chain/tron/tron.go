@@ -49,6 +49,9 @@ type TronConfig struct {
 	// DustThresholdNative is the minimum TRX (sun) on a child for sweep
 	// eligibility. nil when unset.
 	DustThresholdNative *big.Int
+	// Finality is the chains.finality policy new transactions are recorded with;
+	// empty is confirmations.
+	Finality string
 }
 
 // TronLive is the TRON adapter: transactions are built locally in protobuf, signed

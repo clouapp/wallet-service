@@ -55,7 +55,11 @@ type AssetDecimals interface {
 // rendering of AmountBaseUnits with Decimals; receivers should credit from
 // AmountBaseUnits and Decimals and may use Amount as a cross-check. DestinationTag
 // is the XRP Ledger destination tag the payment carried, next to ToAddress; it is
-// omitted when the payment had none and on every other chain.
+// omitted when the payment had none and on every other chain. Finality is the rule
+// that decides Status: "confirmations" (confirmed once Confirmations reaches
+// RequiredConfirmations), or the chain's own finality, "finalized_tag" (EVM) or
+// "solidified" (TRON), under which the deposit is confirmed once its block is final
+// and RequiredConfirmations is only the typical finality lag, for display.
 type Payload struct {
 	ID                    string  `json:"id"`
 	TransactionID         string  `json:"transaction_id"`
@@ -78,6 +82,7 @@ type Payload struct {
 	BlockNumber           int64   `json:"block_number"`
 	Confirmations         int     `json:"confirmations"`
 	RequiredConfirmations int     `json:"required_confirmations"`
+	Finality              string  `json:"finality"`
 	Status                string  `json:"status"`
 	ConfirmedAt           *string `json:"confirmed_at"`
 	OccurredAt            string  `json:"occurred_at"`
@@ -198,6 +203,7 @@ func (p *Publisher) payload(tx models.Transaction) (Payload, error) {
 		BlockNumber:           tx.BlockNumber,
 		Confirmations:         tx.Confirmations,
 		RequiredConfirmations: tx.RequiredConfs,
+		Finality:              tx.FinalityPolicy(),
 		Status:                tx.Status,
 		OccurredAt:            p.now().Format(time.RFC3339),
 	}

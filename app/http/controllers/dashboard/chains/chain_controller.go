@@ -27,7 +27,7 @@ func NewChainController(chains *chainsvc.Service) *ChainController {
 // Index godoc
 //
 //	@Summary		List supported chains
-//	@Description	Returns blockchain networks filtered by the account's environment
+//	@Description	Returns blockchain networks filtered by the account's environment. finality is the rule that confirms a chain's transactions: confirmations (status follows confirmations against required_confirmations), finalized_tag (EVM: confirmed once the block is at or below the node's finalized block) or solidified (TRON: at or below the solidified block). Under finalized_tag and solidified, required_confirmations is the typical finality lag, kept for "n/N confirmations" displays; the status is decided by the policy.
 //	@Tags			Chains
 //	@Produce		json
 //	@Security		ApiKeyAuth

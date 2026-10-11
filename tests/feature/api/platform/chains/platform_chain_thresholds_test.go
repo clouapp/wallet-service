@@ -173,6 +173,45 @@ func (s *PlatformChainThresholdTestSuite) TestA_Negative_ValueIsValidationFailed
 	s.True(btcBefore.DustThresholdUSD.Decimal.Equal(btc.DustThresholdUSD.Decimal))
 }
 
+func (s *PlatformChainThresholdTestSuite) TestA_Platform_AdminSetsAFinalityPolicyTheChainCanRead() {
+	admin := s.seedUser(false)
+	s.grantPlatformAdmin(admin.ID)
+	session := s.signIn(admin.Email)
+
+	body := s.patchChain(session.AccessToken, models.ChainETH, `{"finality":"finalized_tag"}`, http.StatusOK)
+	s.Equal(models.FinalityFinalizedTag, body["finality"])
+	s.Equal(float64(12), body["required_confirmations"])
+	eth := s.loadChain(models.ChainETH)
+	s.Equal(models.FinalityFinalizedTag, eth.Finality)
+	s.Equal(12, eth.RequiredConfirmations)
+	s.Equal(int64(1), s.count(
+		`SELECT count(*) FROM account_activity
+		 WHERE action = 'chains.updated' AND target_id = ?
+		   AND metadata = '{"fields":["finality"],"key":"eth"}'::jsonb`, models.ChainETH,
+	))
+
+	tron := s.patchRaw(session.AccessToken, "/v1/platform/chains/eth", `{"finality":"solidified"}`)
+	tron.AssertUnprocessableEntity()
+	s.assertValidation(tron, "finality", "is not supported on this chain")
+	s.Equal(models.FinalityFinalizedTag, s.loadChain(models.ChainETH).Finality)
+
+	// Polygon is seeded on finalized_tag with its finality lag as the count.
+	polygon := s.loadChain(models.ChainPolygon)
+	s.Equal(models.FinalityFinalizedTag, polygon.Finality)
+	s.Equal(3, polygon.RequiredConfirmations)
+	withoutCount := s.patchRaw(session.AccessToken, "/v1/platform/chains/polygon", `{"finality":"confirmations"}`)
+	withoutCount.AssertUnprocessableEntity()
+	s.assertValidation(withoutCount, "required_confirmations", "is required when finality changes to confirmations")
+	s.Equal(models.FinalityFinalizedTag, s.loadChain(models.ChainPolygon).Finality)
+
+	counted := s.patchChain(session.AccessToken, models.ChainPolygon, `{"finality":"confirmations","required_confirmations":128}`, http.StatusOK)
+	s.Equal(models.FinalityConfirmations, counted["finality"])
+	s.Equal(float64(128), counted["required_confirmations"])
+	polygon = s.loadChain(models.ChainPolygon)
+	s.Equal(models.FinalityConfirmations, polygon.Finality)
+	s.Equal(128, polygon.RequiredConfirmations)
+}
+
 func (s *PlatformChainThresholdTestSuite) grantPlatformAdmin(userID uuid.UUID) {
 	s.T().Helper()
 	_, err := facades.Orm().Query().Exec(

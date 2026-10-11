@@ -269,13 +269,23 @@ configs legadas sem dono recebem tudo. Deduplicação por (config, tipo, transa�
     "amount_format": "decimal",
     "amount_base_units": "25000000",
     "decimals": 6,
-    "confirmations": 128,
-    "required_confirmations": 128,
+    "confirmations": 3,
+    "required_confirmations": 3,
+    "finality": "finalized_tag",
     "status": "confirmed"
   }
 }
 ```
 
+- `finality` diz qual regra decide o `status`: `confirmations` (confirmado quando `confirmations` atinge
+  `required_confirmations`), `finalized_tag` (EVM: confirmado quando o bloco do depósito está no bloco `finalized`
+  do nó ou abaixo dele, com pelo menos 1 confirmação) ou `solidified` (TRON: o mesmo com o bloco solidificado).
+  Nas duas últimas, `required_confirmations` é apenas a defasagem típica da finalidade, para exibir "n/N
+  confirmações"; `confirmations` continua a contar e pode passar desse número antes da confirmação (ou o
+  depósito pode confirmar antes dele). Padrões: `polygon`, `tpolygon`, `bsc`, `tbsc` em `finalized_tag`
+  (3, 3, 2, 2); `tron`, `ttron` em `solidified` (19); as demais chains em `confirmations`. O mesmo campo está em
+  `GET /api/v1/chains`. Cada depósito guarda a regra com que foi registrado; payloads de depósitos anteriores
+  trazem `confirmations`.
 - Contrato antigo (até 2026-10-01): `data` era a linha `transactions` crua e `amount` vinha em **unidades base**
   sem `decimals` — ambíguo. Agora `amount` é sempre decimal (`amount_format: "decimal"`) e o valor exato está em
   `amount_base_units` + `decimals`. O consumidor deve converter a partir de `amount_base_units`/`decimals` com
@@ -359,7 +369,7 @@ Cada config só recebe eventos de wallets da própria conta (configs legadas sem
 | Evento | Quando |
 |---|---|
 | `withdrawal.broadcast` | O saque foi assinado e transmitido; `tx_hash` presente |
-| `withdrawal.confirmed` | A transação atingiu `required_confirmations` (mesma regra de confirmação do depósito por chain) |
+| `withdrawal.confirmed` | A transação foi confirmada pela mesma regra do depósito na chain: `required_confirmations` em `confirmations`, bloco final em `finalized_tag`/`solidified` |
 | `withdrawal.failed` | O saque falhou antes de transmitir; só traz o código público em `failure_code` |
 
 `withdrawal.broadcasting` continua existindo como evento interno legado do sweep e não é assinável.
@@ -417,12 +427,19 @@ padrão 5s). Os modos Lambda não mudam.
 
 ## Chains Suportadas
 
-| Chain | ID | Native | Tokens | Confs | Scan Interval |
-|---|---|---|---|---|---|
-| Ethereum | `eth` | ETH | USDT, USDC | 12 | 15s |
-| Polygon | `polygon` | MATIC | USDT, USDC | 128 | 5s |
-| Solana | `sol` | SOL | USDT, USDC | 1 | 5s |
-| Bitcoin | `btc` | BTC | — | 3 | 60s |
+| Chain | ID | Native | Tokens | Confs | Finalidade | Scan Interval |
+|---|---|---|---|---|---|---|
+| Ethereum | `eth` | ETH | USDT, USDC | 12 | `confirmations` | 15s |
+| Polygon | `polygon` | POL | USDT, USDC | 3 (defasagem) | `finalized_tag` | 5s |
+| Solana | `sol` | SOL | USDT, USDC | 1 | `confirmations` | 5s |
+| Bitcoin | `btc` | BTC | — | 6 | `confirmations` | 60s |
+| BNB Smart Chain | `bsc` | BNB | USDT, USDC | 2 (defasagem) | `finalized_tag` | — |
+| TRON | `tron` | TRX | USDT | 19 (defasagem) | `solidified` | — |
+
+Com `finalized_tag`/`solidified` a transação é confirmada quando o bloco é final na própria chain (medido em
+2026-10-11: o bloco `finalized` da Amoy fica 1 a 2 blocos atrás do topo, o da BSC testnet 1 bloco, o solidificado
+da Nile 18 blocos); Ethereum, Base e Arbitrum seguem contando confirmações porque o bloco `finalized` delas fica
+cerca de 18 minutos atrás do topo.
 
 ### Adicionar chain EVM
 

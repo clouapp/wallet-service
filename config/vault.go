@@ -35,13 +35,16 @@ func registerVault() {
 			"network_profile": envString("CHAIN_NETWORK_PROFILE", ""),
 			// Confirmations seeded on new chain rows (and their t-prefixed test
 			// records). Base ~2 s blocks: 12 ≈ 24 s; Arbitrum ~0.25 s: 120 ≈ 30 s;
-			// BSC ~0.45 s with fast finality: 30 ≈ 14 s; TRON 3 s blocks solidify after
-			// 19 (2/3 of 27 SRs + 1): 20 ≈ 60 s; Litecoin ~2.5 min: 6 ≈ 15 min.
+			// Litecoin ~2.5 min: 6 ≈ 15 min. BSC (finalized_tag) and TRON
+			// (solidified) are confirmed by their chain's finality, so their count is
+			// the finality lag plus the tip block, for display: the finalized block
+			// trailed the BSC testnet tip by 1 block (2) and the solidified block the
+			// Nile tip by 18 (19) on 2026-10-11.
 			"required_confirmations": map[string]any{
 				"base":     envInt("BASE_REQUIRED_CONFIRMATIONS", 12),
 				"arbitrum": envInt("ARBITRUM_REQUIRED_CONFIRMATIONS", 120),
-				"bsc":      envInt("BSC_REQUIRED_CONFIRMATIONS", 30),
-				"tron":     envInt("TRON_REQUIRED_CONFIRMATIONS", 20),
+				"bsc":      envInt("BSC_REQUIRED_CONFIRMATIONS", 2),
+				"tron":     envInt("TRON_REQUIRED_CONFIRMATIONS", 19),
 				"ltc":      envInt("LTC_REQUIRED_CONFIRMATIONS", 6),
 				// One validated XRP Ledger is the inclusion point (~4 s). txrp shares it.
 				"xrp": envInt("XRP_REQUIRED_CONFIRMATIONS", 1),

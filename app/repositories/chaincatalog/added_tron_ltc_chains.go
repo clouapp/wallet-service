@@ -33,9 +33,9 @@ func buildAddedTronLitecoinChainSeeds(confirmations func(primaryChainID string) 
 	tronConfirmations := confirmations(models.ChainTron)
 	litecoinConfirmations := confirmations(models.ChainLTC)
 	return []chainSeed{
-		{id: models.ChainTron, name: "TRON", adapterType: models.AdapterTypeTron, nativeSymbol: models.NativeTRX, nativeDecimals: tronNativeDecimals, envVar: "TRON_RPC_URL", requiredConfirmations: tronConfirmations, displayOrder: 15, iconURL: iconTRX, rpcEnvReference: true},
+		{id: models.ChainTron, name: "TRON", adapterType: models.AdapterTypeTron, nativeSymbol: models.NativeTRX, nativeDecimals: tronNativeDecimals, envVar: "TRON_RPC_URL", requiredConfirmations: tronConfirmations, finality: models.FinalitySolidified, displayOrder: 15, iconURL: iconTRX, rpcEnvReference: true},
 		{id: models.ChainLTC, name: "Litecoin", adapterType: models.AdapterTypeBitcoin, nativeSymbol: models.NativeLTC, nativeDecimals: litecoinNativeDecimals, envVar: "LTC_RPC_URL", requiredConfirmations: litecoinConfirmations, displayOrder: 17, iconURL: iconLTC, rpcEnvReference: true},
-		{id: models.ChainTTron, name: "TRON Nile", adapterType: models.AdapterTypeTron, nativeSymbol: models.NativeTRX, nativeDecimals: tronNativeDecimals, envVar: "TTRON_RPC_URL", isTestnet: true, mainnetChainID: strp(models.ChainTron), requiredConfirmations: tronConfirmations, displayOrder: 16, iconURL: iconTRX, rpcEnvReference: true},
+		{id: models.ChainTTron, name: "TRON Nile", adapterType: models.AdapterTypeTron, nativeSymbol: models.NativeTRX, nativeDecimals: tronNativeDecimals, envVar: "TTRON_RPC_URL", isTestnet: true, mainnetChainID: strp(models.ChainTron), requiredConfirmations: tronConfirmations, finality: models.FinalitySolidified, displayOrder: 16, iconURL: iconTRX, rpcEnvReference: true},
 		{id: models.ChainTLTC, name: "Litecoin Testnet", adapterType: models.AdapterTypeBitcoin, nativeSymbol: models.NativeLTC, nativeDecimals: litecoinNativeDecimals, envVar: "TLTC_RPC_URL", isTestnet: true, mainnetChainID: strp(models.ChainLTC), requiredConfirmations: litecoinConfirmations, displayOrder: 18, iconURL: iconLTC, rpcEnvReference: true},
 	}
 }

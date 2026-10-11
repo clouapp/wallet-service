@@ -128,7 +128,7 @@ func auditedTables() []activitylog.Table {
 			LogName: activityLogName,
 			Subject: "chain",
 			Columns: []string{
-				"status", "required_confirmations",
+				"status", "required_confirmations", "finality",
 				"gas_readiness_threshold_raw", "dust_threshold_native_raw", "dust_threshold_usd",
 			},
 		},

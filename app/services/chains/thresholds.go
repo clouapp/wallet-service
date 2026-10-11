@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -24,8 +25,11 @@ const (
 	fieldDustNative    = "dust_threshold_native_raw"
 	fieldDustUSD       = "dust_threshold_usd"
 	fieldConfirmations = "required_confirmations"
+	fieldFinality      = "finality"
 
 	maxRawDigits = 78
+	// maxConfirmations is the largest chains.required_confirmations (INTEGER).
+	maxConfirmations = math.MaxInt32
 )
 
 const (
@@ -112,12 +116,15 @@ type PlatformAdmins interface {
 	Contains(ctx context.Context, userID uuid.UUID) (bool, error)
 }
 
-// ThresholdView is the stored threshold row. The RPC URL is not included.
+// ThresholdView is the stored chain settings row: the sweep thresholds, the
+// confirmation count and the finality policy. The RPC URL is not included.
 type ThresholdView struct {
 	ID                       string `json:"id"`
 	GasReadinessThresholdRaw string `json:"gas_readiness_threshold_raw"`
 	DustThresholdNativeRaw   string `json:"dust_threshold_native_raw"`
 	DustThresholdUSD         string `json:"dust_threshold_usd"`
+	RequiredConfirmations    int    `json:"required_confirmations"`
+	Finality                 string `json:"finality"`
 }
 
 // Thresholds edits the three sweep columns S1.4.4 keeps on the chain row.
@@ -157,9 +164,15 @@ func NewThresholds(deps ThresholdDeps) *Thresholds {
 // the gate stays the platform_admins row. The pair is not a second gate.
 // The columns still declare sweep.view and sweep.update. Holding
 // settings.update is not chains.update.
-// A negative amount or a negative confirmation count is a ValidationError and
+// A negative amount or a confirmation count below 1 is a ValidationError and
 // is not stored. An omitted field leaves that column unchanged. An empty gas
 // string is stored only for a bitcoin chain, where it is the sentinel.
+// finality is stored only when the chain's adapter can read it (finalized_tag on
+// EVM, solidified on TRON). Moving a chain off finalized_tag or solidified to
+// confirmations needs required_confirmations in the same patch: the count such a
+// chain keeps is only its finality lag. Both take effect for the transactions
+// recorded after the chain registry next loads the row; a transaction keeps the
+// count and the policy it was recorded under.
 func (s *Thresholds) Update(ctx context.Context, actorID uuid.UUID, chainID string, body map[string]json.RawMessage) (ThresholdView, error) {
 	if ctx == nil {
 		return ThresholdView{}, fmt.Errorf("update chain thresholds: context is required")
@@ -248,7 +261,7 @@ func (s *Thresholds) Update(ctx context.Context, actorID uuid.UUID, chainID stri
 func validateThresholds(chain *models.Chain, body map[string]json.RawMessage) (models.ChainThresholdWrite, []string, *ValidationError) {
 	invalid := &ValidationError{}
 	var write models.ChainThresholdWrite
-	fields := make([]string, 0, 3)
+	fields := make([]string, 0, 5)
 	for _, key := range slices.Sorted(maps.Keys(body)) {
 		raw := body[key]
 		switch key {
@@ -277,14 +290,50 @@ func validateThresholds(chain *models.Chain, body map[string]json.RawMessage) (m
 			write.DustThresholdUSD = &value
 			fields = append(fields, key)
 		case fieldConfirmations:
-			if message := parseConfirmations(raw); message != "" {
+			count, message := parseConfirmations(raw)
+			if message != "" {
 				invalid.add(key, message)
+				continue
 			}
+			write.RequiredConfirmations = &count
+			fields = append(fields, key)
+		case fieldFinality:
+			policy, message := parseFinality(raw, chain)
+			if message != "" {
+				invalid.add(key, message)
+				continue
+			}
+			write.Finality = &policy
+			fields = append(fields, key)
 		default:
 			invalid.add(key, "unknown field")
 		}
 	}
+	if leavesNativeFinality(chain, write) && write.RequiredConfirmations == nil && len(invalid.Fields[fieldConfirmations]) == 0 {
+		invalid.add(fieldConfirmations, "is required when finality changes to confirmations")
+	}
 	return write, fields, invalid
+}
+
+// leavesNativeFinality reports whether write moves a chain confirmed by its own
+// finality (finalized_tag, solidified) back to counting confirmations.
+func leavesNativeFinality(chain *models.Chain, write models.ChainThresholdWrite) bool {
+	return chain != nil && write.Finality != nil &&
+		*write.Finality == models.FinalityConfirmations &&
+		chain.FinalityPolicy() != models.FinalityConfirmations
+}
+
+// parseFinality reads a finality policy the chain's adapter can read.
+func parseFinality(raw json.RawMessage, chain *models.Chain) (string, string) {
+	const oneOf = "must be one of " + models.FinalityConfirmations + ", " + models.FinalityFinalizedTag + ", " + models.FinalitySolidified
+	text, kind, message := jsonScalar(raw, oneOf)
+	if message != "" || kind != kindString || !models.IsFinalityPolicy(text) {
+		return "", oneOf
+	}
+	if chain == nil || !models.FinalityFitsAdapter(text, chain.AdapterType) {
+		return "", "is not supported on this chain"
+	}
+	return text, ""
 }
 
 // emptyGasAllowed is the bitcoin sentinel. btc and tbtc store "" because
@@ -341,22 +390,30 @@ func parseDustUSD(raw json.RawMessage) (string, string) {
 	return value.String(), ""
 }
 
-func parseConfirmations(raw json.RawMessage) string {
+func parseConfirmations(raw json.RawMessage) (int, string) {
 	text, kind, message := jsonScalar(raw, "must be an integer")
 	if message != "" || kind == kindNull {
-		return "must be an integer"
+		return 0, "must be an integer"
 	}
-	count, err := strconv.Atoi(text)
+	count, err := strconv.ParseInt(text, 10, 64)
 	if err != nil {
 		if strings.HasPrefix(text, "-") {
-			return "must not be negative"
+			return 0, "must not be negative"
 		}
-		return "must be an integer"
+		if unsignedDigits(text) {
+			return 0, "is too large"
+		}
+		return 0, "must be an integer"
 	}
-	if count < 0 {
-		return "must not be negative"
+	switch {
+	case count < 0:
+		return 0, "must not be negative"
+	case count == 0:
+		return 0, "must be at least 1"
+	case count > maxConfirmations:
+		return 0, "is too large"
 	}
-	return ""
+	return int(count), ""
 }
 
 func jsonScalar(raw json.RawMessage, typeMessage string) (string, int, string) {
@@ -410,6 +467,8 @@ func thresholdView(chain *models.Chain) (ThresholdView, error) {
 		GasReadinessThresholdRaw: deref(chain.GasReadinessThresholdRaw),
 		DustThresholdNativeRaw:   deref(chain.DustThresholdNativeRaw),
 		DustThresholdUSD:         chain.DustThresholdUSD.Decimal.String(),
+		RequiredConfirmations:    chain.RequiredConfirmations,
+		Finality:                 chain.FinalityPolicy(),
 	}, nil
 }
 

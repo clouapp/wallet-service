@@ -7,7 +7,8 @@ import (
 )
 
 // UpdateRequest is the body of PATCH /platform/chains/{chainId}: the sweep
-// thresholds to change. An omitted field is left unchanged.
+// thresholds, the confirmation count and the finality policy to change. An
+// omitted field is left unchanged.
 type UpdateRequest struct {
 	Fields map[string]json.RawMessage
 }

@@ -38,6 +38,13 @@ type MockChain struct {
 
 	VerifySignedTransactionFn func(unsigned *types.UnsignedTx, signed *types.SignedTx, from string) error
 
+	// FinalityPolicyVal is the chain row's finality policy the mock reports; empty
+	// is confirmations. FinalizedBlockFn and SolidifiedBlockFn answer the finality
+	// reads; without them a read fails.
+	FinalityPolicyVal string
+	FinalizedBlockFn  func(ctx context.Context) (uint64, error)
+	SolidifiedBlockFn func(ctx context.Context) (uint64, error)
+
 	GasReadinessThresholdVal *big.Int
 	EstimateGasPriceVal      *big.Int
 	EstimateGasPriceErr      error
@@ -53,6 +60,8 @@ type MockChain struct {
 	VerifySignedTransactionCalls int
 	ScanBlockCalls               int
 	BuildSweepCalls              int
+	FinalizedBlockCalls          int
+	SolidifiedBlockCalls         int
 }
 
 func NewMockChain(id string) *MockChain {
@@ -183,6 +192,27 @@ func (m *MockChain) GetTransactionBlock(ctx context.Context, txHash string) (uin
 		return 0, m.GetTransactionBlockErr
 	}
 	return m.GetTransactionBlockVal, nil
+}
+
+// FinalityPolicy is FinalityPolicyVal.
+func (m *MockChain) FinalityPolicy() string { return m.FinalityPolicyVal }
+
+// FinalizedBlock answers FinalizedBlockFn, or fails when it is not set.
+func (m *MockChain) FinalizedBlock(ctx context.Context) (uint64, error) {
+	m.FinalizedBlockCalls++
+	if m.FinalizedBlockFn != nil {
+		return m.FinalizedBlockFn(ctx)
+	}
+	return 0, fmt.Errorf("mock %s: no finalized block configured", m.IDVal)
+}
+
+// SolidifiedBlock answers SolidifiedBlockFn, or fails when it is not set.
+func (m *MockChain) SolidifiedBlock(ctx context.Context) (uint64, error) {
+	m.SolidifiedBlockCalls++
+	if m.SolidifiedBlockFn != nil {
+		return m.SolidifiedBlockFn(ctx)
+	}
+	return 0, fmt.Errorf("mock %s: no solidified block configured", m.IDVal)
 }
 
 func (m *MockChain) EstimateGasPrice(ctx context.Context) (*big.Int, error) {

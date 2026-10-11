@@ -165,3 +165,22 @@ func TestTronNileQuotesToday(t *testing.T) {
 		t.Logf("%-28s fee=%v sun (%s)", name, quote.Fee(), describeQuote(quote))
 	}
 }
+
+// TestTronNileSolidifiedBlockTrailsTheHead reads Nile's solidified block: it trails
+// the head by about 19 blocks (more than two thirds of the 27 super representatives).
+func TestTronNileSolidifiedBlockTrailsTheHead(t *testing.T) {
+	adapter := newTronNileAdapter()
+	ctx := context.Background()
+	solid, err := adapter.SolidifiedBlock(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := adapter.GetLatestBlock(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if solid >= head || head-solid > 60 {
+		t.Fatalf("solidified block %d, head %d", solid, head)
+	}
+	t.Logf("head %d, solidified %d, lag %d blocks", head, solid, head-solid)
+}

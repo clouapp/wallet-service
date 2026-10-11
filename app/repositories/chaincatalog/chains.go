@@ -17,6 +17,11 @@ import (
 
 const cmcIconBase = "https://s2.coinmarketcap.com/static/img/coins/64x64"
 
+// polygonFinalityLag is Polygon's required_confirmations under finalized_tag: the
+// finalized block trailed the Amoy tip by 1-2 blocks on 2026-10-11, so a block is
+// final at about 3 confirmations. The policy, not this count, decides the status.
+const polygonFinalityLag = 3
+
 type chainSeed struct {
 	id                    string
 	name                  string
@@ -33,6 +38,9 @@ type chainSeed struct {
 	// rpcEnvReference stores rpc_url as "env:<envVar>" instead of the URL itself,
 	// so the URL (and any API key in it) is resolved from the environment at boot.
 	rpcEnvReference bool
+	// finality is the chains.finality policy; empty is confirmations. Under
+	// finalized_tag or solidified, requiredConfirmations is the finality lag.
+	finality string
 }
 
 // chainSeeds lists every chain record, mainnets before testnets (FK targets first).
@@ -44,13 +52,13 @@ func chainSeedsWith(added []chainSeed) []chainSeed {
 	mainnets := []chainSeed{
 		{id: models.ChainETH, name: "Ethereum", adapterType: models.AdapterTypeEVM, nativeSymbol: "eth", nativeDecimals: 18, networkID: i64p(1), envVar: "ETH_RPC_URL", requiredConfirmations: 12, displayOrder: 1, iconURL: cmcIconBase + "/1027.png"},
 		{id: models.ChainBTC, name: "Bitcoin", adapterType: models.AdapterTypeBitcoin, nativeSymbol: "btc", nativeDecimals: 8, envVar: "BTC_RPC_URL", requiredConfirmations: 6, displayOrder: 3, iconURL: cmcIconBase + "/1.png"},
-		{id: models.ChainPolygon, name: "Polygon", adapterType: models.AdapterTypeEVM, nativeSymbol: types.NativeSymbolPOL, nativeDecimals: 18, networkID: i64p(137), envVar: "POLYGON_RPC_URL", requiredConfirmations: 128, displayOrder: 5, iconURL: cmcIconBase + "/3890.png"},
+		{id: models.ChainPolygon, name: "Polygon", adapterType: models.AdapterTypeEVM, nativeSymbol: types.NativeSymbolPOL, nativeDecimals: 18, networkID: i64p(137), envVar: "POLYGON_RPC_URL", requiredConfirmations: polygonFinalityLag, finality: models.FinalityFinalizedTag, displayOrder: 5, iconURL: cmcIconBase + "/3890.png"},
 		{id: models.ChainSOL, name: "Solana", adapterType: models.AdapterTypeSolana, nativeSymbol: "sol", nativeDecimals: 9, envVar: "SOLANA_RPC_URL", requiredConfirmations: 1, displayOrder: 7, iconURL: cmcIconBase + "/5426.png"},
 	}
 	testnets := []chainSeed{
 		{id: models.ChainTETH, name: "Sepolia", adapterType: models.AdapterTypeEVM, nativeSymbol: "eth", nativeDecimals: 18, networkID: i64p(11155111), envVar: "TETH_RPC_URL", isTestnet: true, mainnetChainID: strp(models.ChainETH), requiredConfirmations: 12, displayOrder: 2, iconURL: cmcIconBase + "/1027.png"},
 		{id: models.ChainTBTC, name: "Bitcoin Testnet", adapterType: models.AdapterTypeBitcoin, nativeSymbol: "btc", nativeDecimals: 8, envVar: "TBTC_RPC_URL", isTestnet: true, mainnetChainID: strp(models.ChainBTC), requiredConfirmations: 6, displayOrder: 4, iconURL: cmcIconBase + "/1.png"},
-		{id: models.ChainTPolygon, name: "Polygon Amoy", adapterType: models.AdapterTypeEVM, nativeSymbol: types.NativeSymbolPOL, nativeDecimals: 18, networkID: i64p(80002), envVar: "TPOLYGON_RPC_URL", isTestnet: true, mainnetChainID: strp(models.ChainPolygon), requiredConfirmations: 128, displayOrder: 6, iconURL: cmcIconBase + "/3890.png"},
+		{id: models.ChainTPolygon, name: "Polygon Amoy", adapterType: models.AdapterTypeEVM, nativeSymbol: types.NativeSymbolPOL, nativeDecimals: 18, networkID: i64p(80002), envVar: "TPOLYGON_RPC_URL", isTestnet: true, mainnetChainID: strp(models.ChainPolygon), requiredConfirmations: polygonFinalityLag, finality: models.FinalityFinalizedTag, displayOrder: 6, iconURL: cmcIconBase + "/3890.png"},
 		{id: models.ChainTSOL, name: "Solana Devnet", adapterType: models.AdapterTypeSolana, nativeSymbol: "sol", nativeDecimals: 9, envVar: "TSOL_RPC_URL", isTestnet: true, mainnetChainID: strp(models.ChainSOL), requiredConfirmations: 1, displayOrder: 8, iconURL: cmcIconBase + "/5426.png"},
 	}
 	all := make([]chainSeed, 0, len(mainnets)+len(testnets)+len(added))
@@ -160,6 +168,7 @@ func insertSeedChain(ctx context.Context, chains *repositories.ChainRepository, 
 		IsTestnet:             c.isTestnet,
 		MainnetChainID:        c.mainnetChainID,
 		RequiredConfirmations: c.requiredConfirmations,
+		Finality:              c.finality,
 		IconURL:               &iconURL,
 		DisplayOrder:          c.displayOrder,
 		Status:                "active",

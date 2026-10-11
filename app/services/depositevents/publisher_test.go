@@ -64,6 +64,7 @@ func newFixture() fixture {
 			"base/eth":      18,
 			"arbitrum/USDC": 6,
 			"txrp/xrp":      6,
+			"ttron/trx":     6,
 		},
 	})
 	publisher.now = func() time.Time { return time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC) }
@@ -292,5 +293,37 @@ func TestPublish_Carries_TheXRPDestinationTagOnlyWhenThePaymentHadOne(t *testing
 		if got, present := payloadJSON(t, payload)["destination_tag"]; present {
 			t.Fatalf("%s deposit without a tag carries destination_tag %v", deposit.chain, got)
 		}
+	}
+}
+
+// finality states the rule that decided status: confirmations (status follows
+// confirmations against required_confirmations) or the chain's own finality
+// (finalized_tag, solidified), under which required_confirmations is the typical
+// finality lag. A row recorded before the field existed reads confirmations.
+func TestPublish_Carries_TheFinalityPolicyTheDepositIsConfirmedBy(t *testing.T) {
+	for _, tc := range []struct {
+		name, chain, asset, recorded, want string
+	}{
+		{"finalized tag", "polygon", "USDC", models.FinalityFinalizedTag, models.FinalityFinalizedTag},
+		{"solidified", "ttron", "trx", models.FinalitySolidified, models.FinalitySolidified},
+		{"confirmations", "eth", "ETH", models.FinalityConfirmations, models.FinalityConfirmations},
+		{"row without a policy", "btc", "BTC", "", models.FinalityConfirmations},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture()
+			tx := f.deposit(tc.chain, tc.asset, "1")
+			tx.Finality = tc.recorded
+			if err := f.publisher.Publish(context.Background(), types.EventDepositConfirming, tx); err != nil {
+				t.Fatalf("Publish: %v", err)
+			}
+			_, payload := onlyPayload(t, f.enqueuer)
+			decoded := payloadJSON(t, payload)
+			if decoded["finality"] != tc.want {
+				t.Fatalf("finality = %v, want %s", decoded["finality"], tc.want)
+			}
+			if decoded["required_confirmations"] != float64(tx.RequiredConfs) {
+				t.Fatalf("required_confirmations = %v", decoded["required_confirmations"])
+			}
+		})
 	}
 }
