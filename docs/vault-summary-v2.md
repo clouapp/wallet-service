@@ -249,7 +249,8 @@ go tool cover -html=coverage.out
 
 `deposit.pending`, `deposit.confirming`, `deposit.confirmed` e `deposit.failed` usam a mesma assinatura e o
 mesmo escopo dos saques: cada config só recebe depósitos de wallets da própria conta (ou da própria wallet);
-configs legadas sem dono recebem tudo. Deduplicação por (config, tipo, transação).
+configs legadas sem dono recebem tudo. Deduplicação por (config, tipo, transação); em `deposit.confirming`, por
+(config, transação, número de confirmações).
 
 ```json
 {
@@ -277,6 +278,18 @@ configs legadas sem dono recebem tudo. Deduplicação por (config, tipo, transa�
 }
 ```
 
+- `deposit.pending`, `deposit.confirmed` e `deposit.failed` chegam uma vez por depósito. `deposit.confirming`
+  informa o progresso e pode chegar várias vezes, cada uma com `confirmations` maior: é emitido quando o depósito
+  passa de `pending` a `confirming` e de novo sempre que a contagem gravada sobe numa passagem do rastreador de
+  confirmações (ou da etapa de confirmação de uma varredura), desde que a contagem anterior ainda estivesse abaixo
+  de `required_confirmations`. No máximo um por passagem, com a contagem dessa passagem (as contagens
+  intermediárias entre duas passagens não são enviadas), e nenhum depois que a contagem atinge
+  `required_confirmations`: em `finalized_tag`/`solidified` o depósito pode continuar em `confirming` acima desse
+  número até o bloco ficar final, e o evento seguinte é `deposit.confirmed`. Cada contagem é uma entrega distinta,
+  com `id` e `X-Vault-Delivery-Id` próprios, e a mesma contagem não é enviada duas vezes à mesma config; a ordem
+  de chegada, porém, não é garantida. O consumidor deve tratar `confirmations` como monotônico (ignorar um valor
+  menor ou igual ao já registrado), não notificar o jogador a cada evento e creditar apenas em
+  `deposit.confirmed`. `data.id` e `data.transaction_id` continuam sendo o id da transação em todos os eventos.
 - `finality` diz qual regra decide o `status`: `confirmations` (confirmado quando `confirmations` atinge
   `required_confirmations`), `finalized_tag` (EVM: confirmado quando o bloco do depósito está no bloco `finalized`
   do nó ou abaixo dele, com pelo menos 1 confirmação) ou `solidified` (TRON: o mesmo com o bloco solidificado).

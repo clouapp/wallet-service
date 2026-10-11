@@ -241,6 +241,26 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
     pending and queued in the last minute left alone. — guarded by
     `tests/feature/api/external/webhooks` (`TestRedeliver_Webhook_*`) and `TestRedeliver_*`
     (`app/services/webhook`).
+- Deposit events: `deposit.pending`, `deposit.confirmed` and `deposit.failed` are sent once per
+  deposit, with the transaction id as subject (the key the backfill looks up).
+  `deposit.confirming` reports progress and may arrive several times, with increasing
+  `confirmations`. A tracker or scan pass that leaves a deposit unconfirmed sends it when the
+  deposit moves from pending to confirming, and again when its count rose above the stored one
+  while the stored count was still below `required_confirmations`. That is at most one per pass,
+  carrying the count of that pass (counts crossed between two passes are not sent one by one).
+  None is sent once the count has reached `required_confirmations`: under `confirmations` the
+  deposit is confirmed there, and under a native finality a final block that cannot be read
+  would otherwise send one per pass while the count keeps rising. Its subject is
+  `<transaction id>:<confirmations>` (at most 56 of the 64 characters of `subject_id`), so each
+  count is its own row and delivery id, and a count a config already got is not sent to it again;
+  the payload keeps the plain `transaction_id`. Receivers treat `confirmations` as monotonic
+  (deliveries may arrive out of order). — guarded by
+  `TestUpdate_Confirmations_PublishesDepositConfirmingEachTimeTheCountRises`,
+  `TestUpdate_Confirmations_ACountAlreadySentIsNotSentAgain`,
+  `TestFinality_StalledFinality_StopsTheConfirmingProgressAtTheRequiredCount`,
+  `TestBackfill_DepositEvents_RepairsALostConfirmationBesideItsConfirmingRows`,
+  `TestRedeliver_Requeues_EachConfirmingProgressRowUnderItsOwnID` (`app/services/deposit`) and
+  `TestPublish_Confirming_*` (`app/services/depositevents`).
 - `webhook_poller` replaces the `webhook_worker` Lambda where none runs; the two never consume
   one queue together. — **UNGUARDED**: `TestOne_Consumer_PerQueue` reads the consumers from
   `template.yaml` and cannot see where the poller runs; this rests on the deployment.
