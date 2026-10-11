@@ -122,6 +122,7 @@ How the service uses each resource:
 
 **Rollback:**
 
-1. Restore the three keys in `.env` and point `WEBHOOK_QUEUE_URL` back to empty.
-2. Run `secrets:migrate-shares --apply` with the app on LocalStack and `--from-endpoint` empty. That run reads AWS and points the rows back at the LocalStack copies, which are equal.
-3. Restart.
+1. Empty `WEBHOOK_QUEUE_URL` and stop the poller.
+2. Set `AWS_ENDPOINT_URL=http://127.0.0.1:4566`, but keep `AWS_PROFILE=waas-dev`: the next step reads AWS with it, and LocalStack accepts any credentials.
+3. Run `secrets:migrate-shares --apply` with `--from-endpoint` empty. It reads each share in AWS and points the rows back at the equal LocalStack copies.
+4. Restore `AWS_PROFILE` and `MASTER_KEY_REF`, then restart.
