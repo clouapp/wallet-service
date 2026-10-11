@@ -25,3 +25,20 @@ func TestBuildDetailsTron(t *testing.T) {
 		t.Fatalf("json\n got %s\nwant %s", encoded, want)
 	}
 }
+
+func TestBuildDetailsXRP(t *testing.T) {
+	details := buildDetails(&sweep.FeeQuote{XRP: &sweep.XRPFeeDetails{
+		FeeDrops: big.NewInt(12), AccountReserve: big.NewInt(1_400_000), BaseReserve: big.NewInt(1_000_000),
+	}})
+	if details.EVM != nil || details.Bitcoin != nil || details.Solana != nil || details.Tron != nil || details.XRP == nil {
+		t.Fatalf("details %+v", details)
+	}
+	encoded, err := json.Marshal(details)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"xrp":{"fee_drops":"12","account_reserve_drops":"1400000","base_reserve_drops":"1000000"}}`
+	if string(encoded) != want {
+		t.Fatalf("json\n got %s\nwant %s", encoded, want)
+	}
+}

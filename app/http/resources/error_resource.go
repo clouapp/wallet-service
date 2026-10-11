@@ -42,6 +42,8 @@ const (
 	CodeSpendingLimitExceeded         = "spending_limit_exceeded"
 	CodeSpendingLimitInvalid          = "spending_limit_invalid"
 	CodeSpendingLimitQuoteUnavailable = "spending_limit_quote_unavailable"
+	CodeDestinationBelowReserve       = "destination_below_reserve"
+	CodeDestinationTagRequired        = "destination_tag_required"
 	CodeInternalError                 = "internal_error"
 
 	// ValidationMessage is the human text on every HTTP 422 validation body.

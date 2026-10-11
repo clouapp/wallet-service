@@ -36,7 +36,8 @@ const (
 // EstimatedGas nil. A transfer the node cannot estimate (would revert) fails
 // the plan with chain.ErrGasEstimateFailed before anything is broadcast.
 //
-// EVM, Solana, and Bitcoin wallets can be planned. Any other adapter returns ErrUnsupportedChain.
+// EVM, Solana, Bitcoin, TRON and XRP wallets can be planned; XRP only from its base
+// address (planXRPWithdrawal). Any other adapter returns ErrUnsupportedChain.
 //
 // sweep-enabled is read before any persist or broadcast. An explicit global
 // false pauses even when the account row is true. A missing row uses the
@@ -76,13 +77,16 @@ func (s *service) PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, ass
 	if chainEntity == nil {
 		return nil, fmt.Errorf("sweep: chain %q not found", wallet.Chain)
 	}
-	if !supportedSweepAdapter(chainEntity.AdapterType) {
+	if !supportedWithdrawalAdapter(chainEntity.AdapterType) {
 		return nil, ErrUnsupportedChain
 	}
 
 	adapter, err := s.registry.ChainForWallet(wallet)
 	if err != nil {
 		return nil, fmt.Errorf("sweep: adapter for %q: %w", wallet.Chain, err)
+	}
+	if chainEntity.AdapterType == models.AdapterTypeXRP {
+		return planXRPWithdrawal(ctx, adapter, wallet, asset, amount, toAddress)
 	}
 
 	reserve, err := loadNativeReserve(ctx, adapter, asset)
@@ -536,4 +540,10 @@ func supportedSweepAdapter(adapterType string) bool {
 	default:
 		return false
 	}
+}
+
+// supportedWithdrawalAdapter is supportedSweepAdapter plus XRP, which withdraws from
+// its base address only and cannot be consolidated.
+func supportedWithdrawalAdapter(adapterType string) bool {
+	return supportedSweepAdapter(adapterType) || adapterType == models.AdapterTypeXRP
 }

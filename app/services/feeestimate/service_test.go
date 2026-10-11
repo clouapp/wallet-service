@@ -350,17 +350,19 @@ func TestEstimate_Quote_ErrorsAreClassified(t *testing.T) {
 		kind Kind
 		code string
 	}{
-		sweep.ErrFeeQuoteUnavailable:                            {KindUnavailable, CodeUnavailable},
-		fmt.Errorf("rpc: %w", sweep.ErrGasEstimateFailed):       {KindUnavailable, CodeGasEstimateFailed},
-		errors.New("dial tcp: connection refused"):              {KindUnavailable, CodeUnavailable},
-		chain.Unavailable(errors.New("dial tcp: i/o timeout")):  {KindUnavailable, CodeUnavailable},
-		chain.InvalidAddress(errors.New("invalid checksum")):    {KindUnprocessable, CodeInvalidAddress},
-		chain.Insufficient(errors.New("balance 0")):             {KindUnprocessable, CodeGasEstimateFailed},
-		chain.Wrap(chain.ErrNonce, errors.New("nonce too low")): {KindUnavailable, CodeGasEstimateFailed},
-		chain.Wrap(chain.ErrFee, errors.New("underpriced")):     {KindUnavailable, CodeGasEstimateFailed},
-		sweep.ErrFeeQuoteNeedsTokenBalance:                      {KindUnprocessable, CodeTokenBalanceRequired},
-		fmt.Errorf("plan: %w", sweep.ErrTooManyAddresses):       {KindRateLimited, CodeTooManyAddresses},
-		fmt.Errorf("plan: %w", sweep.ErrUnsupportedChain):       {KindUnprocessable, CodeUnsupportedChain},
+		sweep.ErrFeeQuoteUnavailable:                             {KindUnavailable, CodeUnavailable},
+		fmt.Errorf("rpc: %w", sweep.ErrGasEstimateFailed):        {KindUnavailable, CodeGasEstimateFailed},
+		errors.New("dial tcp: connection refused"):               {KindUnavailable, CodeUnavailable},
+		chain.Unavailable(errors.New("dial tcp: i/o timeout")):   {KindUnavailable, CodeUnavailable},
+		chain.InvalidAddress(errors.New("invalid checksum")):     {KindUnprocessable, CodeInvalidAddress},
+		chain.Insufficient(errors.New("balance 0")):              {KindUnprocessable, CodeGasEstimateFailed},
+		chain.Wrap(chain.ErrNonce, errors.New("nonce too low")):  {KindUnavailable, CodeGasEstimateFailed},
+		chain.Wrap(chain.ErrFee, errors.New("underpriced")):      {KindUnavailable, CodeGasEstimateFailed},
+		sweep.ErrFeeQuoteNeedsTokenBalance:                       {KindUnprocessable, CodeTokenBalanceRequired},
+		fmt.Errorf("plan: %w", sweep.ErrTooManyAddresses):        {KindRateLimited, CodeTooManyAddresses},
+		fmt.Errorf("plan: %w", sweep.ErrUnsupportedChain):        {KindUnprocessable, CodeUnsupportedChain},
+		fmt.Errorf("plan: %w", sweep.ErrDestinationBelowReserve): {KindUnprocessable, CodeDestinationReserve},
+		fmt.Errorf("plan: %w", sweep.ErrDestinationTagRequired):  {KindUnprocessable, CodeDestinationTag},
 	}
 	for quoteErr, want := range cases {
 		t.Run(want.code+"/"+quoteErr.Error(), func(t *testing.T) {

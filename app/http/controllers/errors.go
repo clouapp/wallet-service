@@ -42,10 +42,16 @@ func MapSweepError(ctx http.Context, err error) http.Response {
 		return responses.FailWith(ctx, http.StatusTooManyRequests, responses.CodeSweepLimitExceeded, "sweep_limit_exceeded", map[string]any{"limit_type": "addresses_per_request"})
 	case errors.Is(err, sweep.ErrWalletNotGasReady):
 		return responses.FailWith(ctx, http.StatusUnprocessableEntity, responses.CodeWalletNotGasReady, "wallet_not_gas_ready", map[string]any{"action": "fund_base_address"})
+	case errors.As(err, new(*sweep.BaseReserveShortfallError)):
+		return responses.FailWith(ctx, http.StatusUnprocessableEntity, responses.CodeInsufficientFunds, "insufficient_funds", map[string]any{"action": "fund_base_address"})
 	case errors.Is(err, sweep.ErrInsufficientFunds):
 		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeInsufficientFunds, "insufficient_funds")
 	case errors.Is(err, sweep.ErrUnsupportedChain):
 		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeUnsupportedChain, "unsupported_chain")
+	case errors.Is(err, sweep.ErrDestinationBelowReserve):
+		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeDestinationBelowReserve, "the destination account does not exist and the amount is below the base reserve it needs")
+	case errors.Is(err, sweep.ErrDestinationTagRequired):
+		return responses.Fail(ctx, http.StatusUnprocessableEntity, responses.CodeDestinationTagRequired, "the destination account requires a destination tag, which this API does not send")
 	case errors.Is(err, sweep.ErrGasEstimateFailed):
 		return responses.Fail(ctx, http.StatusUnprocessableEntity, "gas_estimate_failed", "gas_estimate_failed")
 	}

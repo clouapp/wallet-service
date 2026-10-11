@@ -55,6 +55,9 @@ type Plan struct {
 	ReachesTarget bool
 	DustIgnored   []AddressBalance
 	BaseBalance   *big.Int
+	// Shortfall explains a StrategyInsufficient plan when the chain can say more
+	// than ErrInsufficientFunds (XRP: BaseReserveShortfallError). It is ErrInsufficientFunds.
+	Shortfall error
 }
 
 // CompletedSweep is a sweep leg that successfully broadcast.

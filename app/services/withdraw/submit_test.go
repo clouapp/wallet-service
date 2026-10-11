@@ -67,14 +67,19 @@ func (e *submitEvents) PublishFailed(_ context.Context, _ *models.Withdrawal, co
 // planSweep plans a withdrawal and executes it the way the test says.
 type planSweep struct {
 	mockSweepSvc
-	strategy sweep.Strategy
-	result   *sweep.Result
-	planned  uuid.UUID
+	strategy  sweep.Strategy
+	shortfall error
+	planErr   error
+	result    *sweep.Result
+	planned   uuid.UUID
 }
 
 func (p *planSweep) PlanForWithdrawal(_ context.Context, walletID uuid.UUID, asset string, amount *big.Int, _ string, callerAccountID uuid.UUID) (*sweep.Plan, error) {
 	p.planned = callerAccountID
-	return &sweep.Plan{WalletID: walletID, Asset: asset, Amount: amount, Strategy: p.strategy}, nil
+	if p.planErr != nil {
+		return nil, p.planErr
+	}
+	return &sweep.Plan{WalletID: walletID, Asset: asset, Amount: amount, Strategy: p.strategy, Shortfall: p.shortfall}, nil
 }
 
 func (p *planSweep) ExecutePlan(context.Context, *sweep.Plan, sweep.SigningCredentials, uuid.UUID, string, string) (*sweep.Result, error) {
@@ -210,6 +215,46 @@ func TestSubmit_Marks_TheRowFailedAndPublishesWhenTheRequestFails(t *testing.T) 
 	}
 	if len(rows.broadcast) != 0 || len(events.broadcasts) != 0 {
 		t.Fatal("a failed request was marked broadcast")
+	}
+}
+
+func TestSubmit_Returns_TheXRPBaseShortfallAsInsufficientFunds(t *testing.T) {
+	wallet := sealedCreateWallet(t, "eth", nil)
+	rows := newSubmitRows()
+	events := &submitEvents{}
+	shortfall := &sweep.BaseReserveShortfallError{Address: "rBase", Amount: big.NewInt(9_000_000)}
+	svc := newSubmitService(t, wallet, &planSweep{strategy: sweep.StrategyInsufficient, shortfall: shortfall}, rows, events)
+
+	_, err := svc.Submit(context.Background(), submitInput(wallet))
+	var got *sweep.BaseReserveShortfallError
+	if !errors.As(err, &got) || got != shortfall || !errors.Is(err, sweep.ErrInsufficientFunds) {
+		t.Fatalf("err = %v", err)
+	}
+	if row := rows.created[0]; rows.failed[row.ID] != FailureInsufficientFunds {
+		t.Fatalf("failed = %v", rows.failed)
+	}
+	if len(events.failures) != 1 || events.failures[0] != FailureInsufficientFunds {
+		t.Fatalf("published = %v", events.failures)
+	}
+}
+
+func TestSubmit_Marks_AnXRPDestinationRefusalWithItsOwnCode(t *testing.T) {
+	for planErr, code := range map[error]string{
+		sweep.ErrDestinationBelowReserve: FailureDestinationReserve,
+		sweep.ErrDestinationTagRequired:  FailureDestinationTag,
+	} {
+		wallet := sealedCreateWallet(t, "eth", nil)
+		rows := newSubmitRows()
+		events := &submitEvents{}
+		svc := newSubmitService(t, wallet, &planSweep{planErr: planErr}, rows, events)
+
+		_, err := svc.Submit(context.Background(), submitInput(wallet))
+		if !errors.Is(err, planErr) {
+			t.Fatalf("err = %v", err)
+		}
+		if row := rows.created[0]; rows.failed[row.ID] != code || len(events.failures) != 1 || events.failures[0] != code {
+			t.Fatalf("%s: failed = %v published = %v", code, rows.failed, events.failures)
+		}
 	}
 }
 

@@ -21,6 +21,8 @@ const (
 	FailureSpendingLimit        = "spending_limit_exceeded"
 	FailureSpendingLimitInvalid = "spending_limit_invalid"
 	FailureSpendingQuote        = "spending_limit_quote_unavailable"
+	FailureDestinationReserve   = "destination_below_reserve"
+	FailureDestinationTag       = "destination_tag_required"
 	FailureInternalError        = "internal_error"
 )
 
@@ -35,6 +37,10 @@ func FailureCode(err error) string {
 		return FailureWalletNotGasReady
 	case errors.Is(err, sweep.ErrUnsupportedChain):
 		return FailureUnsupportedChain
+	case errors.Is(err, sweep.ErrDestinationBelowReserve):
+		return FailureDestinationReserve
+	case errors.Is(err, sweep.ErrDestinationTagRequired):
+		return FailureDestinationTag
 	case errors.Is(err, sweep.ErrInFlightConsolidation),
 		errors.Is(err, sweep.ErrDailyQuotaExceeded),
 		errors.Is(err, sweep.ErrTooManyAddresses):

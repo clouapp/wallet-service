@@ -234,6 +234,10 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 
 	switch plan.Strategy {
 	case sweep.StrategyInsufficient:
+		if plan.Shortfall != nil {
+			slog.Warn("withdrawal refused", "wallet_id", wallet.ID, "chain", wallet.Chain, "reason", plan.Shortfall.Error())
+			return nil, nil, plan.Shortfall
+		}
 		return nil, nil, sweep.ErrInsufficientFunds
 	case sweep.StrategyMultiSweep:
 		adapter, adapterErr := s.registry.Chain(wallet.Chain)

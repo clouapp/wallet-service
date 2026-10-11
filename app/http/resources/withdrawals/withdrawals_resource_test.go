@@ -31,6 +31,8 @@ func TestFailure_Codes_TheServicePersistsAreThePublicList(t *testing.T) {
 		{withdraw.FailureSpendingLimit, resources.CodeSpendingLimitExceeded},
 		{withdraw.FailureSpendingLimitInvalid, resources.CodeSpendingLimitInvalid},
 		{withdraw.FailureSpendingQuote, resources.CodeSpendingLimitQuoteUnavailable},
+		{withdraw.FailureDestinationReserve, resources.CodeDestinationBelowReserve},
+		{withdraw.FailureDestinationTag, resources.CodeDestinationTagRequired},
 		{withdraw.FailureInternalError, resources.CodeInternalError},
 	}
 	seen := map[string]struct{}{}
