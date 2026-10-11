@@ -201,12 +201,41 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 |---|---|---|
 | Goravel queue, `sync` connection (`QUEUE_CONNECTION`, default `sync`; `config/queue.go`) | credential mail (`jobs.SendCredentialMailJob`, always `DispatchSync`) | runs in the dispatching process. The `database` connection (queue `blockchain`) is configured but nothing runs `queue:work` and no job uses it |
 | AWS SQS (`app/adapters/queue/sqs`, port `queue.Sender`) | outbound webhook delivery | `webhook_worker` Lambda, or on a host without Lambda the `webhook_poller` process (same handler) |
-| `app/services/localworkers` | local stand-in for `confirmation_tracker` and `webhook_worker`, the wallet balance refresh loop (and optional deposit scan), and the MPC keygen pre-parameters pool | started from `main.go` in local mode only |
+| `app/services/localworkers` | local stand-in for `confirmation_tracker` and `webhook_worker` (with a webhook queue, the outbox re-dispatch instead of local delivery), the wallet balance refresh loop (and optional deposit scan, with the deposit event backfill of the scanned chains), and the MPC keygen pre-parameters pool | started from `main.go` in local mode only |
 
 - Local webhook delivery from the outbox runs only when no SQS webhook queue is
   configured, so a message is never drained twice. — guarded by
   `TestStart_Skips_OutboxWhenAQueueDelivers` (`app/services/localworkers`) and
   `TestOne_Consumer_PerQueue` (`tests/architecture`).
+- Webhook delivery is at least once. An event is a `webhook_events` row (one per config, type
+  and subject: the partial unique index of migration 260) written before the queue send, and
+  receivers deduplicate on `X-Vault-Delivery-Id` (the row id), which every resend keeps. Three
+  repairs keep a row from being lost:
+  - **Deposit events.** The tracker persists a deposit's status, then publishes; a failed publish
+    is only logged, and the client credits a deposit only on `deposit.confirmed`. The
+    `confirmation_tracker` (every chain) and the local confirmation loop (the locally scanned
+    chains) run `deposit.Service.BackfillDepositEvents`: a deposit confirmed between 48 h and
+    1 min ago is republished when an active config that subscribes to `deposit.confirmed`, may
+    see the wallet and was created no later than the confirmation has no row for (config,
+    `deposit.confirmed`, deposit id). The event carries `OccurredAt` = the confirmation, so a
+    config created later is left out, and the unique index keeps reruns idempotent; at most 50
+    deposits per run. `deposit.pending` and `deposit.confirming` are not backfilled. — guarded
+    by `TestBackfill_DepositEvents_*`, `TestRun_ConfirmationCheck_RepairsADepositConfirmedWhosePublishFailed`
+    (`app/services/deposit`) and `TestFind_ConfirmedDepositsMissingEvent_*` (`tests/feature/repositories`).
+  - **Queue mode.** An outbox row whose SQS send failed, or whose message left the queue without
+    a recorded attempt, stays `pending`. `webhook.Service.RedispatchStale` claims pending rows of
+    active configs untouched for 5 minutes (`FOR UPDATE SKIP LOCKED`, 50 per run), counts the
+    claim as one attempt (so a row is sent at most `max_attempts` times) and sends them again. It
+    runs from the `confirmation_tracker` Lambda when `vault.queues.webhook` is set and from the
+    local workers when a queue is configured (`RedispatchOutbox`), never beside the local outbox.
+    — guarded by `TestRedispatch_Stale_*`, `TestWebhookEventRepository_ClaimStaleForRedispatch_*`
+    and `TestStart_Redispatches_TheOutboxWhenAQueueDelivers`.
+  - **On request.** `POST /api/v1/webhooks/{webhookId}/redeliver` (`webhooks.write`) requeues
+    `event_ids`, or the events created from `since` to `until` of `types`, of one webhook the
+    token's account owns: only events of the last 7 days, at most 500 per request, an event
+    pending and queued in the last minute left alone. — guarded by
+    `tests/feature/api/external/webhooks` (`TestRedeliver_Webhook_*`) and `TestRedeliver_*`
+    (`app/services/webhook`).
 - `webhook_poller` replaces the `webhook_worker` Lambda where none runs; the two never consume
   one queue together. — **UNGUARDED**: `TestOne_Consumer_PerQueue` reads the consumers from
   `template.yaml` and cannot see where the poller runs; this rests on the deployment.

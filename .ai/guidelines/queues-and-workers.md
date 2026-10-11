@@ -11,7 +11,7 @@
 | Goravel queue (`QUEUE_CONNECTION`, default `sync`) | credential mail (`SendCredentialMailJob`, always `DispatchSync`) | runs in the dispatching process. A `database` connection (queue `blockchain`, `failed_jobs`) is configured, but nothing consumes it |
 | `localworkers` balance loop | the wallet balance read model (`WalletRefresher.RefreshAll`, every `vault.local_workers` interval) | started from `main.go` only in local; the deployed Lambdas have no balance refresher yet |
 | AWS SQS (`app/adapters/queue/sqs`) | outbound webhook delivery | the `webhook_worker` Lambda, or on a host without Lambda the `webhook_poller` process (same handler); with no queue configured, the `localworkers` outbox |
-| `localworkers` | local stand-in for the deployed workers (goroutine tickers) | started from `main.go` only in local |
+| `localworkers` | local stand-in for the deployed workers (goroutine tickers): withdrawal confirmations, the deposit event backfill of the locally scanned chains, and the outbox (delivered locally without a webhook queue, re-dispatched to it with one) | started from `main.go` only in local |
 
 Deployment (Lambdas, `vault.lambda_mode`, EventBridge, SAM) is out of scope for
 this guideline and is not changed by the reorganization; `main.go` only has to
@@ -50,6 +50,33 @@ keep compiling.
   dispatcher port.
 - Artisan commands are thin (resolve a typed service → one call), end through one
   `fail(ctx, err)` helper with a non-zero exit, and contain no query.
+
+## Delivery guarantees
+
+Outbound webhooks are delivered **at least once**, never exactly once.
+
+- **The outbox row comes first.** Every event is a `webhook_events` row written before
+  the queue send; the queue message only carries ids (event, config) and the payload,
+  never the signing secret. A scoped event is one row per config, type and subject
+  (partial unique index, migration 260), so a repeated publish is a no-op.
+- **Receivers deduplicate on `X-Vault-Delivery-Id`** (the row id). Every resend — a
+  queue retry, a re-dispatch, a redelivery — keeps it.
+- **A status persisted before its event is published needs a backfill.** The tracker
+  writes a deposit's status, then publishes; a failed publish is logged and repaired by
+  `deposit.Service.BackfillDepositEvents` on the next tracker run (deposits confirmed in
+  the last 48 h with a subscribed config, existing at the confirmation, that has no
+  `deposit.confirmed` row). Withdrawals have the same repair
+  (`withdrawalevents.Publisher.Backfill`). A new status-then-publish path adds its own
+  backfill, keyed on the outbox row, and stamps the republished event with
+  `ScopedEvent.OccurredAt` so a config created later is not sent history.
+- **In queue mode a lost message is re-dispatched.** `webhook.Service.RedispatchStale`
+  sends again the pending rows untouched for 5 minutes; each claim counts one attempt,
+  so a row is sent at most `max_attempts` times and never more often than every 5
+  minutes. It runs from the `confirmation_tracker` Lambda (every minute) and from the
+  local workers when a queue is configured, never where the local outbox delivers.
+- **A client can ask for a redelivery** (`POST /api/v1/webhooks/{webhookId}/redeliver`):
+  at most 500 events of the last 7 days per request; an event already pending and queued
+  in the last minute is left alone.
 
 ## Tests
 
