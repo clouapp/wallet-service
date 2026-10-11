@@ -1,7 +1,8 @@
 // Package xrp is the XRP Ledger adapter. Classic r-addresses come from
 // addressing.DeriveXRPAddress. It reads a balance and the validated ledger,
-// and it can build, sign, and broadcast one native Payment on the altnet
-// (network id 1). Sweeps and issued currencies are not implemented.
+// scans validated ledgers for native XRP deposits (ScanBlock), and it can build,
+// sign, and broadcast one native Payment on the altnet (network id 1). Sweeps and
+// issued currencies are not implemented.
 package xrp
 
 import (
@@ -143,12 +144,6 @@ func (a *Live) BuildSweep(context.Context, types.SweepRequest) ([]types.Unsigned
 // GetLatestBlock is the validated ledger index.
 func (a *Live) GetLatestBlock(ctx context.Context) (uint64, error) {
 	return a.validatedLedgerIndex(ctx)
-}
-
-// ScanBlock is not implemented. Returning an error keeps a scanner from
-// treating a ledger as empty.
-func (a *Live) ScanBlock(context.Context, uint64) ([]types.DetectedTransfer, error) {
-	return nil, fmt.Errorf("xrp ledger scan is not implemented in this experiment")
 }
 
 // GetTransactionBlock is the validated ledger of txHash, or 0 when the

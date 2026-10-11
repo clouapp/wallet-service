@@ -187,6 +187,9 @@ type DetectedTransfer struct {
 	Token       *Token    `json:"token"`
 	LogIndex    uint      `json:"log_index"`
 	Timestamp   time.Time `json:"timestamp"`
+	// DestinationTag is the XRP Ledger destination tag of the payment; nil means
+	// none, and it is always nil on the other chains.
+	DestinationTag *uint32 `json:"destination_tag,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
