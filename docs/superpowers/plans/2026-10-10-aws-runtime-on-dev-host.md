@@ -439,23 +439,13 @@ Guideline: in the table, the SQS row's consumer becomes "the webhook worker (Lam
 
 ### Task 7: Cutover on the dev host (ssh forge@2.31.21.121)
 
-Checkpoint before step 3: the other agent may still be importing wallets into LocalStack. Confirm with the user that imports are done.
+Follow the runbook in `docs/AWS_DEV_STACK.md`, "Cutover of the dev host". It was rewritten after the plan review: freeze, environment audit, the order of the steps, signing proof per curve, the webhook switch and both rollbacks. It is the source of truth for this task.
 
-1. **Deploy the new build with the current config** (LocalStack), as a new release:
-   - `releases/<ts>` from the current release, then `git fetch` and checkout of the merged `main`, then `go build -o wallet-service .`;
-   - point `current` at it and `kill -TERM` the daemon; supervisor restarts it.
-   - Check `/health`, `local workers started` and the scan logs.
-   - Rollback: point `current` back and kill.
-2. **`.env`:** set `AWS_PROFILE=waas-dev`, `MASTER_KEY_REF=<MasterKeyArn>`, `AWS_ENDPOINT_URL=` (empty).
-3. **Migrate the shares:**
-   - dry run: `./wallet-service artisan secrets:migrate-shares --from-endpoint=http://127.0.0.1:4566`;
-   - `--apply`;
-   - re-run the dry run: every wallet must be `in place`.
-4. **Restart.** Then check the new path end to end:
-   - `make verify-aws` from the laptop;
-   - `aws secretsmanager list-secrets --profile waas-dev` counts the shares, sealed with the master key.
-5. **Webhook poller:**
-   - the user adds a Forge daemon: `/bin/bash -lc 'cd /home/forge/macro-wallets-backend.on-forge.com/current && LAMBDA_MODE=webhook_poller exec ./wallet-service'`, which logs to the Forge daemon log;
-   - set `WEBHOOK_QUEUE_URL=<WebhookQueueUrl>` and restart the API, whose local outbox then stops;
-   - check `webhook poller started`, then an event end to end (`webhook_events.delivery_status`), and that `make dlq-check` stays at 0.
-6. **Keep LocalStack** until the user confirms. It still holds the source shares, which is the rollback: endpoints back, plus `secrets:migrate-shares` reversed.
+**Review follow-ups (done in code):**
+- an inherited `AWS_ENDPOINT_URL` cannot redirect the clients;
+- the migration refuses a source that is the target, `--apply` into AWS without a KMS key, and empty shares;
+- "in place" reads the copy;
+- the ARN moves by compare-and-swap;
+- buffers are zeroed;
+- `--from-profile`;
+- the poller finishes the batch in flight with a 55 s deadline, in batches of 5.
