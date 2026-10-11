@@ -1,4 +1,4 @@
-.PHONY: help build localstack-hooks e2e-tools clean run dev dev-back dev-front stop deploy deploy-guided delete validate local test test-integration test-unit arch arch-baseline contract contract-update test-coverage test-race test-verbose lint fmt vet security mocks migrate migrate-rollback migrate-status migrate-fresh migrate-fresh-seed migrate-fresh-hard db-reset db-seed key-generate jwt-secret docker-up docker-down docker-logs docker-build docker-test docker-status ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
+.PHONY: help build localstack-hooks e2e-tools clean run dev dev-back dev-front stop deploy deploy-guided delete validate check-account require-sam-env require-server-ssh stack-outputs server-credentials verify-aws local test test-integration test-unit arch arch-baseline contract contract-update test-coverage test-race test-verbose lint fmt vet security mocks migrate migrate-rollback migrate-status migrate-fresh migrate-fresh-seed migrate-fresh-hard db-reset db-seed key-generate jwt-secret docker-up docker-down docker-logs docker-build docker-test docker-status ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
 
 # =============================================================================
 # Configuration
@@ -17,6 +17,15 @@ else ifeq ($(ENV),staging)
 else
   -include .env.dev
   STACK_NAME = waas-dev
+endif
+
+# dev runs on one host outside AWS and only needs the stateful AWS resources:
+# template.dev.yaml (queues, master KMS key, the host's IAM user). staging and prod
+# deploy the Lambda application in template.yaml. See docs/AWS_DEV_STACK.md.
+ifeq ($(ENV),dev)
+  TEMPLATE_FILE = template.dev.yaml
+else
+  TEMPLATE_FILE = template.yaml
 endif
 
 # Project paths
@@ -63,7 +72,33 @@ DOCKER_TAG ?= latest
 
 # AWS configuration
 AWS_REGION ?= us-east-1
-AWS_ACCOUNT_ID := $(shell aws sts get-caller-identity --query Account --output text 2>/dev/null)
+# The account .env.$(ENV) names. check-account compares the credentials against it,
+# so it is read before the fallback below fills AWS_ACCOUNT_ID from those credentials.
+AWS_DECLARED_ACCOUNT_ID := $(strip $(AWS_ACCOUNT_ID))
+ifeq ($(AWS_DECLARED_ACCOUNT_ID),)
+  AWS_ACCOUNT_ID := $(shell aws sts get-caller-identity --query Account --output text 2>/dev/null)
+endif
+
+# .env.$(ENV) may carry a deploy user's keys as AMZ_* (never AWS_*, which the app and
+# docker compose read). When set, they reach aws/sam as AWS_* in the AWS targets below
+# only, and AWS_PROFILE/AWS_SESSION_TOKEN from the shell are dropped so they cannot
+# outrank them; nothing is written to ~/.aws. Without them the shell's own credentials
+# are used. AWS_ENDPOINT_URL (LocalStack) never reaches these commands. check-account
+# is the backstop either way.
+AWS_TARGETS = check-account deploy delete stack-outputs server-credentials dlq-check dlq-replay-webhooks dlq-replay-withdrawals
+ifneq ($(strip $(AMZ_ACCESS_KEY_ID)),)
+$(AWS_TARGETS): export AWS_ACCESS_KEY_ID := $(AMZ_ACCESS_KEY_ID)
+$(AWS_TARGETS): export AWS_SECRET_ACCESS_KEY := $(AMZ_SECRET_ACCESS_KEY)
+AWS_ENV = env -u AWS_PROFILE -u AWS_SESSION_TOKEN -u AWS_ENDPOINT_URL AWS_DEFAULT_REGION=$(AWS_REGION)
+else
+AWS_ENV = env -u AWS_ENDPOINT_URL AWS_DEFAULT_REGION=$(AWS_REGION)
+endif
+
+# The host that runs the service outside AWS (dev), and the AWS profile
+# server-credentials installs there for the stack's server user.
+SERVER_SSH ?=
+AWS_RUNTIME_PROFILE ?= waas-$(ENV)
+
 ECR_REGISTRY := $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com
 ECR_IMAGE := $(ECR_REGISTRY)/$(DOCKER_IMAGE_NAME):$(DOCKER_TAG)
 
@@ -177,7 +212,7 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; /^build/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "🚀 Deployment Commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; /^deploy|^delete|^validate/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; /^deploy|^delete|^validate|^check-account|^stack-outputs|^server-credentials|^verify-aws/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "🧪 Testing Commands:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | awk 'BEGIN {FS = ":.*?## "}; /^test/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -206,6 +241,9 @@ help: ## Show this help message
 	@echo "  make stop                   # Stop all dev processes"
 	@echo "  make docker-up              # Start local development environment"
 	@echo "  make test-coverage          # Run tests with coverage report"
+	@echo "  make deploy ENV=dev         # AWS resources of dev (template.dev.yaml)"
+	@echo "  make server-credentials     # Install the dev host's AWS profile on SERVER_SSH"
+	@echo "  make verify-aws             # Prove queues, KMS key and Secrets Manager from the host"
 	@echo "  make deploy ENV=prod        # Deploy to production"
 	@echo ""
 
@@ -258,19 +296,51 @@ clean: ## Clean build artifacts
 # Deployment Commands
 # =============================================================================
 
-deploy: build ## Deploy to AWS using SAM (uses ENV variable)
-	@echo "🚀 Deploying to $(ENV) environment..."
-	@echo "Stack: $(STACK_NAME)"
-	sam deploy \
+# The guard that makes a wrong ~/.aws profile harmless: whatever credentials aws
+# resolved must belong to the account .env.$(ENV) names in AWS_ACCOUNT_ID.
+check-account: ## Refuse unless the AWS credentials belong to AWS_ACCOUNT_ID of .env.$(ENV)
+	@test -n "$(AWS_DECLARED_ACCOUNT_ID)" || { echo "check-account: AWS_ACCOUNT_ID is empty in .env.$(ENV)" >&2; exit 1; }
+	@actual="$$($(AWS_ENV) aws sts get-caller-identity --query Account --output text 2>&1)" || \
+		{ echo "check-account: aws sts get-caller-identity failed: $$actual" >&2; exit 1; }; \
+	if [ "$$actual" != "$(AWS_DECLARED_ACCOUNT_ID)" ]; then \
+		echo "check-account: credentials resolve to account $$actual, but .env.$(ENV) targets $(AWS_DECLARED_ACCOUNT_ID) — refusing to touch it" >&2; \
+		exit 1; \
+	fi; \
+	echo "check-account: OK — account $$actual, region $(AWS_REGION), stack $(STACK_NAME)"
+
+ifeq ($(ENV),dev)
+DEPLOY_PREREQUISITES = check-account validate
+else
+DEPLOY_PREREQUISITES = build check-account
+endif
+
+deploy: $(DEPLOY_PREREQUISITES) ## Deploy ENV: dev applies template.dev.yaml (queues, KMS key, server user); staging/prod deploy template.yaml with SAM
+	@echo "🚀 Deploying $(TEMPLATE_FILE) to $(ENV) (stack $(STACK_NAME))..."
+ifeq ($(ENV),dev)
+	$(AWS_ENV) aws cloudformation deploy \
+		--stack-name $(STACK_NAME) \
+		--template-file $(TEMPLATE_FILE) \
+		--capabilities CAPABILITY_NAMED_IAM \
+		--parameter-overrides Environment=$(ENV) \
+		--tags Project=macro-wallets Environment=$(ENV) \
+		--no-fail-on-empty-changeset
+	@$(AWS_ENV) aws cloudformation describe-stacks --stack-name $(STACK_NAME) \
+		--query "Stacks[0].Outputs[].[OutputKey,OutputValue]" --output table
+else
+	$(AWS_ENV) sam deploy \
 		--stack-name $(STACK_NAME) \
 		--parameter-overrides "$(PARAMETER_OVERRIDES)" \
 		--capabilities CAPABILITY_IAM \
 		$(S3_FLAG) \
 		--no-confirm-changeset \
 		--no-fail-on-empty-changeset
+endif
 	@echo "✅ Deployment complete"
 
-deploy-guided: build ## Deploy with guided prompts (first time setup)
+require-sam-env:
+	@test "$(ENV)" != dev || { echo "this target deploys the Lambda application (template.yaml); dev deploys template.dev.yaml with make deploy ENV=dev" >&2; exit 1; }
+
+deploy-guided: require-sam-env build ## Deploy with guided prompts (first time setup, staging/prod)
 	@echo "🚀 Running guided deployment..."
 	sam deploy --guided \
 		--stack-name $(STACK_NAME) \
@@ -278,14 +348,43 @@ deploy-guided: build ## Deploy with guided prompts (first time setup)
 		--capabilities CAPABILITY_IAM \
 		$(S3_FLAG)
 
-delete: ## Delete CloudFormation stack
+delete: check-account ## Delete ENV's CloudFormation stack (dev keeps its KMS key: DeletionPolicy Retain)
 	@echo "⚠️  Deleting stack: $(STACK_NAME)"
-	sam delete --stack-name $(STACK_NAME) --no-prompts
+	$(AWS_ENV) sam delete --stack-name $(STACK_NAME) --region $(AWS_REGION) --no-prompts
 	@echo "✅ Stack deleted"
 
-validate: ## Validate SAM template
+validate: ## Validate ENV's template (cfn-lint for template.dev.yaml, SAM for template.yaml)
+ifeq ($(ENV),dev)
+	sam validate --lint -t $(TEMPLATE_FILE)
+else
 	@echo "✅ Validating SAM template..."
 	sam validate
+endif
+
+stack-outputs: ## Print ENV's stack outputs (queue URLs, MasterKeyArn for MASTER_KEY_REF, ...)
+	@$(AWS_ENV) aws cloudformation describe-stacks --stack-name $(STACK_NAME) \
+		--query "Stacks[0].Outputs[].[OutputKey,OutputValue]" --output table
+
+require-server-ssh:
+	@test -n "$(SERVER_SSH)" || { echo "SERVER_SSH is empty in .env.$(ENV): the host that runs the service, e.g. forge@203.0.113.10" >&2; exit 1; }
+
+# Copies a repo script to SERVER_SSH and runs it there with the given arguments; stdin
+# is passed through, and the copy is removed whatever the outcome.
+# $(1) local script, $(2) environment assignments, $(3) arguments.
+run-on-server = remote="$$(ssh $(SERVER_SSH) 'f=$$(mktemp); cat > "$$f"; echo "$$f"' < $(1))" && ssh $(SERVER_SSH) "$(2) bash $$remote $(3); rc=\$$?; rm -f $$remote; exit \$$rc"
+
+# The access key never shows: Secrets Manager -> pipe -> ssh -> aws configure import.
+server-credentials: require-server-ssh check-account ## Install the stack's server user on SERVER_SSH as AWS profile $(AWS_RUNTIME_PROFILE)
+	@secret="$$($(AWS_ENV) aws cloudformation describe-stacks --stack-name $(STACK_NAME) \
+		--query "Stacks[0].Outputs[?OutputKey=='ServerAccessKeySecretArn'].OutputValue" --output text)"; \
+	if [ -z "$$secret" ] || [ "$$secret" = "None" ]; then \
+		echo "server-credentials: $(STACK_NAME) has no server user (CreateServerUser=false?)" >&2; exit 1; \
+	fi; \
+	$(AWS_ENV) aws secretsmanager get-secret-value --secret-id "$$secret" --query SecretString --output text | \
+		{ $(call run-on-server,scripts/aws-install-profile.sh,,$(AWS_RUNTIME_PROFILE) $(AWS_REGION)); }
+
+verify-aws: require-server-ssh ## On SERVER_SSH, as profile $(AWS_RUNTIME_PROFILE): queues, DLQ redrive, KMS key and Secrets Manager round trips
+	@$(call run-on-server,scripts/aws-verify.sh,AWS_PROFILE=$(AWS_RUNTIME_PROFILE) AWS_REGION=$(AWS_REGION),$(ENV))
 
 # =============================================================================
 # Local Development Commands
@@ -599,30 +698,30 @@ dlq-check: ## Check DLQ message counts
 	@echo "📊 Checking Dead Letter Queues"
 	@echo "═══════════════════════════════════════"
 	@echo "Webhook DLQ:"
-	@aws sqs get-queue-attributes \
-		--queue-url $$(aws sqs get-queue-url --queue-name waas-webhooks-dlq-$(ENV) --query QueueUrl --output text) \
+	@$(AWS_ENV) aws sqs get-queue-attributes \
+		--queue-url $$($(AWS_ENV) aws sqs get-queue-url --queue-name vault-webhooks-dlq-$(ENV) --query QueueUrl --output text) \
 		--attribute-names ApproximateNumberOfMessages \
 		--query 'Attributes.ApproximateNumberOfMessages' --output text || echo "0"
 	@echo ""
 	@echo "Withdrawal DLQ:"
-	@aws sqs get-queue-attributes \
-		--queue-url $$(aws sqs get-queue-url --queue-name waas-withdrawals-dlq-$(ENV) --query QueueUrl --output text) \
+	@$(AWS_ENV) aws sqs get-queue-attributes \
+		--queue-url $$($(AWS_ENV) aws sqs get-queue-url --queue-name vault-withdrawals-dlq-$(ENV) --query QueueUrl --output text) \
 		--attribute-names ApproximateNumberOfMessages \
 		--query 'Attributes.ApproximateNumberOfMessages' --output text || echo "0"
 	@echo "═══════════════════════════════════════"
 
 dlq-replay-webhooks: ## Replay webhook DLQ messages back to main queue
 	@echo "♻️  Replaying webhook DLQ messages..."
-	aws sqs start-message-move-task \
-		--source-arn $$(aws sqs get-queue-attributes --queue-url $$(aws sqs get-queue-url --queue-name waas-webhooks-dlq-$(ENV) --query QueueUrl --output text) --attribute-names QueueArn --query Attributes.QueueArn --output text) \
-		--destination-arn $$(aws sqs get-queue-attributes --queue-url $$(aws sqs get-queue-url --queue-name waas-webhooks-$(ENV) --query QueueUrl --output text) --attribute-names QueueArn --query Attributes.QueueArn --output text)
+	$(AWS_ENV) aws sqs start-message-move-task \
+		--source-arn $$($(AWS_ENV) aws sqs get-queue-attributes --queue-url $$($(AWS_ENV) aws sqs get-queue-url --queue-name vault-webhooks-dlq-$(ENV) --query QueueUrl --output text) --attribute-names QueueArn --query Attributes.QueueArn --output text) \
+		--destination-arn $$($(AWS_ENV) aws sqs get-queue-attributes --queue-url $$($(AWS_ENV) aws sqs get-queue-url --queue-name vault-webhooks-$(ENV) --query QueueUrl --output text) --attribute-names QueueArn --query Attributes.QueueArn --output text)
 	@echo "✅ Replay initiated"
 
 dlq-replay-withdrawals: ## Replay withdrawal DLQ messages back to main queue
 	@echo "♻️  Replaying withdrawal DLQ messages..."
-	aws sqs start-message-move-task \
-		--source-arn $$(aws sqs get-queue-attributes --queue-url $$(aws sqs get-queue-url --queue-name waas-withdrawals-dlq-$(ENV) --query QueueUrl --output text) --attribute-names QueueArn --query Attributes.QueueArn --output text) \
-		--destination-arn $$(aws sqs get-queue-attributes --queue-url $$(aws sqs get-queue-url --queue-name waas-withdrawals-$(ENV) --query QueueUrl --output text) --attribute-names QueueArn --query Attributes.QueueArn --output text)
+	$(AWS_ENV) aws sqs start-message-move-task \
+		--source-arn $$($(AWS_ENV) aws sqs get-queue-attributes --queue-url $$($(AWS_ENV) aws sqs get-queue-url --queue-name vault-withdrawals-dlq-$(ENV) --query QueueUrl --output text) --attribute-names QueueArn --query Attributes.QueueArn --output text) \
+		--destination-arn $$($(AWS_ENV) aws sqs get-queue-attributes --queue-url $$($(AWS_ENV) aws sqs get-queue-url --queue-name vault-withdrawals-$(ENV) --query QueueUrl --output text) --attribute-names QueueArn --query Attributes.QueueArn --output text)
 	@echo "✅ Replay initiated"
 
 ping: ## Check API health endpoint
