@@ -10,7 +10,7 @@
 |---|---|---|
 | Goravel queue (`QUEUE_CONNECTION`, default `sync`) | credential mail (`SendCredentialMailJob`, always `DispatchSync`) | runs in the dispatching process. A `database` connection (queue `blockchain`, `failed_jobs`) is configured, but nothing consumes it |
 | `localworkers` balance loop | the wallet balance read model (`WalletRefresher.RefreshAll`, every `vault.local_workers` interval) | started from `main.go` only in local; the deployed Lambdas have no balance refresher yet |
-| AWS SQS (`app/adapters/queue/sqs`) | outbound webhook delivery | the webhook worker (local: `localworkers`) |
+| AWS SQS (`app/adapters/queue/sqs`) | outbound webhook delivery | the `webhook_worker` Lambda, or on a host without Lambda the `webhook_poller` process (same handler); with no queue configured, the `localworkers` outbox |
 | `localworkers` | local stand-in for the deployed workers (goroutine tickers) | started from `main.go` only in local |
 
 Deployment (Lambdas, `vault.lambda_mode`, EventBridge, SAM) is out of scope for
@@ -22,6 +22,10 @@ keep compiling.
 - **One consumer per queue.** A second worker for the same queue, or a goroutine
   loop draining what the deployed worker drains, is refused (`tests/architecture`
   `queue_runner_test.go`).
+- **The `webhook_poller` replaces the `webhook_worker` Lambda, never runs beside it.**
+  It is its own process (`LAMBDA_MODE=webhook_poller`), long-polls
+  `vault.queues.webhook` and hands each batch to `handleWebhookWorker`, so it is the
+  same consumer with another trigger. Run it only where no Lambda consumes that queue.
 - **Jobs are thin**: decode a typed payload → call one service method. Payload
   validation is a `decode` in the job, not positional `args ...any` checked by
   hand.

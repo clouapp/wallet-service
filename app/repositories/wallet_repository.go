@@ -144,6 +144,22 @@ func (r *WalletRepository) SetMPCChainCode(ctx context.Context, id uuid.UUID, ch
 	return r.updateColumn(ctx, id, "mpc_chain_code", chainCode, "set wallet chain code")
 }
 
+// SetMPCSecretARN moves wallets.mpc_secret_arn, where the wallet's share B is read
+// from, from `from` to `to`. It refuses when the row no longer holds `from`, so a
+// concurrent writer is never overwritten.
+func (r *WalletRepository) SetMPCSecretARN(ctx context.Context, id uuid.UUID, from, to string) error {
+	result, err := r.Query(ctx).Model(&models.Wallet{}).
+		Where("id = ? AND mpc_secret_arn = ?", id, from).
+		Update("mpc_secret_arn", to)
+	if err != nil {
+		return fmt.Errorf("set wallet secret arn: %w", err)
+	}
+	if result == nil || result.RowsAffected != 1 {
+		return fmt.Errorf("set wallet secret arn: wallet %s no longer holds %s", id, from)
+	}
+	return nil
+}
+
 // Activate sets status and clears activation_code together.
 func (r *WalletRepository) Activate(ctx context.Context, id uuid.UUID, status string) error {
 	if _, err := r.Query(ctx).Model(&models.Wallet{}).Where("id = ?", id).Update(map[string]any{

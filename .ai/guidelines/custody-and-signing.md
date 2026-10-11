@@ -26,7 +26,7 @@ Curves: secp256k1 (EVM, BTC) and ed25519 (SOL). HD derivation (`hdkey`,
 
 - **Key material lives only in `app/services/mpc`** (keygen, keystore, signing)
   **and is reached only through the custody services** (wallets, withdrawals,
-  sweep). No controller, job, command or adapter handles a share, a passphrase
+  sweep, and the share migration `sharemigration`). No controller, job, command or adapter handles a share, a passphrase
   or a derived key.
 - Secrets Manager is a **port** (`SecretStore`) implemented in
   `app/adapters/secretsmanager`; services never import the AWS SDK.

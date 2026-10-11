@@ -26,10 +26,12 @@ func (r endpointResolver) ResolveEndpoint(
 	return smithyendpoints.Endpoint{URI: *u}, nil
 }
 
-// NewClient builds the AWS client. An empty endpoint uses the default resolver.
+// NewClient builds the AWS client. An empty endpoint uses AWS itself: an endpoint
+// the process environment or a profile set (AWS_ENDPOINT_URL) is dropped, so
+// vault.aws.endpoint_url is the only thing that can point the client elsewhere.
 func NewClient(cfg aws.Config, endpoint string) *SDKClient {
 	if endpoint == "" {
-		return awssm.NewFromConfig(cfg)
+		return awssm.NewFromConfig(cfg, func(o *awssm.Options) { o.BaseEndpoint = nil })
 	}
 	return awssm.NewFromConfig(cfg, awssm.WithEndpointResolverV2(endpointResolver{url: endpoint}))
 }

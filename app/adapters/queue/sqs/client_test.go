@@ -187,3 +187,30 @@ func messageAttribute(t *testing.T, body map[string]json.RawMessage, name string
 	}
 	return attribute
 }
+
+func TestSQS_NewClient_PointsAtTheConfiguredEndpoint(t *testing.T) {
+	client := NewClient(aws.Config{Region: "us-east-1"}, "http://127.0.0.1:4566")
+
+	endpoint := client.Options().BaseEndpoint
+	if endpoint == nil || *endpoint != "http://127.0.0.1:4566" {
+		t.Fatalf("BaseEndpoint = %v, want http://127.0.0.1:4566", endpoint)
+	}
+}
+
+func TestSQS_NewClient_KeepsTheDefaultEndpointWhenEmpty(t *testing.T) {
+	client := NewClient(aws.Config{Region: "us-east-1"}, "")
+
+	if endpoint := client.Options().BaseEndpoint; endpoint != nil {
+		t.Fatalf("BaseEndpoint = %q, want the SDK default", *endpoint)
+	}
+}
+
+// An endpoint the process environment or a profile set (AWS_ENDPOINT_URL) must not
+// redirect the client: vault.aws.endpoint_url is the only authority.
+func TestSQS_NewClient_IgnoresAnInheritedEndpoint(t *testing.T) {
+	client := NewClient(aws.Config{Region: "us-east-1", BaseEndpoint: aws.String("http://127.0.0.1:4566")}, "")
+
+	if endpoint := client.Options().BaseEndpoint; endpoint != nil {
+		t.Fatalf("BaseEndpoint = %q, want the AWS default", *endpoint)
+	}
+}

@@ -7,12 +7,16 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/awslabs/aws-lambda-go-api-proxy/httpadapter"
 
+	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
@@ -106,6 +110,8 @@ func main() {
 		lambda.Start(handleWebhookReconciler)
 	case "webhook_worker":
 		lambda.Start(handleWebhookWorker)
+	case "webhook_poller":
+		runWebhookPoller()
 	case "api":
 		lambda.Start(handleAPIGateway)
 	default:
@@ -161,6 +167,29 @@ func handleWebhookWorker(ctx context.Context, sqsEvent events.SQSEvent) (events.
 	}
 
 	return events.SQSEventResponse{BatchItemFailures: failures}, nil
+}
+
+// runWebhookPoller stands in for the webhook_worker Lambda on a host without
+// Lambda: it long-polls vault.queues.webhook and runs handleWebhookWorker on each
+// batch, deleting what it delivered. It replaces the Lambda; the two never consume
+// one queue together (.ai/guidelines/queues-and-workers.md).
+func runWebhookPoller() {
+	queueURL := facades.Config().GetString("vault.queues.webhook")
+	if queueURL == "" {
+		slog.Error("webhook poller needs WEBHOOK_QUEUE_URL")
+		os.Exit(exitCodeFailure)
+	}
+	awsCfg := container.MustMake[*aws.Config]()
+	client := queuesqs.NewClient(*awsCfg, facades.Config().GetString("vault.aws.endpoint_url"))
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	slog.Info("webhook poller started", "queue", queueURL)
+	if err := queuesqs.NewPoller(client, queueURL).Run(ctx, handleWebhookWorker); err != nil {
+		slog.Error("webhook poller stopped", "error", err)
+		os.Exit(exitCodeFailure)
+	}
+	slog.Info("webhook poller stopped")
 }
 
 // startLocalWorkers stands in for the confirmation_tracker and webhook_worker
