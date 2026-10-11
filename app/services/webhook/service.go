@@ -40,6 +40,7 @@ type eventStore interface {
 	ExistsForSubject(ctx context.Context, configID uuid.UUID, eventType, subjectID string) (bool, error)
 	FindDueForDelivery(ctx context.Context, limit int, baseBackoff, maxBackoff time.Duration) ([]models.WebhookEvent, error)
 	MarkFailed(ctx context.Context, eventID, errMsg string) error
+	ClaimStaleForRedispatch(ctx context.Context, staleAfter time.Duration, limit int) ([]models.WebhookEvent, error)
 }
 
 // ---------------------------------------------------------------------------

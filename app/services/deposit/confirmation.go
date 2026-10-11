@@ -406,10 +406,12 @@ func (s *Service) publishWithdrawalConfirmed(ctx context.Context, tx models.Tran
 }
 
 // RunConfirmationCheck walks all registered chains that have pending deposits and
-// refreshes confirmation counts using free block-height APIs when configured.
+// refreshes confirmation counts using free block-height APIs when configured, then
+// repairs the withdrawal confirmations and the deposit.confirmed events that were lost.
 func (s *Service) RunConfirmationCheck(ctx context.Context) error {
 	s.runConfirmationCheck(ctx, allTxTypes)
 	s.backfillWithdrawalConfirmations(ctx)
+	s.backfillDepositEvents(ctx)
 	return nil
 }
 

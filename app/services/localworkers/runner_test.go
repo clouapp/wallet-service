@@ -90,19 +90,27 @@ func waitUntilEither(t *testing.T, limit time.Duration, first, second <-chan str
 func TestStart_Rejects_InvalidConfiguration(t *testing.T) {
 	checker := &countingChecker{}
 	deliverer := &countingDeliverer{}
+	redispatcher := &countingRedispatcher{}
 	cases := map[string]struct {
-		cfg       Config
-		checker   WithdrawalConfirmationChecker
-		deliverer OutboxDeliverer
+		cfg          Config
+		checker      WithdrawalConfirmationChecker
+		deliverer    OutboxDeliverer
+		redispatcher OutboxRedispatcher
 	}{
-		"confirmation interval too short": {Config{ConfirmationInterval: time.Millisecond}, checker, nil},
-		"delivery interval too short":     {Config{ConfirmationInterval: MinInterval, DeliverOutbox: true}, checker, deliverer},
-		"missing checker":                 {Config{ConfirmationInterval: MinInterval}, nil, nil},
-		"outbox without deliverer":        {Config{ConfirmationInterval: MinInterval, DeliveryInterval: MinInterval, DeliverOutbox: true}, checker, nil},
+		"confirmation interval too short":  {Config{ConfirmationInterval: time.Millisecond}, checker, nil, nil},
+		"delivery interval too short":      {Config{ConfirmationInterval: MinInterval, DeliverOutbox: true}, checker, deliverer, nil},
+		"missing checker":                  {Config{ConfirmationInterval: MinInterval}, nil, nil, nil},
+		"outbox without deliverer":         {Config{ConfirmationInterval: MinInterval, DeliveryInterval: MinInterval, DeliverOutbox: true}, checker, nil, nil},
+		"re-dispatch without redispatcher": {Config{ConfirmationInterval: MinInterval, RedispatchOutbox: true}, checker, nil, nil},
+		"outbox delivered and re-dispatched": {
+			Config{ConfirmationInterval: MinInterval, DeliveryInterval: MinInterval, DeliverOutbox: true, RedispatchOutbox: true},
+			checker, deliverer, redispatcher,
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := Start(context.Background(), tc.cfg, Workers{Checker: tc.checker, Deliverer: tc.deliverer}); err == nil {
+			workers := Workers{Checker: tc.checker, Deliverer: tc.deliverer, Redispatcher: tc.redispatcher}
+			if _, err := Start(context.Background(), tc.cfg, workers); err == nil {
 				t.Fatal("expected a configuration error")
 			}
 		})
@@ -152,10 +160,67 @@ func TestStart_Skips_OutboxWhenAQueueDelivers(t *testing.T) {
 	}
 }
 
+type countingRedispatcher struct {
+	runs     atomic.Int32
+	limit    atomic.Int64
+	progress chan struct{}
+}
+
+func (r *countingRedispatcher) RedispatchStale(ctx context.Context, limit int) (int, error) {
+	r.runs.Add(1)
+	r.limit.Store(int64(limit))
+	notify(ctx, r.progress)
+	return 0, nil
+}
+
+func TestStart_Redispatches_TheOutboxWhenAQueueDelivers(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	deliverer := &countingDeliverer{}
+	redispatcher := &countingRedispatcher{progress: progressChan()}
+	cfg := Config{ConfirmationInterval: MinInterval, RedispatchOutbox: true}
+
+	if _, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Deliverer: deliverer, Redispatcher: redispatcher}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	time.Sleep(MinInterval / 2)
+	if redispatcher.runs.Load() != 0 {
+		t.Fatal("the re-dispatch must wait one interval")
+	}
+
+	waitUntil(t, 3*MinInterval, redispatcher.progress, func() bool { return redispatcher.runs.Load() > 0 })
+	if redispatcher.runs.Load() == 0 {
+		t.Fatal("expected the outbox to be re-dispatched to the queue")
+	}
+	if got := redispatcher.limit.Load(); got != RedispatchBatchSize {
+		t.Fatalf("limit = %d, want %d", got, RedispatchBatchSize)
+	}
+	if deliverer.runs.Load() != 0 {
+		t.Fatal("the local outbox must not deliver beside the queue")
+	}
+}
+
+func TestStart_Never_RedispatchesWithoutAQueue(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	redispatcher := &countingRedispatcher{}
+	deliverer := &countingDeliverer{progress: progressChan()}
+	cfg := Config{ConfirmationInterval: MinInterval, DeliveryInterval: MinInterval, DeliverOutbox: true}
+
+	if _, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Deliverer: deliverer, Redispatcher: redispatcher}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	waitUntil(t, 3*MinInterval, deliverer.progress, func() bool { return deliverer.runs.Load() > 1 })
+	if redispatcher.runs.Load() != 0 {
+		t.Fatalf("no queue is configured, got %d re-dispatch runs", redispatcher.runs.Load())
+	}
+}
+
 type recordingScanner struct {
 	mu         sync.Mutex
 	chains     []string
 	synced     []string
+	backfilled [][]string
 	steps      []string
 	err        error
 	syncErr    error
@@ -180,6 +245,20 @@ func (s *recordingScanner) ReprocessDuePending(ctx context.Context, chainID stri
 	s.mu.Unlock()
 	notify(ctx, s.progress)
 	return 0, err
+}
+
+func (s *recordingScanner) BackfillDepositEvents(ctx context.Context, chainIDs []string) (int, error) {
+	s.mu.Lock()
+	s.backfilled = append(s.backfilled, append([]string(nil), chainIDs...))
+	s.mu.Unlock()
+	notify(ctx, s.progress)
+	return 0, nil
+}
+
+func (s *recordingScanner) backfills() [][]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([][]string(nil), s.backfilled...)
 }
 
 func (s *recordingScanner) recordedSteps() []string {
@@ -567,5 +646,48 @@ func TestStart_Runs_ThePreParamsFillerUntilCancelled(t *testing.T) {
 	loops.Wait()
 	if !filler.stopped.Load() {
 		t.Fatal("Wait must not return before the pre-params filler stopped")
+	}
+}
+
+func TestStart_Backfills_DepositEventsOfTheScannedChainsOnTheConfirmationLoop(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	scanner := &recordingScanner{progress: progressChan()}
+	checker := &countingChecker{}
+	cfg := Config{ConfirmationInterval: MinInterval, DepositScanChains: []string{"sol", "base"}, DepositScanInterval: time.Hour}
+
+	if _, err := Start(ctx, cfg, Workers{Checker: checker, Scanner: scanner}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	time.Sleep(MinInterval / 2)
+	if got := scanner.backfills(); len(got) != 0 {
+		t.Fatalf("the backfill must wait one interval, got %v", got)
+	}
+
+	waitUntil(t, 3*MinInterval, scanner.progress, func() bool { return len(scanner.backfills()) > 0 })
+	got := scanner.backfills()
+	if len(got) == 0 {
+		t.Fatal("expected the deposit events of the scanned chains to be backfilled")
+	}
+	if strings.Join(got[0], ",") != "sol,base" {
+		t.Fatalf("backfilled chains %v, want the scan chains", got[0])
+	}
+	if checker.runs.Load() == 0 {
+		t.Fatal("the withdrawal confirmation check must keep running")
+	}
+}
+
+func TestStart_No_DepositEventBackfillWithoutScanChains(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	scanner := &recordingScanner{}
+	checker := &countingChecker{progress: progressChan()}
+
+	if _, err := Start(ctx, Config{ConfirmationInterval: MinInterval}, Workers{Checker: checker, Scanner: scanner}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	waitUntil(t, 3*MinInterval, checker.progress, func() bool { return checker.runs.Load() > 1 })
+	if got := scanner.backfills(); len(got) != 0 {
+		t.Fatalf("deposits are confirmed by the deployed tracker, got backfills %v", got)
 	}
 }

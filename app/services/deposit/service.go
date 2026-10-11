@@ -63,6 +63,7 @@ type transactionStore interface {
 	CountInternalTransfers(ctx context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error)
 	FindPendingByChain(ctx context.Context, chainID string) ([]models.Transaction, error)
 	FindConfirmedOutboundWithoutFee(ctx context.Context, chainID string, limit int) ([]models.Transaction, error)
+	FindConfirmedDepositsMissingEvent(ctx context.Context, eventType string, from, to time.Time, chainIDs []string, limit int) ([]models.Transaction, error)
 	SetBlockNumber(ctx context.Context, id uuid.UUID, block uint64) error
 	SetFee(ctx context.Context, id uuid.UUID, fee string) error
 	RecordConfirmations(ctx context.Context, id uuid.UUID, confirmations int, status string, confirmedAt *time.Time) error
@@ -70,9 +71,11 @@ type transactionStore interface {
 }
 
 // DepositEvents publishes deposit webhooks scoped to the wallet's account with the
-// amount in base units and as a decimal.
+// amount in base units and as a decimal. Republish sends again an event that
+// occurred at occurredAt to the configs that existed then and never got it.
 type DepositEvents interface {
 	Publish(ctx context.Context, eventType types.EventType, tx models.Transaction) error
+	Republish(ctx context.Context, eventType types.EventType, tx models.Transaction, occurredAt time.Time) error
 }
 
 // SetDepositEvents wires the deposit webhook publisher. Without it no deposit webhook

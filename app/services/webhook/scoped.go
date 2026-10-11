@@ -29,6 +29,10 @@ const (
 
 // ScopedEvent is an event about one wallet that must reach only the configs allowed to
 // see that wallet, and at most once per config for a given subject.
+//
+// OccurredAt is set when the event is published after the fact (a backfill): a config
+// created after that instant does not receive it, so an endpoint registered later
+// is not sent history. Zero means the event happens now and reaches every config.
 type ScopedEvent struct {
 	EventType     types.EventType
 	SubjectID     string
@@ -36,6 +40,7 @@ type ScopedEvent struct {
 	AccountID     *uuid.UUID
 	TransactionID *uuid.UUID
 	Data          any
+	OccurredAt    time.Time
 }
 
 func (e ScopedEvent) validate() error {
@@ -67,9 +72,19 @@ func configCanSee(cfg models.WebhookConfig, walletID uuid.UUID, accountID *uuid.
 	return true
 }
 
+// configExistedAt reports whether a config was created no later than at. A zero at
+// (an event happening now) and a config without a creation time always qualify.
+func configExistedAt(cfg models.WebhookConfig, at time.Time) bool {
+	if at.IsZero() || cfg.CreatedAt == nil || cfg.CreatedAt.Carbon == nil || cfg.CreatedAt.IsZero() {
+		return true
+	}
+	return !cfg.CreatedAt.StdTime().After(at)
+}
+
 // EnqueueScoped records and queues one delivery per subscribed config that can see the
-// wallet. A config that already has an event of this type for the subject is skipped,
-// so repeated tracker runs and backfills never deliver the same event twice.
+// wallet (and, for an event with OccurredAt, existed when it occurred). A config that
+// already has an event of this type for the subject is skipped, so repeated tracker
+// runs and backfills never deliver the same event twice.
 func (s *Service) EnqueueScoped(ctx context.Context, event ScopedEvent) (int, error) {
 	if err := event.validate(); err != nil {
 		return 0, fmt.Errorf("enqueue scoped event: %w", err)
@@ -82,7 +97,7 @@ func (s *Service) EnqueueScoped(ctx context.Context, event ScopedEvent) (int, er
 
 	enqueued := 0
 	for _, cfg := range configs {
-		if !containsEvent(cfg.Events, string(event.EventType)) || !configCanSee(cfg, event.WalletID, event.AccountID) {
+		if !containsEvent(cfg.Events, string(event.EventType)) || !configCanSee(cfg, event.WalletID, event.AccountID) || !configExistedAt(cfg, event.OccurredAt) {
 			continue
 		}
 		created, err := s.enqueueForConfig(ctx, cfg, event)
@@ -195,18 +210,7 @@ func (s *Service) deliverStored(ctx context.Context, event models.WebhookEvent) 
 		return false
 	}
 
-	msg := types.WebhookMessage{
-		EventID:     event.ID.String(),
-		EventType:   types.EventType(event.EventType),
-		Payload:     event.Payload,
-		DeliveryURL: event.DeliveryURL,
-		ConfigID:    cfg.ID.String(),
-		Attempt:     event.Attempts + 1,
-	}
-	if event.TransactionID != nil {
-		msg.TransactionID = event.TransactionID.String()
-	}
-
+	msg := queuedMessage(event, event.Attempts+1)
 	deliverErr := s.Deliver(ctx, msg)
 	if deliverErr == nil {
 		return true

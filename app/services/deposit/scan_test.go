@@ -198,6 +198,10 @@ func (r *recordingDepositEvents) Publish(_ context.Context, eventType types.Even
 	return nil
 }
 
+func (r *recordingDepositEvents) Republish(ctx context.Context, eventType types.EventType, tx models.Transaction, _ time.Time) error {
+	return r.Publish(ctx, eventType, tx)
+}
+
 func (r *recordingDepositEvents) count(eventType types.EventType) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()

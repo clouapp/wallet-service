@@ -136,9 +136,29 @@ func handleDepositScan(ctx context.Context, event types.DepositScanEvent) error 
 	return errors.Join(scanErr, pendingErr)
 }
 
+// handleConfirmationTracker advances confirmations, repairs the withdrawal and
+// deposit events that were lost, then sends to the webhook queue again the outbox
+// rows whose queue message was lost. It runs every minute, so it is where the outbox
+// re-dispatch lives: the webhook_worker only runs when a message arrives and the
+// webhook_reconciler only once a day.
 func handleConfirmationTracker(ctx context.Context) error {
 	slog.Info("confirmation tracker triggered")
-	return deposits.RunConfirmationCheck(ctx)
+	err := deposits.RunConfirmationCheck(ctx)
+	if facades.Config().GetString("vault.queues.webhook") != "" {
+		redispatchWebhooks(ctx)
+	}
+	return err
+}
+
+func redispatchWebhooks(ctx context.Context) {
+	sent, err := webhooks.RedispatchStale(ctx, webhook.RedispatchBatchSize)
+	if err != nil {
+		slog.Error("webhook re-dispatch failed", "error", err)
+		return
+	}
+	if sent > 0 {
+		slog.Info("webhooks re-dispatched to the queue", "count", sent)
+	}
 }
 
 func handleWebhookReconciler(ctx context.Context) error {
@@ -195,7 +215,9 @@ func runWebhookPoller() {
 
 // startLocalWorkers stands in for the confirmation_tracker and webhook_worker
 // Lambdas, which never run beside the local HTTP server, keeps the wallet
-// balance read model refreshed and fills the MPC keygen pre-parameters pool. It returns nil when no worker was started.
+// balance read model refreshed and fills the MPC keygen pre-parameters pool. With a
+// webhook queue the outbox is re-dispatched to it instead of delivered locally. It
+// returns nil when no worker was started.
 func startLocalWorkers(ctx context.Context) lifecycle.Workers {
 	if !facades.Config().GetBool("vault.local_workers.enabled") {
 		slog.Info("local workers disabled")
@@ -205,6 +227,7 @@ func startLocalWorkers(ctx context.Context) lifecycle.Workers {
 		ConfirmationInterval:   time.Duration(facades.Config().GetInt("vault.local_workers.confirmation_interval_seconds")) * time.Second,
 		DeliveryInterval:       time.Duration(facades.Config().GetInt("vault.local_workers.delivery_interval_seconds")) * time.Second,
 		DeliverOutbox:          facades.Config().GetString("vault.queues.webhook") == "",
+		RedispatchOutbox:       facades.Config().GetString("vault.queues.webhook") != "",
 		DepositScanChains:      localworkers.ParseChainList(facades.Config().GetString("vault.local_workers.deposit_scan_chains")),
 		DepositScanInterval:    time.Duration(facades.Config().GetInt("vault.local_workers.deposit_scan_interval_seconds")) * time.Second,
 		BalanceRefreshInterval: time.Duration(facades.Config().GetInt("vault.local_workers.balance_refresh_interval_seconds")) * time.Second,
@@ -216,11 +239,12 @@ func startLocalWorkers(ctx context.Context) lifecycle.Workers {
 		}
 	}
 	loops, err := localworkers.Start(ctx, cfg, localworkers.Workers{
-		Checker:   deposits,
-		Deliverer: webhooks,
-		Scanner:   deposits,
-		Balances:  container.MustMake[*refresh.WalletRefresher](),
-		PreParams: container.MustMake[*mpc.PreParamsPool](),
+		Checker:      deposits,
+		Deliverer:    webhooks,
+		Redispatcher: webhooks,
+		Scanner:      deposits,
+		Balances:     container.MustMake[*refresh.WalletRefresher](),
+		PreParams:    container.MustMake[*mpc.PreParamsPool](),
 	})
 	if err != nil {
 		slog.Error("local workers not started", "error", err)

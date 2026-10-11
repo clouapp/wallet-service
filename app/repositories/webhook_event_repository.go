@@ -117,6 +117,42 @@ func (r *WebhookEventRepository) FindDueForDelivery(ctx context.Context, limit i
 	return events, nil
 }
 
+// ClaimStaleForRedispatch takes up to limit pending events whose queue message was
+// lost, oldest first: the event knows its config and that config is active, it has
+// attempts left, and neither its insert nor any delivery attempt touched it for
+// staleAfter. Each claimed row counts one attempt and is touched now, so the next
+// run leaves it alone for another staleAfter and a row is claimed at most
+// max_attempts times. Concurrent runs skip each other's rows (SKIP LOCKED).
+func (r *WebhookEventRepository) ClaimStaleForRedispatch(ctx context.Context, staleAfter time.Duration, limit int) ([]models.WebhookEvent, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("limit must be positive")
+	}
+	if staleAfter <= 0 {
+		return nil, fmt.Errorf("stale period must be positive")
+	}
+	var events []models.WebhookEvent
+	if err := r.Query(ctx).Raw(`
+		UPDATE webhook_events
+		SET attempts = attempts + 1, updated_at = (NOW() AT TIME ZONE 'UTC')
+		WHERE id IN (
+			SELECT e.id FROM webhook_events e
+			JOIN webhook_configs c ON c.id = e.webhook_config_id AND c.is_active
+			WHERE e.delivery_status = ?
+			  AND e.attempts < e.max_attempts
+			  AND e.created_at <= (NOW() AT TIME ZONE 'UTC') - make_interval(secs => ?)
+			  AND (e.updated_at IS NULL OR e.updated_at <= (NOW() AT TIME ZONE 'UTC') - make_interval(secs => ?))
+			ORDER BY e.created_at
+			LIMIT ?
+			FOR UPDATE OF e SKIP LOCKED
+		)
+		RETURNING *`,
+		models.WebhookDeliveryPending, staleAfter.Seconds(), staleAfter.Seconds(), limit,
+	).Scan(&events); err != nil {
+		return nil, fmt.Errorf("claim stale webhook events: %w", err)
+	}
+	return events, nil
+}
+
 // MarkFailed sets delivery_status to failed and stores last_error.
 func (r *WebhookEventRepository) MarkFailed(ctx context.Context, eventID, errMsg string) error {
 	_, err := r.Query(ctx).Exec(

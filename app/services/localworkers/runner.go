@@ -19,6 +19,8 @@ import (
 const (
 	MinInterval       = time.Second
 	DeliveryBatchSize = 25
+	// RedispatchBatchSize bounds the outbox rows one re-dispatch run sends to the queue.
+	RedispatchBatchSize = 50
 )
 
 // dedicatedScanChains produce blocks too fast (Arbitrum about every 0.25 s, BSC 0.75 s,
@@ -52,15 +54,24 @@ type OutboxDeliverer interface {
 	DeliverPending(ctx context.Context, limit int) (int, error)
 }
 
+// OutboxRedispatcher sends to the webhook queue again the outbox rows whose queue
+// message was lost; it is the queue-mode counterpart of OutboxDeliverer.
+type OutboxRedispatcher interface {
+	RedispatchStale(ctx context.Context, limit int) (int, error)
+}
+
 // DepositScanner is the deposit_scanner Lambda body: scan new blocks of one chain,
 // record deposits to watched addresses, then refresh that chain's confirmations.
 // ReprocessDuePending retries the chain's pending blocks whose backoff elapsed.
 // SyncAddressCache rebuilds the chain's watched-address set when it drifted from the
 // database; the local scanner shares Redis with other processes that may overwrite it.
+// BackfillDepositEvents publishes again the deposit.confirmed deliveries those
+// chains' confirmed deposits never enqueued.
 type DepositScanner interface {
 	ScanLatestBlocks(ctx context.Context, chainID string) error
 	ReprocessDuePending(ctx context.Context, chainID string) (int, error)
 	SyncAddressCache(ctx context.Context, chainID string) (bool, error)
+	BackfillDepositEvents(ctx context.Context, chainIDs []string) (int, error)
 }
 
 // BalanceRefresher re-reads every wallet's balances from the chain into the read model.
@@ -74,14 +85,15 @@ type PreParamsFiller interface {
 	Run(ctx context.Context)
 }
 
-// Workers are the jobs Start runs; Deliverer, Scanner and Balances are only needed
-// when the configuration enables their loop. PreParams is optional.
+// Workers are the jobs Start runs; Deliverer, Redispatcher, Scanner and Balances
+// are only needed when the configuration enables their loop. PreParams is optional.
 type Workers struct {
-	Checker   WithdrawalConfirmationChecker
-	Deliverer OutboxDeliverer
-	Scanner   DepositScanner
-	Balances  BalanceRefresher
-	PreParams PreParamsFiller
+	Checker      WithdrawalConfirmationChecker
+	Deliverer    OutboxDeliverer
+	Redispatcher OutboxRedispatcher
+	Scanner      DepositScanner
+	Balances     BalanceRefresher
+	PreParams    PreParamsFiller
 }
 
 type Config struct {
@@ -90,8 +102,13 @@ type Config struct {
 	// DeliverOutbox is true only when no webhook queue is configured; with a queue the
 	// SQS worker owns delivery and the outbox must not deliver a second time.
 	DeliverOutbox bool
+	// RedispatchOutbox is true only when a webhook queue is configured: on the
+	// confirmation interval, outbox rows whose queue message was lost are sent to the
+	// queue again. It never runs beside DeliverOutbox.
+	RedispatchOutbox bool
 	// DepositScanChains opts chains into local block scanning. Their deposits are
-	// detected and confirmed, and deposit webhooks are sent, from this machine.
+	// detected and confirmed, and deposit webhooks are sent, from this machine; the
+	// confirmation loop also backfills the deposit.confirmed deliveries they lost.
 	DepositScanChains   []string
 	DepositScanInterval time.Duration
 	// BalanceRefreshInterval paces the wallet balance refresh; 0 turns it off.
@@ -104,6 +121,9 @@ func (c Config) validate() error {
 	}
 	if c.DeliverOutbox && c.DeliveryInterval < MinInterval {
 		return errors.New("delivery interval must be at least one second")
+	}
+	if c.DeliverOutbox && c.RedispatchOutbox {
+		return errors.New("the outbox is delivered locally or re-dispatched to a queue, never both")
 	}
 	if len(c.DepositScanChains) > 0 && c.DepositScanInterval < MinInterval {
 		return errors.New("deposit scan interval must be at least one second")
@@ -167,6 +187,9 @@ func Start(ctx context.Context, cfg Config, workers Workers) (*Loops, error) {
 	if cfg.DeliverOutbox && deliverer == nil {
 		return nil, errors.New("outbox deliverer is required")
 	}
+	if cfg.RedispatchOutbox && workers.Redispatcher == nil {
+		return nil, errors.New("outbox redispatcher is required")
+	}
 	if len(cfg.DepositScanChains) > 0 && scanner == nil {
 		return nil, errors.New("deposit scanner is required")
 	}
@@ -184,7 +207,16 @@ func Start(ctx context.Context, cfg Config, workers Workers) (*Loops, error) {
 		if err := checker.RunWithdrawalConfirmationCheck(ctx); err != nil {
 			slog.Error("local withdrawal confirmation check failed", "error", err)
 		}
+		if len(scanChains) > 0 {
+			backfillDepositEvents(ctx, scanner, scanChains)
+		}
 	})
+
+	if cfg.RedispatchOutbox {
+		loops.every(ctx, cfg.ConfirmationInterval, func() {
+			redispatchOutbox(ctx, workers.Redispatcher)
+		})
+	}
 
 	if cfg.DeliverOutbox {
 		loops.every(ctx, cfg.DeliveryInterval, func() {
@@ -235,12 +267,37 @@ func Start(ctx context.Context, cfg Config, workers Workers) (*Loops, error) {
 	slog.Info("local workers started",
 		"confirmation_interval", cfg.ConfirmationInterval.String(),
 		"deliver_outbox", cfg.DeliverOutbox,
+		"redispatch_outbox", cfg.RedispatchOutbox,
 		"delivery_interval", cfg.DeliveryInterval.String(),
 		"deposit_scan_chains", strings.Join(scanChains, ","),
 		"deposit_scan_interval", cfg.DepositScanInterval.String(),
 		"balance_refresh_interval", cfg.BalanceRefreshInterval.String(),
 	)
 	return loops, nil
+}
+
+// backfillDepositEvents repairs only the chains this machine confirms deposits for;
+// the others are confirmed, and backfilled, by the deployed confirmation_tracker.
+func backfillDepositEvents(ctx context.Context, scanner DepositScanner, chainIDs []string) {
+	republished, err := scanner.BackfillDepositEvents(ctx, chainIDs)
+	if err != nil {
+		slog.Error("local deposit event backfill failed", "error", err)
+		return
+	}
+	if republished > 0 {
+		slog.Info("local deposit events backfilled", "count", republished)
+	}
+}
+
+func redispatchOutbox(ctx context.Context, redispatcher OutboxRedispatcher) {
+	sent, err := redispatcher.RedispatchStale(ctx, RedispatchBatchSize)
+	if err != nil {
+		slog.Error("local webhook re-dispatch failed", "error", err)
+		return
+	}
+	if sent > 0 {
+		slog.Info("local webhooks re-dispatched to the queue", "count", sent)
+	}
 }
 
 func scanChain(ctx context.Context, scanner DepositScanner, chainID string) {
