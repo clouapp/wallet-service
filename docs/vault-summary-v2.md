@@ -236,7 +236,7 @@ go tool cover -html=coverage.out
 | `GET` | `/v1/addresses/:address` | Buscar endereço (qual user?) |
 | `GET` | `/v1/users/:ext_id/addresses` | Endereços de um usuário |
 | `POST` | `/v1/wallets/:id/withdrawals` | Solicitar saque |
-| `GET` | `/v1/transactions` | Listar transações (filtros) |
+| `GET` | `/v1/transactions` | Listar transações (filtros); com `updated_since`/`cursor`, feed de alterações (ver "Reconciliação") |
 | `GET` | `/v1/transactions/:id` | Detalhes da transação |
 | `GET` | `/v1/users/:ext_id/transactions` | Transações de um usuário |
 | `POST` | `/api/v1/webhooks` | Registrar webhook endpoint da conta do token |
@@ -281,6 +281,68 @@ configs legadas sem dono recebem tudo. Deduplicação por (config, tipo, transa�
   `amount_base_units` + `decimals`. O consumidor deve converter a partir de `amount_base_units`/`decimals` com
   aritmética decimal exata e rejeitar payloads sem esses campos.
 - Se os decimais do ativo não forem conhecidos, o evento não é emitido (fica no log) em vez de sair ambíguo.
+
+## Reconciliação: feed de alterações de `GET /api/v1/transactions`
+
+Para recuperar webhooks perdidos, `GET /api/v1/transactions` aceita `updated_since` (RFC 3339, com `Z` ou
+offset codificado na URL) e `cursor`. Com qualquer um dos dois, a lista deixa de ser paginada por offset:
+
+- ordem `(updated_at, id)` crescente, a partir de `updated_since` (inclusive) ou estritamente depois do
+  `cursor` (vale o que vier depois), com os mesmos filtros `chain`, `type`, `status` e `user_id`;
+- `limit` padrão 50, máximo 200 (acima disso é limitado); `offset` diferente de 0 é recusado;
+- o envelope continua `{"data","limit","offset","total"}` (com `offset: 0` e `total` contando as linhas a
+  partir do início da página) e ganha `next_cursor`, `null` na última página. Para a página seguinte,
+  repita a chamada com `cursor=<next_cursor>` e os mesmos filtros;
+- sem `updated_since` e sem `cursor`, nada muda (offset, mais recentes primeiro, sem `next_cursor`);
+- erros: 400 `invalid_request` com `updated_since must be an RFC 3339 timestamp`, `cursor is invalid`,
+  `limit must be a positive integer` ou `offset cannot be combined with updated_since or cursor`.
+
+Toda escrita numa transação (status, confirmações, falha, taxa, bloco) move `updated_at`, então a mesma
+transação reaparece depois de cada mudança: o crédito precisa ser idempotente por `transaction_id`.
+`updated_at` tem precisão de segundo e é gravado quando a escrita roda, não quando ela é confirmada no banco;
+uma mudança pode ficar visível depois que o leitor já passou daquele segundo. Por isso o reconciliador não
+deve guardar o cursor entre execuções: cada execução começa em `updated_since` = início da última execução
+completa menos alguns minutos e segue `next_cursor` até `null`.
+
+Cada item (também em `GET /api/v1/transactions/{id}` e `GET /api/v1/users/{external_id}/transactions`) traz,
+com os mesmos nomes e formatos do `data` dos webhooks `deposit.*`: `transaction_id`, `amount_base_units`,
+`decimals` e `required_confirmations`, além de `wallet_id`, `external_user_id`, `chain`, `tx_type`, `tx_hash`,
+`log_index`, `to_address`, `asset`, `confirmations`, `status` e `destination_tag` (XRP). Diferenças em relação
+ao webhook: `amount` continua em unidades base (não há `amount_format`), então quem reaproveita o parser do
+webhook remove `amount` antes de validar; `token_contract` vem `""` em vez de `null` quando não há contrato;
+`amount_base_units` e `decimals` são omitidos quando o valor não é um inteiro de unidades base ou os decimais
+do ativo não são conhecidos (o item não deve ser creditado).
+
+```json
+{
+  "data": [
+    {
+      "id": "7d3c9f3e-2b1a-4c5d-8e6f-0a1b2c3d4e5f",
+      "transaction_id": "7d3c9f3e-2b1a-4c5d-8e6f-0a1b2c3d4e5f",
+      "wallet_id": "cd8435dc-...",
+      "external_user_id": "user-42",
+      "chain": "polygon",
+      "tx_type": "deposit",
+      "tx_hash": "0x...",
+      "log_index": 3,
+      "to_address": "0x...",
+      "asset": "USDC",
+      "amount": "25000000",
+      "amount_base_units": "25000000",
+      "decimals": 6,
+      "confirmations": 128,
+      "required_confs": 128,
+      "required_confirmations": 128,
+      "status": "confirmed",
+      "updated_at": "2026-10-11 12:00:07"
+    }
+  ],
+  "limit": 200,
+  "next_cursor": null,
+  "offset": 0,
+  "total": 1
+}
+```
 
 ## Webhooks de saque
 

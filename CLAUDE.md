@@ -158,6 +158,11 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 - A frozen or archived account refuses every mutation with 403 `account_frozen`
   (`middleware` account status check, `policies.AccountAllowsRequest`); reads stay allowed.
   — guarded by the `*_gate_test.go` suites in `tests/feature/api/dashboard/accounts`.
+- The changes feed of `GET /api/v1/transactions` (`updated_since` / `cursor`) reads only the
+  token's account, like the offset list; a cursor is a position, never a grant, so another
+  account's cursor reads the caller's own rows. — guarded by
+  `TestChanges_StaysInsideTheTokenAccount` (`tests/feature/api/external/transactions`) and
+  `TestList_ChangedForAccount_StaysInsideTheAccount` (`tests/feature/repositories`).
 - **KNOWN VIOLATION** S3: some mutating wallet handlers (withdraw, consolidate, generate
   address, activate wallet…) check membership only, not a permission on the dashboard. The
   permission of each handler is a product decision (`.ai/guidelines/authorization.md`).
@@ -233,6 +238,13 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   reads `waas/app/facades`: change it to `github.com/macrowallets/waas/app/facades`.
 - Amounts are base-unit integers/strings (`pkg/amount`, `numeric` columns), never floats,
   and never negative. — guarded by `TestEnforce_Non_NegativeAmounts*`.
+- Every write to a `transactions` row moves `updated_at` (the ORM stamps it on each
+  `TransactionRepository` update: status, confirmations, failure, fee, block), and
+  `transactions_updated_at_id_index` covers `(updated_at, id)`: the changes feed of
+  `GET /api/v1/transactions` reads that order and returns a row again after each change.
+  `updated_at` is `TIMESTAMP(0)` (whole seconds, UTC). — guarded by `TestUpdates_Move_UpdatedAt`
+  (`tests/feature/repositories`) and
+  `TestTransactions_UpdatedAtIndex_CoversTheChangesFeedAndBackfillsNullStamps` (`tests/migrations`).
 - Seed data is test-only (`database/seeders`, registered by `WithSeeders(seeders.All)`;
   `docs/DEV_SEED_DATA.md`). Only `DatabaseSeeder` is registered, so `db:seed --seeder=ChainSeeder`
   is not available. The chain catalog that

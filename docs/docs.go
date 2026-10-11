@@ -3934,7 +3934,7 @@ const docTemplate = `{
                         "SignatureAuth": []
                     }
                 ],
-                "description": "Returns a paginated list of transactions with optional filters by chain, type, status, or user. Always scoped to the authenticated account.",
+                "description": "Returns a page of the account's transactions, optionally filtered by chain, type, status or user. Always scoped to the authenticated account.\n\nWithout updated_since or cursor it is an offset page, newest first (created_at descending).\n\nWith updated_since or cursor it reads the changes feed: transactions in (updated_at, id) ascending order, from updated_since (inclusive) or strictly after the cursor, whichever comes later, with the same filters; limit defaults to 50 and is capped at 200, offset is refused unless 0, and the body adds next_cursor (null on the last page). Pass next_cursor as cursor, with the same filters, to read the next page. Every change of a transaction (status, confirmations, failure, fee, block) moves its updated_at, so a transaction comes back after each change: credit idempotently by transaction_id.\n\nupdated_at has one-second precision and is stamped when the write runs, not when it commits, so a change can become visible after a reader has paged past its second. A reconciler should therefore start each run from updated_since = start of its last complete run minus a few minutes, and follow next_cursor until it is null, rather than keep a cursor between runs.",
                 "produces": [
                     "application/json"
                 ],
@@ -3963,6 +3963,7 @@ const docTemplate = `{
                     {
                         "enum": [
                             "pending",
+                            "confirming",
                             "confirmed",
                             "failed"
                         ],
@@ -3978,16 +3979,30 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "string",
+                        "format": "date-time",
+                        "example": "2026-10-11T12:00:00Z",
+                        "description": "Changes feed: first updated_at to return, RFC 3339 (URL-encode a + offset)",
+                        "name": "updated_since",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Changes feed: next_cursor of the previous page",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "example": 50,
-                        "description": "Max results (default 50)",
+                        "description": "Max results (default 50; the changes feed caps it at 200)",
                         "name": "limit",
                         "in": "query"
                     },
                     {
                         "type": "integer",
                         "example": 0,
-                        "description": "Pagination offset",
+                        "description": "Pagination offset (offset page only)",
                         "name": "offset",
                         "in": "query"
                     }
@@ -3997,6 +4012,12 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/transactions.List"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid updated_since, cursor, limit or offset on the changes feed (invalid_request)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
                     "401": {
@@ -7655,6 +7676,10 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 50
                 },
+                "next_cursor": {
+                    "type": "string",
+                    "example": "eyJ1cGRhdGVkX2F0IjoiMjAyNi0xMC0xMVQxMjowMDowMFoiLCJpZCI6IjdkM2M5ZjNlLTJiMWEtNGM1ZC04ZTZmLTBhMWIyYzNkNGU1ZiJ9"
+                },
                 "offset": {
                     "type": "integer",
                     "example": 0
@@ -7676,6 +7701,10 @@ const docTemplate = `{
                 },
                 "amount": {
                     "type": "string"
+                },
+                "amount_base_units": {
+                    "type": "string",
+                    "example": "1500000"
                 },
                 "asset": {
                     "type": "string"
@@ -7706,6 +7735,10 @@ const docTemplate = `{
                 },
                 "created_at": {
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "decimals": {
+                    "type": "integer",
+                    "example": 6
                 },
                 "destination_tag": {
                     "type": "integer"
@@ -7746,6 +7779,10 @@ const docTemplate = `{
                 "parent_transaction_id": {
                     "type": "string"
                 },
+                "required_confirmations": {
+                    "type": "integer",
+                    "example": 12
+                },
                 "required_confs": {
                     "type": "integer"
                 },
@@ -7763,6 +7800,10 @@ const docTemplate = `{
                 },
                 "token_contract": {
                     "type": "string"
+                },
+                "transaction_id": {
+                    "type": "string",
+                    "format": "uuid"
                 },
                 "tx_hash": {
                     "type": "string"
