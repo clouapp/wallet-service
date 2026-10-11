@@ -56,19 +56,19 @@ func (s *Service) loadCheckpoint(ctx context.Context, chainID string) (uint64, b
 	if err != nil {
 		return 0, false, fmt.Errorf("read %s checkpoint: %w", chainID, err)
 	}
-	s.persisted.Store(chainID, struct{}{})
-	if s.store != nil && !cacheFailed {
-		s.cacheCheckpoint(ctx, chainID, stored)
+	if s.store != nil && !cacheFailed && s.cacheCheckpoint(ctx, chainID, stored) {
+		s.cacheInSync.Store(chainID, struct{}{})
 	}
 	return stored, true, nil
 }
 
-// persistCachedCheckpoint copies a checkpoint read from Redis to the database once per
-// process, and again after a Redis write failed, so a cache written before the database
-// held checkpoints cannot reset the chain to the head when the key is lost. It returns
-// the block to resume after: the database one, which is never behind the cache.
+// persistCachedCheckpoint copies a checkpoint read from Redis to the database until
+// this process knows the two agree, so a cache written before the database held
+// checkpoints cannot reset the chain to the head when the key is lost, and a cache
+// left behind by a failed write is not resumed from. It returns the block to resume
+// after: the database one, which is never behind the cache.
 func (s *Service) persistCachedCheckpoint(ctx context.Context, chainID string, cached uint64) uint64 {
-	if _, done := s.persisted.Load(chainID); done {
+	if _, inSync := s.cacheInSync.Load(chainID); inSync {
 		return cached
 	}
 	stored, err := s.checkpoints.Advance(ctx, chainID, cached)
@@ -76,9 +76,8 @@ func (s *Service) persistCachedCheckpoint(ctx context.Context, chainID string, c
 		slog.Warn("deposit checkpoint not copied to the database; Redis keeps serving it", "chain", chainID, "block", cached, "error", err)
 		return cached
 	}
-	s.persisted.Store(chainID, struct{}{})
-	if stored != cached {
-		s.cacheCheckpoint(ctx, chainID, stored)
+	if stored == cached || s.cacheCheckpoint(ctx, chainID, stored) {
+		s.cacheInSync.Store(chainID, struct{}{})
 	}
 	return stored
 }
@@ -95,23 +94,25 @@ func (s *Service) saveCheckpoint(ctx context.Context, chainID string, block uint
 	if err != nil {
 		return fmt.Errorf("save %s checkpoint %d: %w", chainID, block, err)
 	}
-	s.persisted.Store(chainID, struct{}{})
 	if s.store == nil {
 		return nil
 	}
 	if err := s.store.Set(ctx, checkpointCacheKey(chainID), stored, 0); err != nil {
 		// Redis now trails the database. The next read compares the two, so a Redis
 		// that keeps refusing writes does not make every cycle repeat the same blocks.
-		s.persisted.Delete(chainID)
+		s.cacheInSync.Delete(chainID)
 		return fmt.Errorf("cache %s checkpoint %d: %w", chainID, stored, err)
 	}
+	s.cacheInSync.Store(chainID, struct{}{})
 	return nil
 }
 
-// cacheCheckpoint refreshes the Redis copy; a failure only costs the next read a
-// database query.
-func (s *Service) cacheCheckpoint(ctx context.Context, chainID string, block uint64) {
+// cacheCheckpoint refreshes the Redis copy and reports whether it was written; a
+// failure only costs the next read a database query.
+func (s *Service) cacheCheckpoint(ctx context.Context, chainID string, block uint64) bool {
 	if err := s.store.Set(ctx, checkpointCacheKey(chainID), block, 0); err != nil {
 		slog.Warn("deposit checkpoint cache not refreshed", "chain", chainID, "block", block, "error", err)
+		return false
 	}
+	return true
 }

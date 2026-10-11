@@ -262,12 +262,12 @@ func TestScan_LatestBlocks_KeepsAdvancingWhenRedisRefusesWrites(t *testing.T) {
 	f := newCheckpointFixture(t).withCheckpoint(t, checkpointTestStart)
 	f.svc.store = readOnlyCheckpointCache{redisStore: f.svc.store.(redisStore)}
 
-	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
-		t.Fatal(err)
-	}
-	f.adapter.head = checkpointTestHead + 8
-	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
-		t.Fatal(err)
+	// The head moves, stays, then moves again: no cycle may resume from the stale copy.
+	for _, head := range []uint64{checkpointTestHead, checkpointTestHead, checkpointTestHead + 8} {
+		f.adapter.head = head
+		if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	if got := f.adapter.calls.Load(); got != 16 {

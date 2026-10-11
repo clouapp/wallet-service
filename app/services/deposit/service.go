@@ -44,7 +44,7 @@ type Service struct {
 	store                RedisStore
 	checkpoints          CheckpointStore
 	cache                contractscache.Driver
-	persisted            sync.Map
+	cacheInSync          sync.Map // chain IDs whose Redis checkpoint this process knows matches the database
 	registry             *chain.Registry
 	webhookSvc           *webhook.Service
 	addressRepo          *repositories.AddressRepository
