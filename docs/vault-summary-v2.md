@@ -281,6 +281,12 @@ configs legadas sem dono recebem tudo. Deduplicação por (config, tipo, transa�
   `amount_base_units` + `decimals`. O consumidor deve converter a partir de `amount_base_units`/`decimals` com
   aritmética decimal exata e rejeitar payloads sem esses campos.
 - Se os decimais do ativo não forem conhecidos, o evento não é emitido (fica no log) em vez de sair ambíguo.
+- XRP (`xrp`/`txrp`): `destination_tag` (inteiro 0..4294967295) vem ao lado de `to_address` quando o pagamento
+  recebido tinha tag, e também fica em `transactions.destination_tag`; é omitido sem tag e nas demais chains. Um
+  depósito XRP é um `Payment` com resultado `tesSUCCESS` num ledger validado, pelo valor de `delivered_amount` em drops
+  (um pagamento parcial credita o que chegou, não o `Amount` pedido); pagamentos `tec…`, moedas emitidas (IOU),
+  pagamentos de uma conta para si mesma e os demais tipos de transação não são depósitos. A varredura periódica só roda com
+  `xrp`/`txrp` em `LOCAL_DEPOSIT_SCAN_CHAINS`.
 
 ## Webhooks de saque
 
