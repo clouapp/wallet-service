@@ -114,9 +114,11 @@ func (s *TransactionRepositoryTestSuite) TestFind_ConfirmedDepositsMissingEvent_
 
 	s.enqueuedFor(walletCfg, depositConfirmedType, ofWallet.ID)
 	legacy := s.webhookConfigCreated([]string{depositConfirmedType}, nil, nil, 2*time.Hour)
+	_, err = facades.Orm().Query().Exec(`UPDATE webhook_configs SET created_at = NULL WHERE id = ?`, legacy.ID)
+	s.Require().NoError(err)
 	rows, err = s.repo.FindConfirmedDepositsMissingEvent(ctx, depositConfirmedType, now.Add(-48*time.Hour), now, nil, 10)
 	s.Require().NoError(err)
-	s.Len(rows, 2, "a legacy config without an owner sees every wallet (%s)", legacy.ID)
+	s.Len(rows, 2, "a legacy config without an owner, or a creation time, sees every wallet (%s)", legacy.ID)
 }
 
 func (s *TransactionRepositoryTestSuite) TestFind_ConfirmedDepositsMissingEvent_OldestConfirmationFirstUpToTheLimit() {

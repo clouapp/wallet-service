@@ -226,7 +226,8 @@ func (r *TransactionRepository) FindConfirmedOutboundWithoutFee(ctx context.Cont
 // received eventType for and never did, oldest confirmation first. A config counts
 // when it is active, subscribes to eventType, may see the deposit's wallet (its
 // wallet, its account, or a legacy config without either) and was created no later
-// than the confirmation; it never got the event when it has no webhook_events row for
+// than the confirmation (a config without a creation time counts as older); it never
+// got the event when it has no webhook_events row for
 // (config, eventType, deposit id). These are the rules webhook.EnqueueScoped applies
 // to an event with OccurredAt, so republishing a returned deposit fills the gap.
 func (r *TransactionRepository) FindConfirmedDepositsMissingEvent(ctx context.Context, eventType string, from, to time.Time, chainIDs []string, limit int) ([]models.Transaction, error) {
@@ -246,7 +247,7 @@ func (r *TransactionRepository) FindConfirmedDepositsMissingEvent(ctx context.Co
 			  AND position(? IN c.events) > 0
 			  AND (c.wallet_id IS NULL OR c.wallet_id = transactions.wallet_id)
 			  AND (c.account_id IS NULL OR c.account_id = w.account_id)
-			  AND c.created_at <= (transactions.confirmed_at AT TIME ZONE 'UTC')
+			  AND (c.created_at IS NULL OR c.created_at <= (transactions.confirmed_at AT TIME ZONE 'UTC'))
 			  AND NOT EXISTS (
 				SELECT 1 FROM webhook_events e
 				WHERE e.webhook_config_id = c.id AND e.event_type = ? AND e.subject_id = transactions.id::text

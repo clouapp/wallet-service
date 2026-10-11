@@ -136,18 +136,18 @@ func handleDepositScan(ctx context.Context, event types.DepositScanEvent) error 
 	return errors.Join(scanErr, pendingErr)
 }
 
-// handleConfirmationTracker advances confirmations, repairs the withdrawal and
-// deposit events that were lost, then sends to the webhook queue again the outbox
-// rows whose queue message was lost. It runs every minute, so it is where the outbox
-// re-dispatch lives: the webhook_worker only runs when a message arrives and the
-// webhook_reconciler only once a day.
+// handleConfirmationTracker sends to the webhook queue again the outbox rows whose
+// queue message was lost, then advances confirmations and repairs the withdrawal and
+// deposit events that were lost. It runs every minute, so it is where the outbox
+// re-dispatch lives (the webhook_worker only runs when a message arrives, the
+// webhook_reconciler once a day); the re-dispatch goes first so a slow chain cannot
+// push it past the function's timeout.
 func handleConfirmationTracker(ctx context.Context) error {
 	slog.Info("confirmation tracker triggered")
-	err := deposits.RunConfirmationCheck(ctx)
 	if facades.Config().GetString("vault.queues.webhook") != "" {
 		redispatchWebhooks(ctx)
 	}
-	return err
+	return deposits.RunConfirmationCheck(ctx)
 }
 
 func redispatchWebhooks(ctx context.Context) {
