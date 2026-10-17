@@ -342,7 +342,7 @@ func TestStart_Scans_EveryConfiguredChainAndKeepsGoingAfterErrors(t *testing.T) 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scanner := &recordingScanner{err: errors.New("rate limited"), progress: progressChan()}
-	chains := []string{"sol", "tsol"}
+	chains := []string{"eth", "btc"}
 	cfg := Config{ConfirmationInterval: time.Hour, DepositScanChains: chains, DepositScanInterval: MinInterval}
 
 	if _, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: scanner}); err != nil {
@@ -360,7 +360,7 @@ func TestStart_Scans_EveryConfiguredChainAndKeepsGoingAfterErrors(t *testing.T) 
 		t.Fatalf("expected two rounds over both chains, got %v", got)
 	}
 	for i, chainID := range got[:4] {
-		if want := []string{"sol", "tsol"}[i%2]; chainID != want {
+		if want := []string{"eth", "btc"}[i%2]; chainID != want {
 			t.Fatalf("scan %d chain %q, want %q (all: %v)", i, chainID, want, got)
 		}
 	}
