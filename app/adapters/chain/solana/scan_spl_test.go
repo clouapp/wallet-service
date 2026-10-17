@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -80,9 +81,10 @@ func serveVersionedSolanaFixture(t *testing.T, fixture string, tokens ...types.T
 	return live, &requests
 }
 
+// readSolanaFixture reads a recorded answer from testdata/solana, and nothing outside it.
 func readSolanaFixture(t *testing.T, fixture string) []byte {
 	t.Helper()
-	body, err := os.ReadFile(filepath.Join("testdata", "solana", fixture))
+	body, err := fs.ReadFile(os.DirFS(filepath.Join("testdata", "solana")), fixture)
 	if err != nil {
 		t.Fatal(err)
 	}
