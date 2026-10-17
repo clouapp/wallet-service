@@ -15,7 +15,7 @@ func TestEVM_Native_TransferReserveIsTheBuiltNativeTransferFee(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	adapter := newGasTestAdapter(t, node)
 
-	fee, minimumRemaining, err := adapter.NativeTransferReserve(context.Background())
+	fee, minimumRemaining, err := adapter.NativeTransferReserveTo(context.Background(), gasTestTo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,8 +30,8 @@ func TestEVM_Native_TransferReserveIsTheBuiltNativeTransferFee(t *testing.T) {
 	if fee.Cmp(built) != 0 {
 		t.Fatalf("reserve %s wei, but the built native transfer can spend %s wei", fee, built)
 	}
-	// 1 gwei suggested × 2 buffer × 21000.
-	if want := big.NewInt(2 * 1_000_000_000 * 21_000); fee.Cmp(want) != 0 {
+	// 1 gwei suggested × 2 buffer × (21000 estimate × 120 %).
+	if want := big.NewInt(2 * 1_000_000_000 * 25_200); fee.Cmp(want) != 0 {
 		t.Fatalf("fee %s, want %s", fee, want)
 	}
 	if minimumRemaining == nil || minimumRemaining.Sign() != 0 {
@@ -42,7 +42,7 @@ func TestEVM_Native_TransferReserveIsTheBuiltNativeTransferFee(t *testing.T) {
 func TestEVM_Native_TransferReserveFailsWithoutAUsableGasPrice(t *testing.T) {
 	zero := mocks.NewFakeEVMNode(t)
 	zero.GasPriceHex = "0x0"
-	if _, _, err := newGasTestAdapter(t, zero).NativeTransferReserve(context.Background()); err == nil {
+	if _, _, err := newGasTestAdapter(t, zero).NativeTransferReserveTo(context.Background(), gasTestTo); err == nil {
 		t.Fatal("a zero gas price must not reserve zero gas")
 	}
 
@@ -51,7 +51,7 @@ func TestEVM_Native_TransferReserveFailsWithoutAUsableGasPrice(t *testing.T) {
 	}))
 	defer down.Close()
 	adapter := NewEVMLive(EVMConfig{ChainIDStr: "polygon", NativeSymbol: "matic", RPCURL: down.URL})
-	if _, _, err := adapter.NativeTransferReserve(context.Background()); err == nil {
+	if _, _, err := adapter.NativeTransferReserveTo(context.Background(), gasTestTo); err == nil {
 		t.Fatal("a failed eth_gasPrice must fail the reserve")
 	}
 }

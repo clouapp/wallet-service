@@ -387,7 +387,7 @@ func (s *service) quoteSolanaFee(ctx context.Context, adapter types.Chain, plan 
 		details.AccountCreationLamports.Add(details.AccountCreationLamports, transferQuote.AccountCreationLamports)
 	}
 	if token == nil {
-		reserve, err := loadNativeReserve(ctx, adapter, plan.Asset)
+		reserve, err := loadNativeReserve(ctx, adapter, plan.Asset, reserveRecipients{withdrawal: target.toAddress, base: target.baseAddress})
 		if err != nil {
 			return fmt.Errorf("%w: %v", ErrFeeQuoteUnavailable, err)
 		}

@@ -22,7 +22,6 @@ import (
 const evmGasPriceMultiplier = int64(2)
 
 const (
-	evmNativeTransferGasLimit = uint64(21_000)
 	// evmERC20TransferGasFloor is the lowest limit ever encoded for a token
 	// transfer, even when eth_estimateGas reports less.
 	evmERC20TransferGasFloor = uint64(65_000)
@@ -251,9 +250,9 @@ func (a *EVMLive) EstimateFee(ctx context.Context, req types.TransferRequest) (*
 }
 
 // EstimateTransferGasLimit returns the gas limit BuildTransfer encodes for req.
-// A caller-supplied req.GasLimit wins; native transfers use NativeTransferGasLimit
-// (the fixed transfer limit except on Arbitrum); token transfers simulate
-// transfer(to, amount) from req.From with
+// A caller-supplied req.GasLimit wins; native transfers estimate the transfer of
+// req.Amount from req.From to req.To (nativeTransferGasLimit); token transfers
+// simulate transfer(to, amount) from req.From with
 // eth_estimateGas, add evmERC20GasMarginPercent and never go below
 // evmERC20TransferGasFloor. A failed or zero estimate returns
 // ErrGasEstimateFailed instead of guessing, so the caller cannot broadcast.
@@ -262,7 +261,7 @@ func (a *EVMLive) EstimateTransferGasLimit(ctx context.Context, req types.Transf
 		return *req.GasLimit, nil
 	}
 	if req.Token == nil {
-		return a.NativeTransferGasLimit(ctx, req.From, req.To)
+		return a.nativeTransferGasLimit(ctx, req.From, req.To, req.Amount)
 	}
 	if err := validateTokenTransferForEstimate(req); err != nil {
 		return 0, err
@@ -400,12 +399,17 @@ func (a *EVMLive) EstimateGasPrice(ctx context.Context) (*big.Int, error) {
 	return a.fee.ScaleGasPrice(bufferedEVMGasPrice(hexToBigInt(hexGas))), nil
 }
 
-// NativeTransferReserve is the most a native transfer built now can spend on fees:
-// BuildTransfer encodes a legacy tx with the native gas limit at the buffered gas
-// price (EstimateGasPrice), so the fee is limit × price, plus the buffered L1 data
-// fee on OP-stack networks. EVM accounts keep no minimum balance. The sweep planner
-// adds the fee to native withdrawals and subtracts it from native sweeps.
-func (a *EVMLive) NativeTransferReserve(ctx context.Context) (fee, minimumRemaining *big.Int, err error) {
+// NativeTransferReserveTo is the most a native transfer to `to` built now can
+// spend on fees: BuildTransfer encodes a legacy tx with the estimated native gas
+// limit at the buffered gas price (EstimateGasPrice), so the fee is limit × price,
+// plus the buffered L1 data fee on OP-stack networks. The limit depends on the
+// recipient (creating its account costs more where the network prices state
+// creation) and not on the sender, so it is estimated from the node's default
+// sender; an empty `to` is a recipient not known yet, priced as one that does not
+// exist. EVM accounts keep no minimum balance. The sweep planner adds the fee to
+// native withdrawals (to their recipient) and subtracts it from native sweeps (to
+// the base address).
+func (a *EVMLive) NativeTransferReserveTo(ctx context.Context, to string) (fee, minimumRemaining *big.Int, err error) {
 	gasPrice, err := a.EstimateGasPrice(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -413,11 +417,11 @@ func (a *EVMLive) NativeTransferReserve(ctx context.Context) (fee, minimumRemain
 	if gasPrice == nil || gasPrice.Sign() <= 0 {
 		return nil, nil, fmt.Errorf("gas price: node returned no usable gas price")
 	}
-	gasLimit, err := a.NativeTransferGasLimit(ctx, "", "")
+	gasLimit, err := a.nativeTransferGasLimit(ctx, "", to, nil)
 	if err != nil {
 		return nil, nil, err
 	}
-	fee, err = a.transferFee(ctx, types.TransferRequest{GasPrice: gasPrice}, gasLimit, gasPrice)
+	fee, err = a.transferFee(ctx, types.TransferRequest{To: to, GasPrice: gasPrice}, gasLimit, gasPrice)
 	if err != nil {
 		return nil, nil, err
 	}

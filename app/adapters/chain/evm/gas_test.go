@@ -19,6 +19,9 @@ const (
 	gasTestTo       = "0x53bc147071251db8294b55a303a4570dab595178"
 	gasTestContract = "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582"
 	gasTestNetwork  = int64(80002)
+	// fakeNodeNativeLimit is FakeEVMNode's plain transfer estimate (21000) padded
+	// by evmNativeGasMarginPercent.
+	fakeNodeNativeLimit = uint64(25_200)
 )
 
 var gasTestToken = types.Token{Symbol: "USDC", Contract: gasTestContract, Decimals: 6, ChainID: "polygon"}
@@ -145,7 +148,7 @@ func TestEVM_BuildTransfer_TokenZeroEstimateIsAnError(t *testing.T) {
 	}
 }
 
-func TestEVM_BuildTransfer_NativeKeepsFixedLimitWithoutEstimate(t *testing.T) {
+func TestEVM_BuildTransfer_NativeEncodesThePaddedEstimate(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
 	adapter := newGasTestAdapter(t, node)
 
@@ -155,11 +158,11 @@ func TestEVM_BuildTransfer_NativeKeepsFixedLimitWithoutEstimate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildTransfer: %v", err)
 	}
-	if got := builtGasLimit(t, unsigned); got != evmNativeTransferGasLimit {
-		t.Fatalf("native gas_limit = %d, want %d", got, evmNativeTransferGasLimit)
+	if got := builtGasLimit(t, unsigned); got != fakeNodeNativeLimit {
+		t.Fatalf("native gas_limit = %d, want the 21000 estimate × 120%% = %d", got, fakeNodeNativeLimit)
 	}
-	if calls := node.CallsTo("eth_estimateGas"); len(calls) != 0 {
-		t.Fatalf("native transfers must not call eth_estimateGas, got %d", len(calls))
+	if calls := node.CallsTo("eth_estimateGas"); len(calls) != 1 {
+		t.Fatalf("a native transfer is estimated on every network, got %d eth_estimateGas calls", len(calls))
 	}
 }
 
