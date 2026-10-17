@@ -24,9 +24,12 @@ const (
 	privateKeyEnvironmentVariable = "E2E_FUNDER_PRIVATE_KEY"
 	defaultSendTimeout            = 180 * time.Second
 	receiptPollInterval           = 2 * time.Second
-	nativeTransferGasLimit        = uint64(21_000)
-	etherDecimals                 = 18
-	gasPriceMultiplier            = int64(2)
+	// nativeGasMarginPercent pads the node's estimate of the funding transfer: the
+	// same 20 % the wallet service adds to its native transfers.
+	nativeGasMarginPercent = uint64(120)
+	percentDenominator     = uint64(100)
+	etherDecimals          = 18
+	gasPriceMultiplier     = int64(2)
 )
 
 func main() {
@@ -126,7 +129,12 @@ func send(args []string) error {
 	if err != nil {
 		return err
 	}
-	fee := new(big.Int).Mul(new(big.Int).SetUint64(nativeTransferGasLimit), feeCap)
+	to := common.HexToAddress(*destination)
+	gasLimit, err := nativeTransferGasLimit(ctx, client, sender, to, value)
+	if err != nil {
+		return err
+	}
+	fee := new(big.Int).Mul(new(big.Int).SetUint64(gasLimit), feeCap)
 	required := new(big.Int).Add(new(big.Int).Set(value), fee)
 	balance, err := client.BalanceAt(ctx, sender, nil)
 	if err != nil {
@@ -140,13 +148,12 @@ func send(args []string) error {
 		)
 	}
 
-	to := common.HexToAddress(*destination)
 	unsigned := types.NewTx(&types.DynamicFeeTx{
 		ChainID:   chainID,
 		Nonce:     nonce,
 		GasTipCap: tipCap,
 		GasFeeCap: feeCap,
-		Gas:       nativeTransferGasLimit,
+		Gas:       gasLimit,
 		To:        &to,
 		Value:     value,
 	})
@@ -162,6 +169,26 @@ func send(args []string) error {
 	}
 	fmt.Println(signed.Hash().Hex())
 	return nil
+}
+
+// gasEstimator is the part of the node client a transfer is sized with.
+type gasEstimator interface {
+	EstimateGas(ctx context.Context, call ethereum.CallMsg) (uint64, error)
+}
+
+// nativeTransferGasLimit is the node's estimate of sending value from → to, padded
+// by nativeGasMarginPercent. There is no fixed fallback: since Sepolia priced state
+// creation (2026-10) a transfer that creates its recipient's account needs about
+// 207,000 gas, and one sent with 21000 is mined out of gas with its fee paid.
+func nativeTransferGasLimit(ctx context.Context, client gasEstimator, from, to common.Address, value *big.Int) (uint64, error) {
+	estimate, err := client.EstimateGas(ctx, ethereum.CallMsg{From: from, To: &to, Value: value})
+	if err != nil {
+		return 0, fmt.Errorf("estimate transfer gas: %w", err)
+	}
+	if estimate == 0 {
+		return 0, fmt.Errorf("estimate transfer gas: node returned no gas")
+	}
+	return estimate * nativeGasMarginPercent / percentDenominator, nil
 }
 
 func bufferedGasPrice(suggested *big.Int) *big.Int {
