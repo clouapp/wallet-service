@@ -80,3 +80,46 @@ func (s *TokenRepositoryTestSuite) TestFind_By_ChainAndContractIgnoresStatus() {
 	s.ErrorIs(err, models.ErrRepositoryNotFound)
 	s.Nil(blank)
 }
+
+func (s *TokenRepositoryTestSuite) TestFind_AllByChainID_ListsEveryStatusOfThatChainOnly() {
+	ctx := context.Background()
+	s.Require().NoError(s.chains.Create(ctx, &models.Chain{
+		ID: "sol", Name: "Solana", AdapterType: models.AdapterTypeSolana, NativeSymbol: "sol",
+		NativeDecimals: 9, RpcURL: "enc", RequiredConfirmations: 1, Status: "active",
+	}))
+	for _, token := range []*models.Token{
+		{ID: uuid.New(), ChainID: "eth", Symbol: "USDT", Name: "Tether", ContractAddress: "0xdef", Decimals: 6, Status: models.TokenStatusInactive},
+		{ID: uuid.New(), ChainID: "eth", Symbol: "USDC", Name: "USD Coin", ContractAddress: "0xabc", Decimals: 6, Status: models.TokenStatusActive},
+		{ID: uuid.New(), ChainID: "sol", Symbol: "USDC", Name: "USD Coin", ContractAddress: "mint", Decimals: 6, Status: models.TokenStatusActive},
+	} {
+		s.Require().NoError(s.repo.Create(ctx, token))
+	}
+
+	found, err := s.repo.FindAllByChainID(ctx, "eth")
+	s.Require().NoError(err)
+	s.Require().Len(found, 2)
+	s.Equal("USDC", found[0].Symbol)
+	s.Equal("USDT", found[1].Symbol)
+	s.Equal(models.TokenStatusInactive, found[1].Status)
+
+	none, err := s.repo.FindAllByChainID(ctx, "polygon")
+	s.Require().NoError(err)
+	s.Empty(none)
+}
+
+func (s *TokenRepositoryTestSuite) TestSet_Status_WritesTheStatusOrReportsAMiss() {
+	ctx := context.Background()
+	token := &models.Token{ID: uuid.New(), ChainID: "eth", Symbol: "USDC", Name: "USD Coin", ContractAddress: "0xabc", Decimals: 6, Status: models.TokenStatusActive}
+	s.Require().NoError(s.repo.Create(ctx, token))
+
+	s.Require().NoError(s.repo.SetStatus(ctx, token.ID, models.TokenStatusInactive))
+	reloaded, err := s.repo.FindByID(ctx, token.ID)
+	s.Require().NoError(err)
+	s.Equal(models.TokenStatusInactive, reloaded.Status)
+	active, err := s.repo.FindByChainID(ctx, "eth")
+	s.Require().NoError(err)
+	s.Empty(active)
+
+	s.ErrorIs(s.repo.SetStatus(ctx, uuid.New(), models.TokenStatusActive), models.ErrRepositoryNotFound)
+	s.Error(s.repo.SetStatus(ctx, token.ID, "paused"))
+}

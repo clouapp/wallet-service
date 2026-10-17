@@ -5,6 +5,13 @@ import (
 	"github.com/goravel/framework/database/orm"
 )
 
+// Token statuses: only an active token is registered on its chain adapter (deposits,
+// balances, withdrawals); an inactive row stays for the history that names it.
+const (
+	TokenStatusActive   = "active"
+	TokenStatusInactive = "inactive"
+)
+
 type Token struct {
 	orm.Model
 	ID              uuid.UUID `gorm:"type:uuid;primary_key"`

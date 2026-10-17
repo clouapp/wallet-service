@@ -252,3 +252,14 @@ func TestSecrets_Migrate_SharesSignature(t *testing.T) {
 		t.Fatalf("flags = %v, want from-endpoint, from-profile and apply", names)
 	}
 }
+
+func TestChains_AlignTokens_Signature(t *testing.T) {
+	cmd := NewChainsAlignTokens(nil)
+	if cmd.Signature() != "chains:align-tokens" {
+		t.Fatalf("unexpected: %s", cmd.Signature())
+	}
+	ext := cmd.Extend()
+	if ext.Category != "chains" || len(ext.Flags) != 1 || ext.Flags[0].(*command.BoolFlag).Name != "apply" {
+		t.Fatalf("expected the chains category and one --apply flag, got %+v", ext)
+	}
+}

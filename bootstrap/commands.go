@@ -89,6 +89,7 @@ func Commands() []console.Command {
 			Profile: configuredChainProfile,
 		})),
 		commands.NewChainsAddMissing(chainregistry.NewMissingChains(seedMissingAddedChains)),
+		commands.NewChainsAlignTokens(chainregistry.NewNetworkTokens(alignNetworkTokens)),
 		commands.NewWithdrawPreflight(commands.WithdrawPreflightDeps{
 			Sweep:       container.MustMake[*sweep.Box]().Service,
 			Chains:      registry,
@@ -134,6 +135,22 @@ func seedMissingAddedChains(ctx context.Context, apply bool) (chainregistry.Adde
 	}
 	return chainregistry.AddedChainsPlan{
 		Chains: chains, Tokens: plan.Tokens, Resources: plan.Resources, Skipped: plan.Skipped,
+	}, nil
+}
+
+func alignNetworkTokens(ctx context.Context, apply bool) (chainregistry.TokenAlignmentPlan, error) {
+	alignment, err := chaincatalog.New(appfacades.Config(), appfacades.Crypt()).AlignNetworkTokens(ctx, apply)
+	if err != nil {
+		return chainregistry.TokenAlignmentPlan{}, err
+	}
+	changes := make([]chainregistry.TokenChange, len(alignment.Changes))
+	for i, change := range alignment.Changes {
+		changes[i] = chainregistry.TokenChange{
+			ChainID: change.ChainID, Network: change.Network, Symbol: change.Symbol, Contract: change.Contract, Action: change.Action,
+		}
+	}
+	return chainregistry.TokenAlignmentPlan{
+		Changes: changes, Unknown: alignment.Unknown, Mainnet: alignment.Mainnet, Missing: alignment.Missing,
 	}, nil
 }
 
