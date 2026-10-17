@@ -22,7 +22,7 @@ const (
 	// 0x2540be400 = 10_000_000_000 wei quoted by the GasPriceOracle.
 	feeTestL1FeeHex = "0x2540be400"
 	feeTestL1Fee    = int64(10_000_000_000)
-	// 0x54e5 = 21_733 gas, Arbitrum Sepolia's estimate for a zero-value transfer.
+	// 0x54e5 = 21_733 gas, an Arbitrum Sepolia native transfer estimate.
 	feeTestArbitrumNativeEstimateHex = "0x54e5"
 	feeTestArbitrumNativeEstimate    = uint64(21_733)
 	feeTestGasPrice                  = int64(1_000_000_000)
@@ -54,13 +54,13 @@ func bufferedL1Fee() *big.Int {
 func TestBase_Native_TransferReserveAddsTheBufferedL1DataFee(t *testing.T) {
 	adapter, node := newBaseSepoliaAdapter(t)
 
-	fee, minimumRemaining, err := adapter.NativeTransferReserve(context.Background())
+	fee, minimumRemaining, err := adapter.NativeTransferReserveTo(context.Background(), gasTestTo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := new(big.Int).Add(bufferedL2Fee(evmNativeTransferGasLimit), bufferedL1Fee())
+	want := new(big.Int).Add(bufferedL2Fee(fakeNodeNativeLimit), bufferedL1Fee())
 	if fee.Cmp(want) != 0 {
-		t.Fatalf("reserve %s wei, want 21000 × 2 gwei + 2 × L1 fee = %s wei", fee, want)
+		t.Fatalf("reserve %s wei, want 25200 × 2 gwei + 2 × L1 fee = %s wei", fee, want)
 	}
 	if minimumRemaining.Sign() != 0 {
 		t.Fatalf("EVM keeps no minimum balance, got %s", minimumRemaining)
@@ -134,7 +134,7 @@ func TestBase_Estimate_FeeIncludesTheL1DataFee(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := new(big.Int).Add(bufferedL2Fee(evmNativeTransferGasLimit), bufferedL1Fee())
+	want := new(big.Int).Add(bufferedL2Fee(fakeNodeNativeLimit), bufferedL1Fee())
 	if estimate.Fee != fmtUnits(want, 18) {
 		t.Fatalf("fee %s ETH, want %s", estimate.Fee, fmtUnits(want, 18))
 	}
@@ -144,20 +144,20 @@ func TestBase_L1_DataFeeFailureStopsTheReserve(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t) // no L1FeeHex: the oracle call reverts
 	adapter := newNetworkAdapter(node, models.ChainBase, models.NativeETH, models.EVMNetworkIDBaseSepolia)
 
-	if _, _, err := adapter.NativeTransferReserve(context.Background()); !errors.Is(err, chain.ErrGasEstimateFailed) {
+	if _, _, err := adapter.NativeTransferReserveTo(context.Background(), gasTestTo); !errors.Is(err, chain.ErrGasEstimateFailed) {
 		t.Fatalf("an unquotable L1 fee must fail the reserve, got %v", err)
 	}
 	zero := mocks.NewFakeEVMNode(t)
 	zero.L1FeeHex = "0x0"
 	adapter = newNetworkAdapter(zero, models.ChainBase, models.NativeETH, models.EVMNetworkIDBaseMainnet)
-	if _, _, err := adapter.NativeTransferReserve(context.Background()); !errors.Is(err, chain.ErrGasEstimateFailed) {
+	if _, _, err := adapter.NativeTransferReserveTo(context.Background(), gasTestTo); !errors.Is(err, chain.ErrGasEstimateFailed) {
 		t.Fatalf("a zero L1 fee quote must not reserve nothing, got %v", err)
 	}
 }
 
 func TestArbitrum_Native_TransfersUseThePaddedNodeEstimate(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
-	node.EstimateGasHex = feeTestArbitrumNativeEstimateHex
+	node.NativeTransferGasHex = feeTestArbitrumNativeEstimateHex
 	adapter := newNetworkAdapter(node, models.ChainArbitrum, models.NativeETH, models.EVMNetworkIDArbitrumSepolia)
 	wantLimit := feeTestArbitrumNativeEstimate * evmArbitrumNativeGasMarginPercent / percentDenominator
 
@@ -170,7 +170,7 @@ func TestArbitrum_Native_TransfersUseThePaddedNodeEstimate(t *testing.T) {
 	if got := builtGasLimit(t, unsigned); got != wantLimit {
 		t.Fatalf("native gas limit %d, want %d (estimate × %d%%); 21000 is rejected on Arbitrum", got, wantLimit, evmArbitrumNativeGasMarginPercent)
 	}
-	fee, _, err := adapter.NativeTransferReserve(context.Background())
+	fee, _, err := adapter.NativeTransferReserveTo(context.Background(), gasTestTo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,14 +188,14 @@ func TestArbitrum_Native_TransfersUseThePaddedNodeEstimate(t *testing.T) {
 	if err := json.Unmarshal(node.CallsTo("eth_estimateGas")[0].Params[0], &estimate); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.EqualFold(estimate.From, gasTestFrom) || !strings.EqualFold(estimate.To, gasTestTo) || estimate.Value != "0x0" {
-		t.Fatalf("the native estimate must be a zero-value transfer between the real addresses, got %+v", estimate)
+	if !strings.EqualFold(estimate.From, gasTestFrom) || !strings.EqualFold(estimate.To, gasTestTo) || estimate.Value != "0x1" {
+		t.Fatalf("the native estimate must be the real transfer (addresses and value), got %+v", estimate)
 	}
 }
 
 func TestArbitrum_Native_SweepEncodesTheLimitItReserved(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
-	node.EstimateGasHex = feeTestArbitrumNativeEstimateHex
+	node.NativeTransferGasHex = feeTestArbitrumNativeEstimateHex
 	adapter := newNetworkAdapter(node, models.ChainArbitrum, models.NativeETH, models.EVMNetworkIDArbitrumMainnet)
 	balance := big.NewInt(1_000_000_000_000_000)
 
@@ -208,14 +208,14 @@ func TestArbitrum_Native_SweepEncodesTheLimitItReserved(t *testing.T) {
 	if new(big.Int).Add(value, fee).Cmp(balance) != 0 {
 		t.Fatalf("value %s + gas %s must equal the balance %s", value, fee, balance)
 	}
-	if builtGasLimit(t, &txs[0]) <= evmNativeTransferGasLimit {
-		t.Fatalf("Arbitrum sweep must not encode the 21000 limit")
+	if want := feeTestArbitrumNativeEstimate * evmArbitrumNativeGasMarginPercent / percentDenominator; builtGasLimit(t, &txs[0]) != want {
+		t.Fatalf("Arbitrum sweep encodes %d, want the estimate × %d%% = %d", builtGasLimit(t, &txs[0]), evmArbitrumNativeGasMarginPercent, want)
 	}
 }
 
 func TestNative_Sweep_ReportsTheValueItEncodes(t *testing.T) {
 	node := mocks.NewFakeEVMNode(t)
-	node.EstimateGasHex = feeTestArbitrumNativeEstimateHex
+	node.NativeTransferGasHex = feeTestArbitrumNativeEstimateHex
 	adapter := newNetworkAdapter(node, models.ChainArbitrum, models.NativeETH, models.EVMNetworkIDArbitrumSepolia)
 	plannedAmount := big.NewInt(1)
 
@@ -267,7 +267,7 @@ func TestArbitrum_Native_EstimateFailureFailsTheTransfer(t *testing.T) {
 	}
 }
 
-func TestStandard_Networks_KeepTheFixedNativeLimitAndNoL1Fee(t *testing.T) {
+func TestStandard_Networks_EstimateTheNativeLimitAndChargeNoL1Fee(t *testing.T) {
 	for _, networkID := range []int64{
 		models.EVMNetworkIDEthereumMainnet, models.EVMNetworkIDEthereumSepolia,
 		models.EVMNetworkIDPolygonMainnet, models.EVMNetworkIDPolygonAmoy,
@@ -276,19 +276,22 @@ func TestStandard_Networks_KeepTheFixedNativeLimitAndNoL1Fee(t *testing.T) {
 		node := mocks.NewFakeEVMNode(t)
 		adapter := newNetworkAdapter(node, "evm", "eth", networkID)
 
-		fee, _, err := adapter.NativeTransferReserve(context.Background())
+		fee, _, err := adapter.NativeTransferReserveTo(context.Background(), gasTestTo)
 		if err != nil {
 			t.Fatalf("%d: %v", networkID, err)
 		}
-		if want := bufferedL2Fee(evmNativeTransferGasLimit); fee.Cmp(want) != 0 {
+		if want := bufferedL2Fee(fakeNodeNativeLimit); fee.Cmp(want) != 0 {
 			t.Fatalf("%d: reserve %s, want %s", networkID, fee, want)
 		}
 		l1Fee, err := adapter.EstimateL1DataFee(context.Background(), types.TransferRequest{From: gasTestFrom, To: gasTestTo})
 		if err != nil || l1Fee.Sign() != 0 {
 			t.Fatalf("%d: L1 fee %v err %v, want 0", networkID, l1Fee, err)
 		}
-		if n := len(node.CallsTo("eth_estimateGas")) + len(node.CallsTo("eth_call")); n != 0 {
-			t.Fatalf("%d: standard networks need no estimate or oracle call, got %d", networkID, n)
+		if n := len(node.CallsTo("eth_estimateGas")); n != 1 {
+			t.Fatalf("%d: the reserve is the node's estimate on every network, got %d estimates", networkID, n)
+		}
+		if n := len(node.CallsTo("eth_call")); n != 0 {
+			t.Fatalf("%d: standard networks have no GasPriceOracle, got %d calls", networkID, n)
 		}
 	}
 }
@@ -310,8 +313,8 @@ func TestBSC_Signs_LegacyTransactionsForItsChainID(t *testing.T) {
 	if transaction.Type() != 0 || signer.ChainID().Int64() != models.EVMNetworkIDBSCTestnet {
 		t.Fatalf("want a legacy EIP-155 tx for chain 97, got type %d chain %s", transaction.Type(), signer.ChainID())
 	}
-	if builtGasLimit(t, unsigned) != evmNativeTransferGasLimit {
-		t.Fatalf("BSC native transfers keep the 21000 limit")
+	if got := builtGasLimit(t, unsigned); got != fakeNodeNativeLimit {
+		t.Fatalf("BSC native transfers encode the padded estimate like every network: got %d, want %d", got, fakeNodeNativeLimit)
 	}
 }
 

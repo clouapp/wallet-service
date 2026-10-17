@@ -48,21 +48,29 @@ func (m *estimatingMockChain) EstimateTransferGasLimit(_ context.Context, req ty
 // what the port reports; the live client's padding and RPC stay in adapter tests.
 type evmPlanPort struct {
 	*mocks.MockChain
-	nativeBalance  *big.Int
+	nativeBalance *big.Int
+	// balances overrides nativeBalance per address.
+	balances       map[string]*big.Int
 	tokenBalance   *big.Int
 	gasPrice       *big.Int
 	nativeGasLimit uint64
-	tokenGasLimit  uint64
-	l1Fee          *big.Int
-	estimateErr    error
-	estimates      []types.TransferRequest
-	fee            chain.FeePolicy
+	// recipientGasLimits overrides nativeGasLimit for native transfers to these
+	// recipients ("" is a recipient not known yet), as the live adapter's estimate
+	// does for a recipient whose account does not exist yet.
+	recipientGasLimits map[string]uint64
+	tokenGasLimit      uint64
+	l1Fee              *big.Int
+	estimateErr        error
+	estimates          []types.TransferRequest
+	reserveRecipients  []string
+	fee                chain.FeePolicy
 }
 
 func (p *evmPlanPort) WithFeePolicy(policy chain.FeePolicy) types.Chain {
 	scoped := *p
 	scoped.fee = policy
 	scoped.estimates = nil
+	scoped.reserveRecipients = nil
 	return &scoped
 }
 
@@ -77,6 +85,9 @@ func (p *evmPlanPort) pricedGas() *big.Int {
 
 func (p *evmPlanPort) GetBalance(_ context.Context, address string) (*types.Balance, error) {
 	amount := p.nativeBalance
+	if balance, ok := p.balances[address]; ok {
+		amount = balance
+	}
 	if amount == nil {
 		amount = big.NewInt(0)
 	}
@@ -107,10 +118,17 @@ func (p *evmPlanPort) EstimateTransferGasLimit(_ context.Context, req types.Tran
 	if req.Token != nil {
 		return p.tokenGasLimit, nil
 	}
-	if p.nativeGasLimit == 0 {
-		return 21_000, nil
+	return p.nativeLimitTo(req.To), nil
+}
+
+func (p *evmPlanPort) nativeLimitTo(to string) uint64 {
+	if limit, ok := p.recipientGasLimits[to]; ok {
+		return limit
 	}
-	return p.nativeGasLimit, nil
+	if p.nativeGasLimit == 0 {
+		return 21_000
+	}
+	return p.nativeGasLimit
 }
 
 func (p *evmPlanPort) EstimateL1DataFee(context.Context, types.TransferRequest) (*big.Int, error) {
@@ -120,15 +138,12 @@ func (p *evmPlanPort) EstimateL1DataFee(context.Context, types.TransferRequest) 
 	return new(big.Int).Set(p.l1Fee), nil
 }
 
-func (p *evmPlanPort) NativeTransferReserve(context.Context) (*big.Int, *big.Int, error) {
+func (p *evmPlanPort) NativeTransferReserveTo(_ context.Context, to string) (*big.Int, *big.Int, error) {
+	p.reserveRecipients = append(p.reserveRecipients, to)
 	if p.gasPrice == nil || p.gasPrice.Sign() <= 0 {
 		return nil, nil, chain.ErrGasEstimateFailed
 	}
-	limit := p.nativeGasLimit
-	if limit == 0 {
-		limit = 21_000
-	}
-	fee := new(big.Int).Mul(new(big.Int).SetUint64(limit), p.pricedGas())
+	fee := new(big.Int).Mul(new(big.Int).SetUint64(p.nativeLimitTo(to)), p.pricedGas())
 	if p.l1Fee != nil {
 		fee.Add(fee, p.l1Fee)
 	}

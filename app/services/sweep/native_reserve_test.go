@@ -145,7 +145,7 @@ func TestLoad_NativeReserve_RejectsInvalidValues(t *testing.T) {
 		{MockChain: mockChain, fee: big.NewInt(-1), minimumRemaining: big.NewInt(1)},
 		{MockChain: mockChain, fee: big.NewInt(1), minimumRemaining: big.NewInt(-1)},
 	} {
-		if _, err := loadNativeReserve(context.Background(), adapter, models.NativeSOL); err == nil {
+		if _, err := loadNativeReserve(context.Background(), adapter, models.NativeSOL, reserveRecipients{}); err == nil {
 			t.Fatalf("expected error for fee=%v min=%v", adapter.fee, adapter.minimumRemaining)
 		}
 	}
@@ -155,8 +155,8 @@ func TestLoad_NativeReserve_TokenAssetHasNoReserve(t *testing.T) {
 	mockChain := mocks.NewMockChain(models.ChainSOL)
 	mockChain.NativeAssetVal = models.NativeSOL
 	adapter := &reservingChain{MockChain: mockChain, err: errors.New("must not be called")}
-	reserve, err := loadNativeReserve(context.Background(), adapter, "USDC")
-	if err != nil || reserve.fee.Sign() != 0 || reserve.minimumRemaining.Sign() != 0 {
+	reserve, err := loadNativeReserve(context.Background(), adapter, "USDC", reserveRecipients{})
+	if err != nil || reserve.fee.Sign() != 0 || reserve.sweepFee.Sign() != 0 || reserve.minimumRemaining.Sign() != 0 {
 		t.Fatalf("reserve %+v err %v", reserve, err)
 	}
 }

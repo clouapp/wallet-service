@@ -12,51 +12,112 @@ import (
 
 // nativeTransferReserver is implemented by chains whose native transfers are paid by
 // the source on top of the amount and may have to leave a minimum behind (Solana:
-// signature fee and rent-exempt minimum; EVM: gas limit × gas price, no minimum).
+// signature fee and rent-exempt minimum; TRON: the worst-case transfer fee).
 type nativeTransferReserver interface {
 	NativeTransferReserve(ctx context.Context) (fee, minimumRemaining *big.Int, err error)
 }
 
-// nativeReserve is what a plan keeps aside on every native transfer source. It is
-// zero for chains and assets that do not need one, which leaves their plans unchanged.
+// nativeRecipientReserver is implemented by chains whose native transfer fee depends
+// on its recipient (EVM: gas limit × gas price with the node's estimate, which
+// prices creating a recipient account that does not exist yet). An empty recipient
+// is one not known yet, priced as the most a transfer can need. It is preferred
+// over nativeTransferReserver.
+type nativeRecipientReserver interface {
+	NativeTransferReserveTo(ctx context.Context, to string) (fee, minimumRemaining *big.Int, err error)
+}
+
+// reserveRecipients are the addresses a plan's native transfers pay: the
+// withdrawal's recipient ("" when unknown) and the base address sweeps land on.
+type reserveRecipients struct {
+	withdrawal string
+	base       string
+}
+
+// nativeReserve is what a plan keeps aside on every native transfer source: fee on a
+// transfer to the withdrawal's recipient, sweepFee on a sweep into the base address.
+// It is zero for chains and assets that do not need one, which leaves their plans
+// unchanged.
 type nativeReserve struct {
 	fee              *big.Int
+	sweepFee         *big.Int
 	minimumRemaining *big.Int
 }
 
-func loadNativeReserve(ctx context.Context, adapter types.Chain, asset string) (nativeReserve, error) {
-	none := nativeReserve{fee: new(big.Int), minimumRemaining: new(big.Int)}
+func loadNativeReserve(ctx context.Context, adapter types.Chain, asset string, recipients reserveRecipients) (nativeReserve, error) {
+	none := nativeReserve{fee: new(big.Int), sweepFee: new(big.Int), minimumRemaining: new(big.Int)}
 	if !types.SameAssetSymbol(asset, adapter.NativeAsset()) {
 		return none, nil
+	}
+	if reserver, ok := adapter.(nativeRecipientReserver); ok {
+		return loadRecipientReserve(ctx, adapter, reserver, recipients)
 	}
 	reserver, ok := adapter.(nativeTransferReserver)
 	if !ok {
 		return none, nil
 	}
 	fee, minimumRemaining, err := reserver.NativeTransferReserve(ctx)
-	if err != nil {
-		return nativeReserve{}, fmt.Errorf("sweep: native transfer reserve: %w", err)
+	if err = validReserve(adapter, fee, minimumRemaining, err); err != nil {
+		return nativeReserve{}, err
 	}
-	if fee == nil || minimumRemaining == nil || fee.Sign() < 0 || minimumRemaining.Sign() < 0 {
-		return nativeReserve{}, fmt.Errorf("sweep: chain %s returned an invalid native transfer reserve", adapter.ID())
-	}
-	return nativeReserve{fee: new(big.Int).Set(fee), minimumRemaining: new(big.Int).Set(minimumRemaining)}, nil
+	return newNativeReserve(fee, fee, minimumRemaining), nil
 }
 
-// requiredBalance is the balance a source needs to send amount and stay valid.
+// loadRecipientReserve prices a transfer to the withdrawal's recipient and, when
+// the base address is another recipient, a sweep into it.
+func loadRecipientReserve(ctx context.Context, adapter types.Chain, reserver nativeRecipientReserver, recipients reserveRecipients) (nativeReserve, error) {
+	fee, minimumRemaining, err := reserver.NativeTransferReserveTo(ctx, recipients.withdrawal)
+	if err = validReserve(adapter, fee, minimumRemaining, err); err != nil {
+		return nativeReserve{}, err
+	}
+	if recipients.base == recipients.withdrawal {
+		return newNativeReserve(fee, fee, minimumRemaining), nil
+	}
+	sweepFee, baseMinimum, err := reserver.NativeTransferReserveTo(ctx, recipients.base)
+	if err = validReserve(adapter, sweepFee, baseMinimum, err); err != nil {
+		return nativeReserve{}, err
+	}
+	return newNativeReserve(fee, sweepFee, minimumRemaining), nil
+}
+
+// validReserve refuses a failed, missing or negative reserve answer.
+func validReserve(adapter types.Chain, fee, minimumRemaining *big.Int, err error) error {
+	if err != nil {
+		return fmt.Errorf("sweep: native transfer reserve: %w", err)
+	}
+	if fee == nil || minimumRemaining == nil || fee.Sign() < 0 || minimumRemaining.Sign() < 0 {
+		return fmt.Errorf("sweep: chain %s returned an invalid native transfer reserve", adapter.ID())
+	}
+	return nil
+}
+
+func newNativeReserve(fee, sweepFee, minimumRemaining *big.Int) nativeReserve {
+	return nativeReserve{
+		fee:              new(big.Int).Set(fee),
+		sweepFee:         new(big.Int).Set(sweepFee),
+		minimumRemaining: new(big.Int).Set(minimumRemaining),
+	}
+}
+
+// requiredBalance is the balance a source needs to send amount to the withdrawal's
+// recipient and stay valid.
 func (r nativeReserve) requiredBalance(amount *big.Int) *big.Int {
 	required := new(big.Int).Add(amount, r.fee)
 	return required.Add(required, r.minimumRemaining)
 }
 
-// sweepableAmount is what a sweep that empties a source of balance can move.
+// sweepableAmount is what a sweep into the base address that empties a source of
+// balance can move.
 func (r nativeReserve) sweepableAmount(balance *big.Int) *big.Int {
-	return new(big.Int).Sub(balance, r.fee)
+	return new(big.Int).Sub(balance, r.sweepFee)
 }
 
 // withFee adds a source-specific transfer fee to the chain-wide reserve.
 func (r nativeReserve) withFee(fee *big.Int) nativeReserve {
-	return nativeReserve{fee: new(big.Int).Add(r.fee, fee), minimumRemaining: new(big.Int).Set(r.minimumRemaining)}
+	return nativeReserve{
+		fee:              new(big.Int).Add(r.fee, fee),
+		sweepFee:         new(big.Int).Add(r.sweepFee, fee),
+		minimumRemaining: new(big.Int).Set(r.minimumRemaining),
+	}
 }
 
 // spendableFundsReader is implemented by chains whose spendable native funds differ

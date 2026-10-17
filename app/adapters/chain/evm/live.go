@@ -22,7 +22,6 @@ import (
 const evmGasPriceMultiplier = int64(2)
 
 const (
-	evmNativeTransferGasLimit = uint64(21_000)
 	// evmERC20TransferGasFloor is the lowest limit ever encoded for a token
 	// transfer, even when eth_estimateGas reports less.
 	evmERC20TransferGasFloor = uint64(65_000)
@@ -251,9 +250,9 @@ func (a *EVMLive) EstimateFee(ctx context.Context, req types.TransferRequest) (*
 }
 
 // EstimateTransferGasLimit returns the gas limit BuildTransfer encodes for req.
-// A caller-supplied req.GasLimit wins; native transfers use NativeTransferGasLimit
-// (the fixed transfer limit except on Arbitrum); token transfers simulate
-// transfer(to, amount) from req.From with
+// A caller-supplied req.GasLimit wins; native transfers estimate the transfer of
+// req.Amount from req.From to req.To (nativeTransferGasLimit); token transfers
+// simulate transfer(to, amount) from req.From with
 // eth_estimateGas, add evmERC20GasMarginPercent and never go below
 // evmERC20TransferGasFloor. A failed or zero estimate returns
 // ErrGasEstimateFailed instead of guessing, so the caller cannot broadcast.
@@ -262,7 +261,7 @@ func (a *EVMLive) EstimateTransferGasLimit(ctx context.Context, req types.Transf
 		return *req.GasLimit, nil
 	}
 	if req.Token == nil {
-		return a.NativeTransferGasLimit(ctx, req.From, req.To)
+		return a.nativeTransferGasLimit(ctx, req.From, req.To, req.Amount)
 	}
 	if err := validateTokenTransferForEstimate(req); err != nil {
 		return 0, err
@@ -400,12 +399,17 @@ func (a *EVMLive) EstimateGasPrice(ctx context.Context) (*big.Int, error) {
 	return a.fee.ScaleGasPrice(bufferedEVMGasPrice(hexToBigInt(hexGas))), nil
 }
 
-// NativeTransferReserve is the most a native transfer built now can spend on fees:
-// BuildTransfer encodes a legacy tx with the native gas limit at the buffered gas
-// price (EstimateGasPrice), so the fee is limit × price, plus the buffered L1 data
-// fee on OP-stack networks. EVM accounts keep no minimum balance. The sweep planner
-// adds the fee to native withdrawals and subtracts it from native sweeps.
-func (a *EVMLive) NativeTransferReserve(ctx context.Context) (fee, minimumRemaining *big.Int, err error) {
+// NativeTransferReserveTo is the most a native transfer to `to` built now can
+// spend on fees: BuildTransfer encodes a legacy tx with the estimated native gas
+// limit at the buffered gas price (EstimateGasPrice), so the fee is limit × price,
+// plus the buffered L1 data fee on OP-stack networks. The limit depends on the
+// recipient (creating its account costs more where the network prices state
+// creation) and not on the sender, so it is estimated from the node's default
+// sender; an empty `to` is a recipient not known yet, priced as one that does not
+// exist. EVM accounts keep no minimum balance. The sweep planner adds the fee to
+// native withdrawals (to their recipient) and subtracts it from native sweeps (to
+// the base address).
+func (a *EVMLive) NativeTransferReserveTo(ctx context.Context, to string) (fee, minimumRemaining *big.Int, err error) {
 	gasPrice, err := a.EstimateGasPrice(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -413,11 +417,11 @@ func (a *EVMLive) NativeTransferReserve(ctx context.Context) (fee, minimumRemain
 	if gasPrice == nil || gasPrice.Sign() <= 0 {
 		return nil, nil, fmt.Errorf("gas price: node returned no usable gas price")
 	}
-	gasLimit, err := a.NativeTransferGasLimit(ctx, "", "")
+	gasLimit, err := a.nativeTransferGasLimit(ctx, "", to, nil)
 	if err != nil {
 		return nil, nil, err
 	}
-	fee, err = a.transferFee(ctx, types.TransferRequest{GasPrice: gasPrice}, gasLimit, gasPrice)
+	fee, err = a.transferFee(ctx, types.TransferRequest{To: to, GasPrice: gasPrice}, gasLimit, gasPrice)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -632,25 +636,79 @@ func (a *EVMLive) GetLatestBlock(ctx context.Context) (uint64, error) {
 	return hexToUint64(hexBlock), nil
 }
 
-// GetTransactionBlock returns the block number that included `txHash`, or 0 when
-// the node reports the tx as still pending (blockNumber is null or the tx is
-// unknown). The confirmation loop uses this to backfill BlockNumber on sweep /
-// withdrawal / gas_seed rows — those are inserted immediately after
-// broadcasting and therefore carry block_number=0 until mined. A missing tx is
+// Receipt statuses (EIP-658) and the failure results GetTransactionBlock reports.
+const (
+	evmReceiptStatusSuccess = "0x1"
+	evmReceiptStatusFailure = "0x0"
+	// evmResultOutOfGas is a failed receipt that used the whole gas limit.
+	evmResultOutOfGas = "out_of_gas"
+	// evmResultReverted is a failed receipt that left gas unused (a revert).
+	evmResultReverted = "reverted"
+)
+
+// GetTransactionBlock returns the block that included txHash, or 0 while the
+// node has no receipt for it (still pending, or unknown). The confirmation loop
+// uses this to backfill BlockNumber on sweep / withdrawal / gas_seed rows, which
+// are inserted right after broadcasting with block_number=0. A missing tx is
 // treated as "still pending" so the next tick can retry without the caller
-// having to distinguish between "not mined yet" and "dropped"; truly dropped
-// txs are handled separately when they eventually stop appearing.
+// having to distinguish between "not mined yet" and "dropped".
+//
+// A transaction mined with receipt status 0x0 paid its fee and moved nothing
+// (it ran out of gas or reverted): it is a *chain.TransactionFailedError, with
+// result out_of_gas when it used its whole gas limit and reverted otherwise, so
+// the confirmation tracker marks it (and its withdrawal) failed instead of
+// confirming it. A receipt with any other status is an error and is retried.
 func (a *EVMLive) GetTransactionBlock(ctx context.Context, txHash string) (uint64, error) {
-	var tx *struct {
+	var receipt *struct {
 		BlockNumber string `json:"blockNumber"`
+		Status      string `json:"status"`
+		GasUsed     string `json:"gasUsed"`
 	}
-	if err := a.rpc.Call(ctx, "eth_getTransactionByHash", &tx, txHash); err != nil {
+	if err := a.rpc.Call(ctx, "eth_getTransactionReceipt", &receipt, txHash); err != nil {
 		return 0, err
 	}
-	if tx == nil || tx.BlockNumber == "" {
+	if receipt == nil || receipt.BlockNumber == "" {
 		return 0, nil
 	}
-	return hexToUint64(tx.BlockNumber), nil
+	block := hexToUint64(receipt.BlockNumber)
+	switch strings.ToLower(receipt.Status) {
+	case evmReceiptStatusSuccess:
+		return block, nil
+	case evmReceiptStatusFailure:
+		result, err := a.failedReceiptResult(ctx, txHash, receipt.GasUsed)
+		if err != nil {
+			return 0, err
+		}
+		return 0, fmt.Errorf("evm tx %s: %w", txHash, &chain.TransactionFailedError{Result: result, Block: block})
+	default:
+		return 0, fmt.Errorf("evm receipt of %s in block %d has status %q", txHash, block, receipt.Status)
+	}
+}
+
+// failedReceiptResult tells an out-of-gas failure (gasUsed reached the
+// transaction's gas limit) from a revert.
+func (a *EVMLive) failedReceiptResult(ctx context.Context, txHash, gasUsedHex string) (string, error) {
+	var tx *struct {
+		Gas string `json:"gas"`
+	}
+	if err := a.rpc.Call(ctx, "eth_getTransactionByHash", &tx, txHash); err != nil {
+		return "", err
+	}
+	if tx == nil {
+		return "", fmt.Errorf("evm transaction %s has a failed receipt but the node does not return it", txHash)
+	}
+	gasUsed, err := parseHexQuantity(gasUsedHex, "gasUsed")
+	if err != nil {
+		return "", fmt.Errorf("evm receipt of %s: %w", txHash, err)
+	}
+	gasLimit, err := parseHexQuantity(tx.Gas, "gas")
+	if err != nil {
+		return "", fmt.Errorf("evm transaction %s: %w", txHash, err)
+	}
+	if gasUsed.Cmp(gasLimit) >= 0 {
+		return evmResultOutOfGas, nil
+	}
+	return evmResultReverted, nil
 }
 
 func (a *EVMLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.DetectedTransfer, error) {

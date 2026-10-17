@@ -55,8 +55,8 @@ const (
 	// EVMFeeModelOPStack: an L1 data fee, quoted by the GasPriceOracle predeploy, is
 	// charged to the sender on top of gas × price (Base).
 	EVMFeeModelOPStack EVMFeeModel = "op_stack"
-	// EVMFeeModelArbitrum: the L1 cost is billed as extra L2 gas, so even a plain
-	// native transfer needs more than 21000 gas and must be estimated.
+	// EVMFeeModelArbitrum: the L1 cost is billed as extra L2 gas, so a native
+	// transfer's estimate follows the L1 price and gets a wider margin.
 	EVMFeeModelArbitrum EVMFeeModel = "arbitrum"
 )
 

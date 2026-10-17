@@ -15,8 +15,9 @@ import (
 const reasonBelowDustThreshold = "below_dust_threshold"
 
 // Fallback per-transaction gas limits for adapters that do not implement
-// types.TransferGasEstimator. EVMLive implements it, so EVM plans are sized
-// with the same limits BuildTransfer / BuildSweep encode.
+// types.TransferGasEstimator (or, for a gas_seed, gasSeedLimiter). EVMLive
+// implements both, so EVM plans are sized with the node estimates
+// BuildTransfer / BuildSweep encode, never with these.
 const (
 	gasLimitNativeTransfer = 21_000
 	gasLimitERC20Transfer  = 65_000
@@ -102,7 +103,10 @@ func (s *service) PlanForWithdrawalTo(ctx context.Context, walletID uuid.UUID, a
 		return nil, ErrDestinationTagUnsupported
 	}
 
-	reserve, err := loadNativeReserve(ctx, adapter, asset)
+	reserve, err := loadNativeReserve(ctx, adapter, asset, reserveRecipients{
+		withdrawal: toAddress,
+		base:       wallet.DepositAddress.Address,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -294,8 +298,10 @@ func (s *service) estimatePlanGas(ctx context.Context, adapter types.Chain, plan
 	return total.Add(total, l1Fees), nil
 }
 
-// gasSeedLimiter is implemented by chains whose gas_seed (a native transfer from
-// base) can need more than gasLimitNativeTransfer (Arbitrum bills L1 cost as gas).
+// gasSeedLimiter is implemented by chains that size a gas_seed (a native transfer
+// from base to a child whose amount is not known yet) themselves: EVM estimates
+// it, and creating a fresh child's account costs far more than
+// gasLimitNativeTransfer on networks that price state creation.
 type gasSeedLimiter interface {
 	NativeTransferGasLimit(ctx context.Context, from, to string) (uint64, error)
 }

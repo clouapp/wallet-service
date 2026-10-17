@@ -18,8 +18,9 @@ import (
 // EVM: native withdrawals reserve gas
 // ---------------------------------------------------------------------------
 
-// evmNativeFee is the fee of a native transfer on FakeEVMNode: 1 gwei suggested,
-// doubled by the adapter's buffer, × 21000.
+// evmNativeFee is the fee of a native transfer on evmPlanPort: its 2 gwei gas
+// price × its 21000 native gas limit (the live adapter's estimate is tested in
+// app/adapters/chain/evm).
 var evmNativeFee = big.NewInt(2 * 1_000_000_000 * 21_000)
 
 const evmNativeAmount = 1_000_000_000_000_000 // 0.001

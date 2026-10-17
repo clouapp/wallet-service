@@ -60,7 +60,7 @@ func TestEVM_Gas_PriceAndBuiltTransfersFollowTheWalletMultiplier(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantFee := new(big.Int).Mul(scaledPrice, new(big.Int).SetUint64(evmNativeTransferGasLimit))
+	wantFee := new(big.Int).Mul(scaledPrice, new(big.Int).SetUint64(fakeNodeNativeLimit))
 	if estimate.Fee != fmtUnits(wantFee, 18) || estimate.GasPrice != scaledPrice.String() {
 		t.Fatalf("estimate %+v, want fee %s at %s", estimate, fmtUnits(wantFee, 18), scaledPrice)
 	}
