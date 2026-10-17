@@ -636,25 +636,79 @@ func (a *EVMLive) GetLatestBlock(ctx context.Context) (uint64, error) {
 	return hexToUint64(hexBlock), nil
 }
 
-// GetTransactionBlock returns the block number that included `txHash`, or 0 when
-// the node reports the tx as still pending (blockNumber is null or the tx is
-// unknown). The confirmation loop uses this to backfill BlockNumber on sweep /
-// withdrawal / gas_seed rows — those are inserted immediately after
-// broadcasting and therefore carry block_number=0 until mined. A missing tx is
+// Receipt statuses (EIP-658) and the failure results GetTransactionBlock reports.
+const (
+	evmReceiptStatusSuccess = "0x1"
+	evmReceiptStatusFailure = "0x0"
+	// evmResultOutOfGas is a failed receipt that used the whole gas limit.
+	evmResultOutOfGas = "out_of_gas"
+	// evmResultReverted is a failed receipt that left gas unused (a revert).
+	evmResultReverted = "reverted"
+)
+
+// GetTransactionBlock returns the block that included txHash, or 0 while the
+// node has no receipt for it (still pending, or unknown). The confirmation loop
+// uses this to backfill BlockNumber on sweep / withdrawal / gas_seed rows, which
+// are inserted right after broadcasting with block_number=0. A missing tx is
 // treated as "still pending" so the next tick can retry without the caller
-// having to distinguish between "not mined yet" and "dropped"; truly dropped
-// txs are handled separately when they eventually stop appearing.
+// having to distinguish between "not mined yet" and "dropped".
+//
+// A transaction mined with receipt status 0x0 paid its fee and moved nothing
+// (it ran out of gas or reverted): it is a *chain.TransactionFailedError, with
+// result out_of_gas when it used its whole gas limit and reverted otherwise, so
+// the confirmation tracker marks it (and its withdrawal) failed instead of
+// confirming it. A receipt with any other status is an error and is retried.
 func (a *EVMLive) GetTransactionBlock(ctx context.Context, txHash string) (uint64, error) {
-	var tx *struct {
+	var receipt *struct {
 		BlockNumber string `json:"blockNumber"`
+		Status      string `json:"status"`
+		GasUsed     string `json:"gasUsed"`
 	}
-	if err := a.rpc.Call(ctx, "eth_getTransactionByHash", &tx, txHash); err != nil {
+	if err := a.rpc.Call(ctx, "eth_getTransactionReceipt", &receipt, txHash); err != nil {
 		return 0, err
 	}
-	if tx == nil || tx.BlockNumber == "" {
+	if receipt == nil || receipt.BlockNumber == "" {
 		return 0, nil
 	}
-	return hexToUint64(tx.BlockNumber), nil
+	block := hexToUint64(receipt.BlockNumber)
+	switch strings.ToLower(receipt.Status) {
+	case evmReceiptStatusSuccess:
+		return block, nil
+	case evmReceiptStatusFailure:
+		result, err := a.failedReceiptResult(ctx, txHash, receipt.GasUsed)
+		if err != nil {
+			return 0, err
+		}
+		return 0, fmt.Errorf("evm tx %s: %w", txHash, &chain.TransactionFailedError{Result: result, Block: block})
+	default:
+		return 0, fmt.Errorf("evm receipt of %s in block %d has status %q", txHash, block, receipt.Status)
+	}
+}
+
+// failedReceiptResult tells an out-of-gas failure (gasUsed reached the
+// transaction's gas limit) from a revert.
+func (a *EVMLive) failedReceiptResult(ctx context.Context, txHash, gasUsedHex string) (string, error) {
+	var tx *struct {
+		Gas string `json:"gas"`
+	}
+	if err := a.rpc.Call(ctx, "eth_getTransactionByHash", &tx, txHash); err != nil {
+		return "", err
+	}
+	if tx == nil {
+		return "", fmt.Errorf("evm transaction %s has a failed receipt but the node does not return it", txHash)
+	}
+	gasUsed, err := parseHexQuantity(gasUsedHex, "gasUsed")
+	if err != nil {
+		return "", fmt.Errorf("evm receipt of %s: %w", txHash, err)
+	}
+	gasLimit, err := parseHexQuantity(tx.Gas, "gas")
+	if err != nil {
+		return "", fmt.Errorf("evm transaction %s: %w", txHash, err)
+	}
+	if gasUsed.Cmp(gasLimit) >= 0 {
+		return evmResultOutOfGas, nil
+	}
+	return evmResultReverted, nil
 }
 
 func (a *EVMLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.DetectedTransfer, error) {

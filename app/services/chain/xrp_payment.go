@@ -62,8 +62,9 @@ var (
 	// ErrDestinationTagRequired is a payment to an account that requires a destination
 	// tag (lsfRequireDestTag), which this payment does not carry.
 	ErrDestinationTagRequired = errors.New("destination account requires a destination tag")
-	// ErrTransactionFailed is a transaction a validated ledger includes with a failure
-	// result (an XRP Ledger tec code): its fee was paid, its payment was not made.
+	// ErrTransactionFailed is a transaction a validated ledger or a block includes with
+	// a failure result (an XRP Ledger tec code, an EVM receipt with status 0x0): its
+	// fee was paid, its payment was not made.
 	ErrTransactionFailed = errors.New("transaction failed on chain")
 )
 

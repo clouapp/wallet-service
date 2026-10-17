@@ -89,7 +89,7 @@ func TestEVM_Dust_ThresholdNativeVsToken(t *testing.T) {
 }
 
 // TestEVMGetTransactionBlock_Mined proves the adapter decodes the blockNumber
-// field returned by `eth_getTransactionByHash` so the confirmation loop can
+// of a successful `eth_getTransactionReceipt` so the confirmation loop can
 // reconcile sweep / withdrawal / gas_seed rows that were inserted with
 // block_number=0. The JSON shape mirrors what go-ethereum / Infura return.
 func TestEVM_GetTransactionBlock_Mined(t *testing.T) {
@@ -105,9 +105,11 @@ func TestEVM_GetTransactionBlock_Mined(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"jsonrpc": "2.0", "id": req["id"],
 			"result": map[string]interface{}{
-				"hash":        "0xdeadbeef",
-				"blockNumber": "0x64",
-				"from":        "0xfrom", "to": "0xto",
+				"transactionHash": "0xdeadbeef",
+				"blockNumber":     "0x64",
+				"status":          "0x1",
+				"gasUsed":         "0x5208",
+				"from":            "0xfrom", "to": "0xto",
 			},
 		})
 	}))
@@ -118,8 +120,8 @@ func TestEVM_GetTransactionBlock_Mined(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if seenMethod != "eth_getTransactionByHash" {
-		t.Fatalf("expected eth_getTransactionByHash, got %q", seenMethod)
+	if seenMethod != "eth_getTransactionReceipt" {
+		t.Fatalf("expected eth_getTransactionReceipt, got %q", seenMethod)
 	}
 	if seenHash != "0xdeadbeef" {
 		t.Fatalf("expected hash param 0xdeadbeef, got %q", seenHash)

@@ -13,10 +13,10 @@ const (
 )
 
 // Failure reasons of a withdrawal whose payment left the service and failed on
-// chain (XRP only). A payment a validated ledger includes with a failure result is
-// WithdrawalFailureOnChainPrefix + its lowercase result code, e.g.
-// onchain_tecno_dst_insuf_xrp; one that can no longer be included is
-// WithdrawalFailureExpired.
+// chain. A payment a validated ledger (XRP) or a block (EVM) includes with a
+// failure result is WithdrawalFailureOnChainPrefix + its lowercase result code,
+// e.g. onchain_tecno_dst_insuf_xrp, onchain_out_of_gas or onchain_reverted; an
+// XRP payment that can no longer be included is WithdrawalFailureExpired.
 const (
 	WithdrawalFailureOnChainPrefix = "onchain_"
 	WithdrawalFailureExpired       = "expired"

@@ -46,8 +46,9 @@ const (
 	CodeDestinationTagRequired        = "destination_tag_required"
 	CodeDestinationTagUnsupported     = "destination_tag_not_supported"
 	// CodeExpired is an XRP payment that can no longer be included in a ledger. A
-	// payment a validated ledger includes with a failure result carries
-	// CodeOnChainPrefix + its lowercase result code (onchain_tecno_dst_insuf_xrp).
+	// payment a validated ledger or a block includes with a failure result carries
+	// CodeOnChainPrefix + its lowercase result code (onchain_tecno_dst_insuf_xrp,
+	// onchain_out_of_gas, onchain_reverted).
 	CodeExpired       = "expired"
 	CodeOnChainPrefix = "onchain_"
 	CodeInternalError = "internal_error"
