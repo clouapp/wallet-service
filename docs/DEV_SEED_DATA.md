@@ -8,7 +8,9 @@ Seed logic: `database/seeders/` · `DatabaseSeeder` is the only registered seede
 `artisan db:seed --seeder=ChainSeeder` (or any other sub-seeder) fails with
 `DatabaseSeederNotFound`; `db:seed` always runs the whole chain. The chain, token,
 resource and threshold catalog the seeders write is `app/repositories/chaincatalog`
-(shared with the production command `chains:add-missing`).
+(shared with the production commands `chains:add-missing` and `chains:align-tokens`). Under
+`CHAIN_NETWORK_PROFILE=testnet` the primary records get the tokens of their test network (Circle's USDC,
+Chainlink's LINK, wrapped SOL), not the mainnet contracts; see "Testnet tokens" in `CLAUDE.md`.
 
 ---
 

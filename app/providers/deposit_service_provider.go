@@ -165,6 +165,9 @@ func newDepositService(app foundation.Application) (*deposit.Service, error) {
 			readErr,
 		)
 	})
+	// DEPOSIT_SCAN_*_<CHAIN> lay one chain's window and parallelism over the global
+	// window above, read at each cycle.
+	service.SetChainScanOverrides(chainScanOverrides(facades.Config()))
 	failurePolicy, err := deposit.FailurePolicyFromSettings(
 		facades.Config().GetInt("vault.deposit_scan.retry_attempts"),
 		facades.Config().GetInt("vault.deposit_scan.retry_delay_ms"),
@@ -183,6 +186,25 @@ func newDepositService(app foundation.Application) (*deposit.Service, error) {
 	}
 	service.SetBalanceRefresher(walletRefresher)
 	return service, nil
+}
+
+// configIntReader is the part of the framework configuration the scan overrides read.
+type configIntReader interface {
+	GetInt(path string, defaultValue ...int) int
+}
+
+// chainScanOverrides reads vault.deposit_scan.chains.<chain> (DEPOSIT_SCAN_BATCH_BLOCKS_,
+// _CATCH_UP_BLOCKS_ and _CONCURRENCY_<CHAIN>); a chain without an entry reads zeros and
+// keeps the global window.
+func chainScanOverrides(cfg configIntReader) func(chainID string) deposit.ChainScanOverride {
+	return func(chainID string) deposit.ChainScanOverride {
+		key := "vault.deposit_scan.chains." + chainID + "."
+		return deposit.ChainScanOverride{
+			BatchBlocks:   cfg.GetInt(key + "batch_blocks"),
+			CatchUpBlocks: cfg.GetInt(key + "catch_up_blocks"),
+			Concurrency:   cfg.GetInt(key + "concurrency"),
+		}
+	}
 }
 
 // newIngestService records the deposits a chain-data provider pushes to the

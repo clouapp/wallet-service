@@ -17,13 +17,17 @@ type SolanaConfig struct {
 	NativeDecimal uint8
 	RPCURL        string
 	Confirmations uint64
+	// Tokens lists the registered SPL mints whose deposits ScanBlock reports.
+	Tokens []types.Token
 }
 
 // SolanaLive talks to a Solana JSON-RPC node.
 // The chain service keeps the types.Chain port this client already satisfies.
 type SolanaLive struct {
-	cfg SolanaConfig
-	rpc *rpc.RPCClient
+	cfg       SolanaConfig
+	rpc       *rpc.RPCClient
+	tokens    map[string]types.Token
+	tokensErr error
 }
 
 var _ types.Chain = (*SolanaLive)(nil)
@@ -33,7 +37,13 @@ var _ types.Chain = (*SolanaLive)(nil)
 const solanaRPCMaxResponseBytes = 32 << 20
 
 func NewSolanaLive(cfg SolanaConfig) *SolanaLive {
-	return &SolanaLive{cfg: cfg, rpc: rpc.NewRPCClient(rpc.RPCClientDeps{URL: cfg.RPCURL}).WithMaxResponseBytes(solanaRPCMaxResponseBytes)}
+	tokens, tokensErr := indexSolanaTokens(cfg.ChainIDStr, cfg.Tokens)
+	return &SolanaLive{
+		cfg:       cfg,
+		rpc:       rpc.NewRPCClient(rpc.RPCClientDeps{URL: cfg.RPCURL}).WithMaxResponseBytes(solanaRPCMaxResponseBytes),
+		tokens:    tokens,
+		tokensErr: tokensErr,
+	}
 }
 
 // Endpoint is the URL the next dial uses. Callers must not log it.

@@ -54,9 +54,11 @@ type Service struct {
 	withdrawals          WithdrawalConfirmations
 	deposits             DepositEvents
 	balances             WalletBalanceRefresher
+	scanMu               sync.Mutex // guards scan and scanFallback; chains are scanned in parallel
 	scan                 ScanOptions
 	scanFallback         ScanOptions
 	scanSource           scanOptionSource
+	chainScan            chainScanOverrideSource
 	failure              FailurePolicy
 	pending              pending.Store
 	sleep                func(ctx context.Context, d time.Duration) error
@@ -164,7 +166,7 @@ func (s *Service) ScanLatestBlocks(ctx context.Context, chainID string) error {
 // ErrScanInProgress when another scanner holds it. A checkpoint that cannot be read
 // skips the cycle with an error and moves nothing.
 func (s *Service) scanLatestBlocks(ctx context.Context, chainID string) error {
-	s.resolveScanOptions(ctx)
+	opts := s.scanOptionsFor(ctx, chainID)
 
 	adapter, err := s.registry.Chain(chainID)
 	if err != nil {
@@ -200,14 +202,14 @@ func (s *Service) scanLatestBlocks(ctx context.Context, chainID string) error {
 	}
 
 	lag := latestBlock - lastBlock
-	endBlock := lastBlock + s.scanWindow(lag)
-	if lag > s.scan.BatchBlocks {
-		slog.Warn("deposit scanner behind the head, catching up", "chain", chainID, "checkpoint", lastBlock, "head", latestBlock, "lag", lag, "window", endBlock-lastBlock, "concurrency", s.scan.Concurrency)
+	endBlock := lastBlock + opts.window(lag)
+	if lag > opts.BatchBlocks {
+		slog.Warn("deposit scanner behind the head, catching up", "chain", chainID, "checkpoint", lastBlock, "head", latestBlock, "lag", lag, "window", endBlock-lastBlock, "concurrency", opts.Concurrency)
 	}
 
-	slog.Info("scanning blocks", "chain", chainID, "from", lastBlock+1, "to", endBlock)
+	slog.Info("scanning blocks", "chain", chainID, "from", lastBlock+1, "to", endBlock, "concurrency", opts.Concurrency)
 
-	scannedTo, scanErr := s.scanRange(ctx, chainID, adapter, lastBlock+1, endBlock)
+	scannedTo, scanErr := s.scanRange(ctx, chainID, adapter, lastBlock+1, endBlock, opts.Concurrency)
 	if scannedTo > lastBlock {
 		if err := s.saveCheckpoint(ctx, chainID, scannedTo); err != nil {
 			slog.Error("save checkpoint failed", "chain", chainID, "error", err)

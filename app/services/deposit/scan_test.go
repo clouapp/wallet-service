@@ -548,7 +548,7 @@ func TestScan_Scan_Window(t *testing.T) {
 		t.Fatal(err)
 	}
 	for lag, want := range map[uint64]uint64{1: 1, 50: 50, 51: 51, 499: 499, 500: 500, 90_000: 500} {
-		if got := svc.scanWindow(lag); got != want {
+		if got := svc.scan.window(lag); got != want {
 			t.Errorf("lag %d: window %d, want %d", lag, got, want)
 		}
 	}
@@ -567,7 +567,7 @@ func TestScan_Range_RecordsInBlockOrderWithParallelFetches(t *testing.T) {
 	f.adapter.depositTo(117, "tx-117-other", "someone-else")
 	f.adapter.depositTo(130, "tx-130", f.address)
 
-	scanned, err := f.svc.scanRange(context.Background(), scanTestChain, f.adapter, from, to)
+	scanned, err := f.svc.scanRange(context.Background(), scanTestChain, f.adapter, from, to, f.svc.scan.Concurrency)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -594,7 +594,7 @@ func TestScan_Range_StopsBeforeTheFirstFailedBlock(t *testing.T) {
 	f.adapter.depositTo(108, "tx-108", f.address)
 	f.adapter.failAt[107] = errors.New("rpc call getBlock: rate limited (HTTP 429) after 6 attempts")
 
-	scanned, err := f.svc.scanRange(context.Background(), scanTestChain, f.adapter, 101, 120)
+	scanned, err := f.svc.scanRange(context.Background(), scanTestChain, f.adapter, 101, 120, f.svc.scan.Concurrency)
 	if err == nil || !strings.Contains(err.Error(), "scan block 107") {
 		t.Fatalf("expected the block 107 failure, got %v", err)
 	}
@@ -608,10 +608,10 @@ func TestScan_Range_StopsBeforeTheFirstFailedBlock(t *testing.T) {
 
 func TestScan_Range_RejectsBlockZeroAndAcceptsAnEmptyRange(t *testing.T) {
 	f := newScanFixture(t, 1000, DefaultScanOptions())
-	if _, err := f.svc.scanRange(context.Background(), scanTestChain, f.adapter, 0, 5); err == nil {
+	if _, err := f.svc.scanRange(context.Background(), scanTestChain, f.adapter, 0, 5, f.svc.scan.Concurrency); err == nil {
 		t.Fatal("expected a range starting at block 0 to be rejected")
 	}
-	scanned, err := f.svc.scanRange(context.Background(), scanTestChain, f.adapter, 11, 10)
+	scanned, err := f.svc.scanRange(context.Background(), scanTestChain, f.adapter, 11, 10, f.svc.scan.Concurrency)
 	if err != nil || scanned != 10 || f.adapter.calls.Load() != 0 {
 		t.Fatalf("an empty range must scan nothing, got scanned=%d err=%v calls=%d", scanned, err, f.adapter.calls.Load())
 	}

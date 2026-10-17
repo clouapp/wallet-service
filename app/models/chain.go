@@ -70,6 +70,19 @@ const (
 	USDTContractBSC         = "0x55d398326f99059fF775485246999027B3197955"
 	USDCContractBSC         = "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d"
 
+	// Issuer deployments on the test networks eth, polygon and sol point at under the
+	// testnet profile, checked on-chain on 2026-10-18 (symbol() and decimals(); the
+	// devnet mint's account): Circle's USDC on Sepolia, Amoy and Solana devnet
+	// (developers.circle.com/stablecoins/usdc-contract-addresses) and Chainlink's LINK on
+	// Sepolia and Amoy (docs.chain.link/resources/link-token-contracts). The native mint
+	// (wrapped SOL) is the same account on every Solana cluster.
+	USDCContractSepolia  = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
+	USDCContractAmoy     = "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582"
+	USDCMintSolanaDevnet = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+	LINKContractSepolia  = "0x779877A7B0D9E8603169DdbD7836e478b4624789"
+	LINKContractAmoy     = "0x0Fd9e8d3aF1aaee056EB9e802c3A762a667b1904"
+	WrappedSOLMint       = "So11111111111111111111111111111111111111112"
+
 	// Tether's TRC-20 USDT on TRON mainnet and the test USDT the Nile faucet
 	// (nileex.io) hands out; both checked on-chain with symbol() and decimals() = 6.
 	// Circle stopped issuing USDC on TRON, so TRON lists USDT only.

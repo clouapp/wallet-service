@@ -315,7 +315,7 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 - Seed data is test-only (`database/seeders`, registered by `WithSeeders(seeders.All)`;
   `docs/DEV_SEED_DATA.md`). Only `DatabaseSeeder` is registered, so `db:seed --seeder=ChainSeeder`
   is not available. The chain catalog that
-  `chains:add-missing` writes in production is not seed data: it lives in
+  `chains:add-missing` and `chains:align-tokens` write in production is not seed data: it lives in
   `app/repositories/chaincatalog`.
 
 ### 9. Tests never touch live data and never share state
@@ -641,6 +641,88 @@ The confirmation tracker (and the confirmation step of each scan cycle) confirms
 ### XRP deposits
 
 `ScanBlock` on `xrp`/`txrp` reads one validated ledger (rippled `ledger`, `transactions` and `expand` true; API v1 `metaData` and API v2 `tx_json`/`meta` shapes) and reports, in ledger order (`TransactionIndex`), every `Payment` with `meta.TransactionResult` `tesSUCCESS` that delivered XRP to another account: the amount is `meta.delivered_amount` in drops (a partial payment credits what arrived, never `Amount`), `From` is `Account`, `To` is `Destination`, and `DestinationTag` is carried to `transactions.destination_tag` and to the `deposit.*` webhooks (`destination_tag`, omitted without a tag and on other chains). Not deposits: `tec…` payments, issued-currency or MPT deliveries (an object `delivered_amount`; the token registry does not model XRPL issued currencies), payments an account makes to itself, and every other type, including `CheckCash`, `EscrowFinish`, `PaymentChannelClaim` and `AccountDelete`, which can also deliver XRP. A ledger that is not validated, not closed, not the one asked for, without its transactions list, with a transaction not expanded or without metadata, or a payment whose `delivered_amount` is missing or `unavailable`, is an error, never an empty ledger, so the engine retries it and then keeps it pending. An XRP withdrawal is a `Payment` from the base address to its destination, so it is a deposit only when that destination is itself a watched address (as on every chain). The head is the validated ledger, so with 1 required confirmation a deposit is confirmed on the cycle that records it (tip − ledger + 1). A scanner runs only where one is scheduled for the chain: the local workers scan the chains in `LOCAL_DEPOSIT_SCAN_CHAINS` (`xrp`/`txrp` must be listed), the SAM `deposit_scanner` schedules (`template.yaml`) list no XRP chain, and `artisan scan:deposits` scans on demand; the first cycle starts at the head, without history. A ledger closes every 3–5 s, so the default windows (`DEPOSIT_SCAN_BATCH_BLOCKS` 50, `DEPOSIT_SCAN_CATCH_UP_BLOCKS` 500, 8 ledgers fetched at a time) are about 3–4 minutes and 30–40 minutes of ledgers; a ledger the load-balanced public servers do not have yet answers `lgrNotFound` and is retried. — guarded by `TestLive_ScanBlock_*` (`app/adapters/chain/xrp/scan_test.go`, altnet ledgers recorded in `testdata/xrpl`) and `TestXRP_Deposit_*` (`app/services/deposit/xrp_deposit_test.go`).
+
+### Solana deposits
+
+`ScanBlock` on `sol`/`tsol` reads one finalized slot with `getBlock` (`encoding` json,
+`transactionDetails` `accounts`, `rewards` false, `maxSupportedTransactionVersion` 1): the account
+keys, static and lookup-table loaded, in balance order, with the lamport and token balances before and
+after each transaction, and no instructions. Devnet carries version-1 transactions since 2026-10 and
+refuses (-32015 "Transaction version (1) is not supported") a block or transaction that holds one to a
+request that allows only version 0; `getTransaction` (the paid fee) asks for the same version. Legacy,
+v0 and v1 transactions read alike. A skipped slot (-32007, -32009) yields no transfers; every other error
+fails the block, which is retried and then kept pending. Per successful transaction, in block order:
+
+- **SOL**: every account whose lamports rose, except the fee payer, is credited from the fee payer;
+  the log index is the account index. A transaction whose balances do not line up with its keys is
+  logged and skipped.
+- **SPL** (Token and Token-2022 accounts alike): `preTokenBalances`/`postTokenBalances` are netted per
+  owner and mint; an owner whose total of a mint the chain's token registry lists rose is credited that
+  increase (base units, `uiTokenAmount.amount`), with the token row (symbol, mint as contract, the row's
+  decimals; a mint reporting other decimals is logged). The sender is the owner whose holding of that
+  mint fell most (the fee payer when none fell, a mint). The log index is the number of account keys
+  plus the credited owner's lowest token account index, so two mints or two owners in one transaction
+  never share a log index with each other or with a lamport credit. Moving tokens between two accounts
+  of one owner credits nothing. The deposit's `to_address` is the owner (the wallet address), never the
+  token account. A registered mint that is not a public key fails every scan of the chain, and a
+  registered balance without an owner, with an index past the keys or an amount that is not a base-unit
+  integer fails the block, so it is retried instead of marked scanned. Unregistered mints are ignored.
+
+The scanner records one deposit per chain and transaction (`ScannerDepositLogIndex`, the unique deposit
+index): when one transaction pays watched addresses twice (two assets, or two addresses), only the first
+of those transfers in that order is recorded. A public devnet endpoint allows 6 `getBlock` calls per 10 s per IP
+(`x-ratelimit-method-limit: 6`, measured on 2026-10-18), about 0.6 slots per second against 2.5 produced:
+it can never keep up, whatever the pace (see "Deposit scan pacing"); scan `sol` with a keyed RPC. —
+guarded by `app/adapters/chain/solana/scan_spl_test.go` (devnet slots 512232469 and 512232636 recorded in
+`testdata/solana`, with the -32015 answer to a version-0 request), `scan_test.go`,
+`TestRegister_ActiveChains_SolanaScansTheRegisteredSPLTokens` and
+`TestSolana_Deposit_RecordsAnSPLCreditWithItsSymbolAndMint`.
+
+### Deposit scan pacing
+
+Every scan cycle (Lambda and local) reads its window at the moment of use: `DEPOSIT_SCAN_BATCH_BLOCKS`
+(default 50), `DEPOSIT_SCAN_CATCH_UP_BLOCKS` (500, while the checkpoint trails the head by more than the
+batch) and `DEPOSIT_SCAN_CONCURRENCY` (8 blocks fetched at a time, at most 32), overridden by the platform
+`deposit_scan` setting. Per chain, `DEPOSIT_SCAN_BATCH_BLOCKS_<CHAIN>`, `DEPOSIT_SCAN_CATCH_UP_BLOCKS_<CHAIN>`
+and `DEPOSIT_SCAN_CONCURRENCY_<CHAIN>` (`vault.deposit_scan.chains.<chain>`, the chain id in capitals, e.g.
+`DEPOSIT_SCAN_CONCURRENCY_SOL=1`, `DEPOSIT_SCAN_CONCURRENCY_BSC=2`) win over the global value for that
+chain only; 0 or unset keeps it. A negative value, a concurrency above 32 or a catch-up below the batch is
+logged and dropped field by field, and the scan runs. A chain id must be listed in `depositScanChainIDs`
+(`config/vault.go`) to be overridden. The window of a cycle is local to it, so chains scanned at the same
+time never see each other's values. The RPC client retries a 429 itself (6 attempts, 250 ms doubling to
+8 s, or `Retry-After`); a block that still fails is retried by the engine and then kept pending. The local
+workers scan `sol`/`tsol`, `base`/`tbase`, `arbitrum`/`tarbitrum`, `bsc`/`tbsc` and `tron`/`ttron` in loops
+of their own, so a slow chain never holds up `eth`, `polygon` and `btc`. — guarded by
+`app/services/deposit/scan_override_test.go`, `config/vault_test.go`,
+`app/providers/deposit_scan_overrides_test.go` and `TestStart_Scans_FastChainsInLoopsOfTheirOwn`.
+
+### Testnet tokens
+
+The tokens of a primary record (`eth`, `polygon`, `sol`, `base`, `arbitrum`, `bsc`, `tron`) are the
+catalog's list of the network the profile points it at (`app/repositories/chaincatalog`,
+`primary_tokens.go`, `added_evm_chains.go`, `added_tron_ltc_chains.go`). A test network lists only the
+issuer's own deployments, read on-chain on 2026-10-18:
+
+| Record under `CHAIN_NETWORK_PROFILE=testnet` | Tokens |
+|---|---|
+| `eth` (Sepolia) | USDC `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238` (Circle), LINK `0x779877A7B0D9E8603169DdbD7836e478b4624789` (Chainlink) |
+| `polygon` (Amoy) | USDC `0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582` (Circle), LINK `0x0Fd9e8d3aF1aaee056EB9e802c3A762a667b1904` (Chainlink) |
+| `sol` (devnet) | USDC `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` (Circle), WSOL `So11111111111111111111111111111111111111112` (native mint) |
+| `base` / `arbitrum` (Sepolia) | Circle's USDC |
+| `bsc` (testnet) | none |
+| `tron` (Nile) | USDT `TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf` (the nileex.io faucet's) |
+
+USDT, DAI, WBTC, WETH, UNI, BONK, JUP and WIF publish no testnet deployment and are not listed on a test
+network. The t-prefixed records (`teth`, `tpolygon`, `tsol`, …) keep their own lists under every profile.
+`go run . artisan chains:align-tokens [--apply]` moves an existing database there: for each primary record
+whose row (`network_id`, `is_testnet`) points at a test network it creates the network's missing tokens,
+re-activates inactive ones and marks `inactive` the active tokens of the record's mainnet list. It never
+deletes a row, reports and leaves alone a token no catalog list names, never touches a record on a mainnet
+network or a t-prefixed record (a mainnet database is left as it is), prints only by default and changes
+nothing on a second run. Only active tokens are registered on the adapters, read at boot: restart the API
+and workers afterwards. Run it after `chains:align-network` flips a database to the testnet profile. —
+guarded by `app/repositories/chaincatalog/token_alignment_test.go`, `primary_tokens_test.go` and
+`app/services/chainregistry/network_tokens_test.go`.
 
 ### EVM native gas
 

@@ -94,6 +94,56 @@ func TestSolana_Deposit_DetectedFromRecordedBlockThenConfirmed(t *testing.T) {
 	}
 }
 
+// The version-1 swap of devnet slot 512232469: 2200 base units of devnet USDC to
+// solSPLRecipient, numbered after the transaction's 25 account keys. Parsing stays in
+// the adapter tests (TestSolana_ScanBlock_CreditsRegisteredSPLTokensToTheTokenAccountOwner).
+const (
+	solSPLSlot      = 512232469
+	solSPLSignature = "2kb1KrYNCc82UoDgAR742bysmxtYXrwBbgbTUVEPmQMb3udTR2ykDod6G7isQhp8fReVd2sWp3xmkr4t1A2bonsk"
+	solSPLRecipient = "5uDDz3wNUz8YDafuEhS2ZELzsU6529dM9GS4LJrfNeoi"
+	solSPLSender    = "vH9xX8SkhoNirTUw9UKsRiN78hQxmEVz3azsYpXbN7U"
+	devnetUSDCMint  = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+)
+
+func TestSolana_Deposit_RecordsAnSPLCreditWithItsSymbolAndMint(t *testing.T) {
+	fixtures.TestDB(t)
+	adapter := solanaFixtureChain(t)
+	usdc := types.Token{Symbol: models.SymbolUSDC, Contract: devnetUSDCMint, Decimals: 6, ChainID: models.ChainSOL}
+	adapter.ScanBlockFn = func(context.Context, uint64) ([]types.DetectedTransfer, error) {
+		return []types.DetectedTransfer{{
+			TxHash: solSPLSignature, BlockNumber: solSPLSlot, BlockHash: "3VMvKFUd8KCcYRcwjmBMftHNBaerDMoSZHmHhuiPtCin",
+			From: solSPLSender, To: solSPLRecipient, Amount: big.NewInt(2200), Asset: usdc.Symbol, Token: &usdc, LogIndex: 28,
+		}}, nil
+	}
+	registry := chain.NewRegistry()
+	registry.RegisterChain(adapter)
+	w := fixtures.InsertWallet(t, models.ChainSOL)
+	addr := fixtures.InsertAddress(t, w.ID, models.ChainSOL, solSPLRecipient, "user_spl", 1)
+	svc := newDepositSvc(registry, newWebhookSvc())
+
+	transfers, err := adapter.ScanBlock(context.Background(), solSPLSlot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := fetchedBlock{number: solSPLSlot, transfers: transfers}
+	if outcome := svc.processBlock(context.Background(), models.ChainSOL, adapter, block, adapter.ScanBlock); outcome.err != nil || outcome.recorded != 1 {
+		t.Fatalf("outcome %+v", outcome)
+	}
+
+	var deposits []models.Transaction
+	if err := facades.Orm().Query().Where("chain", models.ChainSOL).Where("tx_type", models.TxTypeDeposit).Find(&deposits); err != nil {
+		t.Fatal(err)
+	}
+	if len(deposits) != 1 {
+		t.Fatalf("expected one deposit, got %d", len(deposits))
+	}
+	deposit := deposits[0]
+	if deposit.Asset != models.SymbolUSDC || deposit.TokenContract != devnetUSDCMint || deposit.Amount != "2200" ||
+		deposit.AddressID == nil || *deposit.AddressID != addr.ID || deposit.FromAddress != solSPLSender || deposit.BlockNumber != solSPLSlot {
+		t.Fatalf("unexpected SPL deposit %+v", deposit)
+	}
+}
+
 // solanaFeeChain is the Solana port that also reads a paid fee. Decoding meta.fee
 // stays in the adapter tests (TestSolanaTransactionFee); here the port reports it.
 type solanaFeeChain struct {

@@ -17,7 +17,9 @@ const (
 	// Returned by getBlock for slots that produced no block; they will never have one.
 	solanaRPCSlotSkipped                = -32007
 	solanaRPCSlotSkippedLongTermStorage = -32009
-	// getBlock rejects the whole block when it holds a newer transaction version.
+	// getBlock and getTransaction refuse (-32015) a block or transaction that holds a
+	// version newer than this. Devnet carries version-1 transactions since 2026-10;
+	// the accounts encoding lists their keys and balances like legacy and v0 ones.
 	solanaMaxSupportedTxVersion = 1
 	solanaCommitmentFinalized   = "finalized"
 )
@@ -32,25 +34,36 @@ type solanaBlockTransaction struct {
 		AccountKeys []solanaBlockAccountKey `json:"accountKeys"`
 		Signatures  []string                `json:"signatures"`
 	} `json:"transaction"`
-	Meta *struct {
-		Err          interface{} `json:"err"`
-		PreBalances  []uint64    `json:"preBalances"`
-		PostBalances []uint64    `json:"postBalances"`
-	} `json:"meta"`
+	Meta *solanaTransactionMeta `json:"meta"`
+}
+
+// solanaTransactionMeta is the status and the balances of one transaction, before and
+// after it: lamports per account key, and the SPL token accounts it touched.
+type solanaTransactionMeta struct {
+	Err               interface{}          `json:"err"`
+	PreBalances       []uint64             `json:"preBalances"`
+	PostBalances      []uint64             `json:"postBalances"`
+	PreTokenBalances  []solanaTokenBalance `json:"preTokenBalances"`
+	PostTokenBalances []solanaTokenBalance `json:"postTokenBalances"`
 }
 
 // solanaBlockAccounts is getBlock with transactionDetails "accounts": account keys
-// (static and lookup-table loaded, in balance order) and balances, without
-// instructions, which keeps busy blocks under solanaRPCMaxResponseBytes.
+// (static and lookup-table loaded, in balance order), lamport and token balances,
+// without instructions, which keeps busy blocks under solanaRPCMaxResponseBytes.
 type solanaBlockAccounts struct {
 	Blockhash    string                   `json:"blockhash"`
 	BlockTime    *int64                   `json:"blockTime"`
 	Transactions []solanaBlockTransaction `json:"transactions"`
 }
 
-// ScanBlock returns every native SOL credit in a finalized slot. A skipped slot has
-// no block and yields no transfers, so the scanner checkpoint moves past it.
+// ScanBlock returns every native SOL credit and every credit of a registered SPL token
+// in a finalized slot. A skipped slot has no block and yields no transfers, so the
+// scanner checkpoint moves past it. A registered mint that is not a public key fails
+// the scan, so the block is retried instead of marked scanned without its deposits.
 func (a *SolanaLive) ScanBlock(ctx context.Context, slot uint64) ([]types.DetectedTransfer, error) {
+	if a.tokensErr != nil {
+		return nil, a.tokensErr
+	}
 	var block solanaBlockAccounts
 	err := a.rpc.Call(ctx, "getBlock", &block, slot, map[string]interface{}{
 		"encoding":                       "json",
@@ -65,7 +78,7 @@ func (a *SolanaLive) ScanBlock(ctx context.Context, slot uint64) ([]types.Detect
 	if err != nil {
 		return nil, err
 	}
-	return solanaNativeCredits(slot, &block, a.cfg.NativeSymbol), nil
+	return solanaBlockCredits(slot, &block, a.cfg.NativeSymbol, a.tokens)
 }
 
 func isSolanaSkippedSlot(err error) bool {
@@ -76,9 +89,11 @@ func isSolanaSkippedSlot(err error) bool {
 	return rpcErr.Code == solanaRPCSlotSkipped || rpcErr.Code == solanaRPCSlotSkippedLongTermStorage
 }
 
-// solanaNativeCredits turns balance increases of successful transactions into
-// transfers credited from the fee payer. Failed transactions only move fees.
-func solanaNativeCredits(slot uint64, block *solanaBlockAccounts, asset string) []types.DetectedTransfer {
+// solanaBlockCredits returns, per successful transaction in block order, its lamport
+// credits (account order, credited from the fee payer) and then its credits of the
+// tokens keyed by mint. Failed transactions only move fees. A registered token balance
+// that cannot be read fails the block.
+func solanaBlockCredits(slot uint64, block *solanaBlockAccounts, nativeAsset string, tokens map[string]types.Token) ([]types.DetectedTransfer, error) {
 	var blockTime time.Time
 	if block.BlockTime != nil {
 		blockTime = time.Unix(*block.BlockTime, 0).UTC()
@@ -96,26 +111,44 @@ func solanaNativeCredits(slot uint64, block *solanaBlockAccounts, asset string) 
 			slog.Warn("solana block: balances do not line up with account keys", "slot", slot, "tx", signature)
 			continue
 		}
+		credit := func(from, to string, amount *big.Int, asset string, token *types.Token, logIndex int) {
+			transfers = append(transfers, types.DetectedTransfer{
+				TxHash:      signature,
+				BlockNumber: slot,
+				BlockHash:   block.Blockhash,
+				From:        from,
+				To:          to,
+				Amount:      amount,
+				Asset:       asset,
+				Token:       token,
+				LogIndex:    uint(logIndex),
+				Timestamp:   blockTime,
+			})
+		}
 		feePayer := keys[0].Pubkey
 		for i, key := range keys {
 			pre, post := meta.PreBalances[i], meta.PostBalances[i]
 			if post <= pre || key.Pubkey == feePayer {
 				continue
 			}
-			transfers = append(transfers, types.DetectedTransfer{
-				TxHash:      signature,
-				BlockNumber: slot,
-				BlockHash:   block.Blockhash,
-				From:        feePayer,
-				To:          key.Pubkey,
-				Amount:      new(big.Int).SetUint64(post - pre),
-				Asset:       asset,
-				LogIndex:    uint(i),
-				Timestamp:   blockTime,
-			})
+			credit(feePayer, key.Pubkey, new(big.Int).SetUint64(post-pre), nativeAsset, nil, i)
+		}
+		tokenCredits, err := solanaTokenCredits(meta, len(keys), tokens)
+		if err != nil {
+			return nil, fmt.Errorf("sol slot %d tx %s: %w", slot, signature, err)
+		}
+		for _, c := range tokenCredits {
+			from := c.from
+			if from == "" {
+				from = feePayer
+			}
+			token := c.token
+			// Token credits are numbered after the account keys, so they never share a
+			// log index with a lamport credit of the same transaction.
+			credit(from, c.owner, c.amount, token.Symbol, &token, len(keys)+c.accountIndex)
 		}
 	}
-	return transfers
+	return transfers, nil
 }
 
 type solanaSignatureStatus struct {

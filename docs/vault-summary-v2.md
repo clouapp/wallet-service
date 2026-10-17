@@ -310,6 +310,19 @@ configs legadas sem dono recebem tudo. Deduplicação por (config, tipo, transa�
   (um pagamento parcial credita o que chegou, não o `Amount` pedido); pagamentos `tec…`, moedas emitidas (IOU),
   pagamentos de uma conta para si mesma e os demais tipos de transação não são depósitos. A varredura periódica só roda com
   `xrp`/`txrp` em `LOCAL_DEPOSIT_SCAN_CHAINS`.
+- Solana (`sol`/`tsol`): além do SOL nativo, a varredura credita os tokens SPL (Token e Token-2022) cujo mint está no
+  registro de tokens da chain. O depósito vai para o dono da conta de token (o endereço da carteira), pelo aumento
+  líquido do saldo desse dono no mint (`preTokenBalances`/`postTokenBalances`), com `asset` = símbolo do token e
+  `token_contract` = mint. Transações de versão 1 (presentes na devnet desde 2026-10) são lidas como as legadas e as v0.
+  Cada transação registra um único depósito: se pagar dois ativos ao mesmo endereço, só o primeiro é registrado.
+- Ritmo da varredura por chain: `DEPOSIT_SCAN_CONCURRENCY_<CHAIN>`, `DEPOSIT_SCAN_BATCH_BLOCKS_<CHAIN>` e
+  `DEPOSIT_SCAN_CATCH_UP_BLOCKS_<CHAIN>` (por exemplo `DEPOSIT_SCAN_CONCURRENCY_SOL=1`) substituem os valores globais
+  só para aquela chain. O endpoint público da devnet aceita 6 `getBlock` a cada 10 s por IP e nunca acompanha a
+  chain; para o `sol`, use um RPC com chave.
+- Tokens no perfil testnet: `eth` (Sepolia), `polygon` (Amoy) e `sol` (devnet) listam só as implantações publicadas
+  pelo emissor (USDC da Circle, LINK da Chainlink, o mint nativo WSOL). Numa base existente,
+  `artisan chains:align-tokens --apply` cria esses tokens e desativa os contratos de mainnet; não altera uma base de
+  mainnet.
 
 ## Reconciliação: feed de alterações de `GET /api/v1/transactions`
 

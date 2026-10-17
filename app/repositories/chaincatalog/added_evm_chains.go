@@ -123,8 +123,8 @@ var networkResources = map[string][]resourceSeed{
 	models.NetworkBSCTestnet:      {{resourceType: resourceTypeExplorer, name: "BscTrace Testnet", url: "https://testnet.bsctrace.com"}, {resourceType: resourceTypeFaucet, name: "BNB Smart Chain Testnet Faucet", url: "https://www.bnbchain.org/en/testnet-faucet"}},
 }
 
-// addedChainNetwork is the network an added record points at under profile: EVM by
-// network id, TRON and Litecoin by is_testnet.
+// addedChainNetwork is the network a primary or added record points at under profile:
+// EVM by network id, the other adapters by is_testnet.
 func addedChainNetwork(c chainSeed, profile string) (string, error) {
 	c, err := withProfileNetwork(c, profile)
 	if err != nil {
@@ -145,7 +145,12 @@ func (cat *Catalog) addedChainTokens(profile string) ([]tokenSeed, error) {
 	return tokensForChains(cat.addedChainSeeds(), profile)
 }
 
+// tokensOfNetwork is the catalog's token list of a network; nil for a network without
+// tokens (Bitcoin, Litecoin, XRP Ledger, BSC testnet).
 func tokensOfNetwork(network string) []tokenSeed {
+	if tokens, ok := primaryNetworkTokens[network]; ok {
+		return tokens
+	}
 	if tokens, ok := networkTokens[network]; ok {
 		return tokens
 	}

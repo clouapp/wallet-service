@@ -23,12 +23,15 @@ const (
 	RedispatchBatchSize = 50
 )
 
-// dedicatedScanChains produce blocks too fast (Arbitrum about every 0.25 s, BSC 0.75 s,
-// Base 2 s, TRON 3 s) to wait for the other chains' scans; each one runs in a loop of
-// its own.
+// dedicatedScanChains produce blocks too fast (Arbitrum about every 0.25 s, Solana a
+// slot every 0.4 s, BSC 0.75 s, Base 2 s, TRON 3 s) to wait for the other chains' scans;
+// each one runs in a loop of its own. A public Solana endpoint also rate-limits getBlock
+// (devnet: 6 per 10 s), so a Solana cycle can take minutes and must not hold up the
+// chains of the shared loop.
 var dedicatedScanChains = map[string]bool{
 	models.ChainBase: true, models.ChainTBase: true,
 	models.ChainArbitrum: true, models.ChainTArbitrum: true,
+	models.ChainSOL: true, models.ChainTSOL: true,
 	models.ChainBSC: true, models.ChainTBSC: true,
 	models.ChainTron: true, models.ChainTTron: true,
 }

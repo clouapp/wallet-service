@@ -342,7 +342,7 @@ func TestStart_Scans_EveryConfiguredChainAndKeepsGoingAfterErrors(t *testing.T) 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scanner := &recordingScanner{err: errors.New("rate limited"), progress: progressChan()}
-	chains := []string{"sol", "tsol"}
+	chains := []string{"eth", "btc"}
 	cfg := Config{ConfirmationInterval: time.Hour, DepositScanChains: chains, DepositScanInterval: MinInterval}
 
 	if _, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: scanner}); err != nil {
@@ -360,7 +360,7 @@ func TestStart_Scans_EveryConfiguredChainAndKeepsGoingAfterErrors(t *testing.T) 
 		t.Fatalf("expected two rounds over both chains, got %v", got)
 	}
 	for i, chainID := range got[:4] {
-		if want := []string{"sol", "tsol"}[i%2]; chainID != want {
+		if want := []string{"eth", "btc"}[i%2]; chainID != want {
 			t.Fatalf("scan %d chain %q, want %q (all: %v)", i, chainID, want, got)
 		}
 	}
@@ -383,14 +383,14 @@ func TestStart_Reprocesses_PendingBlocksAfterEachChainScan(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scanner := &recordingScanner{err: errors.New("rpc down"), pendingErr: errors.New("redis and file down"), progress: progressChan()}
-	cfg := Config{ConfirmationInterval: time.Hour, DepositScanChains: []string{"sol", "btc"}, DepositScanInterval: MinInterval}
+	cfg := Config{ConfirmationInterval: time.Hour, DepositScanChains: []string{"eth", "btc"}, DepositScanInterval: MinInterval}
 
 	if _, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: scanner}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	waitUntil(t, 4*MinInterval, scanner.progress, func() bool { return len(scanner.recordedSteps()) >= 8 })
 	got := scanner.recordedSteps()
-	want := []string{"scan:sol", "pending:sol", "scan:btc", "pending:btc"}
+	want := []string{"scan:eth", "pending:eth", "scan:btc", "pending:btc"}
 	if len(got) < 8 {
 		t.Fatalf("expected two rounds of scan then pending per chain despite errors, got %v", got)
 	}
@@ -501,25 +501,25 @@ func (s *recordingScanner) scansOf(chainID string) int {
 func TestStart_Scans_FastChainsInLoopsOfTheirOwn(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	scanner := &stuckScanner{recordingScanner: &recordingScanner{progress: progressChan()}, stuckChain: "sol", release: make(chan struct{})}
+	scanner := &stuckScanner{recordingScanner: &recordingScanner{progress: progressChan()}, stuckChain: "btc", release: make(chan struct{})}
 	defer close(scanner.release)
-	cfg := Config{ConfirmationInterval: time.Hour, DepositScanChains: []string{"sol", "eth", "arbitrum", "bsc"}, DepositScanInterval: MinInterval}
+	cfg := Config{ConfirmationInterval: time.Hour, DepositScanChains: []string{"btc", "eth", "sol", "arbitrum", "bsc"}, DepositScanInterval: MinInterval}
 
 	if _, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: scanner}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 
 	waitUntil(t, 5*MinInterval, scanner.progress, func() bool {
-		return scanner.scansOf("arbitrum") >= 2 && scanner.scansOf("bsc") >= 2
+		return scanner.scansOf("sol") >= 2 && scanner.scansOf("arbitrum") >= 2 && scanner.scansOf("bsc") >= 2
 	})
-	if scanner.scansOf("arbitrum") < 2 || scanner.scansOf("bsc") < 2 {
-		t.Fatalf("arbitrum and bsc must keep scanning while sol is stuck, got %v", scanner.scanned())
+	if scanner.scansOf("sol") < 2 || scanner.scansOf("arbitrum") < 2 || scanner.scansOf("bsc") < 2 {
+		t.Fatalf("sol, arbitrum and bsc must keep scanning while btc is stuck, got %v", scanner.scanned())
 	}
-	if got := scanner.scansOf("sol"); got != 1 {
-		t.Fatalf("sol must be scanned once and stay stuck, got %d", got)
+	if got := scanner.scansOf("btc"); got != 1 {
+		t.Fatalf("btc must be scanned once and stay stuck, got %d", got)
 	}
 	if got := scanner.scansOf("eth"); got != 0 {
-		t.Fatalf("eth shares the loop stuck on sol, got %d scans", got)
+		t.Fatalf("eth shares the loop stuck on btc, got %d scans", got)
 	}
 }
 
@@ -605,12 +605,12 @@ func TestLoops_Wait_OnNilLoopsReturns(t *testing.T) {
 }
 
 func TestSplit_Scan_ChainsKeepsTheConfiguredOrder(t *testing.T) {
-	shared, dedicated := splitScanChains([]string{"sol", "base", "eth", "btc", "tarbitrum", "polygon", "bsc"})
+	shared, dedicated := splitScanChains([]string{"sol", "base", "eth", "btc", "tarbitrum", "polygon", "bsc", "tsol"})
 
-	if want := []string{"sol", "eth", "btc", "polygon"}; strings.Join(shared, ",") != strings.Join(want, ",") {
+	if want := []string{"eth", "btc", "polygon"}; strings.Join(shared, ",") != strings.Join(want, ",") {
 		t.Fatalf("shared %v, want %v", shared, want)
 	}
-	if want := []string{"base", "tarbitrum", "bsc"}; strings.Join(dedicated, ",") != strings.Join(want, ",") {
+	if want := []string{"sol", "base", "tarbitrum", "bsc", "tsol"}; strings.Join(dedicated, ",") != strings.Join(want, ",") {
 		t.Fatalf("dedicated %v, want %v", dedicated, want)
 	}
 }

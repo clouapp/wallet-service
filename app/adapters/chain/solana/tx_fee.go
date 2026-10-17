@@ -8,8 +8,9 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 )
 
-// TransactionFee is meta.fee (lamports) of the finalized transaction.
-
+// TransactionFee is meta.fee (lamports) of the finalized transaction. It asks for the
+// newest transaction version the adapter reads: devnet refuses a version-1
+// transaction to a request that allows only version 0.
 func (a *SolanaLive) TransactionFee(ctx context.Context, txHash string) (*big.Int, error) {
 	if txHash == "" {
 		return nil, fmt.Errorf("sol transaction signature is required")
@@ -20,7 +21,7 @@ func (a *SolanaLive) TransactionFee(ctx context.Context, txHash string) (*big.In
 		} `json:"meta"`
 	}
 	if err := a.rpc.Call(ctx, "getTransaction", &tx, txHash, map[string]any{
-		"encoding": "json", "commitment": solanaCommitmentFinalized, "maxSupportedTransactionVersion": 0,
+		"encoding": "json", "commitment": solanaCommitmentFinalized, "maxSupportedTransactionVersion": solanaMaxSupportedTxVersion,
 	}); err != nil {
 		return nil, err
 	}
