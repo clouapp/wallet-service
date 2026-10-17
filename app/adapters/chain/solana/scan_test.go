@@ -129,13 +129,9 @@ func TestSolana_NativeCredits_IgnoresMisalignedBalances(t *testing.T) {
 	block := &solanaBlockAccounts{Transactions: []solanaBlockTransaction{{}}}
 	block.Transactions[0].Transaction.Signatures = []string{"sig"}
 	block.Transactions[0].Transaction.AccountKeys = []solanaBlockAccountKey{{Pubkey: "payer", Signer: true}, {Pubkey: "dest"}}
-	block.Transactions[0].Meta = &struct {
-		Err          interface{} `json:"err"`
-		PreBalances  []uint64    `json:"preBalances"`
-		PostBalances []uint64    `json:"postBalances"`
-	}{PreBalances: []uint64{10}, PostBalances: []uint64{5, 5}}
-	if got := solanaNativeCredits(1, block, models.NativeSOL); len(got) != 0 {
-		t.Fatalf("misaligned balances must be ignored, got %+v", got)
+	block.Transactions[0].Meta = &solanaTransactionMeta{PreBalances: []uint64{10}, PostBalances: []uint64{5, 5}}
+	if got, err := solanaBlockCredits(1, block, models.NativeSOL, nil); err != nil || len(got) != 0 {
+		t.Fatalf("misaligned balances must be ignored, got %+v, %v", got, err)
 	}
 }
 

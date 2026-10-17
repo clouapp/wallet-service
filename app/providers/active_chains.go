@@ -174,6 +174,7 @@ func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByC
 				NativeDecimal: uint8(ch.NativeDecimals),
 				RPCURL:        rpcURL,
 				Confirmations: uint64(ch.RequiredConfirmations),
+				Tokens:        tokensByChain[ch.ID],
 			})
 		default:
 			slog.Warn("unknown adapter type, skipping", "chain", ch.ID, "adapter", ch.AdapterType)
