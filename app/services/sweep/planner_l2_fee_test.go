@@ -14,7 +14,7 @@ import (
 
 const (
 	l2FeeTestAmount = int64(1_000_000_000_000_000) // 0.001 ETH
-	// FakeEVMNode: 1 gwei suggested → 2 gwei encoded; native transfers use 21000 gas.
+	// evmPlanPort: 2 gwei gas price; native transfers use its 21000 gas limit.
 	l2FeeTestNativeGas = int64(2_000_000_000 * 21_000)
 	// GasPriceOracle quote 10 gwei-wei, doubled by the adapter's L1 fee buffer.
 	l2FeeTestL1FeeHex      = "0x2540be400"

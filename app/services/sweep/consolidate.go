@@ -185,7 +185,11 @@ func (s *service) planConsolidation(
 		return nil, fmt.Errorf("sweep: list children: %w", err)
 	}
 
-	reserve, err := loadNativeReserve(ctx, adapter, asset)
+	// A consolidation only sweeps into base: both reserve routes pay the base address.
+	reserve, err := loadNativeReserve(ctx, adapter, asset, reserveRecipients{
+		withdrawal: wallet.DepositAddress.Address,
+		base:       wallet.DepositAddress.Address,
+	})
 	if err != nil {
 		return nil, err
 	}
