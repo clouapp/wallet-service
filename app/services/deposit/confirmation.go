@@ -130,7 +130,8 @@ func (s *Service) updateConfirmations(ctx context.Context, chainID string, adapt
 // applyConfirmations counts each pending transaction's confirmations at
 // currentBlock and confirms it by the finality policy it was recorded under (see
 // reachedConfirmation). The chain's finalized or solidified block is read at most
-// once per call, which is once per chain per tracker pass.
+// once per call, which is once per chain per tracker pass. A deposit sends
+// deposit.confirming as its count rises (confirmingProgress) and deposit.confirmed once.
 func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, currentBlock uint64, pending []models.Transaction) error {
 	confirmedWallets := newWalletSet()
 	defer func() { s.refreshBalances(ctx, confirmedWallets.ids) }()
@@ -202,7 +203,6 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 			continue
 		}
 
-		confirmingNow := tx.Status == string(types.TxStatusPending) && newStatus == string(types.TxStatusConfirming)
 		if confirmedNow && movesWalletBalance(tx.TxType) {
 			confirmedWallets.add(tx.WalletID)
 		}
@@ -211,7 +211,7 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 		case models.TxTypeDeposit:
 			if confirmedNow {
 				s.publishDeposit(ctx, types.EventDepositConfirmed, withConfirmationState(tx, confs, newStatus, confirmedAt))
-			} else if confirmingNow {
+			} else if confirmingProgress(tx, confs, newStatus) {
 				s.publishDeposit(ctx, types.EventDepositConfirming, withConfirmationState(tx, confs, newStatus, confirmedAt))
 			}
 		case models.TxTypeWithdrawal:
@@ -389,6 +389,30 @@ func confirmationsAt(currentBlock uint64, txBlock int64) int {
 		return 0
 	}
 	return int(currentBlock-uint64(txBlock)) + 1
+}
+
+// confirmingProgress reports whether the pass that leaves a deposit at confs
+// confirmations and newStatus sends deposit.confirming. tx is the row as the pass
+// read it, before the new count was stored. It is sent when the deposit stays
+// unconfirmed and either moves from pending to confirming, or its count rose above
+// the stored one while the stored count was still below the required confirmations.
+//
+// So a deposit gets at most one deposit.confirming per tracker or scan pass, with the
+// count of that pass (counts crossed between two passes are not sent one by one),
+// and none once its count has reached the required confirmations: under the
+// confirmations policy it is confirmed there, and under a native finality a final
+// block that cannot be read, while the count keeps rising, would otherwise send one
+// per pass until it can. That bounds a deposit to about required_confirmations
+// progress events. The outbox subject carries the count (depositevents), so a count a
+// config already got is never sent to it again.
+func confirmingProgress(tx models.Transaction, confs int, newStatus string) bool {
+	if newStatus != string(types.TxStatusConfirming) {
+		return false
+	}
+	if tx.Status == string(types.TxStatusPending) {
+		return true
+	}
+	return confs > tx.Confirmations && tx.Confirmations < tx.RequiredConfs
 }
 
 // withConfirmationState returns the transaction as just persisted by the tracker.

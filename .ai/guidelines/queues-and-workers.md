@@ -58,7 +58,9 @@ Outbound webhooks are delivered **at least once**, never exactly once.
 - **The outbox row comes first.** Every event is a `webhook_events` row written before
   the queue send; the queue message only carries ids (event, config) and the payload,
   never the signing secret. A scoped event is one row per config, type and subject
-  (partial unique index, migration 260), so a repeated publish is a no-op.
+  (partial unique index, migration 260), so a repeated publish is a no-op. An event
+  that reports progress puts its step in the subject: `deposit.confirming` uses
+  `<transaction id>:<confirmations>`, one row per count (`CLAUDE.md` §7).
 - **Receivers deduplicate on `X-Vault-Delivery-Id`** (the row id). Every resend — a
   queue retry, a re-dispatch, a redelivery — keeps it.
 - **A status persisted before its event is published needs a backfill.** The tracker

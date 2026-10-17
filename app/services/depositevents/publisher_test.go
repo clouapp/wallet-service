@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -325,5 +326,55 @@ func TestPublish_Carries_TheFinalityPolicyTheDepositIsConfirmedBy(t *testing.T) 
 				t.Fatalf("required_confirmations = %v", decoded["required_confirmations"])
 			}
 		})
+	}
+}
+
+// deposit.confirming is progress: each count is its own outbox row, so its subject
+// carries the count. The other deposit events stay one per deposit, keyed on the
+// transaction id the backfill looks up. The payload keeps the plain transaction id.
+func TestPublish_Confirming_SubjectCarriesTheCountAndTheOtherEventsTheTransaction(t *testing.T) {
+	f := newFixture()
+	tx := f.deposit("eth", "ETH", "1")
+	tx.Status = string(types.TxStatusConfirming)
+	tx.Confirmations = 7
+	tx.ConfirmedAt = nil
+
+	if err := f.publisher.Publish(context.Background(), types.EventDepositConfirming, tx); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	event, payload := onlyPayload(t, f.enqueuer)
+	if event.SubjectID != tx.ID.String()+":7" {
+		t.Fatalf("deposit.confirming subject = %q, want %s:7", event.SubjectID, tx.ID)
+	}
+	if *event.TransactionID != tx.ID || payload.TransactionID != tx.ID.String() || payload.ID != tx.ID.String() || payload.Confirmations != 7 {
+		t.Fatalf("deposit.confirming identity: transaction %v, payload id %q transaction_id %q, %d confirmations",
+			*event.TransactionID, payload.ID, payload.TransactionID, payload.Confirmations)
+	}
+
+	for _, eventType := range []types.EventType{types.EventDepositPending, types.EventDepositConfirmed, types.EventDepositFailed} {
+		other := newFixture()
+		if err := other.publisher.Publish(context.Background(), eventType, other.deposit("eth", "ETH", "1")); err != nil {
+			t.Fatalf("Publish %s: %v", eventType, err)
+		}
+		event, _ := onlyPayload(t, other.enqueuer)
+		if event.SubjectID != event.TransactionID.String() {
+			t.Fatalf("%s subject = %q, want the transaction id", eventType, event.SubjectID)
+		}
+	}
+}
+
+// webhook_events.subject_id is varchar(64) (migration 260): a uuid, a colon and
+// the largest count still fit.
+func TestPublish_Confirming_SubjectFitsTheSubjectColumn(t *testing.T) {
+	f := newFixture()
+	tx := f.deposit("eth", "ETH", "1")
+	tx.Confirmations = math.MaxInt
+
+	if err := f.publisher.Publish(context.Background(), types.EventDepositConfirming, tx); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	event, _ := onlyPayload(t, f.enqueuer)
+	if len(event.SubjectID) > 64 {
+		t.Fatalf("subject %q is %d characters, the column holds 64", event.SubjectID, len(event.SubjectID))
 	}
 }
