@@ -76,6 +76,12 @@ Outbound webhooks are delivered **at least once**, never exactly once.
   are published first and the row is marked failed last, so a failed publish leaves the
   row as it was and the next tracker pass (or `deposits:verify-receipts` run) publishes
   again; the outbox row keeps that a no-op for the configs that already got it.
+- **A final event supersedes the earlier ones of its subject at delivery.**
+  `webhook.Service.Deliver` is the one path every delivery takes, so a rule about what
+  may still be sent lives there, not in each producer: a `deposit.pending`,
+  `deposit.confirming` or `deposit.confirmed` row of a deposit that failed on chain is
+  settled as `failed` (`superseded: …`) instead of being posted, whatever queue message,
+  re-dispatch or redelivery carries it. A POST already in flight is not recalled.
 - **In queue mode a lost message is re-dispatched.** `webhook.Service.RedispatchStale`
   sends again the pending rows untouched for 5 minutes; each claim counts one attempt,
   so a row is sent at most `max_attempts` times and never more often than every 5

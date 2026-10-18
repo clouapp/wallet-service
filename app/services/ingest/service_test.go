@@ -417,6 +417,9 @@ func (f *ingestWebhookEventRepo) Create(_ context.Context, event *models.Webhook
 func (f *ingestWebhookEventRepo) AlreadyDelivered(context.Context, string) (bool, error) {
 	return false, nil
 }
+func (f *ingestWebhookEventRepo) SupersededByDepositFailure(context.Context, string) (bool, error) {
+	return false, nil
+}
 func (f *ingestWebhookEventRepo) MarkDelivered(_ context.Context, eventID string) error { return nil }
 func (f *ingestWebhookEventRepo) IncrementAttempt(_ context.Context, eventID, errMsg string) error {
 	return nil

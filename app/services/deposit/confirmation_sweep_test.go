@@ -139,6 +139,9 @@ func (f *sweepConfirmEventRepo) Create(_ context.Context, event *models.WebhookE
 func (f *sweepConfirmEventRepo) AlreadyDelivered(context.Context, string) (bool, error) {
 	return false, nil
 }
+func (f *sweepConfirmEventRepo) SupersededByDepositFailure(context.Context, string) (bool, error) {
+	return false, nil
+}
 func (f *sweepConfirmEventRepo) MarkDelivered(context.Context, string) error { return nil }
 func (f *sweepConfirmEventRepo) IncrementAttempt(context.Context, string, string) error {
 	return nil

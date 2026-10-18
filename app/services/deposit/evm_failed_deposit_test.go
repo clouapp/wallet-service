@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +19,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit/pending"
 	"github.com/macrowallets/waas/app/services/depositevents"
+	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/feature/support/chainfixtures"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
@@ -49,11 +53,36 @@ func mustBaseUnits(value string) *big.Int {
 
 // failedDepositFixture is the teth adapter against a fake Sepolia node, a wallet
 // with two watched deposit addresses, and the deposit webhooks recorded in the
-// outbox of a config that subscribes to every deposit event.
+// outbox of a config that subscribes to every deposit event and delivers to
+// receiver.
 type failedDepositFixture struct {
-	node   *mocks.FakeEVMNode
-	svc    *Service
-	wallet models.Wallet
+	node      *mocks.FakeEVMNode
+	svc       *Service
+	wallet    models.Wallet
+	accountID uuid.UUID
+	config    models.WebhookConfig
+	webhooks  *webhook.Service
+	publisher *depositevents.Publisher
+	receiver  *webhookReceiver
+}
+
+// webhookReceiver records the X-Vault-Event of every webhook it accepts.
+type webhookReceiver struct {
+	mu     sync.Mutex
+	events []string
+}
+
+func (r *webhookReceiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	r.mu.Lock()
+	r.events = append(r.events, req.Header.Get("X-Vault-Event"))
+	r.mu.Unlock()
+	w.WriteHeader(http.StatusOK)
+}
+
+func (r *webhookReceiver) received() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.events...)
 }
 
 func newFailedDepositFixture(t *testing.T) failedDepositFixture {
@@ -68,15 +97,22 @@ func newFailedDepositFixture(t *testing.T) failedDepositFixture {
 	wallet := fixtures.InsertWalletWithAccount(t, models.ChainTETH, &account.ID)
 	fixtures.InsertAddress(t, wallet.ID, models.ChainTETH, sepoliaDepositAddress, "player-failed", 1)
 	fixtures.InsertAddress(t, wallet.ID, models.ChainTETH, succeededDepositAddress, "player-succeeded", 2)
-	fixtures.InsertScopedWebhookConfig(t, "https://hooks.example.test/deposits", depositHookSecret, []string{
+	receiver := &webhookReceiver{}
+	server := httptest.NewServer(receiver)
+	t.Cleanup(server.Close)
+	config := fixtures.InsertScopedWebhookConfig(t, server.URL, depositHookSecret, []string{
 		string(types.EventDepositPending), string(types.EventDepositConfirming),
 		string(types.EventDepositConfirmed), string(types.EventDepositFailed),
 	}, &account.ID, nil)
 
 	webhookSvc := newWebhookSvc()
+	publisher := newDepositPublisher(webhookSvc, chainAssetDecimals{"teth/eth": etherDecimals, "teth/usdc": 6})
 	svc := newDepositSvc(registry, webhookSvc)
-	svc.SetDepositEvents(newDepositPublisher(webhookSvc, chainAssetDecimals{"teth/eth": etherDecimals, "teth/usdc": 6}))
-	return failedDepositFixture{node: node, svc: svc, wallet: wallet}
+	svc.SetDepositEvents(publisher)
+	return failedDepositFixture{
+		node: node, svc: svc, wallet: wallet, accountID: account.ID, config: config,
+		webhooks: webhookSvc, publisher: publisher, receiver: receiver,
+	}
 }
 
 // failedTransferBlock lists block 0xb62506 with the failed transfer to the watched

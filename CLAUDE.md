@@ -273,6 +273,19 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   (`app/services/deposit/evm_failed_deposit_test.go`), `TestVerify_DepositReceipts_*`
   (`app/services/deposit/receipt_verification_test.go`) and
   `TestPublish_Failed_CarriesTheOnChainFailureCodeAndTheOtherEventsNone` (`app/services/depositevents`).
+- No `deposit.pending`, `deposit.confirming` or `deposit.confirmed` of a deposit that failed on
+  chain is posted once its `deposit.failed` row exists or its transaction is `failed`
+  (`WebhookEventRepository.SupersededByDepositFailure`, for every config, also one that does not
+  subscribe to `deposit.failed`). `webhook.Service.Deliver`, which every delivery goes through (the
+  `webhook_worker` Lambda, `webhook_poller`, the local outbox, `RedispatchStale` and a client
+  redelivery), settles such a row as `failed` with `superseded: the deposit failed on chain
+  (deposit.failed)` instead of posting it, and the queue message is acknowledged; a later retry,
+  re-dispatch or redelivery finds it superseded again. Only a POST already in flight when
+  `deposit.failed` is stored can still land after it, so receivers treat `deposit.failed` as final
+  for its transaction id. — guarded by
+  `TestDeliver_Superseded_ADepositProgressEventIsNeverSentOnceTheDepositFailed` (`app/services/webhook`),
+  `TestSuperseded_ByDepositFailure_*` (`tests/feature/repositories`) and `TestDeposit_Failed_*`
+  (`app/services/deposit/deposit_failed_delivery_test.go`).
 - `webhook_poller` replaces the `webhook_worker` Lambda where none runs; the two never consume
   one queue together. — **UNGUARDED**: `TestOne_Consumer_PerQueue` reads the consumers from
   `template.yaml` and cannot see where the poller runs; this rests on the deployment.

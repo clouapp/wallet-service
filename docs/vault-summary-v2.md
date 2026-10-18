@@ -305,6 +305,13 @@ configs legadas sem dono recebem tudo. Deduplicação por (config, tipo, transa�
     o consumidor deve estornar o crédito feito para esse `transaction_id`, de forma idempotente, e não creditá-lo de
     novo.
   - A transação passa a `status: failed` em `GET /api/v1/transactions` e reaparece no feed de alterações.
+  - Depois que o `deposit.failed` é registrado, nenhum `deposit.pending`, `deposit.confirming` ou
+    `deposit.confirmed` ainda não entregue desse depósito é enviado: nem por retentativa, nem pela fila, nem
+    por um pedido de redelivery (o evento antigo fica com entrega `failed` e erro `superseded`; um pedido de
+    redelivery o conta como reenfileirado, mas ele não é enviado). Isso vale também para configs que não
+    assinam `deposit.failed`. Uma entrega que já estava em andamento nesse instante ainda pode chegar
+    depois dele; por isso o consumidor deve tratar `deposit.failed` como final para o `transaction_id`
+    (guardar o id, mesmo sem ter registrado o depósito) e ignorar eventos desse depósito que cheguem depois.
   - Depósitos de tokens (ERC-20) não são afetados: vêm de eventos `Transfer`, que uma transação que falhou não emite.
 - `finality` diz qual regra decide o `status`: `confirmations` (confirmado quando `confirmations` atinge
   `required_confirmations`), `finalized_tag` (EVM: confirmado quando o bloco do depósito está no bloco `finalized`
