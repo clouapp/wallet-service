@@ -71,6 +71,11 @@ Outbound webhooks are delivered **at least once**, never exactly once.
   (`withdrawalevents.Publisher.Backfill`). A new status-then-publish path adds its own
   backfill, keyed on the outbox row, and stamps the republished event with
   `ScopedEvent.OccurredAt` so a config created later is not sent history.
+- **An on-chain failure publishes before it writes its status, and needs no backfill.**
+  `withdrawal.failed` and `deposit.failed` (a deposit whose transaction failed on chain)
+  are published first and the row is marked failed last, so a failed publish leaves the
+  row as it was and the next tracker pass (or `deposits:verify-receipts` run) publishes
+  again; the outbox row keeps that a no-op for the configs that already got it.
 - **In queue mode a lost message is re-dispatched.** `webhook.Service.RedispatchStale`
   sends again the pending rows untouched for 5 minutes; each claim counts one attempt,
   so a row is sent at most `max_attempts` times and never more often than every 5

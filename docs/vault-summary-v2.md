@@ -290,6 +290,22 @@ configs legadas sem dono recebem tudo. Deduplicação por (config, tipo, transa�
   de chegada, porém, não é garantida. O consumidor deve tratar `confirmations` como monotônico (ignorar um valor
   menor ou igual ao já registrado), não notificar o jogador a cada evento e creditar apenas em
   `deposit.confirmed`. `data.id` e `data.transaction_id` continuam sendo o id da transação em todos os eventos.
+- `deposit.failed`: a transação do depósito foi minerada, mas falhou na chain (EVM: recibo com `status` `0x0`, por
+  falta de gás ou por reversão). A taxa foi paga e o valor não saiu do remetente, portanto nada chegou ao endereço.
+  `data.status` vem `failed` e `data.failure_code` vem `onchain_out_of_gas` ou `onchain_reverted` (o campo existe
+  apenas neste evento). Chega uma vez por depósito e por config, e nunca é seguido de `deposit.confirmed` para o mesmo
+  depósito.
+  - Desde 2026-10-18, a varredura não registra transferências nativas EVM cujo recibo falhou: não há linha, nem
+    `deposit.pending`, nem outro evento para elas. O rastreador de confirmações também relê o recibo de todo depósito
+    nativo EVM antes de confirmá-lo (o que cobre depósitos registrados por versões anteriores e pela ingestão de
+    provedores) e, se ele falhou, envia `deposit.failed` no lugar de `deposit.confirmed`. Nesse caso `confirmed_at`
+    vem `null`: o depósito nunca foi confirmado e não há crédito a desfazer.
+  - Depósitos confirmados antes dessa verificação são revistos pela operação (`deposits:verify-receipts`). O
+    `deposit.failed` de um deles traz `confirmed_at` preenchido, porque o `deposit.confirmed` já tinha sido enviado:
+    o consumidor deve estornar o crédito feito para esse `transaction_id`, de forma idempotente, e não creditá-lo de
+    novo.
+  - A transação passa a `status: failed` em `GET /api/v1/transactions` e reaparece no feed de alterações.
+  - Depósitos de tokens (ERC-20) não são afetados: vêm de eventos `Transfer`, que uma transação que falhou não emite.
 - `finality` diz qual regra decide o `status`: `confirmations` (confirmado quando `confirmations` atinge
   `required_confirmations`), `finalized_tag` (EVM: confirmado quando o bloco do depósito está no bloco `finalized`
   do nó ou abaixo dele, com pelo menos 1 confirmação) ou `solidified` (TRON: o mesmo com o bloco solidificado).
