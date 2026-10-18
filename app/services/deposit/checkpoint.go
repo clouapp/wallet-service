@@ -21,6 +21,11 @@ type CheckpointStore interface {
 	// Advance moves the chain's checkpoint to block, never back, and returns the
 	// checkpoint now stored.
 	Advance(ctx context.Context, chainID string, block uint64) (uint64, error)
+	// Set replaces the chain's checkpoint with block, back or forward. Only the
+	// operator paths call it, under the chain's scan lock.
+	Set(ctx context.Context, chainID string, block uint64) error
+	// Delete removes the chain's checkpoint; a chain without one is not an error.
+	Delete(ctx context.Context, chainID string) error
 }
 
 func checkpointCacheKey(chainID string) string {

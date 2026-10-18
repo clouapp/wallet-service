@@ -11,7 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/services/deposit"
 )
 
-// Store runs the deposit scanner's Redis commands: GET, SET, SISMEMBER, SCARD,
+// Store runs the deposit scanner's Redis commands: GET, SET, DEL, SISMEMBER, SCARD,
 // SMISMEMBER, and a DEL+SADD transaction. The service keeps the keys. Values are not logged.
 type Store struct {
 	client redis.UniversalClient
@@ -49,6 +49,15 @@ func (s *Store) Set(ctx context.Context, key string, value uint64, expiration ti
 		return fmt.Errorf("redis scanner: client is nil")
 	}
 	return s.client.Set(ctx, key, value, expiration).Err()
+}
+
+// Delete removes key with DEL; a missing key is not an error. The Redis error is
+// returned unchanged.
+func (s *Store) Delete(ctx context.Context, key string) error {
+	if s == nil || s.client == nil {
+		return fmt.Errorf("redis scanner: client is nil")
+	}
+	return s.client.Del(ctx, key).Err()
 }
 
 // SIsMember reports whether member is in key. The Redis error is returned unchanged.

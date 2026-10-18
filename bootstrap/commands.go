@@ -82,11 +82,12 @@ func Commands() []console.Command {
 			Seal:  func(plaintext string) (string, error) { return settings.Seal(appfacades.Crypt(), plaintext) },
 		})),
 		commands.NewChainsAlignNetwork(chainregistry.NewAligner(chainregistry.AlignerDeps{
-			Store:   repositories.NewChainRegistryRepository(nil),
-			Decrypt: decryptChainRPC,
-			Probe:   chainregistry.ProbeRPCNetwork,
-			Cache:   deposits,
-			Profile: configuredChainProfile,
+			Store:       repositories.NewChainRegistryRepository(nil),
+			Decrypt:     decryptChainRPC,
+			Probe:       chainregistry.ProbeRPCNetwork,
+			Cache:       deposits,
+			Checkpoints: deposits,
+			Profile:     configuredChainProfile,
 		})),
 		commands.NewChainsAddMissing(chainregistry.NewMissingChains(seedMissingAddedChains)),
 		commands.NewWithdrawPreflight(commands.WithdrawPreflightDeps{
