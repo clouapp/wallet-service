@@ -269,6 +269,32 @@ func (r *TransactionRepository) FindConfirmedDepositsMissingEvent(ctx context.Co
 	return rows, nil
 }
 
+// FindConfirmedNativeDeposits lists the confirmed deposits of chainID in the
+// chain's native asset (no token contract) that have a transaction hash, recorded
+// at or after since (a zero since reads them all), in id order after afterID
+// (uuid.Nil starts at the first). deposits:verify-receipts pages through them with
+// the last id of each page.
+func (r *TransactionRepository) FindConfirmedNativeDeposits(ctx context.Context, chainID string, since time.Time, afterID uuid.UUID, limit int) ([]models.Transaction, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("list confirmed native deposits: limit is required")
+	}
+	query := r.Query(ctx).
+		Where("chain = ? AND tx_type = ? AND status = ?", chainID, models.TxTypeDeposit, string(types.TxStatusConfirmed)).
+		Where("(token_contract IS NULL OR token_contract = '')").
+		Where("tx_hash <> ''")
+	if !since.IsZero() {
+		query = query.Where("created_at >= (?::timestamptz AT TIME ZONE 'UTC')", since.UTC())
+	}
+	if afterID != uuid.Nil {
+		query = query.Where("id > ?", afterID)
+	}
+	var rows []models.Transaction
+	if err := query.Order("id").Limit(limit).Find(&rows); err != nil {
+		return nil, fmt.Errorf("list confirmed native deposits: %w", err)
+	}
+	return rows, nil
+}
+
 // SetFee stores the paid fee in native base units.
 func (r *TransactionRepository) SetFee(ctx context.Context, id uuid.UUID, fee string) error {
 	return r.updateColumns(ctx, id, map[string]any{"fee": fee}, "set transaction fee")

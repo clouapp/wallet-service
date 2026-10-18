@@ -261,6 +261,31 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `TestBackfill_DepositEvents_RepairsALostConfirmationBesideItsConfirmingRows`,
   `TestRedeliver_Requeues_EachConfirmingProgressRowUnderItsOwnID` (`app/services/deposit`) and
   `TestPublish_Confirming_*` (`app/services/depositevents`).
+- `deposit.failed` is a native EVM deposit whose transaction was mined and failed (see "EVM
+  native gas"): the tracker sends it instead of `deposit.confirmed`, and
+  `deposits:verify-receipts --apply` sends it for a deposit confirmed before that check existed.
+  Its payload has `status: failed` and `failure_code` (`onchain_out_of_gas` or `onchain_reverted`;
+  no other event carries the field), and keeps `confirmed_at` when the deposit had been
+  confirmed. Unlike the other deposit events it is published before the row is marked failed, so
+  a failed publish leaves the row as it was and the next pass or run publishes again (once per
+  config, by the outbox row); it is not backfilled. — guarded by
+  `TestRunConfirmationCheck_EVMNativeDepositWhoseReceiptFailedIsFailedInsteadOfConfirmed`
+  (`app/services/deposit/evm_failed_deposit_test.go`), `TestVerify_DepositReceipts_*`
+  (`app/services/deposit/receipt_verification_test.go`) and
+  `TestPublish_Failed_CarriesTheOnChainFailureCodeAndTheOtherEventsNone` (`app/services/depositevents`).
+- No `deposit.pending`, `deposit.confirming` or `deposit.confirmed` of a deposit that failed on
+  chain is posted once its `deposit.failed` row exists or its transaction is `failed`
+  (`WebhookEventRepository.SupersededByDepositFailure`, for every config, also one that does not
+  subscribe to `deposit.failed`). `webhook.Service.Deliver`, which every delivery goes through (the
+  `webhook_worker` Lambda, `webhook_poller`, the local outbox, `RedispatchStale` and a client
+  redelivery), settles such a row as `failed` with `superseded: the deposit failed on chain
+  (deposit.failed)` instead of posting it, and the queue message is acknowledged; a later retry,
+  re-dispatch or redelivery finds it superseded again. Only a POST already in flight when
+  `deposit.failed` is stored can still land after it, so receivers treat `deposit.failed` as final
+  for its transaction id. — guarded by
+  `TestDeliver_Superseded_ADepositProgressEventIsNeverSentOnceTheDepositFailed` (`app/services/webhook`),
+  `TestSuperseded_ByDepositFailure_*` (`tests/feature/repositories`) and `TestDeposit_Failed_*`
+  (`app/services/deposit/deposit_failed_delivery_test.go`).
 - `webhook_poller` replaces the `webhook_worker` Lambda where none runs; the two never consume
   one queue together. — **UNGUARDED**: `TestOne_Consumer_PerQueue` reads the consumers from
   `template.yaml` and cannot see where the poller runs; this rests on the deployment.
@@ -282,9 +307,11 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   guarded by `app/services/deposit/scan_lock_test.go`.
 - A block is never marked scanned while its deposits are not all read and recorded: it is
   retried, then kept in the pending-blocks store. On every EVM chain a failed `eth_getLogs`
-  fails the block. — guarded by `app/services/deposit/failure_test.go`,
-  `TestScan_Block_FailsTheBlockWhenGetLogsFailsOnEveryEVMChain` and
-  `TestRegister_ActiveChains_EVMBlockWhoseLogsFailGoesPending`.
+  fails the block, and so does a receipt of a native transfer to a watched address that cannot
+  be read (the transfer is neither recorded nor dropped). — guarded by
+  `app/services/deposit/failure_test.go`, `TestScan_Block_FailsTheBlockWhenGetLogsFailsOnEveryEVMChain`,
+  `TestRegister_ActiveChains_EVMBlockWhoseLogsFailGoesPending` and
+  `TestScan_Block_EVMBlockWhoseReceiptsCannotBeReadGoesPendingAndRecordsOnRetry`.
 
 ### 8. Database and migrations
 
@@ -626,7 +653,7 @@ One node answer is read up to a per-chain limit and refused past it with an expl
 
 ### Paid fees
 
-The confirmation tracker stores the fee actually paid (native base units) in `transactions.fee` when a withdrawal, sweep or gas_seed confirms: EVM gasUsed × effectiveGasPrice + L1 fee, BTC/LTC inputs − outputs, Solana `meta.fee`, TRON `fee` (energy + bandwidth burned), XRP `Fee` (drops) of the transaction in a validated ledger. An XRP transaction is confirmed only when validated with `meta.TransactionResult` `tesSUCCESS`. XRP: a validated `tec…` result marks the transaction and its withdrawal `failed` with `onchain_<result in lowercase>` (e.g. `onchain_tecno_dst_insuf_xrp`), stores the fee it still burned, and sends `withdrawal.failed` once; a payment past its `LastLedgerSequence` (kept in `transactions.raw_payload`) that the node searched every ledger for (`tx` `min_ledger`/`max_ledger` → `searched_all`, inside `complete_ledgers`) is failed with `expired`, no fee. EVM: the block of an outbound row is read from its receipt (`eth_getTransactionReceipt`); a receipt with status `0x0` (mined out of gas or reverted: fee paid, value not moved) marks the row (withdrawal, sweep or gas_seed), and a withdrawal's `withdrawals` row, `failed` with `onchain_out_of_gas` (gasUsed reached the gas limit) or `onchain_reverted`, stores the fee it burned, and sends `withdrawal.failed` once; a failed sweep sends no `sweep.confirmed`. Only rows still at block 0 are read this way: a row whose block was recorded before this check (2026-10-18) is not re-read. TRON and Solana report an on-chain failure as an error (the row stays pending, never confirmed); other chains never mark an on-chain failure. The deposit scanner does not read receipts: a native EVM transfer mined with status `0x0` to a watched address is still recorded as a deposit (**KNOWN VIOLATION**, see "EVM native gas"). Older rows: `go run . artisan transactions:backfill-fees [--chain a,b] [--apply]` (dry run by default, idempotent, reads only).
+The confirmation tracker stores the fee actually paid (native base units) in `transactions.fee` when a withdrawal, sweep or gas_seed confirms: EVM gasUsed × effectiveGasPrice + L1 fee, BTC/LTC inputs − outputs, Solana `meta.fee`, TRON `fee` (energy + bandwidth burned), XRP `Fee` (drops) of the transaction in a validated ledger. An XRP transaction is confirmed only when validated with `meta.TransactionResult` `tesSUCCESS`. XRP: a validated `tec…` result marks the transaction and its withdrawal `failed` with `onchain_<result in lowercase>` (e.g. `onchain_tecno_dst_insuf_xrp`), stores the fee it still burned, and sends `withdrawal.failed` once; a payment past its `LastLedgerSequence` (kept in `transactions.raw_payload`) that the node searched every ledger for (`tx` `min_ledger`/`max_ledger` → `searched_all`, inside `complete_ledgers`) is failed with `expired`, no fee. EVM: the block of an outbound row is read from its receipt (`eth_getTransactionReceipt`); a receipt with status `0x0` (mined out of gas or reverted: fee paid, value not moved) marks the row (withdrawal, sweep or gas_seed), and a withdrawal's `withdrawals` row, `failed` with `onchain_out_of_gas` (gasUsed reached the gas limit) or `onchain_reverted`, stores the fee it burned, and sends `withdrawal.failed` once; a failed sweep sends no `sweep.confirmed`. Only rows still at block 0 are read this way: a row whose block was recorded before this check (2026-10-18) is not re-read. TRON and Solana report an on-chain failure as an error (the row stays pending, never confirmed); other chains never mark an on-chain failure. A native EVM transfer mined with status `0x0` is never a deposit: the scanner drops it and the tracker fails a deposit whose receipt failed (see "EVM native gas"). Older rows: `go run . artisan transactions:backfill-fees [--chain a,b] [--apply]` (dry run by default, idempotent, reads only).
 
 ### Confirmation and finality
 
@@ -732,9 +759,12 @@ Every native EVM transfer (withdrawal, native sweep, gas_seed, and the `tools/e2
 - An amount not known yet (a native sweep sized before its fee, a gas_seed the planner sizes) is estimated with 1 wei: a positive value is what creates the recipient's account, its size does not change a plain transfer's gas. A sender that does not hold the value yet (the base of a multi_sweep before its sweeps land, an unfunded quote) is re-estimated with 1 wei from the node's default sender (the zero address, which holds burned funds on Sepolia, Amoy, BSC testnet, Base Sepolia and Arbitrum Sepolia, checked 2026-10-18; where it does not, the estimate fails closed).
 - An unknown recipient (a preview or fee estimate without `to`, or the shared probe `0x1111…1111`, which anyone can fund) is sized as a fresh random address, the worst case for an externally owned account.
 - The planner reserves per recipient (`NativeTransferReserveTo`): a native withdrawal keeps the fee of a transfer to its recipient, a sweep the fee of a transfer into the base address. The fee estimate endpoint, the plan's gas and the built transaction use the same estimate; a gas_seed to a fresh child is sized with the account-creation gas.
-- **KNOWN VIOLATION**: `ScanBlock` reports every native transfer of a block with a value, without reading its receipt, so a native transfer mined with status `0x0` to a watched address (for example an external sender that hard-codes 21000 to a fresh deposit address) is recorded and confirmed as a deposit. ERC-20 deposits are not affected (a failed transaction emits no `Transfer` log).
+- **A failed transfer is not a deposit.** A block lists a transaction mined with receipt status `0x0` (out of gas, reverted) with its value, but none of it moved: the sender keeps it and can send the same failing transfer again (on 2026-10-17 the Sepolia transfer `0x235681c8…26cb`, 0.002 ETH with 21000 gas to the fresh deposit address `0xa9c37e6b…f80a`, was recorded, confirmed and credited). `ScanBlock` still reports every native transfer with a value; the scanner keeps a native transfer to a watched address only when its receipt succeeded (`chain.ReceiptStatusReader`, `EVMLive.TransactionsSucceeded`). Receipts are read only for those candidates: one candidate in a block reads its own receipt (`eth_getTransactionReceipt`), several read the block's once (`eth_getBlockReceipts`; a node that rejects it with a JSON-RPC error is read one receipt at a time, and one that answers -32601 or -32602 is never asked again), through the RPC client's 429 backoff. A receipt must be in the block number and hash the scan read (a reorganized block fails). A failed receipt drops the transfer (logged; no row, no webhook). A receipt that cannot be read, or that the node does not have, fails the block like a failed `eth_getLogs`: retried, then pending; the transfer is never recorded unread and never dropped unread.
+- Before the tracker (or a scan's confirmation step) confirms a native EVM deposit, it re-reads its receipt (`GetTransactionBlock`). A failed receipt marks the deposit `failed` with `onchain_out_of_gas` or `onchain_reverted` in `error_message` and sends `deposit.failed` once instead of `deposit.confirmed`; a receipt that cannot be read, or that the node does not have, leaves it unconfirmed that pass. This also covers deposits from the inbound ingest, which does not read receipts when it records them.
+- ERC-20 deposits come from `Transfer` logs (`eth_getLogs`), which a failed transaction never emits: its logs are reverted with its state (Sepolia block `0xb62506`: 4 failed transactions, none of its 341 logs, read 2026-10-18). Their receipts are not read. Internal (trace) native transfers are not scanned at all.
+- Deposits confirmed before this check (2026-10-18): `go run . artisan deposits:verify-receipts <chain> [--since=<RFC 3339 or YYYY-MM-DD>] [--apply]` re-reads the receipt of every confirmed native deposit of an EVM chain recorded since then (default: all), one receipt per deposit, and prints those that failed. Dry run by default; `--apply` marks them `failed` and sends `deposit.failed` (with `confirmed_at` kept, so the receiver reverses its credit). Idempotent: a deposit marked failed is never selected again. A deposit whose receipt was not read is printed and left as it is, and the command exits 1; run it again. A non-EVM chain is refused. Nothing is signed or broadcast.
 
-— guarded by `app/adapters/chain/evm/native_gas_test.go`, `app/adapters/chain/evm/transaction_block_test.go`, `app/services/sweep/planner_native_reserve_test.go`, `app/services/deposit/evm_failed_receipt_test.go` and `tools/e2e-funder/gas_test.go`.
+— guarded by `app/adapters/chain/evm/native_gas_test.go`, `app/adapters/chain/evm/transaction_block_test.go`, `app/adapters/chain/evm/receipt_status_test.go` (and the read-only `receipt_status_live_test.go`, `-tags evm_receipts_live`), `app/services/sweep/planner_native_reserve_test.go`, `app/services/deposit/evm_failed_receipt_test.go`, `app/services/deposit/evm_failed_deposit_test.go`, `app/services/deposit/receipt_verification_test.go`, `TestFind_ConfirmedNativeDeposits_*` (`tests/feature/repositories`), `app/console/commands/deposits_verify_receipts_test.go` and `tools/e2e-funder/gas_test.go`.
 
 ### TRON gas_seed
 

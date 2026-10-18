@@ -38,6 +38,7 @@ type eventStore interface {
 	MarkDelivered(ctx context.Context, eventID string) error
 	IncrementAttempt(ctx context.Context, eventID, errMsg string) error
 	ExistsForSubject(ctx context.Context, configID uuid.UUID, eventType, subjectID string) (bool, error)
+	SupersededByDepositFailure(ctx context.Context, eventID string) (bool, error)
 	FindDueForDelivery(ctx context.Context, limit int, baseBackoff, maxBackoff time.Duration) ([]models.WebhookEvent, error)
 	MarkFailed(ctx context.Context, eventID, errMsg string) error
 	ClaimStaleForRedispatch(ctx context.Context, staleAfter time.Duration, limit int) ([]models.WebhookEvent, error)
@@ -352,46 +353,84 @@ const (
 	webhookTestEvent   = "webhook.test"
 )
 
+// errSupersededByDepositFailure is the last_error of a deposit.pending,
+// deposit.confirming or deposit.confirmed event that is never delivered because its
+// deposit failed on chain.
+const errSupersededByDepositFailure = "superseded: the deposit failed on chain (deposit.failed)"
+
 // Deliver executes the HTTP delivery. Called by the SQS Lambda worker.
 // The signing secret is loaded from the config id. It is not taken from the
 // queue payload and it is not logged.
 // A redelivery of an event already marked delivered does not post again.
 // Returns error to trigger SQS retry → eventually DLQ after 10 failures.
 func (s *Service) Deliver(ctx context.Context, msg types.WebhookMessage) error {
+	_, err := s.deliver(ctx, msg)
+	return err
+}
+
+// deliver posts msg and reports whether it did. Every delivery passes here: the
+// queue worker, the webhook poller, the local outbox, a re-dispatch and a
+// redelivery. A deposit.pending, deposit.confirming or deposit.confirmed event of a
+// deposit that failed on chain (its transaction is failed, or deposit.failed is
+// stored for it) is never posted: the row is settled as failed, so no retry,
+// re-dispatch or redelivery sends it after deposit.failed, and the receiver never
+// credits a deposit that moved no value.
+func (s *Service) deliver(ctx context.Context, msg types.WebhookMessage) (bool, error) {
 	if s == nil || s.webhookEventRepo == nil {
-		return errors.New("webhook event store is required")
+		return false, errors.New("webhook event store is required")
 	}
 	delivered, err := s.webhookEventRepo.AlreadyDelivered(ctx, msg.EventID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if delivered {
 		slog.Info("webhook already delivered", "event_id", msg.EventID)
-		return nil
+		return false, nil
+	}
+	if depositProgressEvents[msg.EventType] {
+		superseded, supersededErr := s.webhookEventRepo.SupersededByDepositFailure(ctx, msg.EventID)
+		if supersededErr != nil {
+			return false, supersededErr
+		}
+		if superseded {
+			if markErr := s.webhookEventRepo.MarkFailed(ctx, msg.EventID, errSupersededByDepositFailure); markErr != nil {
+				return false, markErr
+			}
+			slog.Info("webhook not sent: its deposit failed on chain", "event_id", msg.EventID, "event_type", msg.EventType)
+			return false, nil
+		}
 	}
 	secret, err := s.signingSecret(ctx, msg.ConfigID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	resp, err := postSignedWebhook(ctx, msg.DeliveryURL, secret, msg.Payload, string(msg.EventType), msg.EventID, s.resolveDeliverySettings(ctx).Timeout)
 	if err != nil {
 		if httpclient.IsBuild(err) {
-			return fmt.Errorf("build request: %w", err)
+			return false, fmt.Errorf("build request: %w", err)
 		}
 		s.markAttempt(ctx, msg.EventID, err.Error())
-		return fmt.Errorf("http send: %w", err)
+		return false, fmt.Errorf("http send: %w", err)
 	}
 
 	if resp.StatusCode >= httpclient.StatusBadRequest {
 		errMsg := fmt.Sprintf("HTTP %d", resp.StatusCode)
 		s.markAttempt(ctx, msg.EventID, errMsg)
-		return fmt.Errorf("delivery failed: %s", errMsg)
+		return false, fmt.Errorf("delivery failed: %s", errMsg)
 	}
 
 	s.webhookEventRepo.MarkDelivered(ctx, msg.EventID)
 
 	slog.Info("webhook delivered", "event_id", msg.EventID, "url", msg.DeliveryURL)
-	return nil
+	return true, nil
+}
+
+// depositProgressEvents are the deposit events a deposit.failed of the same
+// deposit supersedes.
+var depositProgressEvents = map[types.EventType]bool{
+	types.EventDepositPending:    true,
+	types.EventDepositConfirming: true,
+	types.EventDepositConfirmed:  true,
 }
 
 // signingSecret loads the signing secret for configID. The secret is not logged.

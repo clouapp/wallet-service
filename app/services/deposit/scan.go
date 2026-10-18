@@ -342,13 +342,32 @@ func (s *Service) tryBlock(ctx context.Context, chainID string, adapter types.Ch
 }
 
 // recordTransfers records each transfer to a watched address and returns how many
-// deposits were new. Every transfer is tried even after one fails; the failed
-// transactions and their joined error are returned.
+// deposits were new. A native transfer whose transaction failed on chain is not a
+// deposit, and one whose receipt could not be read is not recorded and fails the
+// block (withoutFailedNativeTransfers). Every other transfer is tried even after
+// one fails; the failed transactions and their joined error are returned.
 func (s *Service) recordTransfers(ctx context.Context, chainID string, adapter types.Chain, transfers []types.DetectedTransfer) (int, []string, error) {
 	recorded := 0
 	var failedTx []string
 	var failures []error
+	var watched []types.DetectedTransfer
 	for _, transfer := range transfers {
+		isWatched, err := s.isWatchedAddress(ctx, chainID, transfer.To)
+		if err != nil {
+			failedTx = append(failedTx, transfer.TxHash)
+			failures = append(failures, fmt.Errorf("tx %s: %w", transfer.TxHash, classify(pending.ClassDatabase, err)))
+			continue
+		}
+		if isWatched {
+			watched = append(watched, transfer)
+		}
+	}
+	deposits, unverified, err := s.withoutFailedNativeTransfers(ctx, chainID, adapter, watched)
+	if err != nil {
+		failedTx = append(failedTx, unverified...)
+		failures = append(failures, err)
+	}
+	for _, transfer := range deposits {
 		created, err := s.processTransfer(ctx, chainID, adapter, transfer)
 		if err != nil {
 			failedTx = append(failedTx, transfer.TxHash)

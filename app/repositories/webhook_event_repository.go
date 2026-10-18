@@ -14,6 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories/internal/db"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 // WebhookEventRepository persists the webhook delivery queue.
@@ -88,6 +89,33 @@ func (r *WebhookEventRepository) ExistsForSubject(ctx context.Context, configID 
 		Count()
 	if err != nil {
 		return false, fmt.Errorf("count webhook events: %w", err)
+	}
+	return count > 0, nil
+}
+
+// SupersededByDepositFailure reports whether eventID is a deposit.pending,
+// deposit.confirming or deposit.confirmed event of a deposit that failed on chain:
+// its transaction is failed, or a deposit.failed event is stored for that
+// transaction (for any config: the tracker stores deposit.failed before it marks
+// the transaction failed). An unknown event, or one without a transaction, is not.
+func (r *WebhookEventRepository) SupersededByDepositFailure(ctx context.Context, eventID string) (bool, error) {
+	id := strings.TrimSpace(eventID)
+	if id == "" {
+		return false, fmt.Errorf("webhook event id is required")
+	}
+	count, err := r.Query(ctx).Model(&models.WebhookEvent{}).
+		Where("id = ? AND transaction_id IS NOT NULL", id).
+		Where("event_type IN (?, ?, ?)", string(types.EventDepositPending), string(types.EventDepositConfirming), string(types.EventDepositConfirmed)).
+		Where(`(EXISTS (
+			SELECT 1 FROM transactions t
+			WHERE t.id = webhook_events.transaction_id AND t.tx_type = ? AND t.status = ?
+		) OR EXISTS (
+			SELECT 1 FROM webhook_events f
+			WHERE f.transaction_id = webhook_events.transaction_id AND f.event_type = ?
+		))`, models.TxTypeDeposit, string(types.TxStatusFailed), string(types.EventDepositFailed)).
+		Count()
+	if err != nil {
+		return false, fmt.Errorf("check webhook event superseded by a deposit failure: %w", err)
 	}
 	return count > 0, nil
 }
