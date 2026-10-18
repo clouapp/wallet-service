@@ -21,7 +21,7 @@ func NewChainsAlignNetwork(aligner *chainregistry.Aligner) *ChainsAlignNetwork {
 func (c *ChainsAlignNetwork) Signature() string { return "chains:align-network" }
 
 func (c *ChainsAlignNetwork) Description() string {
-	return "Point eth/btc/polygon/sol at the networks of a profile (mainnet|testnet); dry run unless --apply"
+	return "Point eth/btc/polygon/sol at the networks of a profile (mainnet|testnet) and drop the deposit scan checkpoint of a chain moved to another network; dry run unless --apply"
 }
 
 func (c *ChainsAlignNetwork) Extend() command.Extend {
