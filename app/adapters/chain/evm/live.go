@@ -9,6 +9,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 	"math/big"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -66,6 +67,9 @@ type EVMLive struct {
 	cfg EVMConfig
 	rpc *rpc.RPCClient
 	fee chain.FeePolicy
+	// noBlockReceipts is set once the node answered that it does not serve
+	// eth_getBlockReceipts; receipts are then read one transaction at a time.
+	noBlockReceipts atomic.Bool
 }
 
 var (

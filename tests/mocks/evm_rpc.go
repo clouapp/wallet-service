@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -33,15 +34,33 @@ const FakeEVMGasPriceOracle = "0x420000000000000000000000000000000000000f"
 const FakeEVMNativeTransferGasHex = "0x5208"
 
 // FakeEVMReceipt is a mined (Block > 0) or pending (Block == 0) transaction the
-// fake answers eth_getTransactionByHash and eth_getTransactionReceipt with.
+// fake answers eth_getTransactionByHash, eth_getTransactionReceipt and
+// eth_getBlockReceipts with.
 type FakeEVMReceipt struct {
 	Block uint64
+	// BlockHash is the hash the receipt reports; empty is FakeEVMBlockHash(Block),
+	// the hash eth_getBlockByNumber answers for that block.
+	BlockHash string
 	// Status is the receipt status: "0x1" succeeded, "0x0" failed (out of gas or reverted).
 	Status string
 	// Gas is the transaction's gas limit; GasUsed is what the receipt reports.
 	Gas               uint64
 	GasUsed           uint64
 	EffectiveGasPrice uint64
+}
+
+// FakeEVMBlockTx is one transaction eth_getBlockByNumber lists with full
+// transactions; Value is a hex quantity.
+type FakeEVMBlockTx struct {
+	Hash  string
+	From  string
+	To    string
+	Value string
+}
+
+// FakeEVMBlockHash is the hash the fake reports for block number.
+func FakeEVMBlockHash(number uint64) string {
+	return fmt.Sprintf("0x%064x", number)
 }
 
 // FakeEVMEstimate is the transaction an eth_estimateGas call asked about.
@@ -84,8 +103,21 @@ type FakeEVMNode struct {
 	// status instead of a JSON-RPC body (a provider outage).
 	EstimateGasHTTPStatus int
 	// Receipts answers eth_getTransactionByHash and eth_getTransactionReceipt by
-	// lowercase hash; an unknown hash is null.
+	// lowercase hash; an unknown hash is null. eth_getBlockReceipts answers the
+	// mined receipts of the block asked for.
 	Receipts map[string]FakeEVMReceipt
+	// Blocks answers eth_getBlockByNumber with full transactions (hash
+	// FakeEVMBlockHash, timestamp 1); an unknown block is null. eth_getLogs
+	// answers no logs.
+	Blocks map[uint64][]FakeEVMBlockTx
+	// BlockReceiptsErrorCode, when set, answers eth_getBlockReceipts with that
+	// JSON-RPC error code: -32601 is a node that predates the method, another
+	// code a provider that disables it.
+	BlockReceiptsErrorCode int
+	// ReceiptsHTTPStatus, when set, answers eth_getTransactionReceipt and
+	// eth_getBlockReceipts with that HTTP status instead of a JSON-RPC body (a
+	// provider outage).
+	ReceiptsHTTPStatus int
 
 	mu     sync.Mutex
 	calls  []FakeEVMCall
@@ -104,6 +136,7 @@ func NewFakeEVMNode(t *testing.T) *FakeEVMNode {
 		BlockNumberHex:       "0x64",
 		NativeTransferGasHex: FakeEVMNativeTransferGasHex,
 		Receipts:             map[string]FakeEVMReceipt{},
+		Blocks:               map[uint64][]FakeEVMBlockTx{},
 	}
 	node.server = httptest.NewServer(http.HandlerFunc(node.handle))
 	t.Cleanup(node.server.Close)
@@ -173,6 +206,10 @@ func (n *FakeEVMNode) handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "upstream unavailable", n.EstimateGasHTTPStatus)
 		return
 	}
+	if n.ReceiptsHTTPStatus != 0 && (req.Method == "eth_getTransactionReceipt" || req.Method == "eth_getBlockReceipts") {
+		http.Error(w, "upstream unavailable", n.ReceiptsHTTPStatus)
+		return
+	}
 	result, rpcErr := n.answer(req.Method, req.Params)
 	body := map[string]interface{}{"jsonrpc": "2.0", "id": req.ID}
 	if rpcErr != nil {
@@ -234,6 +271,15 @@ func (n *FakeEVMNode) answer(method string, params []json.RawMessage) (interface
 		return n.transactionByHash(params), nil
 	case "eth_getTransactionReceipt":
 		return n.transactionReceipt(params), nil
+	case "eth_getBlockByNumber":
+		return n.blockByNumber(params), nil
+	case "eth_getLogs":
+		return []interface{}{}, nil
+	case "eth_getBlockReceipts":
+		if n.BlockReceiptsErrorCode != 0 {
+			return nil, map[string]interface{}{"code": n.BlockReceiptsErrorCode, "message": "the method eth_getBlockReceipts does not exist/is not available"}
+		}
+		return n.blockReceipts(params), nil
 	default:
 		return nil, map[string]interface{}{"code": -32601, "message": "method not found: " + method}
 	}
@@ -303,13 +349,81 @@ func (n *FakeEVMNode) transactionReceipt(params []json.RawMessage) interface{} {
 	if !ok || receipt.Block == 0 {
 		return nil
 	}
+	return receiptJSON(hash, receipt)
+}
+
+func receiptJSON(hash string, receipt FakeEVMReceipt) map[string]interface{} {
+	blockHash := receipt.BlockHash
+	if blockHash == "" {
+		blockHash = FakeEVMBlockHash(receipt.Block)
+	}
 	return map[string]interface{}{
 		"transactionHash":   hash,
+		"blockHash":         blockHash,
 		"blockNumber":       hexOf(receipt.Block),
 		"status":            receipt.Status,
 		"gasUsed":           hexOf(receipt.GasUsed),
 		"effectiveGasPrice": hexOf(receipt.EffectiveGasPrice),
+		"logs":              []interface{}{},
 	}
+}
+
+// blockNumberParam reads the hex block number of params[0]; a tag is not a block.
+func blockNumberParam(params []json.RawMessage) (uint64, bool) {
+	if len(params) == 0 {
+		return 0, false
+	}
+	var tag string
+	if err := json.Unmarshal(params[0], &tag); err != nil || !strings.HasPrefix(tag, "0x") {
+		return 0, false
+	}
+	number := hexQuantity(tag)
+	return number.Uint64(), number.IsUint64()
+}
+
+func (n *FakeEVMNode) blockByNumber(params []json.RawMessage) interface{} {
+	number, ok := blockNumberParam(params)
+	if !ok {
+		return nil
+	}
+	txs, known := n.Blocks[number]
+	if !known {
+		return nil
+	}
+	transactions := make([]map[string]string, 0, len(txs))
+	for _, tx := range txs {
+		transactions = append(transactions, map[string]string{"hash": tx.Hash, "from": tx.From, "to": tx.To, "value": tx.Value})
+	}
+	return map[string]interface{}{
+		"number":       hexOf(number),
+		"hash":         FakeEVMBlockHash(number),
+		"timestamp":    "0x1",
+		"transactions": transactions,
+	}
+}
+
+// blockReceipts answers the mined receipts of a block, sorted by hash; a block
+// the fake knows nothing about is null, as on a node that does not have it.
+func (n *FakeEVMNode) blockReceipts(params []json.RawMessage) interface{} {
+	number, ok := blockNumberParam(params)
+	if !ok {
+		return nil
+	}
+	hashes := make([]string, 0)
+	for hash, receipt := range n.Receipts {
+		if receipt.Block == number {
+			hashes = append(hashes, hash)
+		}
+	}
+	if _, known := n.Blocks[number]; !known && len(hashes) == 0 {
+		return nil
+	}
+	sort.Strings(hashes)
+	receipts := make([]map[string]interface{}, 0, len(hashes))
+	for _, hash := range hashes {
+		receipts = append(receipts, receiptJSON(hash, n.Receipts[hash]))
+	}
+	return receipts
 }
 
 func hexOf(value uint64) string {
