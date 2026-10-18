@@ -38,6 +38,15 @@ func (u *unreadableCheckpoints) Advance(_ context.Context, _ string, block uint6
 	return 0, u.err
 }
 
+func (u *unreadableCheckpoints) Set(_ context.Context, _ string, block uint64) error {
+	u.advanced = append(u.advanced, block)
+	return u.err
+}
+
+func (u *unreadableCheckpoints) Delete(context.Context, string) error {
+	return u.err
+}
+
 func newCheckpointFixture(t *testing.T) scanFixture {
 	t.Helper()
 	f := newScanFixture(t, checkpointTestHead, ScanOptions{BatchBlocks: 10, CatchUpBlocks: 100, Concurrency: 4})

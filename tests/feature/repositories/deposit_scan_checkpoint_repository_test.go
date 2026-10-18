@@ -115,3 +115,47 @@ func (s *DepositScanCheckpointRepositoryTestSuite) TestAdvance_Of_ConcurrentScan
 	s.Require().NoError(err)
 	s.EqualValues(1000+scanners, found)
 }
+
+func (s *DepositScanCheckpointRepositoryTestSuite) TestSet_Moves_TheCheckpointBackAndCreatesAMissingOne() {
+	ctx := context.Background()
+	_, err := s.repo.Advance(ctx, models.ChainBTC, 5158070)
+	s.Require().NoError(err)
+
+	s.Require().NoError(s.repo.Set(ctx, models.ChainBTC, 156875))
+	found, err := s.repo.Find(ctx, models.ChainBTC)
+	s.Require().NoError(err)
+	s.EqualValues(156875, found, "the operator moves the checkpoint back")
+
+	s.Require().NoError(s.repo.Set(ctx, models.ChainETH, 42))
+	found, err = s.repo.Find(ctx, models.ChainETH)
+	s.Require().NoError(err)
+	s.EqualValues(42, found)
+}
+
+func (s *DepositScanCheckpointRepositoryTestSuite) TestSet_Refuses_ABlankChainAndABlockPastBigint() {
+	ctx := context.Background()
+
+	s.Error(s.repo.Set(ctx, "  ", 1))
+	s.Error(s.repo.Set(ctx, models.ChainETH, math.MaxInt64+1))
+
+	_, err := s.repo.Find(ctx, models.ChainETH)
+	s.ErrorIs(err, models.ErrRepositoryNotFound, "a refused set writes nothing")
+}
+
+func (s *DepositScanCheckpointRepositoryTestSuite) TestDelete_Removes_OnlyThatChainAndIgnoresAMissingOne() {
+	ctx := context.Background()
+	_, err := s.repo.Advance(ctx, models.ChainBTC, 5158070)
+	s.Require().NoError(err)
+	_, err = s.repo.Advance(ctx, models.ChainETH, 10)
+	s.Require().NoError(err)
+
+	s.Require().NoError(s.repo.Delete(ctx, models.ChainBTC))
+	_, err = s.repo.Find(ctx, models.ChainBTC)
+	s.ErrorIs(err, models.ErrRepositoryNotFound)
+	eth, err := s.repo.Find(ctx, models.ChainETH)
+	s.Require().NoError(err)
+	s.EqualValues(10, eth)
+
+	s.NoError(s.repo.Delete(ctx, models.ChainBTC), "a chain without a checkpoint is not an error")
+	s.Error(s.repo.Delete(ctx, " "))
+}

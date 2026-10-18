@@ -27,6 +27,8 @@ type RedisStore interface {
 	// Uint64 reads key; found is false, with no error, when the key does not exist.
 	Uint64(ctx context.Context, key string) (value uint64, found bool, err error)
 	Set(ctx context.Context, key string, value uint64, expiration time.Duration) error
+	// Delete removes key; a key that does not exist is not an error.
+	Delete(ctx context.Context, key string) error
 	SIsMember(ctx context.Context, key, member string) (bool, error)
 	SCard(ctx context.Context, key string) (int64, error)
 	SMIsMember(ctx context.Context, key string, members ...any) ([]bool, error)

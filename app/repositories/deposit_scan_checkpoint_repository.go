@@ -13,7 +13,8 @@ import (
 )
 
 // DepositScanCheckpointRepository persists the block each chain's deposit scan
-// resumes after. The checkpoint only moves forward.
+// resumes after. The scanner only moves it forward (Advance); Set and Delete are the
+// operator's way to move it back or drop it.
 type DepositScanCheckpointRepository struct {
 	db.Base
 }
@@ -58,6 +59,40 @@ func (r *DepositScanCheckpointRepository) Advance(ctx context.Context, chainID s
 		return 0, models.ErrRepositoryNotFound
 	}
 	return storedCheckpoint(rows[0])
+}
+
+// Set writes block as the chain's checkpoint, creating the row when missing; unlike
+// Advance it also moves the checkpoint back. It fails on a blank chain or a block
+// past bigint.
+func (r *DepositScanCheckpointRepository) Set(ctx context.Context, chainID string, block uint64) error {
+	if strings.TrimSpace(chainID) == "" {
+		return fmt.Errorf("set deposit scan checkpoint: chain is required")
+	}
+	if block > math.MaxInt64 {
+		return fmt.Errorf("set deposit scan checkpoint: block %d does not fit a bigint", block)
+	}
+	if _, err := r.Query(ctx).Exec(
+		`INSERT INTO deposit_scan_checkpoints (chain, block_number, created_at, updated_at)
+		 VALUES (?, ?, NOW(), NOW())
+		 ON CONFLICT (chain) DO UPDATE
+		 SET block_number = EXCLUDED.block_number, updated_at = NOW()`,
+		chainID, int64(block),
+	); err != nil {
+		return fmt.Errorf("set deposit scan checkpoint: %w", err)
+	}
+	return nil
+}
+
+// Delete removes the chain's checkpoint, so its next scan starts at the head; a chain
+// without one is not an error.
+func (r *DepositScanCheckpointRepository) Delete(ctx context.Context, chainID string) error {
+	if strings.TrimSpace(chainID) == "" {
+		return fmt.Errorf("delete deposit scan checkpoint: chain is required")
+	}
+	if _, err := r.Query(ctx).Exec(`DELETE FROM deposit_scan_checkpoints WHERE chain = ?`, chainID); err != nil {
+		return fmt.Errorf("delete deposit scan checkpoint: %w", err)
+	}
+	return nil
 }
 
 // storedCheckpoint returns the row's block, or an error for a negative one.
