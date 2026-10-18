@@ -39,6 +39,9 @@ func TestNil_Store_ReportsAMissingClient(t *testing.T) {
 	if err := store.ReplaceSet(ctx, "vault:addresses:eth", "0xabc"); err == nil {
 		t.Fatal("expected error for a nil store replace")
 	}
+	if err := store.Delete(ctx, "vault:checkpoint:eth"); err == nil {
+		t.Fatal("expected error for a nil store delete")
+	}
 }
 
 func TestSet_And_Uint64RoundTrip(t *testing.T) {
@@ -303,6 +306,27 @@ func TestS_Card_MissingKeyIsZero(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("scard = %d", count)
+	}
+}
+
+func TestDelete_Removes_TheKeyAndIgnoresAMissingOne(t *testing.T) {
+	client := testenv.TestRedis(t)
+	prefix := testenv.TestRedisPrefix(t, client)
+	key := prefix + "vault:checkpoint:btc"
+	ctx := context.Background()
+	store := New(client)
+	if err := store.Set(ctx, key, 5158070, 0); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+
+	if err := store.Delete(ctx, key); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, found, err := store.Uint64(ctx, key); err != nil || found {
+		t.Fatalf("the key must be gone, found %v err %v", found, err)
+	}
+	if err := store.Delete(ctx, key); err != nil {
+		t.Fatalf("deleting a missing key is not an error: %v", err)
 	}
 }
 

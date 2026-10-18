@@ -27,6 +27,8 @@ type RedisStore interface {
 	// Uint64 reads key; found is false, with no error, when the key does not exist.
 	Uint64(ctx context.Context, key string) (value uint64, found bool, err error)
 	Set(ctx context.Context, key string, value uint64, expiration time.Duration) error
+	// Delete removes key; a key that does not exist is not an error.
+	Delete(ctx context.Context, key string) error
 	SIsMember(ctx context.Context, key, member string) (bool, error)
 	SCard(ctx context.Context, key string) (int64, error)
 	SMIsMember(ctx context.Context, key string, members ...any) ([]bool, error)
@@ -153,7 +155,8 @@ func NewService(deps Deps) *Service {
 
 // ScanLatestBlocks is the Lambda entry point. Scans new blocks for a chain.
 // Called by EventBridge on schedule (every 5-60s depending on chain). A cycle that
-// finds another scanner on the chain is skipped and returns nil.
+// finds another scanner on the chain is skipped and returns nil; one whose checkpoint
+// is far past the head fails with ErrCheckpointAheadOfHead and scans nothing.
 func (s *Service) ScanLatestBlocks(ctx context.Context, chainID string) error {
 	err := s.scanLatestBlocks(ctx, chainID)
 	if errors.Is(err, ErrScanInProgress) {
@@ -199,7 +202,9 @@ func (s *Service) scanLatestBlocks(ctx context.Context, chainID string) error {
 	}
 
 	if latestBlock <= lastBlock {
-		return nil
+		// Nothing new: a checkpoint slightly ahead (a lagging node) is waited out, one
+		// far past the head (another network, a hand edit) fails the cycle loudly.
+		return checkCheckpointNotAhead(chainID, lastBlock, latestBlock)
 	}
 
 	lag := latestBlock - lastBlock

@@ -29,6 +29,10 @@ func (s redisStore) Set(ctx context.Context, key string, value uint64, expiratio
 	return s.client.Set(ctx, key, value, expiration).Err()
 }
 
+func (s redisStore) Delete(ctx context.Context, key string) error {
+	return s.client.Del(ctx, key).Err()
+}
+
 func (s redisStore) SIsMember(ctx context.Context, key, member string) (bool, error) {
 	return s.client.SIsMember(ctx, key, member).Result()
 }

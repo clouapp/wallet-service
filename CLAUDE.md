@@ -294,16 +294,32 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `app/jobs/send_credential_mail_test.go` and `TestJob_Payload_IsDecodedNotPositional`.
 - The app registers no events or listeners; add an event only together with a listener.
 - The deposit scan checkpoint of each chain lives in Postgres (`deposit_scan_checkpoints`)
-  and never moves back; Redis (`vault:checkpoint:<chain>`) is a copy written after the
+  and the scanner never moves it back; Redis (`vault:checkpoint:<chain>`) is a copy written after the
   database. A read falls back from Redis to the database on a miss or an error. Only a chain
   the database does not hold, with Redis answering a clean miss (or not configured), starts
   at the head; a Redis error with no row, or a database error, skips the cycle and moves
   nothing. — guarded by `app/services/deposit/checkpoint_test.go` and
   `TestDeposit_Scan_CheckpointRepositorySuite`.
+- A checkpoint is a height of the network it was written on. A cycle whose checkpoint is
+  ahead of the head by at most 1000 blocks (`checkpointAheadTolerance`: a load-balanced RPC
+  answering from a lagging node) waits quietly; further ahead (the RPC now serves another
+  network, or a hand edit) it logs at error level and fails with `ErrCheckpointAheadOfHead`
+  every cycle, scanning and moving nothing: the cursor is never reset automatically, since
+  that could skip deposits. Two operator paths move it, both under the scan lock, Redis
+  cleared before the database is written: `scan:deposits <chain> --set-checkpoint=<block>
+  [--apply]` (dry run without `--apply`; prints both copies and the head; refuses a block
+  past the head; the next scan resumes after the block) and `chains:align-network --apply`,
+  which drops the checkpoint of every chain it moves to another network before moving any
+  (an environment-only change keeps it), so the next scan starts at the new network's head.
+  Never rewind by hand in SQL and Redis. — guarded by
+  `app/services/deposit/checkpoint_guard_test.go`, `checkpoint_operator_test.go`,
+  `app/services/chainregistry/align_checkpoints_test.go` and
+  `app/console/commands/scan_deposits_test.go`.
 - One scanner per chain: a `ScanLatestBlocks` cycle holds `vault:lock:deposit_scan:<chain>`
   (`cacheguard.Acquire`, TTL 2 min, above the 60 s `deposit_scanner` Lambda timeout). A held
   lock skips the cycle; a lock store that is down or missing fails it. `scan:deposits
-  --block|--tx|--pending|--retry-pending` take no lock and never move the checkpoint. —
+  --block|--tx|--pending|--retry-pending` take no lock and never move the checkpoint;
+  `--set-checkpoint --apply` takes it and refuses while a scan holds it. —
   guarded by `app/services/deposit/scan_lock_test.go`.
 - A block is never marked scanned while its deposits are not all read and recorded: it is
   retried, then kept in the pending-blocks store. On every EVM chain a failed `eth_getLogs`

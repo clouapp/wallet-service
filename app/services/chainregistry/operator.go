@@ -21,32 +21,45 @@ type AddressCache interface {
 	RefreshAddressCache(ctx context.Context, chainID string) error
 }
 
+// ScanCheckpoints reads and drops the deposit scan checkpoint of one chain. A
+// checkpoint is a block height of the network it was written on, so a chain moved to
+// another network starts its scan again at the new network's head.
+type ScanCheckpoints interface {
+	// Checkpoint returns the chain's checkpoint; found is false for a chain never scanned.
+	Checkpoint(ctx context.Context, chainID string) (block uint64, found bool, err error)
+	// DropCheckpoint removes the chain's checkpoint and returns the one it removed.
+	DropCheckpoint(ctx context.Context, chainID string) (block uint64, found bool, err error)
+}
+
 // AlignerDeps is everything chains:align-network needs. Store is required.
 type AlignerDeps struct {
-	Store   FullStore
-	Decrypt RPCDecrypter
-	Probe   NetworkProbe
-	Cache   AddressCache
-	Profile func() string
+	Store       FullStore
+	Decrypt     RPCDecrypter
+	Probe       NetworkProbe
+	Cache       AddressCache
+	Checkpoints ScanCheckpoints
+	Profile     func() string
 }
 
 // Aligner points configured chains at a network profile.
 type Aligner struct {
-	store   FullStore
-	decrypt RPCDecrypter
-	probe   NetworkProbe
-	cache   AddressCache
-	profile func() string
+	store       FullStore
+	decrypt     RPCDecrypter
+	probe       NetworkProbe
+	cache       AddressCache
+	checkpoints ScanCheckpoints
+	profile     func() string
 }
 
 // NewAligner wires the alignment command.
 func NewAligner(deps AlignerDeps) *Aligner {
 	return &Aligner{
-		store:   deps.Store,
-		decrypt: deps.Decrypt,
-		probe:   deps.Probe,
-		cache:   deps.Cache,
-		profile: deps.Profile,
+		store:       deps.Store,
+		decrypt:     deps.Decrypt,
+		probe:       deps.Probe,
+		cache:       deps.Cache,
+		checkpoints: deps.Checkpoints,
+		profile:     deps.Profile,
 	}
 }
 
@@ -79,9 +92,16 @@ func (a *Aligner) Align(ctx context.Context, profile, accountRaw string, apply b
 	if alignment.IsEmpty() {
 		return report, nil
 	}
+	moved := networkMoves(alignment.Plan)
 	if !apply {
+		a.describeCheckpointDrops(ctx, &report, moved)
 		report.Info = append(report.Info, "dry run: nothing written (pass --apply)")
 		return report, nil
+	}
+	// The checkpoints go first: a drop that fails (a scan holds the chain) stops the run
+	// before any chain moves, so running it again plans the same moves and drops again.
+	if err := a.dropCheckpoints(ctx, &report, moved); err != nil {
+		return report, err
 	}
 	if err := ApplyAlignment(ctx, a.store, alignment); err != nil {
 		return report, err
@@ -97,6 +117,61 @@ func (a *Aligner) Align(ctx context.Context, profile, accountRaw string, apply b
 	}
 	report.Info = append(report.Info, "applied; restart the API and workers so the chain adapters reload")
 	return report, nil
+}
+
+// networkMoves are the changes that put a chain on another network, not only in
+// another environment list.
+func networkMoves(plan *Plan) []ChainChange {
+	var moves []ChainChange
+	for _, change := range plan.Changes {
+		if change.NetworkChanges() {
+			moves = append(moves, change)
+		}
+	}
+	return moves
+}
+
+// describeCheckpointDrops reports, in a dry run, the checkpoint each move would drop.
+func (a *Aligner) describeCheckpointDrops(ctx context.Context, report *Report, moves []ChainChange) {
+	for _, change := range moves {
+		if a.checkpoints == nil {
+			report.Warning = append(report.Warning, fmt.Sprintf("deposit scan checkpoint of %s would not be dropped: no deposit service", change.ChainID))
+			continue
+		}
+		block, found, err := a.checkpoints.Checkpoint(ctx, change.ChainID)
+		switch {
+		case err != nil:
+			report.Warning = append(report.Warning, fmt.Sprintf("deposit scan checkpoint of %s not read: %s", change.ChainID, err))
+			report.Info = append(report.Info, fmt.Sprintf("chain %s: its deposit scan checkpoint would be dropped; the next scan starts at the head of %s", change.ChainID, change.ToNetwork))
+		case found:
+			report.Info = append(report.Info, fmt.Sprintf("chain %s: deposit scan checkpoint %d would be dropped; the next scan starts at the head of %s", change.ChainID, block, change.ToNetwork))
+		default:
+			report.Info = append(report.Info, fmt.Sprintf("chain %s: no deposit scan checkpoint; the next scan starts at the head of %s", change.ChainID, change.ToNetwork))
+		}
+	}
+}
+
+// dropCheckpoints drops the checkpoint of every chain the alignment moves to another
+// network: its block is a height of the old network. It fails on the first chain whose
+// checkpoint cannot be dropped.
+func (a *Aligner) dropCheckpoints(ctx context.Context, report *Report, moves []ChainChange) error {
+	for _, change := range moves {
+		if a.checkpoints == nil {
+			report.Warning = append(report.Warning, fmt.Sprintf("deposit scan checkpoint of %s not dropped: no deposit service; move it with scan:deposits %s --set-checkpoint=<head> --apply", change.ChainID, change.ChainID))
+			continue
+		}
+		block, found, err := a.checkpoints.DropCheckpoint(ctx, change.ChainID)
+		if err != nil {
+			return fmt.Errorf("drop the deposit scan checkpoint of %s (no chain was changed; run the command again): %w", change.ChainID, err)
+		}
+		if !found {
+			report.Info = append(report.Info, fmt.Sprintf("chain %s: no deposit scan checkpoint; the next scan starts at the head of %s", change.ChainID, change.ToNetwork))
+			continue
+		}
+		report.Info = append(report.Info, fmt.Sprintf("chain %s: deposit scan checkpoint %d dropped; the next scan starts at the head of %s (if the RPC already served %s, restore it with scan:deposits %s --set-checkpoint=%d --apply)",
+			change.ChainID, block, change.ToNetwork, change.ToNetwork, change.ChainID, block))
+	}
+	return nil
 }
 
 func describeAlignment(alignment *Alignment) Report {
