@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -376,5 +377,50 @@ func TestPublish_Confirming_SubjectFitsTheSubjectColumn(t *testing.T) {
 	event, _ := onlyPayload(t, f.enqueuer)
 	if len(event.SubjectID) > 64 {
 		t.Fatalf("subject %q is %d characters, the column holds 64", event.SubjectID, len(event.SubjectID))
+	}
+}
+
+func TestPublish_Failed_CarriesTheOnChainFailureCodeAndTheOtherEventsNone(t *testing.T) {
+	f := newFixture()
+	failed := f.deposit("eth", "ETH", "2000000000000000")
+	failed.Status = string(types.TxStatusFailed)
+	failed.ErrorMessage = "onchain_out_of_gas"
+
+	if err := f.publisher.Publish(context.Background(), types.EventDepositFailed, failed); err != nil {
+		t.Fatal(err)
+	}
+	event, payload := onlyPayload(t, f.enqueuer)
+	if event.EventType != types.EventDepositFailed || event.SubjectID != failed.ID.String() {
+		t.Fatalf("deposit.failed is one row per deposit under its transaction id, got %s %s", event.EventType, event.SubjectID)
+	}
+	if payload.Status != string(types.TxStatusFailed) || payload.FailureCode == nil || *payload.FailureCode != "onchain_out_of_gas" {
+		t.Fatalf("payload status %q failure_code %v", payload.Status, payload.FailureCode)
+	}
+	if payload.ConfirmedAt == nil {
+		t.Fatal("a deposit confirmed before its receipt was found failed keeps confirmed_at, so the receiver knows it credited it")
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"failure_code":"onchain_out_of_gas"`) {
+		t.Fatalf("deposit.failed body %s", raw)
+	}
+
+	for _, eventType := range []types.EventType{types.EventDepositPending, types.EventDepositConfirming, types.EventDepositConfirmed} {
+		f := newFixture()
+		tx := f.deposit("eth", "ETH", "2000000000000000")
+		tx.ErrorMessage = "stale text on a row that did not fail"
+		if err := f.publisher.Publish(context.Background(), eventType, tx); err != nil {
+			t.Fatal(err)
+		}
+		_, payload := onlyPayload(t, f.enqueuer)
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if payload.FailureCode != nil || strings.Contains(string(raw), "failure_code") {
+			t.Fatalf("%s must not carry failure_code: %s", eventType, raw)
+		}
 	}
 }

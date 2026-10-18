@@ -33,6 +33,16 @@ func (d chainAssetDecimals) Decimals(chainID, asset string) (int, bool) {
 	return decimals, ok
 }
 
+// newDepositPublisher is the production deposit event publisher on the test
+// database, with the decimals of decimals.
+func newDepositPublisher(enqueuer depositevents.Enqueuer, decimals chainAssetDecimals) *depositevents.Publisher {
+	return depositevents.NewPublisher(depositevents.PublisherDeps{
+		Enqueuer: enqueuer,
+		Wallets:  repositories.NewWalletRepository(nil),
+		Decimals: decimals,
+	})
+}
+
 type depositEventsFixture struct {
 	svc       *Service
 	adapter   *mocks.MockChain
@@ -53,11 +63,7 @@ func newDepositEventsFixture(t *testing.T) depositEventsFixture {
 	wallet := fixtures.InsertWalletWithAccount(t, "eth", &account.ID)
 
 	webhookSvc := newWebhookSvc()
-	publisher := depositevents.NewPublisher(depositevents.PublisherDeps{
-		Enqueuer: webhookSvc,
-		Wallets:  repositories.NewWalletRepository(nil),
-		Decimals: chainAssetDecimals{"eth/eth": etherDecimals},
-	})
+	publisher := newDepositPublisher(webhookSvc, chainAssetDecimals{"eth/eth": etherDecimals})
 	svc := newDepositSvc(registry, webhookSvc)
 	svc.SetDepositEvents(publisher)
 	return depositEventsFixture{svc: svc, adapter: adapter, publisher: publisher, wallet: wallet, accountID: account.ID}

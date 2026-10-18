@@ -176,6 +176,9 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 		}
 
 		confirmedNow := newStatus == string(types.TxStatusConfirmed) && tx.Status != string(types.TxStatusConfirmed)
+		if confirmedNow && checksDepositReceipt(adapter, tx) && !s.depositReceiptAllowsConfirmation(ctx, adapter, tx) {
+			continue
+		}
 		fee := ""
 		if confirmedNow && needsPaidFee(tx) {
 			if got, ok := paidFee(ctx, adapter, tx); ok {
