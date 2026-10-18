@@ -86,6 +86,8 @@ func (s *Service) SetScanOptions(opts ScanOptions) error {
 	if err := opts.Validate(); err != nil {
 		return err
 	}
+	s.scanMu.Lock()
+	defer s.scanMu.Unlock()
 	s.scan = opts
 	s.scanFallback = opts
 	return nil
@@ -138,26 +140,33 @@ func ScanOptionsForRun(envBatch, envCatchUp, envConcurrency, storedBatch, stored
 	return opts, nil
 }
 
-// resolveScanOptions applies a stored deposit_scan row for this invocation.
-// A missing source keeps the window already on the service. A reader error
-// keeps the fallback so a settings outage does not stop the scan. The
-// production reader returns the environment window instead of an error.
-func (s *Service) resolveScanOptions(ctx context.Context) {
-	if s == nil || s.scanSource == nil {
-		return
+// resolveScanOptions applies a stored deposit_scan row for this invocation and
+// returns the global window it leaves on the service. A missing source keeps the
+// window already there. A reader error keeps the fallback so a settings outage does
+// not stop the scan. The production reader returns the environment window instead of
+// an error.
+func (s *Service) resolveScanOptions(ctx context.Context) ScanOptions {
+	if s.scanSource == nil {
+		s.scanMu.Lock()
+		defer s.scanMu.Unlock()
+		return s.scan
 	}
 	opts, err := s.scanSource(ctx)
-	if err != nil {
+	if err == nil {
+		if invalid := opts.Validate(); invalid != nil {
+			slog.Warn("deposit scan settings invalid; keeping the environment window", "error", invalid)
+			err = invalid
+		}
+	} else {
 		slog.Warn("deposit scan settings unread; keeping the environment window", "error", err)
-		s.scan = s.scanFallback
-		return
 	}
-	if err := opts.Validate(); err != nil {
-		slog.Warn("deposit scan settings invalid; keeping the environment window", "error", err)
-		s.scan = s.scanFallback
-		return
+	s.scanMu.Lock()
+	defer s.scanMu.Unlock()
+	if err != nil {
+		opts = s.scanFallback
 	}
 	s.scan = opts
+	return opts
 }
 
 // ApplyStoredScanOptions overlays a deposit_scan row on the environment window.
@@ -209,11 +218,11 @@ func overlayScanOptions(base ScanOptions, batchBlocks, catchUpBlocks, concurrenc
 	return opts
 }
 
-// scanWindow is how many blocks after the checkpoint this cycle covers.
-func (s *Service) scanWindow(lag uint64) uint64 {
-	window := s.scan.BatchBlocks
+// window is how many blocks after the checkpoint a cycle lagging the head by lag covers.
+func (o ScanOptions) window(lag uint64) uint64 {
+	window := o.BatchBlocks
 	if lag > window {
-		window = s.scan.CatchUpBlocks
+		window = o.CatchUpBlocks
 	}
 	return min(window, lag)
 }
@@ -224,12 +233,13 @@ type fetchedBlock struct {
 	err       error
 }
 
-// scanRange records the deposits of blocks from..to and returns the last block the
-// checkpoint may move to. A block whose deposits cannot be recorded is retried right
-// away; if it keeps failing it is saved as pending and the scan moves on. The scan
-// stops before a failing block that cannot be saved as pending, or when too many
-// blocks failed this cycle, so the checkpoint never passes a block it could lose.
-func (s *Service) scanRange(ctx context.Context, chainID string, adapter types.Chain, from, to uint64) (uint64, error) {
+// scanRange records the deposits of blocks from..to, fetching concurrency blocks at a
+// time, and returns the last block the checkpoint may move to. A block whose deposits
+// cannot be recorded is retried right away; if it keeps failing it is saved as pending
+// and the scan moves on. The scan stops before a failing block that cannot be saved as
+// pending, or when too many blocks failed this cycle, so the checkpoint never passes a
+// block it could lose.
+func (s *Service) scanRange(ctx context.Context, chainID string, adapter types.Chain, from, to uint64, concurrency int) (uint64, error) {
 	if from == 0 {
 		return 0, fmt.Errorf("scan range must start after block 0")
 	}
@@ -237,11 +247,14 @@ func (s *Service) scanRange(ctx context.Context, chainID string, adapter types.C
 	if from > to {
 		return scanned, nil
 	}
+	if concurrency < 1 {
+		return scanned, fmt.Errorf("scan concurrency must be at least 1, got %d", concurrency)
+	}
 	newPending := 0
 	for chunkStart := from; ; {
 		chunkEnd := to
-		if to-chunkStart >= uint64(s.scan.Concurrency) {
-			chunkEnd = chunkStart + uint64(s.scan.Concurrency) - 1
+		if to-chunkStart >= uint64(concurrency) {
+			chunkEnd = chunkStart + uint64(concurrency) - 1
 		}
 		for _, block := range fetchBlocks(ctx, adapter, chunkStart, chunkEnd) {
 			outcome := s.processBlock(ctx, chainID, adapter, block, adapter.ScanBlock)

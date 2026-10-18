@@ -1,6 +1,10 @@
 package config
 
-import "github.com/macrowallets/waas/app/facades"
+import (
+	"strings"
+
+	"github.com/macrowallets/waas/app/facades"
+)
 
 // registerVault holds WaaS-specific settings (RPC, AWS, queues, provider API keys).
 func registerVault() {
@@ -100,6 +104,12 @@ func registerVault() {
 			"batch_blocks":    envInt("DEPOSIT_SCAN_BATCH_BLOCKS", 0),
 			"catch_up_blocks": envInt("DEPOSIT_SCAN_CATCH_UP_BLOCKS", 0),
 			"concurrency":     envInt("DEPOSIT_SCAN_CONCURRENCY", 0),
+			// The same three per chain, for an RPC that rate-limits the scan (a public
+			// endpoint without a key): DEPOSIT_SCAN_BATCH_BLOCKS_<CHAIN>,
+			// DEPOSIT_SCAN_CATCH_UP_BLOCKS_<CHAIN> and DEPOSIT_SCAN_CONCURRENCY_<CHAIN>, e.g.
+			// DEPOSIT_SCAN_CONCURRENCY_SOL=1. A positive value wins over the global window
+			// (environment or deposit_scan setting) for that chain only; 0 keeps it.
+			"chains": depositScanChainsDocument(envInt),
 			// A block whose deposits fail to record is retried right away (3 retries at
 			// 100/300/900 ms by default), then kept as pending in Redis and in an
 			// append-only file under pending_dir (default ~/.local/state/macro-wallets/
@@ -132,6 +142,29 @@ func registerFeeEstimate() {
 	facades.Config().Add("fee_estimate", map[string]any{
 		"cache_ttl_seconds": envInt("FEE_ESTIMATE_CACHE_TTL_SECONDS", defaultFeeEstimateCacheTTLSeconds),
 	})
+}
+
+// depositScanChainIDs are the chain records whose deposit scan window can be set apart;
+// a new chain record needs its id here to be overridden.
+var depositScanChainIDs = []string{
+	"eth", "teth", "btc", "tbtc", "polygon", "tpolygon", "sol", "tsol", "base", "tbase",
+	"arbitrum", "tarbitrum", "bsc", "tbsc", "tron", "ttron", "ltc", "tltc", "xrp", "txrp",
+}
+
+// depositScanChainsDocument reads each chain's DEPOSIT_SCAN_BATCH_BLOCKS_<CHAIN>,
+// DEPOSIT_SCAN_CATCH_UP_BLOCKS_<CHAIN> and DEPOSIT_SCAN_CONCURRENCY_<CHAIN> through
+// lookup, keyed by chain id; an unset variable is 0.
+func depositScanChainsDocument(lookup func(key string, defaultValue int) int) map[string]any {
+	chains := make(map[string]any, len(depositScanChainIDs))
+	for _, chainID := range depositScanChainIDs {
+		suffix := "_" + strings.ToUpper(chainID)
+		chains[chainID] = map[string]any{
+			"batch_blocks":    lookup("DEPOSIT_SCAN_BATCH_BLOCKS"+suffix, 0),
+			"catch_up_blocks": lookup("DEPOSIT_SCAN_CATCH_UP_BLOCKS"+suffix, 0),
+			"concurrency":     lookup("DEPOSIT_SCAN_CONCURRENCY"+suffix, 0),
+		}
+	}
+	return chains
 }
 
 // utxoFallback reads <PREFIX>_FALLBACK_RPC_URL (comma-separated, in order), the
