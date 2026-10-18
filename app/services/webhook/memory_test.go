@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 // memoryWebhook is the config and event ports the webhook service already takes.
@@ -214,6 +216,27 @@ func (e memoryEvents) AlreadyDelivered(_ context.Context, eventID string) (bool,
 		return false, nil
 	}
 	return event.DeliveryStatus == models.WebhookDeliveryDelivered, nil
+}
+
+// SupersededByDepositFailure holds a deposit progress event of a transaction that
+// has a deposit.failed event (the memory store has no transactions table).
+func (e memoryEvents) SupersededByDepositFailure(_ context.Context, eventID string) (bool, error) {
+	if eventID == "" {
+		return false, fmt.Errorf("webhook event id is required")
+	}
+	e.store.mu.Lock()
+	defer e.store.mu.Unlock()
+	event := e.store.events[eventID]
+	if event == nil || event.TransactionID == nil || event.EventType == string(types.EventDepositFailed) ||
+		!strings.HasPrefix(event.EventType, "deposit.") {
+		return false, nil
+	}
+	for _, other := range e.store.events {
+		if other.TransactionID != nil && *other.TransactionID == *event.TransactionID && other.EventType == string(types.EventDepositFailed) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (e memoryEvents) MarkDelivered(_ context.Context, eventID string) error {

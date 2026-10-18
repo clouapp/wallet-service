@@ -48,6 +48,9 @@ func (s *sweepConfirmMemory) FindConfirmedOutboundWithoutFee(context.Context, st
 func (s *sweepConfirmMemory) FindConfirmedDepositsMissingEvent(context.Context, string, time.Time, time.Time, []string, int) ([]models.Transaction, error) {
 	return nil, nil
 }
+func (s *sweepConfirmMemory) FindConfirmedNativeDeposits(context.Context, string, time.Time, uuid.UUID, int) ([]models.Transaction, error) {
+	return nil, nil
+}
 
 func (s *sweepConfirmMemory) RecordConfirmations(_ context.Context, id uuid.UUID, _ int, status string, _ *time.Time) error {
 	s.rows = append(s.rows, sweepConfirmRow{
@@ -134,6 +137,9 @@ func (f *sweepConfirmEventRepo) Create(_ context.Context, event *models.WebhookE
 	return nil
 }
 func (f *sweepConfirmEventRepo) AlreadyDelivered(context.Context, string) (bool, error) {
+	return false, nil
+}
+func (f *sweepConfirmEventRepo) SupersededByDepositFailure(context.Context, string) (bool, error) {
 	return false, nil
 }
 func (f *sweepConfirmEventRepo) MarkDelivered(context.Context, string) error { return nil }

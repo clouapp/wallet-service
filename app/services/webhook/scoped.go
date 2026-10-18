@@ -211,9 +211,9 @@ func (s *Service) deliverStored(ctx context.Context, event models.WebhookEvent) 
 	}
 
 	msg := queuedMessage(event, event.Attempts+1)
-	deliverErr := s.Deliver(ctx, msg)
+	posted, deliverErr := s.deliver(ctx, msg)
 	if deliverErr == nil {
-		return true
+		return posted
 	}
 	slog.Warn("local webhook delivery failed", "error", deliverErr, "event_id", event.ID, "attempt", msg.Attempt)
 	if msg.Attempt >= s.resolveDeliverySettings(ctx).MaxAttempts {

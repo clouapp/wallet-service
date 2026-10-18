@@ -61,6 +61,10 @@ type AssetDecimals interface {
 // RequiredConfirmations), or the chain's own finality, "finalized_tag" (EVM) or
 // "solidified" (TRON), under which the deposit is confirmed once its block is final
 // and RequiredConfirmations is only the typical finality lag, for display.
+// FailureCode is set on deposit.failed only: the on-chain result of a transaction
+// that was mined and failed (onchain_out_of_gas, onchain_reverted), so it moved no
+// value. A deposit.failed whose ConfirmedAt is set had been confirmed (and
+// deposit.confirmed sent) before its failure was found.
 type Payload struct {
 	ID                    string  `json:"id"`
 	TransactionID         string  `json:"transaction_id"`
@@ -86,6 +90,7 @@ type Payload struct {
 	Finality              string  `json:"finality"`
 	Status                string  `json:"status"`
 	ConfirmedAt           *string `json:"confirmed_at"`
+	FailureCode           *string `json:"failure_code,omitempty"`
 	OccurredAt            string  `json:"occurred_at"`
 }
 
@@ -147,7 +152,7 @@ func (p *Publisher) publish(ctx context.Context, eventType types.EventType, tx m
 		return fmt.Errorf("publish %s for transaction %s: %w", eventType, tx.ID, ErrNotADeposit)
 	}
 
-	payload, err := p.payload(tx)
+	payload, err := p.payload(eventType, tx)
 	if err != nil {
 		return fmt.Errorf("publish %s for transaction %s: %w", eventType, tx.ID, err)
 	}
@@ -187,7 +192,7 @@ func subjectOf(eventType types.EventType, tx models.Transaction) string {
 	return tx.ID.String()
 }
 
-func (p *Publisher) payload(tx models.Transaction) (Payload, error) {
+func (p *Publisher) payload(eventType types.EventType, tx models.Transaction) (Payload, error) {
 	baseUnits, ok := amount.ParseBaseUnits(tx.Amount)
 	if !ok {
 		return Payload{}, ErrInvalidBaseUnits
@@ -237,6 +242,9 @@ func (p *Publisher) payload(tx models.Transaction) (Payload, error) {
 	if tx.ConfirmedAt != nil {
 		confirmedAt := tx.ConfirmedAt.UTC().Format(time.RFC3339)
 		payload.ConfirmedAt = &confirmedAt
+	}
+	if code := strings.TrimSpace(tx.ErrorMessage); eventType == types.EventDepositFailed && code != "" {
+		payload.FailureCode = &code
 	}
 	return payload, nil
 }
