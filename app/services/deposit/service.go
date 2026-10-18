@@ -71,6 +71,7 @@ type transactionStore interface {
 	FindPendingByChain(ctx context.Context, chainID string) ([]models.Transaction, error)
 	FindConfirmedOutboundWithoutFee(ctx context.Context, chainID string, limit int) ([]models.Transaction, error)
 	FindConfirmedDepositsMissingEvent(ctx context.Context, eventType string, from, to time.Time, chainIDs []string, limit int) ([]models.Transaction, error)
+	FindConfirmedNativeDeposits(ctx context.Context, chainID string, since time.Time, afterID uuid.UUID, limit int) ([]models.Transaction, error)
 	SetBlockNumber(ctx context.Context, id uuid.UUID, block uint64) error
 	SetFee(ctx context.Context, id uuid.UUID, fee string) error
 	RecordConfirmations(ctx context.Context, id uuid.UUID, confirmations int, status string, confirmedAt *time.Time) error

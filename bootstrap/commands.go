@@ -115,6 +115,7 @@ func Commands() []console.Command {
 			TargetKMSKeyID: secretsadapter.KMSKeyID(appfacades.Config().GetString("vault.master_key_ref")),
 		})),
 		commands.NewTransactionsBackfillFees(deposits, registry),
+		commands.NewDepositsVerifyReceipts(deposits),
 	})
 }
 
