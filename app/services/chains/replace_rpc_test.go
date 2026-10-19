@@ -262,7 +262,8 @@ func TestReplace_RPC_SaysWhichNetworkTheEndpointServes(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			store := &setRPCStore{chain: &models.Chain{ID: "eth"}}
-			rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store, Verify: tc.verifier, Seal: func(string) (string, error) { return "enc:v1:sealed", nil }})
+			rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store, Verify: tc.verifier, Fallbacks: &recordingFallbacks{},
+				Seal: func(string) (string, error) { return "enc:v1:sealed", nil }})
 			line, err := rpc.Replace(context.Background(), "eth", setRPCFixture, false)
 			if err != nil || !strings.Contains(line, tc.want) || store.updates != 1 {
 				t.Fatalf("line=%q err=%v updates=%d", line, err, store.updates)
@@ -282,7 +283,8 @@ func TestReplace_RPC_RequiresTheVerifierBeforeWriting(t *testing.T) {
 func TestReplace_RPC_SkipsTheNetworkCheckOnlyWhenAskedAndSaysSoLoudly(t *testing.T) {
 	store := &setRPCStore{chain: &models.Chain{ID: "eth", AdapterType: models.AdapterTypeEVM}}
 	verifier := &stubVerifier{err: fmt.Errorf("%w: eth_chainId: provider unavailable", chainregistry.ErrEndpointUnverified)}
-	rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store, Verify: verifier, Seal: func(string) (string, error) { return "enc:v1:sealed", nil }})
+	rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store, Verify: verifier, Fallbacks: &recordingFallbacks{},
+		Seal: func(string) (string, error) { return "enc:v1:sealed", nil }})
 
 	if _, err := rpc.Replace(context.Background(), "eth", "http://10.0.0.5:8545", false); err == nil || store.updates != 0 {
 		t.Fatalf("without the flag an endpoint that does not answer is refused: err=%v updates=%d", err, store.updates)
@@ -296,5 +298,76 @@ func TestReplace_RPC_SkipsTheNetworkCheckOnlyWhenAskedAndSaysSoLoudly(t *testing
 	}
 	if !strings.Contains(line, "WITHOUT a network check (--skip-network-check)") || strings.Contains(line, "10.0.0.5") {
 		t.Fatalf("line = %q", line)
+	}
+}
+
+// recordingFallbacks is the fallback list of one chain: it disables what is enabled.
+type recordingFallbacks struct {
+	enabled  []int
+	disabled []int
+	err      error
+	within   int
+}
+
+func (f *recordingFallbacks) Within(ctx context.Context, fn func(context.Context) error) error {
+	f.within++
+	return fn(ctx)
+}
+
+func (f *recordingFallbacks) DisableAll(_ context.Context, _ string) ([]int, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	f.disabled, f.enabled = f.enabled, nil
+	return f.disabled, nil
+}
+
+func TestReplace_RPC_DisablesTheFallbacksWhenThePrimaryMayServeAnotherNetwork(t *testing.T) {
+	cases := map[string]struct {
+		verifier *stubVerifier
+		skip     bool
+		disabled bool
+	}{
+		"profile move":       {&stubVerifier{network: models.NetworkEthereumMainnet, moved: true}, false, true},
+		"skip network check": {&stubVerifier{}, true, true},
+		"own network":        {&stubVerifier{network: models.NetworkEthereumSepolia}, false, false},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			store := &setRPCStore{chain: &models.Chain{ID: "eth", AdapterType: models.AdapterTypeEVM}}
+			fallbacks := &recordingFallbacks{enabled: []int{2, 3}}
+			rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store, Verify: tc.verifier, Fallbacks: fallbacks,
+				Seal: func(string) (string, error) { return "enc:v1:sealed", nil }})
+
+			line, err := rpc.Replace(context.Background(), "eth", setRPCFixture, tc.skip)
+			if err != nil || store.updates != 1 || fallbacks.within != 1 {
+				t.Fatalf("err=%v updates=%d within=%d", err, store.updates, fallbacks.within)
+			}
+			if tc.disabled != (len(fallbacks.disabled) == 2) {
+				t.Fatalf("disabled = %v", fallbacks.disabled)
+			}
+			if mention := strings.Contains(line, "fallbacks at positions 2, 3 disabled"); mention != tc.disabled {
+				t.Fatalf("line = %q", line)
+			}
+		})
+	}
+}
+
+func TestReplace_RPC_AFallbackListThatCannotBeDisabledStopsTheWrite(t *testing.T) {
+	store := &setRPCStore{chain: &models.Chain{ID: "eth", AdapterType: models.AdapterTypeEVM}}
+	fallbacks := &recordingFallbacks{err: errors.New("database down")}
+	rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store, Verify: &stubVerifier{moved: true, network: models.NetworkEthereumMainnet},
+		Fallbacks: fallbacks, Seal: func(string) (string, error) { return "enc:v1:sealed", nil }})
+
+	if _, err := rpc.Replace(context.Background(), "eth", setRPCFixture, false); err == nil || !strings.Contains(err.Error(), "database down") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestReplace_RPC_RefusesAMoveWithoutTheFallbackList(t *testing.T) {
+	store := &setRPCStore{chain: &models.Chain{ID: "eth", AdapterType: models.AdapterTypeEVM}}
+	rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store, Verify: &stubVerifier{moved: true}, Seal: func(string) (string, error) { return "enc:v1:sealed", nil }})
+	if _, err := rpc.Replace(context.Background(), "eth", setRPCFixture, false); err == nil || store.updates != 0 {
+		t.Fatalf("err=%v updates=%d", err, store.updates)
 	}
 }

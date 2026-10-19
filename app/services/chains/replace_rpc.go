@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/macrowallets/waas/app/models"
@@ -19,23 +20,35 @@ type PrimaryVerifier interface {
 	Verify(ctx context.Context, record models.Chain, candidate string) (network string, moved bool, err error)
 }
 
-// ReplaceRPCDeps is everything chains:set-rpc needs. Store, Seal and Verify are required.
+// FallbackDisabler turns off the enabled fallbacks of a chain, in the transaction
+// Within opens (the chain store joins it through the context), and returns their
+// positions.
+type FallbackDisabler interface {
+	Within(ctx context.Context, fn func(context.Context) error) error
+	DisableAll(ctx context.Context, chainID string) ([]int, error)
+}
+
+// ReplaceRPCDeps is everything chains:set-rpc needs. Store, Seal and Verify are
+// required; Fallbacks is required to move a primary to another network or to skip
+// the network check.
 type ReplaceRPCDeps struct {
-	Store  RPCStore
-	Seal   func(plaintext string) (string, error)
-	Verify PrimaryVerifier
+	Store     RPCStore
+	Seal      func(plaintext string) (string, error)
+	Verify    PrimaryVerifier
+	Fallbacks FallbackDisabler
 }
 
 // ReplaceRPC writes one chain's sealed rpc_url. The endpoint is never returned.
 type ReplaceRPC struct {
-	store  RPCStore
-	seal   func(plaintext string) (string, error)
-	verify PrimaryVerifier
+	store     RPCStore
+	seal      func(plaintext string) (string, error)
+	verify    PrimaryVerifier
+	fallbacks FallbackDisabler
 }
 
 // NewReplaceRPC wires the chain endpoint writer.
 func NewReplaceRPC(deps ReplaceRPCDeps) *ReplaceRPC {
-	return &ReplaceRPC{store: deps.Store, seal: deps.Seal, verify: deps.Verify}
+	return &ReplaceRPC{store: deps.Store, seal: deps.Seal, verify: deps.Verify, fallbacks: deps.Fallbacks}
 }
 
 // Replace asks rawURL which network it serves, then seals it and stores it for
@@ -44,8 +57,11 @@ func NewReplaceRPC(deps ReplaceRPCDeps) *ReplaceRPC {
 // is written; a chain whose endpoints cannot be asked (Bitcoin family, TRON, XRP)
 // is written unchecked, as before. skipNetworkCheck (artisan --skip-network-check,
 // never the platform API) writes without asking, says so in the line and logs a
-// warning. The returned line is the operator message. The endpoint is not part of
-// the line, the log or the error.
+// warning. When the new primary serves the profile's network instead of the
+// chain's (moved) or was not checked, the chain's enabled fallbacks, checked
+// against the network it was on, are disabled in the same transaction and the line
+// names them. The returned line is the operator message. The endpoint is not part
+// of the line, the log or the error.
 func (r *ReplaceRPC) Replace(ctx context.Context, chainID, rawURL string, skipNetworkCheck bool) (string, error) {
 	chainID = strings.TrimSpace(chainID)
 	rawURL = strings.TrimSpace(rawURL)
@@ -77,6 +93,7 @@ func (r *ReplaceRPC) Replace(ctx context.Context, chainID, rawURL string, skipNe
 		return "", fmt.Errorf("chain not found: %s", chainID)
 	}
 	note := "WITHOUT a network check (--skip-network-check)"
+	otherNetwork := skipNetworkCheck
 	if skipNetworkCheck {
 		slog.Warn("chain rpc_url written without a network check", "chain", chain.ID, "host", chainpkg.RPCEndpointHost(rawURL))
 	} else {
@@ -88,7 +105,10 @@ func (r *ReplaceRPC) Replace(ctx context.Context, chainID, rawURL string, skipNe
 		if refused != nil {
 			return "", refused
 		}
-		note = checked
+		note, otherNetwork = checked, moved
+	}
+	if otherNetwork && r.fallbacks == nil {
+		return "", fmt.Errorf("fallback list is not configured: refusing to write a primary that may serve another network")
 	}
 	if r.seal == nil {
 		return "", fmt.Errorf("failed to encrypt url: sealer is required")
@@ -97,13 +117,47 @@ func (r *ReplaceRPC) Replace(ctx context.Context, chainID, rawURL string, skipNe
 	if err != nil {
 		return "", fmt.Errorf("failed to encrypt url: %w", err)
 	}
-	if err := r.store.UpdateRPCURL(ctx, chainID, encURL); err != nil {
-		if errors.Is(err, models.ErrRepositoryNotFound) {
-			return "", fmt.Errorf("no rows updated for chain %s", chainID)
+	var disabled []int
+	write := func(ctx context.Context) error {
+		if err := r.store.UpdateRPCURL(ctx, chainID, encURL); err != nil {
+			if errors.Is(err, models.ErrRepositoryNotFound) {
+				return fmt.Errorf("no rows updated for chain %s", chainID)
+			}
+			return fmt.Errorf("failed to update chain %s: %w", chainID, innermost(err))
 		}
-		return "", fmt.Errorf("failed to update chain %s: %w", chainID, innermost(err))
+		if !otherNetwork {
+			return nil
+		}
+		positions, err := r.fallbacks.DisableAll(ctx, chainID)
+		if err != nil {
+			return fmt.Errorf("failed to disable the fallbacks of chain %s (nothing written): %w", chainID, err)
+		}
+		disabled = positions
+		return nil
+	}
+	var err2 error
+	if r.fallbacks != nil {
+		err2 = r.fallbacks.Within(ctx, write)
+	} else {
+		err2 = write(ctx)
+	}
+	if err2 != nil {
+		return "", err2
+	}
+	if len(disabled) > 0 {
+		note += fmt.Sprintf("; fallbacks at positions %s disabled: they were checked against the chain's previous network; "+
+			"re-enable each with chains:rpc-endpoints %s --enable=N --apply once the chain is aligned", joinPositions(disabled), chainID)
+		slog.Warn("chain rpc fallbacks disabled with a primary that may serve another network", "chain", chainID, "positions", disabled)
 	}
 	return fmt.Sprintf("chain %s rpc_url updated (%s; restart running processes to pick it up)", chainID, note), nil
+}
+
+func joinPositions(positions []int) string {
+	parts := make([]string, len(positions))
+	for i, position := range positions {
+		parts[i] = strconv.Itoa(position)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // primaryCheckNote turns what a new primary said about its network into the

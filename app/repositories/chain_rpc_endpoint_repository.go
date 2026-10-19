@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -52,6 +53,30 @@ func (r *ChainRPCEndpointRepository) ListEnabled(ctx context.Context) ([]models.
 		return nil, fmt.Errorf("list enabled chain rpc endpoints: %w", err)
 	}
 	return rows, nil
+}
+
+// DisableAll turns off every enabled fallback of chainID (joining a transaction on
+// ctx) and returns their positions, in order; none enabled is an empty list.
+func (r *ChainRPCEndpointRepository) DisableAll(ctx context.Context, chainID string) ([]int, error) {
+	chainID = strings.TrimSpace(chainID)
+	if chainID == "" {
+		return nil, fmt.Errorf("disable chain rpc endpoints: chain id is required")
+	}
+	var rows []models.ChainRPCEndpoint
+	if err := r.Query(ctx).Raw(
+		`UPDATE chain_rpc_endpoints SET enabled = FALSE, updated_at = NOW()
+		 WHERE chain_id = ? AND enabled
+		 RETURNING id, chain_id, url, position, enabled, created_at, updated_at`,
+		chainID,
+	).Scan(&rows); err != nil {
+		return nil, fmt.Errorf("disable chain rpc endpoints: %w", err)
+	}
+	positions := make([]int, 0, len(rows))
+	for _, row := range rows {
+		positions = append(positions, row.Position)
+	}
+	sort.Ints(positions)
+	return positions, nil
 }
 
 // Replace writes endpoints as the whole fallback list of chainID, at their

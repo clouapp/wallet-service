@@ -79,9 +79,10 @@ func Commands() []console.Command {
 		}),
 		commands.NewPriceCheckUpdate(prices),
 		commands.NewChainsSetRPC(chains.NewReplaceRPC(chains.ReplaceRPCDeps{
-			Store:  container.MustMake[*repositories.ChainRepository](),
-			Seal:   func(plaintext string) (string, error) { return settings.Seal(appfacades.Crypt(), plaintext) },
-			Verify: chainregistry.NewPrimaryVerifier(decryptChainRPC, configuredChainProfile),
+			Store:     container.MustMake[*repositories.ChainRepository](),
+			Seal:      func(plaintext string) (string, error) { return settings.Seal(appfacades.Crypt(), plaintext) },
+			Verify:    chainregistry.NewPrimaryVerifier(decryptChainRPC, configuredChainProfile),
+			Fallbacks: container.MustMake[*repositories.ChainRPCEndpointRepository](),
 		})),
 		commands.NewChainsAlignNetwork(chainregistry.NewAligner(chainregistry.AlignerDeps{
 			Store:       repositories.NewChainRegistryRepository(nil),

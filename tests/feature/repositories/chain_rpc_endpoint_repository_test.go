@@ -149,3 +149,23 @@ func (s *ChainRPCEndpointRepositoryTestSuite) TestDeleting_AChainDeletesItsFallb
 	s.Require().NoError(err)
 	s.Empty(rows)
 }
+
+func (s *ChainRPCEndpointRepositoryTestSuite) TestDisable_All_TurnsOffTheEnabledFallbacksOfOneChain() {
+	ctx := context.Background()
+	s.Require().NoError(s.repo.Replace(ctx, models.ChainETH, []models.ChainRPCEndpoint{
+		sealedFallback(2, true), sealedFallback(3, false), sealedFallback(4, true),
+	}))
+	s.Require().NoError(s.repo.Replace(ctx, models.ChainSOL, []models.ChainRPCEndpoint{sealedFallback(2, true)}))
+
+	disabled, err := s.repo.DisableAll(ctx, models.ChainETH)
+	s.Require().NoError(err)
+	s.Equal([]int{2, 4}, disabled)
+	rows, err := s.repo.ListEnabled(ctx)
+	s.Require().NoError(err)
+	s.Require().Len(rows, 1)
+	s.Equal(models.ChainSOL, rows[0].ChainID)
+
+	again, err := s.repo.DisableAll(ctx, models.ChainETH)
+	s.Require().NoError(err)
+	s.Empty(again)
+}
