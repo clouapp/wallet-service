@@ -64,8 +64,13 @@ var (
 		"rate limit", "rate-limit", "ratelimit", "too many requests", "request limit", "requests limit",
 		"daily limit", "quota", "capacity limit", "throttl",
 	}
+	// noStatePhrases are a node without the state of an old block (no archive): the
+	// call moves on, the node stays healthy for every other call.
+	noStatePhrases = []string{
+		"missing trie node", "historical state", "state is not available", "state not available", "pruned",
+	}
 	unavailablePhrases = []string{
-		"internal error", "header not found", "missing trie node", "unknown block", "upstream",
+		"internal error", "header not found", "unknown block", "upstream",
 		"backend", "temporarily unavailable", "service unavailable", "no healthy", "node is behind",
 		"node is unhealthy", "timeout", "timed out",
 	}
@@ -120,7 +125,7 @@ func classifyRPCErrorOf(rpcErr *rpcError, httpFailure bool) outcome {
 		switch {
 		case hasPhrase(message, rateLimitPhrases):
 			return outcomeRateLimited
-		case hasPhrase(message, unsupportedPhrases):
+		case hasPhrase(message, unsupportedPhrases), hasPhrase(message, noStatePhrases):
 			return outcomeUnsupported
 		case hasPhrase(message, unavailablePhrases):
 			return outcomeUnavailable
@@ -171,6 +176,14 @@ func shapeKey(method string, params []interface{}) string {
 func shapeRefused(err error) bool {
 	var rpcErr *rpcError
 	return errors.As(err, &rpcErr) && rpcErr != nil && rpcErr.Code == jsonRPCInvalidParams
+}
+
+// MissingState reports a node's answer that it has no state for the block asked
+// about (a node without archive state: "missing trie node", "historical state ...
+// not available").
+func MissingState(err error) bool {
+	var rpcErr *rpcError
+	return errors.As(err, &rpcErr) && rpcErr != nil && hasPhrase(strings.ToLower(rpcErr.Message), noStatePhrases)
 }
 
 // skippedSlotAnswer reports a Solana getBlock answer that the slot was skipped (or

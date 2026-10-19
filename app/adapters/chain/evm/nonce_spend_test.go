@@ -198,6 +198,7 @@ func TestEVM_NonceSpend_AReadItCannotMakeProvesNothing(t *testing.T) {
 	archiveNeeded := &spendNode{head: 1000, from: spendSender, nonce: 41, spentAt: 150, spentBy: otherHash, receiptStatus: "0x1", gasUsed: "0x5208", stateFrom: 872}
 	_, err := spendAdapter(t, archiveNeeded).NonceSpend(context.Background(), ourHash, spendSender, 41, 100)
 	require.Error(t, err, "without the state of the blocks around the spend nothing is proven")
+	require.ErrorIs(t, err, chain.ErrHistoricalStateUnavailable, "the tracker backs off a row it cannot prove instead of asking every pass")
 
 	before := &spendNode{head: 1000, from: spendSender, nonce: 41, spentAt: 90, spentBy: otherHash, receiptStatus: "0x1", gasUsed: "0x5208"}
 	_, err = spendAdapter(t, before).NonceSpend(context.Background(), ourHash, spendSender, 41, 100)

@@ -2,11 +2,13 @@ package evm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 
+	"github.com/macrowallets/waas/app/adapters/chain/rpc"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -53,6 +55,9 @@ func (a *EVMLive) NonceSpend(ctx context.Context, txHash, from string, nonce, fr
 	spentAt := func(block uint64) (bool, error) {
 		var count string
 		if err := a.rpc.Call(ctx, "eth_getTransactionCount", &count, from, fmt.Sprintf("0x%x", block)); err != nil {
+			if rpc.MissingState(err) {
+				err = errors.Join(chain.ErrHistoricalStateUnavailable, err)
+			}
 			return false, fmt.Errorf("evm nonce spend: nonce count of %s at block %d (a node without that block's state needs an archive endpoint): %w", from, block, err)
 		}
 		spent, err := parseHexQuantity(count, "nonce count")

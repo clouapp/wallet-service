@@ -270,24 +270,33 @@ func onChainFailureCode(result string) string {
 // can never land. Only rows recorded with broadcast_outcome unknown, sender_nonce
 // and broadcast_head are read; anything else, or a proof that could not be made (a
 // node without the state of those blocks needs an archive endpoint), settles nothing
-// and is logged: the row stays pending for withdrawals:reconcile.
+// and is logged: the row stays pending for withdrawals:reconcile. A row the
+// endpoints have no state to prove (chain.ErrHistoricalStateUnavailable) is not
+// tried again for nonceProofRetryAfter (kept in raw_payload).
 func (s *Service) settleByNonceSpend(ctx context.Context, adapter types.Chain, tx models.Transaction) (chain.NonceSpend, bool) {
 	reader, ok := adapter.(chain.NonceSpendReader)
 	if !ok {
 		return chain.NonceSpend{}, false
 	}
 	proof, ok := unknownOutcomeProof(tx)
-	if !ok {
+	if !ok || s.now().Before(payloadUnixTime(tx, chain.NonceProofRetryAtPayloadKey)) {
 		return chain.NonceSpend{}, false
 	}
 	spend, err := reader.NonceSpend(ctx, tx.TxHash, tx.FromAddress, proof.nonce, proof.head)
 	if err != nil {
 		slog.Warn("cannot prove whether an unknown-outcome transfer landed; it stays pending (withdrawals:reconcile)",
 			"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "error", err)
+		if errors.Is(err, chain.ErrHistoricalStateUnavailable) {
+			s.recordPayloadValue(ctx, tx, chain.NonceProofRetryAtPayloadKey, s.now().Add(nonceProofRetryAfter).Unix())
+		}
 		return chain.NonceSpend{}, false
 	}
 	return spend, spend.Spent
 }
+
+// nonceProofRetryAfter is how long the tracker leaves a row the endpoints had no
+// state to prove before it tries again.
+const nonceProofRetryAfter = time.Hour
 
 // nonceProof is what raw_payload keeps for settleByNonceSpend.
 type nonceProof struct {

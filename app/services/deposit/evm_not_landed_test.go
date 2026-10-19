@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
@@ -189,5 +190,50 @@ func TestRunConfirmationCheck_EVMUnknownOutcomeStaysPendingWithoutTheStateToProv
 	}
 	if got := reloadWithdrawal(t, withdrawal.ID); got.Status != models.WithdrawalStatusBroadcast {
 		t.Fatalf("withdrawal %s, want broadcast", got.Status)
+	}
+}
+
+func TestRunConfirmationCheck_EVMUnknownOutcomeWithoutTheStateIsRetriedHourly(t *testing.T) {
+	fixtures.TestDB(t)
+	node := mocks.NewFakeEVMNode(t)
+	node.BlockNumberHex = fmt.Sprintf("0x%x", notLandedHead)
+	node.NoTxIndex = true
+	node.MissingStateBelow = notLandedHead + 1
+	if node.Blocks == nil {
+		node.Blocks = map[uint64][]mocks.FakeEVMBlockTx{}
+	}
+	registry := chain.NewRegistry()
+	registry.RegisterChain(chainfixtures.NewEVMSepolia(node.URL()))
+	w := fixtures.InsertWallet(t, models.ChainTETH)
+	tx, _ := sentWithdrawal(t, w.ID, notLandedSender(1), 41, notLandedHead-100, true)
+	spendNonce(node, notLandedHead-40, notLandedSender(1), "0x00000000000000000000000000000000000000000000000000000000000000e1", 41, 21_000)
+	svc := newDepositSvc(registry, newWebhookSvc())
+	svc.SetWithdrawalConfirmations(newWithdrawalPublisher())
+	clock := &testClock{now: time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)}
+	svc.now = clock.Now
+	counts := func() int { return len(node.CallsTo("eth_getTransactionCount")) }
+
+	if err := svc.RunConfirmationCheck(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	first := counts()
+	var payload map[string]any
+	_ = json.Unmarshal([]byte(reloadTransaction(t, tx.ID).RawPayload), &payload)
+	if first == 0 || payload[chain.NonceProofRetryAtPayloadKey] != float64(clock.Now().Add(nonceProofRetryAfter).Unix()) {
+		t.Fatalf("reads %d, raw_payload %v: the row is backed off for an hour", first, payload)
+	}
+
+	if err := svc.RunConfirmationCheck(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if counts() != first {
+		t.Fatalf("reads %d after a second pass, want %d: a row known unprovable is not asked again every pass", counts(), first)
+	}
+	clock.advance(nonceProofRetryAfter + time.Minute)
+	if err := svc.RunConfirmationCheck(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if counts() == first {
+		t.Fatal("after the back-off the proof is tried again")
 	}
 }

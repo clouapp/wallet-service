@@ -1219,6 +1219,24 @@ func TestFailover_SkippedSlot_ACoolingEndpointIsAskedOncePerCoolDown(t *testing.
 	assert.Greater(t, primary.count("getBlock"), 1, "after the cool-down it is asked again")
 }
 
+func TestFailover_MissingHistoricalState_MovesOnWithoutCountingAFailure(t *testing.T) {
+	pruned := newFakeNode(t, answers(rpcFailure(-32000, "missing trie node 7c2f… (path ) state 0x… is not available")))
+	archive := newFakeNode(t, answers(result(`"0x2a"`)))
+	client, _, _ := failoverClient(pruned.URL(), archive.URL())
+
+	for i := 0; i < endpointFailuresToOpen+1; i++ {
+		var count string
+		require.NoError(t, client.Call(context.Background(), "eth_getTransactionCount", &count, "0xabc", "0x10"))
+		assert.Equal(t, "0x2a", count)
+	}
+	assert.Zero(t, healthOf(client)[0].ConsecutiveFailures, "a node without an old block's state is healthy for every other call")
+	assert.True(t, healthOf(client)[0].CoolingDownUntil.IsZero())
+
+	err := NewRPCClient(RPCClientDeps{URL: pruned.URL()}).Call(context.Background(), "eth_getTransactionCount", nil, "0xabc", "0x10")
+	assert.True(t, MissingState(err), "the caller can tell a missing state from an outage: %v", err)
+	assert.False(t, MissingState(errors.New("connection refused")))
+}
+
 func TestFailover_SolanaHistoryAnswers_MoveOnWithoutCountingAFailure(t *testing.T) {
 	for _, failure := range []func(string) (int, string){
 		answers(rpcFailure(-32001, "Block 512 cleaned up, does not exist on node. First available block: 900")),

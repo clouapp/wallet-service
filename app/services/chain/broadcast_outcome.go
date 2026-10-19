@@ -2,6 +2,7 @@ package chain
 
 import (
 	"context"
+	"errors"
 
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -46,6 +47,10 @@ type NonceSpend struct {
 	// receipt (out_of_gas, reverted); "" when it succeeded.
 	Result string
 }
+
+// ErrHistoricalStateUnavailable is a proof that needs the state of old blocks no
+// endpoint has (an archive endpoint is needed): the tracker backs the row off.
+var ErrHistoricalStateUnavailable = errors.New("historical state unavailable")
 
 // NonceSpendReader is an adapter that can say, by positive proof, which transaction
 // spent a sender's nonce (EVM): the block where the sender's nonce count passed nonce,
