@@ -169,3 +169,19 @@ func (s *ChainRPCEndpointRepositoryTestSuite) TestDisable_All_TurnsOffTheEnabled
 	s.Require().NoError(err)
 	s.Empty(again)
 }
+
+func (s *ChainRPCEndpointRepositoryTestSuite) TestDisable_Positions_TurnsOffOnlyThoseOfThatChain() {
+	ctx := context.Background()
+	s.Require().NoError(s.repo.Replace(ctx, models.ChainETH, []models.ChainRPCEndpoint{
+		sealedFallback(2, true), sealedFallback(3, true), sealedFallback(4, true),
+	}))
+	s.Require().NoError(s.repo.Replace(ctx, models.ChainSOL, []models.ChainRPCEndpoint{sealedFallback(3, true)}))
+
+	s.Require().NoError(s.repo.DisablePositions(ctx, models.ChainETH, []int{2, 4, 9}))
+	s.Require().NoError(s.repo.DisablePositions(ctx, models.ChainETH, nil))
+	rows, err := s.repo.ListEnabled(ctx)
+	s.Require().NoError(err)
+	s.Require().Len(rows, 2)
+	s.Equal([]int{3, 3}, []int{rows[0].Position, rows[1].Position})
+	s.Equal([]string{models.ChainETH, models.ChainSOL}, []string{rows[0].ChainID, rows[1].ChainID})
+}

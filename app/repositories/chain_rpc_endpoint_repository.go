@@ -79,6 +79,25 @@ func (r *ChainRPCEndpointRepository) DisableAll(ctx context.Context, chainID str
 	return positions, nil
 }
 
+// DisablePositions turns off the fallbacks of chainID at positions (joining a
+// transaction on ctx). A position without a row is not an error.
+func (r *ChainRPCEndpointRepository) DisablePositions(ctx context.Context, chainID string, positions []int) error {
+	chainID = strings.TrimSpace(chainID)
+	if chainID == "" {
+		return fmt.Errorf("disable chain rpc endpoints: chain id is required")
+	}
+	if len(positions) == 0 {
+		return nil
+	}
+	if _, err := r.Query(ctx).Exec(
+		`UPDATE chain_rpc_endpoints SET enabled = FALSE, updated_at = NOW() WHERE chain_id = ? AND position IN ?`,
+		chainID, positions,
+	); err != nil {
+		return fmt.Errorf("disable chain rpc endpoints: %w", err)
+	}
+	return nil
+}
+
 // Replace writes endpoints as the whole fallback list of chainID, at their
 // positions, in one transaction (joining one already on ctx). A position under 2,
 // a repeated position or an unsealed URL is refused by the table and nothing

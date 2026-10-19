@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chain"
 )
 
 // Report is what a chain artisan command prints before it fails or returns.
@@ -31,13 +32,26 @@ type ScanCheckpoints interface {
 	DropCheckpoint(ctx context.Context, chainID string) (block uint64, found bool, err error)
 }
 
+// FallbackEndpoints reads the fallbacks of a chain and disables some of them.
+type FallbackEndpoints interface {
+	ListByChain(ctx context.Context, chainID string) ([]models.ChainRPCEndpoint, error)
+	DisablePositions(ctx context.Context, chainID string, positions []int) error
+}
+
+// EndpointVerify asks an endpoint which network it serves (VerifyEndpoint).
+type EndpointVerify func(ctx context.Context, adapterType string, target EndpointTarget, rawURL string) (string, error)
+
 // AlignerDeps is everything chains:align-network needs. Store is required.
+// Fallbacks, when set, lets a move disable the fallbacks that do not serve the new
+// network; Verify defaults to VerifyEndpoint.
 type AlignerDeps struct {
 	Store       FullStore
 	Decrypt     RPCDecrypter
 	Probe       NetworkProbe
 	Cache       AddressCache
 	Checkpoints ScanCheckpoints
+	Fallbacks   FallbackEndpoints
+	Verify      EndpointVerify
 	Profile     func() string
 }
 
@@ -48,17 +62,25 @@ type Aligner struct {
 	probe       NetworkProbe
 	cache       AddressCache
 	checkpoints ScanCheckpoints
+	fallbacks   FallbackEndpoints
+	verify      EndpointVerify
 	profile     func() string
 }
 
 // NewAligner wires the alignment command.
 func NewAligner(deps AlignerDeps) *Aligner {
+	verify := deps.Verify
+	if verify == nil {
+		verify = VerifyEndpoint
+	}
 	return &Aligner{
 		store:       deps.Store,
 		decrypt:     deps.Decrypt,
 		probe:       deps.Probe,
 		cache:       deps.Cache,
 		checkpoints: deps.Checkpoints,
+		fallbacks:   deps.Fallbacks,
+		verify:      verify,
 		profile:     deps.Profile,
 	}
 }
@@ -93,16 +115,26 @@ func (a *Aligner) Align(ctx context.Context, profile, accountRaw string, apply b
 		return report, nil
 	}
 	moved := networkMoves(alignment.Plan)
+	stale, err := a.staleFallbacks(ctx, moved)
+	if err != nil {
+		return report, err
+	}
 	if !apply {
 		a.describeCheckpointDrops(ctx, &report, moved)
+		describeFallbackDrops(&report, stale, "would be disabled")
 		report.Info = append(report.Info, "dry run: nothing written (pass --apply)")
 		return report, nil
 	}
-	// The checkpoints go first: a drop that fails (a scan holds the chain) stops the run
-	// before any chain moves, so running it again plans the same moves and drops again.
+	// The checkpoints and the stale fallbacks go first: a drop that fails (a scan
+	// holds the chain) stops the run before any chain moves, so running it again
+	// plans the same moves and drops again.
 	if err := a.dropCheckpoints(ctx, &report, moved); err != nil {
 		return report, err
 	}
+	if err := a.disableFallbacks(ctx, stale); err != nil {
+		return report, err
+	}
+	describeFallbackDrops(&report, stale, "disabled")
 	if err := ApplyAlignment(ctx, a.store, alignment); err != nil {
 		return report, err
 	}
@@ -117,6 +149,80 @@ func (a *Aligner) Align(ctx context.Context, profile, accountRaw string, apply b
 	}
 	report.Info = append(report.Info, "applied; restart the API and workers so the chain adapters reload")
 	return report, nil
+}
+
+// staleFallback is an enabled fallback of a moved chain that does not serve the
+// network it moves to (or does not say).
+type staleFallback struct {
+	chainID  string
+	position int
+	host     string
+	network  string
+}
+
+// staleFallbacks asks every enabled fallback of each moved chain which network it
+// serves and returns those that do not serve the chain's new network.
+func (a *Aligner) staleFallbacks(ctx context.Context, moves []ChainChange) ([]staleFallback, error) {
+	if a.fallbacks == nil {
+		return nil, nil
+	}
+	var stale []staleFallback
+	for _, change := range moves {
+		rows, err := a.fallbacks.ListByChain(ctx, change.ChainID)
+		if err != nil {
+			return nil, fmt.Errorf("read the fallbacks of %s (no chain was changed): %w", change.ChainID, err)
+		}
+		goal := EndpointTarget{Network: change.ToNetwork}
+		if change.ToNetworkID != nil {
+			goal.EVMNetworkID = *change.ToNetworkID
+		}
+		for _, row := range rows {
+			if !row.Enabled {
+				continue
+			}
+			endpoint := ""
+			if a.decrypt != nil {
+				if opened, openErr := a.decrypt(row.URL); openErr == nil {
+					endpoint = opened
+				}
+			}
+			if endpoint != "" {
+				if _, verifyErr := a.verify(ctx, change.AdapterType, goal, endpoint); verifyErr == nil {
+					continue
+				}
+			}
+			stale = append(stale, staleFallback{chainID: change.ChainID, position: row.Position, host: chain.RPCEndpointHost(endpoint), network: change.ToNetwork})
+		}
+	}
+	return stale, nil
+}
+
+// disableFallbacks disables the stale fallbacks, chain by chain.
+func (a *Aligner) disableFallbacks(ctx context.Context, stale []staleFallback) error {
+	byChain := map[string][]int{}
+	var order []string
+	for _, fallback := range stale {
+		if _, seen := byChain[fallback.chainID]; !seen {
+			order = append(order, fallback.chainID)
+		}
+		byChain[fallback.chainID] = append(byChain[fallback.chainID], fallback.position)
+	}
+	for _, chainID := range order {
+		if err := a.fallbacks.DisablePositions(ctx, chainID, byChain[chainID]); err != nil {
+			return fmt.Errorf("disable the fallbacks of %s that do not serve its new network (no chain was changed; run the command again): %w", chainID, err)
+		}
+	}
+	return nil
+}
+
+func describeFallbackDrops(report *Report, stale []staleFallback, verb string) {
+	for _, fallback := range stale {
+		host := fallback.host
+		if host == "" {
+			host = "(does not open)"
+		}
+		report.Info = append(report.Info, fmt.Sprintf("chain %s: fallback %d %s %s: it does not serve %s", fallback.chainID, fallback.position, host, verb, fallback.network))
+	}
 }
 
 // networkMoves are the changes that put a chain on another network, not only in

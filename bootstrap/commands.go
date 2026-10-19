@@ -90,6 +90,7 @@ func Commands() []console.Command {
 			Probe:       chainregistry.ProbeRPCNetwork,
 			Cache:       deposits,
 			Checkpoints: deposits,
+			Fallbacks:   container.MustMake[*repositories.ChainRPCEndpointRepository](),
 			Profile:     configuredChainProfile,
 		})),
 		commands.NewChainsRPCEndpoints(container.MustMake[*rpcendpoints.Service]()),

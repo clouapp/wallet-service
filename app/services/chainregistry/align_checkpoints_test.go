@@ -3,6 +3,7 @@ package chainregistry
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chain"
 )
 
 // fakeCheckpoints is the deposit scanner's checkpoint store; each drop records how
@@ -130,4 +132,74 @@ func TestAlign_Apply_WithoutADepositServiceWarnsAndMovesTheChains(t *testing.T) 
 	require.Len(t, report.Warning, 2)
 	assert.Contains(t, report.Warning[1], "deposit scan checkpoint of btc not dropped")
 	assert.Contains(t, report.Warning[1], "scan:deposits btc --set-checkpoint=<head> --apply")
+}
+
+// fakeFallbacks is the fallback list of the chains an alignment moves.
+type fakeFallbacks struct {
+	store    *fakeStore
+	rows     map[string][]models.ChainRPCEndpoint
+	disabled map[string][]int
+	writesAt []int
+	err      error
+}
+
+func (f *fakeFallbacks) ListByChain(_ context.Context, chainID string) ([]models.ChainRPCEndpoint, error) {
+	return f.rows[chainID], nil
+}
+
+func (f *fakeFallbacks) DisablePositions(_ context.Context, chainID string, positions []int) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.disabled[chainID] = append(f.disabled[chainID], positions...)
+	f.writesAt = append(f.writesAt, f.store.chainWrite)
+	return nil
+}
+
+// sepoliaOnlyVerify says https://sepolia.example serves Sepolia and anything else mainnet.
+func sepoliaOnlyVerify(_ context.Context, _ string, target EndpointTarget, rawURL string) (string, error) {
+	served := models.EVMNetworkIDEthereumMainnet
+	if rawURL == "https://sepolia.example" {
+		served = models.EVMNetworkIDEthereumSepolia
+	}
+	if target.EVMNetworkID != served {
+		return models.EVMNetworkName(served), fmt.Errorf("%w: eth_chainId is %d", chain.ErrWrongNetwork, served)
+	}
+	return models.EVMNetworkName(served), nil
+}
+
+func TestAlign_Apply_DisablesTheFallbacksThatDoNotServeTheNewNetwork(t *testing.T) {
+	aligner, store, _ := alignerOnVaultTestRegistry()
+	fallbacks := &fakeFallbacks{store: store, disabled: map[string][]int{}, rows: map[string][]models.ChainRPCEndpoint{
+		models.ChainETH: {
+			{ChainID: models.ChainETH, URL: "https://sepolia.example", Position: 2, Enabled: true},
+			{ChainID: models.ChainETH, URL: "https://mainnet.example", Position: 3, Enabled: true},
+			{ChainID: models.ChainETH, URL: "https://mainnet-off.example", Position: 4, Enabled: false},
+		},
+		models.ChainPolygon: {{ChainID: models.ChainPolygon, URL: "https://mainnet.example", Position: 2, Enabled: true}},
+	}}
+	aligner.fallbacks, aligner.verify = fallbacks, sepoliaOnlyVerify
+
+	dry, err := aligner.Align(context.Background(), models.ChainNetworkProfileTestnet, "", false)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"chain eth: fallback 3 mainnet.example would be disabled: it does not serve " + models.NetworkEthereumSepolia},
+		infoContaining(dry, "fallback"))
+	assert.Empty(t, fallbacks.disabled)
+
+	_, err = aligner.Align(context.Background(), models.ChainNetworkProfileTestnet, "", true)
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]int{models.ChainETH: {3}}, fallbacks.disabled,
+		"only the moved chain, only its enabled fallback on the old network; polygon only changes environment")
+	assert.Equal(t, []int{0}, fallbacks.writesAt, "fallbacks are disabled before any chain moves")
+}
+
+func TestAlign_Apply_StopsBeforeMovingAnyChainWhenAFallbackCannotBeDisabled(t *testing.T) {
+	aligner, store, _ := alignerOnVaultTestRegistry()
+	fallbacks := &fakeFallbacks{store: store, disabled: map[string][]int{}, err: errors.New("database down"),
+		rows: map[string][]models.ChainRPCEndpoint{models.ChainETH: {{ChainID: models.ChainETH, URL: "https://mainnet.example", Position: 2, Enabled: true}}}}
+	aligner.fallbacks, aligner.verify = fallbacks, sepoliaOnlyVerify
+
+	_, err := aligner.Align(context.Background(), models.ChainNetworkProfileTestnet, "", true)
+	require.Error(t, err)
+	assert.Zero(t, store.chainWrite)
 }
