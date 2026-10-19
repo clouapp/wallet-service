@@ -1,0 +1,188 @@
+package rpc
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"strings"
+	"syscall"
+
+	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/pkg/httpclient"
+)
+
+// outcome is what one answer of one endpoint means for failover.
+type outcome int
+
+const (
+	// outcomeAnswer is an answer about the request (a result, invalid params, a
+	// reverted call, nonce too low, insufficient funds, ...). Another endpoint would
+	// answer the same, so it is returned as it is and the endpoint counts as healthy.
+	outcomeAnswer outcome = iota
+	// outcomeUnsupported is an endpoint that does not serve the method. The call
+	// moves on; the endpoint stays healthy for every other method.
+	outcomeUnsupported
+	// outcomeUnavailable is an endpoint that could not answer: transport error,
+	// timeout, HTTP 5xx, an unreadable body, or a JSON-RPC error that names the node
+	// (internal error, header not found, node behind). The call moves on and the
+	// endpoint counts a failure.
+	outcomeUnavailable
+	// outcomeRateLimited is an endpoint that refused the call for capacity (HTTP 429
+	// or 403, JSON-RPC 429 or -32005, a rate-limit message). The request was not
+	// served: the call moves on and the endpoint counts a failure.
+	outcomeRateLimited
+)
+
+// JSON-RPC codes the classification names. EIP-1474 and the Solana RPC share the
+// standard range; -32004 is "method not supported" (EIP-1474) and "block not
+// available for slot" (Solana), both answers this node cannot give.
+const (
+	jsonRPCMethodNotFound       = -32601
+	jsonRPCInternalError        = -32603
+	jsonRPCMethodNotSupported   = -32004
+	jsonRPCLimitExceeded        = -32005
+	solanaBlockStatusNotYet     = -32014
+	solanaMinContextSlotNotHit  = -32016
+	httpStatusRequestTimeout    = 408
+	httpStatusFirstServerFailed = 500
+)
+
+var (
+	unsupportedPhrases = []string{
+		"method not found", "method not supported", "unsupported method", "method not allowed",
+		"method is not available", "method disabled", "is not whitelisted", "not whitelisted",
+	}
+	rateLimitPhrases = []string{
+		"rate limit", "rate-limit", "ratelimit", "too many requests", "request limit", "requests limit",
+		"daily limit", "quota", "capacity limit", "throttl",
+	}
+	unavailablePhrases = []string{
+		"internal error", "header not found", "missing trie node", "unknown block", "upstream",
+		"backend", "temporarily unavailable", "service unavailable", "no healthy", "node is behind",
+		"node is unhealthy", "timeout", "timed out",
+	}
+	alreadyKnownPhrases = []string{
+		"already known", "known transaction", "alreadyknown", "already imported", "already exists",
+		"already in mempool", "already been processed", "alreadyprocessed",
+	}
+)
+
+// classifyRPCError decides what a JSON-RPC error means for failover. Only the codes
+// and phrases above move the call to another endpoint; every other error is an
+// answer about the request.
+func classifyRPCError(rpcErr *rpcError) outcome {
+	if rpcErr == nil {
+		return outcomeAnswer
+	}
+	message := strings.ToLower(rpcErr.Message)
+	switch {
+	case rpcErr.Code == jsonRPCRateLimitedCode || rpcErr.Code == jsonRPCLimitExceeded || hasPhrase(message, rateLimitPhrases):
+		return outcomeRateLimited
+	case rpcErr.Code == jsonRPCMethodNotFound || rpcErr.Code == jsonRPCMethodNotSupported || hasPhrase(message, unsupportedPhrases):
+		return outcomeUnsupported
+	case rpcErr.Code == jsonRPCInternalError || rpcErr.Code == solanaBlockStatusNotYet || rpcErr.Code == solanaMinContextSlotNotHit || hasPhrase(message, unavailablePhrases):
+		return outcomeUnavailable
+	default:
+		return outcomeAnswer
+	}
+}
+
+// classifyHTTPFailure decides what a non-2xx answer means. 5xx and 408 are an
+// endpoint that could not answer. Any other status carrying a JSON-RPC error is
+// classified by that error; without one, the endpoint did not serve the call.
+func classifyHTTPFailure(status int, body []byte) outcome {
+	if status >= httpStatusFirstServerFailed || status == httpStatusRequestTimeout {
+		return outcomeUnavailable
+	}
+	var resp rpcResponse
+	if json.Unmarshal(body, &resp) == nil && resp.Error != nil {
+		return classifyRPCError(resp.Error)
+	}
+	return outcomeUnavailable
+}
+
+// alreadyKnown reports a broadcast refusal that means the network already holds
+// these exact bytes ("already known", Solana "already been processed").
+func alreadyKnown(err error) bool {
+	var rpcErr *rpcError
+	if !errors.As(err, &rpcErr) || rpcErr == nil {
+		return false
+	}
+	return hasPhrase(strings.ToLower(rpcErr.Message), alreadyKnownPhrases)
+}
+
+// notAccepted reports a failed broadcast attempt that certainly did not hand the
+// transaction to the endpoint: the connection was never made, or the endpoint
+// refused the call before reading it (rate limit, method not served). A timeout,
+// a reset, a 5xx or any answer may mean it was accepted.
+func notAccepted(kind outcome, err error) bool {
+	switch kind {
+	case outcomeRateLimited, outcomeUnsupported:
+		return true
+	case outcomeUnavailable:
+		return requestNotSent(err)
+	default:
+		return false
+	}
+}
+
+// requestNotSent reports an error raised before the request left the process:
+// the request could not be built, or the connection failed (refused, DNS, no
+// route). The dial error must still be on the chain; a flattened one is treated
+// as possibly sent.
+func requestNotSent(err error) bool {
+	if err == nil {
+		return false
+	}
+	if httpclient.IsBuild(err) {
+		return true
+	}
+	var opErr *net.OpError
+	return errors.As(err, &opErr) && opErr != nil && opErr.Op == "dial"
+}
+
+// failureLabel is a short description of a failure for logs and health records.
+// It carries no provider sentence, URL or key.
+func failureLabel(kind outcome, err error) string {
+	var rpcErr *rpcError
+	var failure *chain.Failure
+	switch {
+	case errors.As(err, &rpcErr) && rpcErr != nil:
+		return fmt.Sprintf("json-rpc error %d", rpcErr.Code)
+	case kind == outcomeRateLimited:
+		return "rate limited"
+	case errors.As(err, &failure) && failure != nil && failure.Status != 0:
+		return fmt.Sprintf("http %d", failure.Status)
+	case errors.Is(err, chain.ErrWrongNetwork):
+		return "wrong network"
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return "connection refused"
+	case requestNotSent(err):
+		return "connection failed"
+	case timedOut(err):
+		return "timeout"
+	case kind == outcomeUnavailable:
+		return "unavailable"
+	default:
+		return "error"
+	}
+}
+
+func timedOut(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+func hasPhrase(message string, phrases []string) bool {
+	for _, phrase := range phrases {
+		if strings.Contains(message, phrase) {
+			return true
+		}
+	}
+	return false
+}

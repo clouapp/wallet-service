@@ -1,0 +1,128 @@
+package chain
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// ErrWrongNetwork is an RPC endpoint that answers for another network than the
+// chain's: another EVM chain id or another Solana genesis.
+var ErrWrongNetwork = errors.New("rpc endpoint serves another network")
+
+const (
+	evmChainIDMethod     = "eth_chainId"
+	solanaGenesisMethod  = "getGenesisHash"
+	rpcFingerprintLength = 12
+)
+
+// RPCEndpointHealth is what one process last saw of one RPC endpoint of a chain.
+// Host is the URL's host (and port) only and Fingerprint identifies the URL
+// without revealing it, so neither carries a path, a query or a key.
+type RPCEndpointHealth struct {
+	Position            int
+	Host                string
+	Fingerprint         string
+	ConsecutiveFailures int
+	CoolingDownUntil    time.Time
+	LastError           string
+	LastErrorAt         time.Time
+	WrongNetwork        bool
+}
+
+// RPCHealthSink receives the endpoint health of a chain each time it changes
+// (an endpoint starts failing, is skipped for a cool-down, or recovers). It must
+// not block the call that reports it.
+type RPCHealthSink interface {
+	RecordRPCHealth(chainID string, endpoints []RPCEndpointHealth)
+}
+
+// RPCEndpointFingerprint is a short digest of rawURL: equal URLs have equal
+// fingerprints, and the URL (with its key) cannot be read back from it.
+func RPCEndpointFingerprint(rawURL string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(rawURL)))
+	return hex.EncodeToString(sum[:])[:rpcFingerprintLength]
+}
+
+// RPCEndpointHost is the host[:port] of rawURL, without user info, path or query,
+// or "" when rawURL does not parse. It is the only part of an endpoint that is
+// printed or logged.
+func RPCEndpointHost(rawURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(parsed.Host)
+}
+
+// EVMChainID asks caller for eth_chainId and returns it as a number.
+func EVMChainID(ctx context.Context, caller JSONRPCCaller) (int64, error) {
+	if caller == nil {
+		return 0, fmt.Errorf("%s: json-rpc client is not linked", evmChainIDMethod)
+	}
+	var chainIDHex string
+	if err := caller.Call(ctx, evmChainIDMethod, &chainIDHex); err != nil {
+		return 0, fmt.Errorf("%s: %w", evmChainIDMethod, err)
+	}
+	digits := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(chainIDHex)), "0x")
+	networkID, err := strconv.ParseInt(digits, 16, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s returned %q: %w", evmChainIDMethod, chainIDHex, err)
+	}
+	return networkID, nil
+}
+
+// CheckEVMNetwork refuses an endpoint whose eth_chainId is not want with
+// ErrWrongNetwork. A want of zero or less checks nothing.
+func CheckEVMNetwork(ctx context.Context, caller JSONRPCCaller, want int64) error {
+	if want <= 0 {
+		return nil
+	}
+	got, err := EVMChainID(ctx, caller)
+	if err != nil {
+		return err
+	}
+	if got != want {
+		return fmt.Errorf("%w: eth_chainId is %d, the chain signs for %d", ErrWrongNetwork, got, want)
+	}
+	return nil
+}
+
+// SolanaGenesis asks caller for getGenesisHash.
+func SolanaGenesis(ctx context.Context, caller JSONRPCCaller) (string, error) {
+	if caller == nil {
+		return "", fmt.Errorf("%s: json-rpc client is not linked", solanaGenesisMethod)
+	}
+	var genesis string
+	if err := caller.Call(ctx, solanaGenesisMethod, &genesis); err != nil {
+		return "", fmt.Errorf("%s: %w", solanaGenesisMethod, err)
+	}
+	genesis = strings.TrimSpace(genesis)
+	if genesis == "" {
+		return "", fmt.Errorf("%s returned an empty hash", solanaGenesisMethod)
+	}
+	return genesis, nil
+}
+
+// CheckSolanaGenesis refuses an endpoint whose genesis hash is not want with
+// ErrWrongNetwork. An empty want checks nothing.
+func CheckSolanaGenesis(ctx context.Context, caller JSONRPCCaller, want string) error {
+	want = strings.TrimSpace(want)
+	if want == "" {
+		return nil
+	}
+	got, err := SolanaGenesis(ctx, caller)
+	if err != nil {
+		return err
+	}
+	if got != want {
+		return fmt.Errorf("%w: genesis is %s, the chain's cluster is %s", ErrWrongNetwork, got, want)
+	}
+	return nil
+}
