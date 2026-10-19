@@ -12,6 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/macrowallets/waas/app/services/chain"
 )
 
@@ -756,4 +759,29 @@ func TestClassify_HTTPFailure_ReadsAJSONRPCErrorBody(t *testing.T) {
 	if got := classifyHTTPFailure(http.StatusGatewayTimeout, []byte(`{"error":{"code":-32602,"message":"invalid params"}}`)); got != outcomeUnavailable {
 		t.Fatalf("504 = %d", got)
 	}
+}
+
+func TestFailover_Identity_AFallbackPromotedToPrimaryIsUsed(t *testing.T) {
+	primary := newFakeNode(t, answers(http.StatusBadGateway, "down"))
+	promoted := newFakeNode(t, func(method string) (int, string) {
+		if method == "eth_chainId" {
+			return result(`"0x1"`)
+		}
+		return result(`"0x99"`)
+	})
+	client := NewRPCClient(RPCClientDeps{
+		URL: primary.URL(), Fallbacks: []string{promoted.URL()}, ChainID: "eth",
+		Identity: func(ctx context.Context, caller chain.JSONRPCCaller) error {
+			return chain.CheckEVMNetwork(ctx, caller, 11155111)
+		},
+	})
+	_ = client.Call(context.Background(), "eth_blockNumber", nil)
+	require.True(t, healthOf(client)[1].WrongNetwork, "the fallback was first seen on another network")
+
+	client.ReplaceEndpoints(promoted.URL(), nil)
+	var block string
+	err := client.Call(context.Background(), "eth_blockNumber", &block)
+	require.NoError(t, err, "the primary, checked when it was written, is always called")
+	assert.Equal(t, "0x99", block)
+	assert.False(t, healthOf(client)[0].WrongNetwork)
 }

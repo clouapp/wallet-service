@@ -78,7 +78,10 @@ type endpointSet struct {
 }
 
 // newEndpointSet orders primary and fallbacks, dropping blanks and repeats. An
-// endpoint of previous with the same URL is kept with its health.
+// endpoint of previous with the same URL is kept with its health, except that the
+// primary drops what a runtime identity check found: the primary is not checked at
+// runtime (its network was checked when it was written), so a former fallback seen
+// on another network is not kept out once it is the primary.
 func newEndpointSet(previous *endpointSet, primary string, fallbacks []string) *endpointSet {
 	known := map[string]*endpoint{}
 	if previous != nil {
@@ -98,6 +101,9 @@ func newEndpointSet(previous *endpointSet, primary string, fallbacks []string) *
 		if !ok {
 			member = &endpoint{url: rawURL, host: chain.RPCEndpointHost(rawURL), fingerprint: chain.RPCEndpointFingerprint(rawURL)}
 		}
+		if len(set.members) == 0 {
+			member.clearIdentity()
+		}
 		set.members = append(set.members, member)
 	}
 	return set
@@ -110,8 +116,8 @@ type candidate struct {
 }
 
 // ordered is the endpoints a call tries: the available ones in configured order,
-// or, when every one is cooling down, all of them. An endpoint that serves another
-// network is never tried.
+// or, when every one is cooling down, all of them. A fallback that serves another
+// network is never tried; the primary always may be.
 func (s *endpointSet) ordered(now time.Time) []candidate {
 	ready := make([]candidate, 0, len(s.members))
 	usable := make([]candidate, 0, len(s.members))
@@ -119,7 +125,7 @@ func (s *endpointSet) ordered(now time.Time) []candidate {
 		member.mu.Lock()
 		wrong, open := member.wrongNetwork, now.Before(member.openUntil)
 		member.mu.Unlock()
-		if wrong {
+		if wrong && i > 0 {
 			continue
 		}
 		usable = append(usable, candidate{ep: member, index: i})
@@ -198,6 +204,13 @@ func (e *endpoint) identity() (verified, wrong bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.verified, e.wrongNetwork
+}
+
+// clearIdentity forgets what an identity check found.
+func (e *endpoint) clearIdentity() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.verified, e.wrongNetwork = false, false
 }
 
 func (e *endpoint) markIdentity(wrong bool) {
