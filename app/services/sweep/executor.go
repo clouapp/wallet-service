@@ -471,7 +471,8 @@ func (s *service) broadcastWithdrawal(
 	if err != nil {
 		return nil, err
 	}
-	rawPayload, err := broadcastRawPayload(adapter, signed, false)
+	head := s.broadcastHead(ctx, adapter, plan.Chain)
+	rawPayload, err := broadcastRawPayload(adapter, signed, head, false)
 	if err != nil {
 		return nil, fmt.Errorf("record last valid block: %w", err)
 	}
@@ -498,7 +499,7 @@ func (s *service) broadcastWithdrawal(
 		hash = signed.TxHash
 		slog.Warn("withdrawal broadcast outcome unknown; recorded and tracked by its signed hash",
 			"tx_id", txID, "tx_hash", hash, "chain", plan.Chain, "error", chain.ClientText(err))
-		if tx.RawPayload, err = broadcastRawPayload(adapter, signed, true); err != nil {
+		if tx.RawPayload, err = broadcastRawPayload(adapter, signed, head, true); err != nil {
 			return nil, fmt.Errorf("record last valid block: %w", err)
 		}
 	}
@@ -525,6 +526,22 @@ func (s *service) broadcastWithdrawal(
 			"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", plan.Chain, "error", err)
 	}
 	return tx, nil
+}
+
+// broadcastHead is the chain head read just before a send, for an adapter that can
+// prove which transaction spent a nonce (chain.NonceSpendReader, EVM): no earlier
+// block can hold the transfer. 0 for any other adapter, or when the head cannot be
+// read (logged: an unknown outcome of that transfer then cannot be proven).
+func (s *service) broadcastHead(ctx context.Context, adapter types.Chain, chainID string) uint64 {
+	if _, ok := adapter.(chain.NonceSpendReader); !ok {
+		return 0
+	}
+	head, err := adapter.GetLatestBlock(ctx)
+	if err != nil {
+		slog.Warn("chain head before a withdrawal send could not be read", "chain", chainID, "error", err)
+		return 0
+	}
+	return head
 }
 
 // broadcastRefusedReason is the error_message of a withdrawal row recorded before

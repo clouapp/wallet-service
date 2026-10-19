@@ -1306,6 +1306,10 @@ func (finalizingChain) FinalizeMPCSignature(unsigned *types.UnsignedTx, _ []byte
 
 func (finalizingChain) SenderNonce(*types.SignedTx) (uint64, error) { return 41, nil }
 
+func (finalizingChain) NonceSpend(context.Context, string, string, uint64, uint64) (chain.NonceSpend, error) {
+	return chain.NonceSpend{}, nil
+}
+
 func unknownOutcomeService(t *testing.T, broadcast func(context.Context, *types.SignedTx) (string, error)) (*service, *fakeTxRepo, models.Address, uuid.UUID) {
 	t.Helper()
 	walletID := uuid.New()
@@ -1314,6 +1318,7 @@ func unknownOutcomeService(t *testing.T, broadcast func(context.Context, *types.
 	assignDerivedEVMAddresses(t, wallet, &baseAddr)
 	mockChain := sweepMockChain("eth", "eth")
 	mockChain.BroadcastTransactionFn = broadcast
+	mockChain.GetLatestBlockFn = func(context.Context) (uint64, error) { return 777, nil }
 	svc, txRepo := newExecutorService(t, wallet, mockChain)
 	registry := chain.NewRegistry()
 	registry.RegisterChain(finalizingChain{MockChain: mockChain})
@@ -1343,8 +1348,9 @@ func TestExecute_Withdrawal_AnUnknownBroadcastOutcomeIsRecordedAndTrackedByItsHa
 	if err := json.Unmarshal([]byte(row.RawPayload), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload[chain.BroadcastOutcomePayloadKey] != chain.BroadcastOutcomeUnknown || payload[chain.SenderNoncePayloadKey] != float64(41) {
-		t.Fatalf("raw_payload = %s", row.RawPayload)
+	if payload[chain.BroadcastOutcomePayloadKey] != chain.BroadcastOutcomeUnknown || payload[chain.SenderNoncePayloadKey] != float64(41) ||
+		payload[chain.BroadcastHeadPayloadKey] != float64(777) {
+		t.Fatalf("raw_payload = %s; want the unknown outcome, the nonce it spends and the head before the send", row.RawPayload)
 	}
 }
 

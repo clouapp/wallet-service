@@ -3,6 +3,7 @@ package deposit
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -18,53 +19,86 @@ import (
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
-const notLandedSender = "0x2f5c1b4e4b5d0f3c8a9e7d6c5b4a39281706f5e4"
+// notLandedHead is the head of the fake chain these tests read; transfers were sent
+// 100 blocks before it.
+const notLandedHead = uint64(0xb62520)
 
-// unknownOutcomeWithdrawal is an EVM withdrawal whose broadcast answer did not say
-// whether the network took it: recorded under its signed hash with the nonce it
-// spends. A nil nonce is a row recorded before the nonce was kept.
-func unknownOutcomeWithdrawal(t *testing.T, walletID uuid.UUID, nonce *uint64) (models.Transaction, models.Withdrawal) {
+func notLandedSender(n int) string { return fmt.Sprintf("0x%040x", 0xbb00+n) }
+
+// sentWithdrawal is an EVM withdrawal from sender recorded under its signed hash
+// with the nonce it spends: unknown is a broadcast whose answer did not say whether
+// the network took it; head is the chain head read before the send (0: not kept).
+func sentWithdrawal(t *testing.T, walletID uuid.UUID, sender string, nonce, head uint64, unknown bool) (models.Transaction, models.Withdrawal) {
 	t.Helper()
 	tx, withdrawal := evmWithdrawal(t, walletID)
-	payload := map[string]any{chain.BroadcastOutcomePayloadKey: chain.BroadcastOutcomeUnknown}
-	if nonce != nil {
-		payload[chain.SenderNoncePayloadKey] = *nonce
+	payload := map[string]any{chain.SenderNoncePayloadKey: nonce}
+	if head != 0 {
+		payload[chain.BroadcastHeadPayloadKey] = head
+	}
+	if unknown {
+		payload[chain.BroadcastOutcomePayloadKey] = chain.BroadcastOutcomeUnknown
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := facades.Orm().Query().Model(&models.Transaction{}).Where("id = ?", tx.ID).
-		Update(map[string]any{"raw_payload": string(raw), "from_address": notLandedSender}); err != nil {
+		Update(map[string]any{"raw_payload": string(raw), "from_address": sender}); err != nil {
 		t.Fatal(err)
 	}
-	tx.RawPayload, tx.FromAddress = string(raw), notLandedSender
+	tx.RawPayload, tx.FromAddress = string(raw), sender
 	return tx, withdrawal
 }
 
-func TestRunConfirmationCheck_EVMUnknownOutcomesSettleByHashAndFailOnlyWhenTheirNonceWasSpent(t *testing.T) {
+// spendNonce makes block spend nonce of from with the transaction hash, gas limit gas.
+func spendNonce(node *mocks.FakeEVMNode, block uint64, from, hash string, nonce uint64, gas uint64) {
+	node.SpentNonces = append(node.SpentNonces, mocks.FakeEVMNonceSpend{From: from, Nonce: nonce, Block: block})
+	node.Blocks[block] = append(node.Blocks[block], mocks.FakeEVMBlockTx{
+		Hash: hash, From: from, To: "0x2222222222222222222222222222222222222222", Value: "0x1",
+		Nonce: fmt.Sprintf("0x%x", nonce), Gas: fmt.Sprintf("0x%x", gas),
+	})
+}
+
+func TestRunConfirmationCheck_EVMUnknownOutcomesAreSettledByThePositiveProofOfTheirNonceSpend(t *testing.T) {
 	fixtures.TestDB(t)
 	node := mocks.NewFakeEVMNode(t)
-	node.BlockNumberHex = failedReceiptTip
-	node.NonceHex = "0x2a" // the sender's mined nonce count is 42: nonces up to 41 are spent
+	node.BlockNumberHex = fmt.Sprintf("0x%x", notLandedHead)
+	node.NoTxIndex = true // publicnode Sepolia: every lookup by hash is null, mined or not
+	if node.Blocks == nil {
+		node.Blocks = map[uint64][]mocks.FakeEVMBlockTx{}
+	}
 	registry := chain.NewRegistry()
 	registry.RegisterChain(chainfixtures.NewEVMSepolia(node.URL()))
 	w := fixtures.InsertWallet(t, models.ChainTETH)
 	fixtures.InsertWebhookConfig(t, "https://hooks.example.test/evm", "secret", []string{
 		string(types.EventWithdrawalConfirmed), string(types.EventWithdrawalFailed),
 	})
-	spent, free := uint64(41), uint64(42)
+	sent := notLandedHead - 100
+	const otherHash = "0x00000000000000000000000000000000000000000000000000000000000000e1"
 
-	supersededTx, superseded := unknownOutcomeWithdrawal(t, w.ID, &spent)
-	landedTx, landed := unknownOutcomeWithdrawal(t, w.ID, &spent)
-	inMempoolTx, inMempool := unknownOutcomeWithdrawal(t, w.ID, &spent)
-	freeNonceTx, freeNonce := unknownOutcomeWithdrawal(t, w.ID, &free)
-	noNonceTx, noNonce := unknownOutcomeWithdrawal(t, w.ID, nil)
+	supersededTx, superseded := sentWithdrawal(t, w.ID, notLandedSender(1), 41, sent, true)
+	spendNonce(node, notLandedHead-40, notLandedSender(1), otherHash, 41, 21_000)
+
+	landedTx, landed := sentWithdrawal(t, w.ID, notLandedSender(2), 7, sent, true)
+	spendNonce(node, notLandedHead-39, notLandedSender(2), landedTx.TxHash, 7, 21_000)
 	node.Receipts[strings.ToLower(landedTx.TxHash)] = mocks.FakeEVMReceipt{
-		Block: failedReceiptBlock, Status: "0x1", Gas: 21_000, GasUsed: 21_000, EffectiveGasPrice: failedReceiptGasPrice,
+		Block: notLandedHead - 39, Status: "0x1", Gas: 21_000, GasUsed: 21_000, EffectiveGasPrice: failedReceiptGasPrice,
 	}
-	// Known to the node, not mined yet (eth_getTransactionByHash answers it, no receipt).
-	node.Receipts[strings.ToLower(inMempoolTx.TxHash)] = mocks.FakeEVMReceipt{Gas: 21_000, EffectiveGasPrice: failedReceiptGasPrice}
+
+	revertedTx, reverted := sentWithdrawal(t, w.ID, notLandedSender(3), 9, sent, true)
+	spendNonce(node, notLandedHead-38, notLandedSender(3), revertedTx.TxHash, 9, 30_000)
+	node.Receipts[strings.ToLower(revertedTx.TxHash)] = mocks.FakeEVMReceipt{
+		Block: notLandedHead - 38, Status: "0x0", Gas: 30_000, GasUsed: 25_000, EffectiveGasPrice: failedReceiptGasPrice,
+	}
+
+	freeTx, free := sentWithdrawal(t, w.ID, notLandedSender(4), 5, sent, true)
+
+	// A broadcast the node accepted is never failed by this proof, whatever spent its nonce.
+	acceptedTx, accepted := sentWithdrawal(t, w.ID, notLandedSender(5), 3, sent, false)
+	spendNonce(node, notLandedHead-37, notLandedSender(5), otherHash, 3, 21_000)
+
+	headlessTx, headless := sentWithdrawal(t, w.ID, notLandedSender(6), 2, 0, true)
+	spendNonce(node, notLandedHead-36, notLandedSender(6), otherHash, 2, 21_000)
 
 	svc := newDepositSvc(registry, newWebhookSvc())
 	svc.SetWithdrawalConfirmations(newWithdrawalPublisher())
@@ -74,28 +108,31 @@ func TestRunConfirmationCheck_EVMUnknownOutcomesSettleByHashAndFailOnlyWhenTheir
 		}
 	}
 
-	if got := reloadTransaction(t, supersededTx.ID); got.Status != string(types.TxStatusFailed) || got.BlockNumber != 0 || got.Fee != "" ||
-		got.ErrorMessage != models.WithdrawalFailureNotLanded {
-		t.Fatalf("superseded: status %s block %d fee %q error %q, want failed %s with no block or fee",
-			got.Status, got.BlockNumber, got.Fee, got.ErrorMessage, models.WithdrawalFailureNotLanded)
+	if got := reloadTransaction(t, supersededTx.ID); got.Status != string(types.TxStatusFailed) || got.BlockNumber != 0 || got.ErrorMessage != models.WithdrawalFailureNotLanded {
+		t.Fatalf("another transaction spent the nonce: status %s block %d error %q, want failed %s", got.Status, got.BlockNumber, got.ErrorMessage, models.WithdrawalFailureNotLanded)
 	}
-	if got := reloadWithdrawal(t, superseded.ID); got.Status != models.WithdrawalStatusFailed || got.FailureReason == nil ||
-		*got.FailureReason != models.WithdrawalFailureNotLanded {
+	if got := reloadWithdrawal(t, superseded.ID); got.Status != models.WithdrawalStatusFailed || got.FailureReason == nil || *got.FailureReason != models.WithdrawalFailureNotLanded {
 		t.Fatalf("superseded withdrawal %+v", got)
 	}
-	if got := reloadTransaction(t, landedTx.ID); got.Status != string(types.TxStatusConfirmed) || got.BlockNumber != int64(failedReceiptBlock) {
-		t.Fatalf("an unknown outcome that was mined: status %s block %d, want confirmed", got.Status, got.BlockNumber)
+	if got := reloadTransaction(t, landedTx.ID); got.Status != string(types.TxStatusConfirmed) || got.BlockNumber != int64(notLandedHead-39) {
+		t.Fatalf("ours spent the nonce: status %s block %d, want confirmed in block %d", got.Status, got.BlockNumber, notLandedHead-39)
 	}
 	if got := reloadWithdrawal(t, landed.ID); got.Status != models.WithdrawalStatusConfirmed {
-		t.Fatalf("mined withdrawal %+v", got)
+		t.Fatalf("a withdrawal that landed is confirmed, never refunded: %+v", got)
+	}
+	if got := reloadTransaction(t, revertedTx.ID); got.Status != string(types.TxStatusFailed) || got.BlockNumber != int64(notLandedHead-38) || got.ErrorMessage != "onchain_reverted" {
+		t.Fatalf("ours was mined and reverted: status %s block %d error %q", got.Status, got.BlockNumber, got.ErrorMessage)
+	}
+	if got := reloadWithdrawal(t, reverted.ID); got.Status != models.WithdrawalStatusFailed {
+		t.Fatalf("reverted withdrawal %+v", got)
 	}
 	for name, pending := range map[string]struct {
 		tx         models.Transaction
 		withdrawal models.Withdrawal
 	}{
-		"known to the node":                 {inMempoolTx, inMempool},
-		"its nonce is still free":           {freeNonceTx, freeNonce},
-		"recorded without the sender nonce": {noNonceTx, noNonce},
+		"its nonce is still free":                 {freeTx, free},
+		"its broadcast was accepted":              {acceptedTx, accepted},
+		"recorded without the head before a send": {headlessTx, headless},
 	} {
 		if got := reloadTransaction(t, pending.tx.ID); got.Status != string(types.TxStatusConfirming) || got.ErrorMessage != "" {
 			t.Errorf("%s: status %s error %q, want still confirming", name, got.Status, got.ErrorMessage)
@@ -108,7 +145,6 @@ func TestRunConfirmationCheck_EVMUnknownOutcomesSettleByHashAndFailOnlyWhenTheir
 		}
 	}
 
-	// Two tracker runs, one withdrawal.failed for the transfer that can never land.
 	failedEvents := webhookEvents(t, string(types.EventWithdrawalFailed), superseded.ID)
 	if len(failedEvents) != 1 {
 		t.Fatalf("%d withdrawal.failed events for the superseded withdrawal, want 1", len(failedEvents))
@@ -119,22 +155,28 @@ func TestRunConfirmationCheck_EVMUnknownOutcomesSettleByHashAndFailOnlyWhenTheir
 	if err := json.Unmarshal([]byte(failedEvents[0].Payload), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Data.FailureCode == nil || *body.Data.FailureCode != models.WithdrawalFailureNotLanded || body.Data.TxHash == nil ||
-		*body.Data.TxHash != supersededTx.TxHash || body.Data.Status != models.WithdrawalStatusFailed {
+	if body.Data.FailureCode == nil || *body.Data.FailureCode != models.WithdrawalFailureNotLanded || body.Data.Status != models.WithdrawalStatusFailed {
 		t.Fatalf("withdrawal.failed payload %+v", body.Data)
+	}
+	if got := webhookEvents(t, string(types.EventWithdrawalConfirmed), landed.ID); len(got) != 1 {
+		t.Fatalf("%d withdrawal.confirmed events for the landed withdrawal, want 1", len(got))
 	}
 }
 
-func TestRunConfirmationCheck_EVMUnknownOutcomeStaysPendingWhileTheNodeCannotAnswer(t *testing.T) {
+func TestRunConfirmationCheck_EVMUnknownOutcomeStaysPendingWithoutTheStateToProveIt(t *testing.T) {
 	fixtures.TestDB(t)
 	node := mocks.NewFakeEVMNode(t)
-	node.BlockNumberHex = failedReceiptTip
-	node.NonceHex = "not-a-quantity"
+	node.BlockNumberHex = fmt.Sprintf("0x%x", notLandedHead)
+	node.NoTxIndex = true
+	node.MissingStateBelow = notLandedHead + 1 // no archive: every nonce count read fails
+	if node.Blocks == nil {
+		node.Blocks = map[uint64][]mocks.FakeEVMBlockTx{}
+	}
 	registry := chain.NewRegistry()
 	registry.RegisterChain(chainfixtures.NewEVMSepolia(node.URL()))
 	w := fixtures.InsertWallet(t, models.ChainTETH)
-	spent := uint64(41)
-	tx, withdrawal := unknownOutcomeWithdrawal(t, w.ID, &spent)
+	tx, withdrawal := sentWithdrawal(t, w.ID, notLandedSender(1), 41, notLandedHead-100, true)
+	spendNonce(node, notLandedHead-40, notLandedSender(1), "0x00000000000000000000000000000000000000000000000000000000000000e1", 41, 21_000)
 
 	svc := newDepositSvc(registry, newWebhookSvc())
 	svc.SetWithdrawalConfirmations(newWithdrawalPublisher())
@@ -143,7 +185,7 @@ func TestRunConfirmationCheck_EVMUnknownOutcomeStaysPendingWhileTheNodeCannotAns
 	}
 
 	if got := reloadTransaction(t, tx.ID); got.Status != string(types.TxStatusConfirming) {
-		t.Fatalf("status %s, want confirming while the nonce cannot be read", got.Status)
+		t.Fatalf("status %s, want confirming while nothing can be proven", got.Status)
 	}
 	if got := reloadWithdrawal(t, withdrawal.ID); got.Status != models.WithdrawalStatusBroadcast {
 		t.Fatalf("withdrawal %s, want broadcast", got.Status)

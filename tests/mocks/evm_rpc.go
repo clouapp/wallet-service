@@ -50,12 +50,23 @@ type FakeEVMReceipt struct {
 }
 
 // FakeEVMBlockTx is one transaction eth_getBlockByNumber lists with full
-// transactions; Value is a hex quantity.
+// transactions; Value, Nonce and Gas are hex quantities (Nonce and Gas are left out
+// when empty).
 type FakeEVMBlockTx struct {
 	Hash  string
 	From  string
 	To    string
 	Value string
+	Nonce string
+	Gas   string
+}
+
+// FakeEVMNonceSpend is a nonce of From that block Block spent: eth_getTransactionCount
+// of From at a block number answers Nonce before Block and Nonce+1 from it on.
+type FakeEVMNonceSpend struct {
+	From  string
+	Nonce uint64
+	Block uint64
 }
 
 // FakeEVMBlockHash is the hash the fake reports for block number.
@@ -118,6 +129,15 @@ type FakeEVMNode struct {
 	// eth_getBlockReceipts with that HTTP status instead of a JSON-RPC body (a
 	// provider outage).
 	ReceiptsHTTPStatus int
+	// NoTxIndex answers every lookup by transaction hash null, as a node without a
+	// transaction index does; block reads still hold the transactions.
+	NoTxIndex bool
+	// SpentNonces answers eth_getTransactionCount at a block number; another sender
+	// or tag answers NonceHex.
+	SpentNonces []FakeEVMNonceSpend
+	// MissingStateBelow, when set, answers eth_getTransactionCount at an earlier
+	// block with "missing trie node", as a node without archive state does.
+	MissingStateBelow uint64
 
 	mu     sync.Mutex
 	calls  []FakeEVMCall
@@ -258,7 +278,7 @@ func (n *FakeEVMNode) answer(method string, params []json.RawMessage) (interface
 	case "eth_gasPrice":
 		return n.GasPriceHex, nil
 	case "eth_getTransactionCount":
-		return n.NonceHex, nil
+		return n.transactionCount(params)
 	case "eth_estimateGas":
 		return n.estimateGas(params)
 	case "eth_getBalance":
@@ -268,8 +288,14 @@ func (n *FakeEVMNode) answer(method string, params []json.RawMessage) (interface
 	case "eth_blockNumber":
 		return n.BlockNumberHex, nil
 	case "eth_getTransactionByHash":
+		if n.NoTxIndex {
+			return nil, nil
+		}
 		return n.transactionByHash(params), nil
 	case "eth_getTransactionReceipt":
+		if n.NoTxIndex {
+			return nil, nil
+		}
 		return n.transactionReceipt(params), nil
 	case "eth_getBlockByNumber":
 		return n.blockByNumber(params), nil
@@ -392,7 +418,14 @@ func (n *FakeEVMNode) blockByNumber(params []json.RawMessage) interface{} {
 	}
 	transactions := make([]map[string]string, 0, len(txs))
 	for _, tx := range txs {
-		transactions = append(transactions, map[string]string{"hash": tx.Hash, "from": tx.From, "to": tx.To, "value": tx.Value})
+		entry := map[string]string{"hash": tx.Hash, "from": tx.From, "to": tx.To, "value": tx.Value}
+		if tx.Nonce != "" {
+			entry["nonce"] = tx.Nonce
+		}
+		if tx.Gas != "" {
+			entry["gas"] = tx.Gas
+		}
+		transactions = append(transactions, entry)
 	}
 	return map[string]interface{}{
 		"number":       hexOf(number),
@@ -426,6 +459,32 @@ func (n *FakeEVMNode) blockReceipts(params []json.RawMessage) interface{} {
 		receipts = append(receipts, receiptJSON(hash, n.Receipts[hash]))
 	}
 	return receipts
+}
+
+// transactionCount answers eth_getTransactionCount: a spent nonce of SpentNonces at a
+// block number, else NonceHex.
+func (n *FakeEVMNode) transactionCount(params []json.RawMessage) (interface{}, map[string]interface{}) {
+	if len(params) < 2 {
+		return n.NonceHex, nil
+	}
+	var from string
+	_ = json.Unmarshal(params[0], &from)
+	block, numbered := blockNumberParam(params[1:])
+	if !numbered {
+		return n.NonceHex, nil
+	}
+	if n.MissingStateBelow != 0 && block < n.MissingStateBelow {
+		return nil, map[string]interface{}{"code": -32000, "message": "missing trie node"}
+	}
+	for _, spend := range n.SpentNonces {
+		if strings.EqualFold(spend.From, from) {
+			if block >= spend.Block {
+				return hexOf(spend.Nonce + 1), nil
+			}
+			return hexOf(spend.Nonce), nil
+		}
+	}
+	return n.NonceHex, nil
 }
 
 func hexOf(value uint64) string {

@@ -154,10 +154,26 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 				continue
 			}
 			if block == 0 {
-				if code, never := s.neverLands(ctx, adapter, tx); never && s.failOnChain(ctx, adapter, tx, code, 0) {
-					confirmedWallets.add(tx.WalletID)
+				spend, settled := s.settleByNonceSpend(ctx, adapter, tx)
+				switch {
+				case settled && !spend.Ours:
+					if s.failOnChain(ctx, adapter, tx, models.WithdrawalFailureNotLanded, 0) {
+						confirmedWallets.add(tx.WalletID)
+					}
+					continue
+				case settled && spend.Result != "":
+					if s.failOnChain(ctx, adapter, tx, onChainFailureCode(spend.Result), spend.Block) {
+						confirmedWallets.add(tx.WalletID)
+					}
+					continue
+				case settled:
+					block = spend.Block
+				default:
+					if s.transactionExpired(ctx, adapter, tx) && s.failOnChain(ctx, adapter, tx, models.WithdrawalFailureExpired, 0) {
+						confirmedWallets.add(tx.WalletID)
+					}
+					continue
 				}
-				continue
 			}
 			tx.BlockNumber = int64(block)
 			if err := s.txRepo.SetBlockNumber(ctx, tx.ID, block); err != nil {
@@ -247,46 +263,54 @@ func onChainFailureCode(result string) string {
 	return code
 }
 
-// neverLands reports a sent transaction the node does not have that can never be
-// included, with its failure code: past its last valid block (XRP, expired) or its
-// nonce spent by another transaction (EVM, not_landed). Anything else, including
-// a check that could not be made, keeps the transaction pending.
-func (s *Service) neverLands(ctx context.Context, adapter types.Chain, tx models.Transaction) (string, bool) {
-	if s.transactionExpired(ctx, adapter, tx) {
-		return models.WithdrawalFailureExpired, true
+// settleByNonceSpend settles, by positive proof, a transfer whose broadcast outcome
+// was unknown and that the node does not know by its hash (EVM): the transaction
+// that spent its sender nonce (kept in raw_payload with the head at the send) is
+// ours, in a block (a node without a transaction index), or another one, and ours
+// can never land. Only rows recorded with broadcast_outcome unknown, sender_nonce
+// and broadcast_head are read; anything else, or a proof that could not be made (a
+// node without the state of those blocks needs an archive endpoint), settles nothing
+// and is logged: the row stays pending for withdrawals:reconcile.
+func (s *Service) settleByNonceSpend(ctx context.Context, adapter types.Chain, tx models.Transaction) (chain.NonceSpend, bool) {
+	reader, ok := adapter.(chain.NonceSpendReader)
+	if !ok {
+		return chain.NonceSpend{}, false
 	}
-	if s.transactionSuperseded(ctx, adapter, tx) {
-		return models.WithdrawalFailureNotLanded, true
+	proof, ok := unknownOutcomeProof(tx)
+	if !ok {
+		return chain.NonceSpend{}, false
 	}
-	return "", false
+	spend, err := reader.NonceSpend(ctx, tx.TxHash, tx.FromAddress, proof.nonce, proof.head)
+	if err != nil {
+		slog.Warn("cannot prove whether an unknown-outcome transfer landed; it stays pending (withdrawals:reconcile)",
+			"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "error", err)
+		return chain.NonceSpend{}, false
+	}
+	return spend, spend.Spent
 }
 
-// transactionSuperseded asks an adapter that can prove it (EVM) whether another
-// transaction spent the sender nonce kept in raw_payload. A row without that nonce
-// (recorded before it was kept) is never superseded.
-func (s *Service) transactionSuperseded(ctx context.Context, adapter types.Chain, tx models.Transaction) bool {
-	checker, ok := adapter.(chain.TransactionSupersededChecker)
-	if !ok {
-		return false
-	}
+// nonceProof is what raw_payload keeps for settleByNonceSpend.
+type nonceProof struct {
+	nonce, head uint64
+}
+
+// unknownOutcomeProof reads the sender nonce and broadcast head of a row whose
+// broadcast outcome was unknown.
+func unknownOutcomeProof(tx models.Transaction) (nonceProof, bool) {
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(tx.RawPayload), &payload); err != nil {
-		return false
+		return nonceProof{}, false
 	}
-	raw, ok := payload[chain.SenderNoncePayloadKey]
-	if !ok {
-		return false
+	var outcome string
+	if json.Unmarshal(payload[chain.BroadcastOutcomePayloadKey], &outcome) != nil || outcome != chain.BroadcastOutcomeUnknown {
+		return nonceProof{}, false
 	}
-	var nonce uint64
-	if err := json.Unmarshal(raw, &nonce); err != nil {
-		return false
+	var proof nonceProof
+	if json.Unmarshal(payload[chain.SenderNoncePayloadKey], &proof.nonce) != nil ||
+		json.Unmarshal(payload[chain.BroadcastHeadPayloadKey], &proof.head) != nil || proof.head == 0 {
+		return nonceProof{}, false
 	}
-	superseded, err := checker.TransactionSuperseded(ctx, tx.TxHash, tx.FromAddress, nonce)
-	if err != nil {
-		slog.Warn("check transaction superseded", "tx_id", tx.ID, "tx_hash", tx.TxHash, "error", err)
-		return false
-	}
-	return superseded
+	return proof, true
 }
 
 // transactionExpired asks an adapter that can prove expiry (XRP) whether the
