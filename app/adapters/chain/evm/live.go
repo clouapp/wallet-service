@@ -568,7 +568,12 @@ func (a *EVMLive) BroadcastTransaction(ctx context.Context, signed *types.Signed
 			a.nonces.raise(signed.RawBytes)
 			return signed.TxHash, nil
 		}
-		return "", chain.ClassifyBroadcast(err)
+		classified := chain.ClassifyBroadcast(err)
+		if errors.Is(classified, chain.ErrUnknownOutcome) {
+			// The transfer may have landed: its nonce is not handed out again.
+			a.nonces.raise(signed.RawBytes)
+		}
+		return "", classified
 	}
 	a.nonces.raise(signed.RawBytes)
 	if signed.TxHash != "" && !strings.EqualFold(strings.TrimSpace(txHash), signed.TxHash) {
