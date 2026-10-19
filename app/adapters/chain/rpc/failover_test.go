@@ -1168,44 +1168,141 @@ func TestCall_Each_AsksEveryReadyEndpointAndKeepsTheAnswers(t *testing.T) {
 	assert.Equal(t, []json.RawMessage{json.RawMessage(`"0x5"`)}, one)
 }
 
-func TestFailover_MethodNotServed_IsRememberedPerEndpointOnly(t *testing.T) {
-	var primaryDown atomic.Bool
-	primaryDown.Store(true)
-	primary := newFakeNode(t, func(string) (int, string) {
-		if primaryDown.Load() {
-			return http.StatusServiceUnavailable, "down"
+func TestFailover_MethodNotFound_IsNeverRemembered(t *testing.T) {
+	for _, method := range []string{"eth_sendRawTransaction", "eth_getLogs", "eth_getTransactionReceipt", "getSignatureStatuses", "eth_getBlockReceipts"} {
+		t.Run(method, func(t *testing.T) {
+			misrouted := newFakeNode(t, answers(rpcFailure(-32601, "the method "+method+" does not exist/is not available")))
+			fallback := newFakeNode(t, answers(result(`"0x1"`)))
+			client, _, _ := failoverClient(misrouted.URL(), fallback.URL())
+			for i := 0; i < 3; i++ {
+				require.NoError(t, client.Call(context.Background(), method, nil, "0x1"))
+			}
+			assert.Equal(t, 3, misrouted.count(method), "one misrouted answer must not turn the method off for this endpoint")
+
+			alone := NewRPCClient(RPCClientDeps{URL: misrouted.URL()})
+			for i := 0; i < 3; i++ {
+				err := alone.Call(context.Background(), method, nil, "0x1")
+				var rpcErr *RPCError
+				require.ErrorAs(t, err, &rpcErr)
+				assert.Equal(t, -32601, rpcErr.Code, "a single endpoint answers as it always did")
+			}
+			assert.Equal(t, 6, misrouted.count(method))
+		})
+	}
+	t.Run("a generic server error that names the method", func(t *testing.T) {
+		gated := newFakeNode(t, answers(rpcFailure(-32000, "method not allowed: eth_getLogs is not whitelisted")))
+		fallback := newFakeNode(t, answers(result(`[]`)))
+		client, _, _ := failoverClient(gated.URL(), fallback.URL())
+		for i := 0; i < 3; i++ {
+			require.NoError(t, client.Call(context.Background(), "eth_getLogs", nil, map[string]any{"fromBlock": "0x1", "toBlock": "0x1"}))
 		}
-		return result(`[]`)
+		assert.Equal(t, 3, gated.count("eth_getLogs"))
 	})
-	oldNode := newFakeNode(t, func(method string) (int, string) {
+}
+
+func TestFailover_ShapeNotServed_IsRememberedAfterTwoAnswersForTenMinutes(t *testing.T) {
+	refuses := newFakeNode(t, func(method string) (int, string) {
 		if method == "eth_getBlockReceipts" {
-			return rpcFailure(-32601, "the method eth_getBlockReceipts does not exist")
+			return rpcFailure(-32602, "invalid argument 0: json: cannot unmarshal hex string")
 		}
 		return result(`"0x20"`)
 	})
-	client, _, _ := failoverClient(primary.URL(), oldNode.URL())
+	fallback := newFakeNode(t, answers(result(`[]`)))
+	client, clock, _ := failoverClient(refuses.URL(), fallback.URL())
+	receipts := func() { require.NoError(t, client.Call(context.Background(), "eth_getBlockReceipts", nil, "0x1")) }
 
-	err := client.Call(context.Background(), "eth_getBlockReceipts", nil, "0x1")
-	var rpcErr *RPCError
-	require.ErrorAs(t, err, &rpcErr)
-	primaryDown.Store(false)
-	require.NoError(t, client.Call(context.Background(), "eth_getBlockReceipts", nil, "0x1"), "the primary still serves it")
+	receipts()
+	receipts()
+	assert.Equal(t, 2, refuses.count("eth_getBlockReceipts"), "one refusal is not remembered")
+	receipts()
+	assert.Equal(t, 2, refuses.count("eth_getBlockReceipts"), "two refusals in a row are")
+	assert.Equal(t, 3, fallback.count("eth_getBlockReceipts"))
 
-	primaryDown.Store(true)
-	_ = client.Call(context.Background(), "eth_getBlockReceipts", nil, "0x1")
-	assert.Equal(t, 1, oldNode.count("eth_getBlockReceipts"), "an endpoint that does not serve a method is not asked it again")
-	require.NoError(t, client.Call(context.Background(), "eth_blockNumber", nil), "it serves the other methods")
+	clock.Advance(shapeNotServedTTL + time.Second)
+	receipts()
+	assert.Equal(t, 3, refuses.count("eth_getBlockReceipts"), "the memory expires")
+	require.NoError(t, client.Call(context.Background(), "eth_blockNumber", nil))
+	assert.Equal(t, 1, refuses.count("eth_blockNumber"), "it serves the other methods")
 }
 
-func TestFailover_BlockReceipts_InvalidParamsIsAMethodNotServed(t *testing.T) {
-	primary := newFakeNode(t, answers(rpcFailure(-32602, "invalid argument 0: json: cannot unmarshal hex string")))
+func TestFailover_ShapeNotServed_AnAnswerInBetweenStartsTheCountAgain(t *testing.T) {
+	var refuse atomic.Bool
+	flaky := newFakeNode(t, func(string) (int, string) {
+		if refuse.Load() {
+			return rpcFailure(-32602, "invalid argument 0")
+		}
+		return result(`[]`)
+	})
 	fallback := newFakeNode(t, answers(result(`[]`)))
-	client, _, _ := failoverClient(primary.URL(), fallback.URL())
+	client, _, _ := failoverClient(flaky.URL(), fallback.URL())
+	call := func(refused bool) {
+		refuse.Store(refused)
+		require.NoError(t, client.Call(context.Background(), "eth_getBlockReceipts", nil, "0x1"))
+	}
 
-	require.NoError(t, client.Call(context.Background(), "eth_getBlockReceipts", nil, "0x1"))
-	require.NoError(t, client.Call(context.Background(), "eth_getBlockReceipts", nil, "0x1"))
-	assert.Equal(t, 1, primary.count("eth_getBlockReceipts"))
-	assert.Equal(t, 2, fallback.count("eth_getBlockReceipts"))
+	call(true)
+	call(false)
+	call(true)
+	call(false)
+	assert.Equal(t, 4, flaky.count("eth_getBlockReceipts"), "refusals that are not consecutive are never remembered")
+}
+
+func TestFailover_ShapeNotServed_NeverSkipsTheLastEndpointThatWouldServe(t *testing.T) {
+	alone := newFakeNode(t, answers(rpcFailure(-32602, "invalid argument 0")))
+	client := NewRPCClient(RPCClientDeps{URL: alone.URL()})
+	for i := 0; i < 4; i++ {
+		err := client.Call(context.Background(), "eth_getBlockReceipts", nil, "0x1")
+		var rpcErr *RPCError
+		require.ErrorAs(t, err, &rpcErr)
+		assert.Equal(t, -32602, rpcErr.Code, "the node's own answer, never a made-up one")
+	}
+	assert.Equal(t, 4, alone.count("eth_getBlockReceipts"))
+
+	first := newFakeNode(t, answers(rpcFailure(-32602, "invalid argument 0")))
+	second := newFakeNode(t, answers(rpcFailure(-32602, "invalid argument 0")))
+	both, _, _ := failoverClient(first.URL(), second.URL())
+	for i := 0; i < 3; i++ {
+		_ = both.Call(context.Background(), "eth_getBlockReceipts", nil, "0x1")
+	}
+	assert.Equal(t, 6, first.count("eth_getBlockReceipts")+second.count("eth_getBlockReceipts"),
+		"with every endpoint remembered as refusing, the call still asks them")
+}
+
+// logsShapeNode refuses eth_getLogs by blockHash with -32602 (no EIP-234) and
+// answers a number range, counting each shape.
+func logsShapeNode(t *testing.T) (*httptest.Server, *atomic.Int32, *atomic.Int32) {
+	t.Helper()
+	var byHash, byNumber atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Params []map[string]any `json:"params"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if len(req.Params) == 1 && req.Params[0]["blockHash"] != nil {
+			byHash.Add(1)
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"invalid argument 0: unknown field blockHash"}}`))
+			return
+		}
+		byNumber.Add(1)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":[]}`))
+	}))
+	t.Cleanup(server.Close)
+	return server, &byHash, &byNumber
+}
+
+func TestFailover_ShapeNotServed_RemembersTheLogsFilterByHashNotTheMethod(t *testing.T) {
+	old, byHash, byNumber := logsShapeNode(t)
+	fallback := newFakeNode(t, answers(result(`[]`)))
+	client, _, _ := failoverClient(old.URL, fallback.URL())
+	hashFilter := map[string]any{"blockHash": "0xabc", "topics": []string{"0xddf2"}}
+	numberFilter := map[string]any{"fromBlock": "0x1", "toBlock": "0x1"}
+
+	for i := 0; i < 3; i++ {
+		require.NoError(t, client.Call(context.Background(), "eth_getLogs", nil, hashFilter))
+	}
+	assert.Equal(t, int32(2), byHash.Load(), "two refusals of the hash filter are remembered")
+	require.NoError(t, client.Call(context.Background(), "eth_getLogs", nil, numberFilter))
+	assert.Equal(t, int32(1), byNumber.Load(), "the same node still serves logs by number")
 }
 
 func TestFailover_BlockReceipts_NullAsksOneMoreEndpoint(t *testing.T) {

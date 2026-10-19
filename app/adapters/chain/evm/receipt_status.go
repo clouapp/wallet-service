@@ -27,9 +27,9 @@ type evmReceipt struct {
 // of the whole block once (eth_getBlockReceipts, which is larger than the block
 // itself but one call instead of one per transaction). A rejection of
 // eth_getBlockReceipts with a JSON-RPC error is read one receipt at a time instead.
-// An endpoint that does not serve the method (-32601, or -32602: it does not take a
-// block number) is remembered by the RPC client for that endpoint only, and not
-// asked it again; the others still are. The RPC client retries rate-limited calls;
+// An endpoint that refuses a block number twice in a row (-32602) is not asked it
+// for 10 minutes while another endpoint can be (the RPC client remembers it for that
+// endpoint only); "method not found" is never remembered. The RPC client retries rate-limited calls;
 // an outage, a rate limit that outlasts the retries, a missing receipt, a receipt
 // of another block (reorganized) or an unknown status fails the whole read.
 func (a *EVMLive) TransactionsSucceeded(ctx context.Context, blockNum uint64, blockHash string, txHashes []string) (map[string]bool, error) {

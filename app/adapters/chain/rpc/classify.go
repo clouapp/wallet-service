@@ -147,30 +147,31 @@ func classifyHTTPFailure(status int, body []byte) outcome {
 	return outcomeUnavailable
 }
 
-// shapeNotServed names, per method, the JSON-RPC codes that mean the endpoint does
-// not take the call's shape at all (not that this one request is wrong): a node
-// that answers eth_getBlockReceipts with -32602 does not take a block number.
-var shapeNotServed = map[string]int{
-	"eth_getBlockReceipts": jsonRPCInvalidParams,
+// shapeKey names the shape of a call that a node without a feature refuses as a
+// whole, not because this one request is wrong: eth_getBlockReceipts by block
+// number, and eth_getLogs by blockHash (EIP-234). Only those refusals (-32602) are
+// remembered per endpoint (failover.go). Any other call, a broadcast above all, has
+// no shape: a misrouted "method not found" is never remembered.
+func shapeKey(method string, params []interface{}) string {
+	switch method {
+	case "eth_getBlockReceipts":
+		return method
+	case "eth_getLogs":
+		if len(params) == 1 {
+			if filter, ok := params[0].(map[string]interface{}); ok {
+				if _, byHash := filter["blockHash"]; byHash {
+					return "eth_getLogs(blockHash)"
+				}
+			}
+		}
+	}
+	return ""
 }
 
-// methodNotServed reports an answer that the endpoint does not serve method at all
-// (-32601, a "method not found/not supported/..." server error, or a shape
-// refusal): it is remembered for that endpoint and the method is not asked of it
-// again. Answers about one block or slot (-32004, -32001, -32011) are not.
-func methodNotServed(method string, err error) bool {
+// shapeRefused reports the answer of a node that does not take a call's shape.
+func shapeRefused(err error) bool {
 	var rpcErr *rpcError
-	if !errors.As(err, &rpcErr) || rpcErr == nil {
-		return false
-	}
-	if rpcErr.Code == jsonRPCMethodNotFound {
-		return true
-	}
-	if code, ok := shapeNotServed[method]; ok && rpcErr.Code == code {
-		return true
-	}
-	generic := rpcErr.Code == jsonRPCServerError || rpcErr.Code == jsonRPCInternalError
-	return generic && hasPhrase(strings.ToLower(rpcErr.Message), unsupportedPhrases)
+	return errors.As(err, &rpcErr) && rpcErr != nil && rpcErr.Code == jsonRPCInvalidParams
 }
 
 // skippedSlotAnswer reports a Solana getBlock answer that the slot was skipped (or

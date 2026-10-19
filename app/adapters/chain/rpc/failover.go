@@ -31,6 +31,12 @@ const (
 	// Without a deadline every attempt keeps the HTTP client's timeout, as with one
 	// endpoint: a large answer (a 64 MiB EVM block, a busy Solana slot) is not cut.
 	failoverMinAttempt = 2 * time.Second
+
+	// An endpoint that refuses a call's shape (shapeKey) this many times in a row is
+	// not asked that shape again for shapeNotServedTTL, unless no other endpoint
+	// would be asked. Any other answer to that shape starts the count again.
+	shapeRefusalsToRemember = 2
+	shapeNotServedTTL       = 10 * time.Minute
 )
 
 // Methods whose answer is a signed transaction handed to the network. They move to
@@ -71,8 +77,14 @@ type endpoint struct {
 	lastErrorAt         time.Time
 	verified            bool
 	wrongNetwork        bool
-	// notServed holds the methods this endpoint answered it does not serve.
-	notServed map[string]bool
+	// notServed holds, per call shape, the refusals in a row and until when the
+	// endpoint is not asked that shape.
+	notServed map[string]shapeRefusal
+}
+
+type shapeRefusal struct {
+	refusals int
+	until    time.Time
 }
 
 // endpointSet is the ordered list a client calls: the primary first, each member
@@ -225,20 +237,41 @@ func (e *endpoint) fail(now time.Time, label string) (time.Duration, bool) {
 	return cooldown, true
 }
 
-// serves reports whether the endpoint has not answered that it does not serve method.
-func (e *endpoint) serves(method string) bool {
+// serves reports whether the endpoint may be asked shape now: it is not remembered
+// as refusing it. A call without a shape is always served.
+func (e *endpoint) serves(shape string, now time.Time) bool {
+	if shape == "" {
+		return true
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return !e.notServed[method]
+	return !now.Before(e.notServed[shape].until)
 }
 
-func (e *endpoint) markNotServed(method string) {
+// refusedShape counts a refusal of shape; the shapeRefusalsToRemember-th in a row
+// is remembered for shapeNotServedTTL. An expired memory counts from zero again.
+func (e *endpoint) refusedShape(shape string, now time.Time) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.notServed == nil {
-		e.notServed = map[string]bool{}
+		e.notServed = map[string]shapeRefusal{}
 	}
-	e.notServed[method] = true
+	entry := e.notServed[shape]
+	if !entry.until.IsZero() && !now.Before(entry.until) {
+		entry = shapeRefusal{}
+	}
+	entry.refusals++
+	if entry.refusals >= shapeRefusalsToRemember {
+		entry = shapeRefusal{until: now.Add(shapeNotServedTTL)}
+	}
+	e.notServed[shape] = entry
+}
+
+// servedShape forgets the refusals of shape: the next one is not consecutive.
+func (e *endpoint) servedShape(shape string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	delete(e.notServed, shape)
 }
 
 // identity reports what is known of the network the endpoint serves.
@@ -275,10 +308,8 @@ func (e *endpoint) markIdentity(wrong bool) {
 func (c *RPCClient) call(ctx context.Context, set *endpointSet, method string, out interface{}, params []interface{}) error {
 	pin := pinFrom(ctx)
 	candidates, pinned := c.candidates(set, pin)
-	candidates = servingCandidates(candidates, method)
-	if len(candidates) == 0 {
-		return &rpcError{Code: jsonRPCMethodNotFound, Message: "method " + method + " is not served by any endpoint"}
-	}
+	shape := shapeKey(method, params)
+	candidates = servingCandidates(candidates, shape, c.now())
 	broadcast := broadcastMethods[method]
 	askNextOnNull := nullMeansAskNext[method] && !pinned
 
@@ -305,9 +336,14 @@ func (c *RPCClient) call(ctx context.Context, set *endpointSet, method string, o
 			}
 		}
 		result, kind, err := c.attempt(ctx, cand.ep.url, method, params, remaining, broadcast)
-		if err != nil && methodNotServed(method, err) {
-			cand.ep.markNotServed(method)
-			kind = outcomeUnsupported
+		if shape != "" {
+			switch {
+			case shapeRefused(err):
+				cand.ep.refusedShape(shape, c.now())
+				kind = outcomeUnsupported
+			case err == nil || kind == outcomeAnswer:
+				cand.ep.servedShape(shape)
+			}
 		}
 		if err == nil {
 			c.succeeded(set, cand)
@@ -496,13 +532,18 @@ func (c *RPCClient) CallEach(ctx context.Context, method string, params ...inter
 	return nil, fmt.Errorf("rpc call %s: no usable endpoint", method)
 }
 
-// servingCandidates drops the endpoints that answered they do not serve method.
-func servingCandidates(candidates []candidate, method string) []candidate {
+// servingCandidates drops the endpoints remembered as refusing shape. When that
+// would drop them all, every one is asked: the last endpoint that might serve the
+// call is never skipped.
+func servingCandidates(candidates []candidate, shape string, now time.Time) []candidate {
 	serving := candidates[:0:0]
 	for _, cand := range candidates {
-		if cand.ep.serves(method) {
+		if cand.ep.serves(shape, now) {
 			serving = append(serving, cand)
 		}
+	}
+	if len(serving) == 0 {
+		return candidates
 	}
 	return serving
 }
