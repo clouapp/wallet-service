@@ -110,9 +110,7 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 			Activity: activityLog,
 			Sealer:   chainRPCSealer{},
 			Dialer:   registry,
-			// No profile: the platform API never moves a chain to another network
-			// (chains:set-rpc then chains:align-network do, from artisan).
-			Verify: chainregistry.NewPrimaryVerifier(openChainEndpoint, nil),
+			Verify:   platformPrimaryVerifier(),
 		}), nil
 	})
 	app.Singleton((*rpcendpoints.Service)(nil), func(app foundation.Application) (any, error) {
@@ -217,4 +215,11 @@ func (chainRPCSealer) Open(stored string) (string, error) {
 		return "", fmt.Errorf("open chain rpc")
 	}
 	return opened, nil
+}
+
+// platformPrimaryVerifier checks a new primary written by the platform API. It has
+// no network profile: the platform API never moves a chain to another network
+// (chains:set-rpc then chains:align-network do, from artisan).
+func platformPrimaryVerifier() *chainregistry.PrimaryVerifier {
+	return chainregistry.NewPrimaryVerifier(openChainEndpoint, nil)
 }
