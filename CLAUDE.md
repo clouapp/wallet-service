@@ -711,9 +711,12 @@ list writes are refused.
   against. A block or slot no endpoint returns fails `ScanBlock` (retried, then pending) instead of
   reading as an empty block. A Solana "skipped" slot (-32007/-32009, only with "skipped" in the
   message) from a fallback must be confirmed by another endpoint, asked in turn, the primary first and
-  cooling down or not: the first block wins, the first "skipped" confirms; when none can say, the error
+  cooling down or not (a cooling one once per cool-down window, so one that hangs is not waited for on
+  every slot): the first block wins, the first "skipped" confirms; when none can say, the error
   carries `chain.ErrSkippedSlotUnconfirmed` and the deposit scan saves the slot pending at once, without
-  immediate retries and without counting it against the cycle's limit of failing blocks. The
+  immediate retries and without counting it against the cycle's limit of failing blocks. The pending
+  pass that follows each scan retries at most 25 due blocks, oldest first, and starts none once 5 s
+  are spent (an operator's forced pass has no limit). The
   primary's answer is believed.
 - **Health**: an endpoint failing 3 calls in a row is skipped for 30 s, doubling up to 5 min; after a
   cool-down one more failure skips it again, a success clears it. When every endpoint is cooling down
@@ -750,8 +753,8 @@ list writes are refused.
   refused as reorganized. A node without EIP-234 (-32602) is read by number, the same node, every log
   checked against the block's hash. On either path, "no logs" for a block whose `logsBloom` may hold a
   `Transfer` asks the other ready endpoints by the block's hash: their logs are the answer, an empty
-  answer from one agrees; with nobody else to ask the block is retried and believed empty the third
-  time the same hash is answered so (logged). Receipts keep their block number and hash check.
+  answer from one agrees; with nobody else to ask the block is retried and believed empty from the
+  third time the same hash is answered so, once the block is at least 5 minutes old (logged). Receipts keep their block number and hash check.
 
 — guarded by `app/adapters/chain/rpc/failover_test.go`, `app/adapters/chain/evm/endpoints_test.go`,
 `app/adapters/chain/solana/endpoints_test.go`, `app/services/chainregistry/endpoint_verify_test.go`,

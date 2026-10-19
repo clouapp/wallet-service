@@ -878,7 +878,7 @@ type transferLog struct {
 }
 
 func (a *EVMLive) scanERC20(ctx context.Context, blockNum uint64, blockHash, logsBloom string, blockTime time.Time) ([]types.DetectedTransfer, error) {
-	logs, err := a.transferLogs(ctx, blockNum, blockHash, logsBloom)
+	logs, err := a.transferLogs(ctx, blockNum, blockHash, logsBloom, blockTime)
 	if err != nil {
 		return nil, err
 	}
@@ -922,7 +922,7 @@ func (a *EVMLive) scanERC20(ctx context.Context, blockNum uint64, blockHash, log
 // EIP-234) is read by number, the same node (the scope is pinned): every log must
 // then be of the block read (the caller checks). Either way, "no logs" for a block
 // whose logsBloom may hold a Transfer is checked (confirmNoTransferLogs).
-func (a *EVMLive) transferLogs(ctx context.Context, blockNum uint64, blockHash, logsBloom string) ([]transferLog, error) {
+func (a *EVMLive) transferLogs(ctx context.Context, blockNum uint64, blockHash, logsBloom string, blockTime time.Time) ([]transferLog, error) {
 	if blockHash == "" {
 		return nil, fmt.Errorf("block %d has no hash to read its logs by", blockNum)
 	}
@@ -943,15 +943,17 @@ func (a *EVMLive) transferLogs(ctx context.Context, blockNum uint64, blockHash, 
 	if len(logs) > 0 || !bloomMayHoldTransfer(logsBloom) {
 		return logs, nil
 	}
-	return a.confirmNoTransferLogs(ctx, blockNum, blockHash, byHash)
+	return a.confirmNoTransferLogs(ctx, blockNum, blockHash, byHash, blockTime)
 }
 
 const (
 	// emptyBloomAnswersToAccept is how many times a block's logs may come back empty
 	// while its bloom may hold a Transfer, with no other endpoint able to say, before
 	// the block is believed to hold none: a bloom false positive must not leave the
-	// block pending forever.
+	// block pending forever. The block must also be emptyLogsMinBlockAge old: the
+	// immediate retries are milliseconds apart, the pending retries minutes.
 	emptyBloomAnswersToAccept = 3
+	emptyLogsMinBlockAge      = 5 * time.Minute
 	// otherLogsBudget bounds the question to the other endpoints.
 	otherLogsBudget = 5 * time.Second
 )
@@ -960,9 +962,10 @@ const (
 // bloom may hold some. The other endpoints are asked by its hash: logs from one of
 // them are the answer (the caller checks they are of the block); an empty answer
 // from one agrees, and the block holds none. With nobody else to ask, the same empty
-// answer is believed the emptyBloomAnswersToAccept-th time; before that it is an
-// error and the block is retried.
-func (a *EVMLive) confirmNoTransferLogs(ctx context.Context, blockNum uint64, blockHash string, byHash map[string]interface{}) ([]transferLog, error) {
+// answer is believed from the emptyBloomAnswersToAccept-th time on, once the block is
+// emptyLogsMinBlockAge old; before that it is an error and the block is retried (then
+// kept pending, retried minutes apart).
+func (a *EVMLive) confirmNoTransferLogs(ctx context.Context, blockNum uint64, blockHash string, byHash map[string]interface{}, blockTime time.Time) ([]transferLog, error) {
 	agreed := false
 	for _, raw := range a.rpc.CallOthers(ctx, otherLogsBudget, "eth_getLogs", byHash) {
 		var other []transferLog
@@ -974,7 +977,7 @@ func (a *EVMLive) confirmNoTransferLogs(ctx context.Context, blockNum uint64, bl
 		}
 		agreed = true
 	}
-	if !agreed && a.emptyLogs.count(blockHash) < emptyBloomAnswersToAccept {
+	if !agreed && (a.emptyLogs.count(blockHash) < emptyBloomAnswersToAccept || time.Since(blockTime) < emptyLogsMinBlockAge) {
 		return nil, fmt.Errorf("evm %s: no Transfer log for block %d, whose bloom says it may hold some (a node without the block?)", a.cfg.ChainIDStr, blockNum)
 	}
 	a.emptyLogs.forget(blockHash)

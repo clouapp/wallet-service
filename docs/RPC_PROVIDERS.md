@@ -332,8 +332,8 @@ go run . artisan chains:rpc-endpoints eth --defaults --apply                    
   `eth_getLogs` by `blockHash`, after two in a row, for 10 minutes. The last endpoint that might serve
   a call is always asked, and a broadcast is never remembered.
 - A Solana slot a fallback answers skipped is confirmed by another endpoint (the primary first, even
-  while it cools down). When none can say, the deposit scan keeps the slot pending without counting it
-  as a failing block.
+  while it cools down, then once per cool-down). When none can say, the deposit scan keeps the slot
+  pending without counting it as a failing block; each pending pass retries at most 25 blocks within 5 s.
 - Under a caller deadline each attempt gets its share of the time left; without one an attempt keeps
   the 30 s HTTP timeout.
 - A broadcast moves on only when the previous endpoint certainly did not take the transaction (the
@@ -343,7 +343,8 @@ go run . artisan chains:rpc-endpoints eth --defaults --apply                    
 - An EVM block and its logs are read from the same endpoint, and the logs by the block's hash, so a
   backend without that block fails the block (retried) instead of answering no logs. A node without
   EIP-234 is read by number, with every log checked. "No logs" where the block's bloom may hold a
-  `Transfer` is checked with the other endpoints (by hash), else believed the third time.
+  `Transfer` is checked with the other endpoints (by hash), else believed the third time once the block
+  is 5 minutes old.
 - The primary's pending nonce decides (with its rate-limit backoff); the other endpoints, asked for 1 s
   at the same time, may raise it by one at most. It is never below the next nonce of a transaction
   the same process broadcast in the last 10 minutes.
