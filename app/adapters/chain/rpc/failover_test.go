@@ -785,3 +785,51 @@ func TestFailover_Identity_AFallbackPromotedToPrimaryIsUsed(t *testing.T) {
 	assert.Equal(t, "0x99", block)
 	assert.False(t, healthOf(client)[0].WrongNetwork)
 }
+
+func TestClassify_RPCError_AContractRevertIsAnAnswerWhateverItsReason(t *testing.T) {
+	for _, tc := range []struct {
+		code    int
+		message string
+	}{
+		{3, "execution reverted: rate limit exceeded"},
+		{3, "execution reverted: Timeout"},
+		{3, "execution reverted: quota reached"},
+		{3, "execution reverted"},
+		{-32000, "execution reverted: backend paused"},
+		{-32603, "execution reverted: internal error in the pool"},
+		{-32015, "upstream: transaction version not supported"},
+		{-32010, "timeout waiting for the index"},
+	} {
+		if got := classifyRPCError(&rpcError{Code: tc.code, Message: tc.message}); got != outcomeAnswer {
+			t.Errorf("%d %q: got %d, want an answer", tc.code, tc.message, got)
+		}
+	}
+}
+
+func TestClassify_HTTPFailure_ReadsPhrasesOfAnyCodeOutsideA2xx(t *testing.T) {
+	body := []byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32010,"message":"upstream timeout"}}`)
+	if got := classifyHTTPFailure(http.StatusBadRequest, body); got != outcomeUnavailable {
+		t.Fatalf("400 with an upstream timeout = %d", got)
+	}
+	revert := []byte(`{"jsonrpc":"2.0","id":1,"error":{"code":3,"message":"execution reverted: rate limit exceeded"}}`)
+	if got := classifyHTTPFailure(http.StatusBadRequest, revert); got != outcomeAnswer {
+		t.Fatalf("400 with a revert = %d", got)
+	}
+}
+
+func TestFailover_Call_AContractRevertNeverMovesOnNorCountsAFailure(t *testing.T) {
+	primary := newFakeNode(t, answers(rpcFailure(3, "execution reverted: rate limit exceeded")))
+	fallback := newFakeNode(t, answers(result(`"0x"`)))
+	client, _, _ := failoverClient(primary.URL(), fallback.URL())
+
+	for i := 0; i < endpointFailuresToOpen; i++ {
+		err := client.Call(context.Background(), "eth_call", nil, map[string]string{}, "latest")
+		var rpcErr *RPCError
+		require.ErrorAs(t, err, &rpcErr)
+		assert.Equal(t, 3, rpcErr.Code)
+	}
+	assert.Zero(t, fallback.total(), "a revert reason is the contract's answer, not the node's state")
+	health := healthOf(client)[0]
+	assert.Zero(t, health.ConsecutiveFailures)
+	assert.True(t, health.CoolingDownUntil.IsZero())
+}

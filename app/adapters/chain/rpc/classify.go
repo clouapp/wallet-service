@@ -39,6 +39,8 @@ const (
 // standard range; -32004 is "method not supported" (EIP-1474) and "block not
 // available for slot" (Solana), both answers this node cannot give.
 const (
+	jsonRPCExecutionReverted    = 3
+	jsonRPCServerError          = -32000
 	jsonRPCMethodNotFound       = -32601
 	jsonRPCInternalError        = -32603
 	jsonRPCMethodNotSupported   = -32004
@@ -63,30 +65,54 @@ var (
 		"backend", "temporarily unavailable", "service unavailable", "no healthy", "node is behind",
 		"node is unhealthy", "timeout", "timed out",
 	}
-	alreadyKnownPhrases = []string{
+	executionRevertedPhrase = "execution reverted"
+	alreadyKnownPhrases     = []string{
 		"already known", "known transaction", "alreadyknown", "already imported", "already exists",
 		"already in mempool", "already been processed", "alreadyprocessed",
 	}
 )
 
-// classifyRPCError decides what a JSON-RPC error means for failover. Only the codes
-// and phrases above move the call to another endpoint; every other error is an
-// answer about the request.
+// classifyRPCError decides what a JSON-RPC error of a 2xx answer means for failover.
 func classifyRPCError(rpcErr *rpcError) outcome {
+	return classifyRPCErrorOf(rpcErr, false)
+}
+
+// classifyRPCErrorOf decides what a JSON-RPC error means for failover. A contract
+// revert (code 3, "execution reverted…") is always the contract's answer, whatever
+// its reason string says. Then the codes above decide; the phrases are read only
+// for the generic server errors (-32000, -32603) and for an error that came with a
+// non-2xx status, so a provider-specific code with a word like "timeout" in it is
+// not taken for the node's state. Every other error is an answer about the request.
+func classifyRPCErrorOf(rpcErr *rpcError, httpFailure bool) outcome {
 	if rpcErr == nil {
 		return outcomeAnswer
 	}
 	message := strings.ToLower(rpcErr.Message)
-	switch {
-	case rpcErr.Code == jsonRPCRateLimitedCode || rpcErr.Code == jsonRPCLimitExceeded || hasPhrase(message, rateLimitPhrases):
-		return outcomeRateLimited
-	case rpcErr.Code == jsonRPCMethodNotFound || rpcErr.Code == jsonRPCMethodNotSupported || hasPhrase(message, unsupportedPhrases):
-		return outcomeUnsupported
-	case rpcErr.Code == jsonRPCInternalError || rpcErr.Code == solanaBlockStatusNotYet || rpcErr.Code == solanaMinContextSlotNotHit || hasPhrase(message, unavailablePhrases):
-		return outcomeUnavailable
-	default:
+	if rpcErr.Code == jsonRPCExecutionReverted || strings.Contains(message, executionRevertedPhrase) {
 		return outcomeAnswer
 	}
+	switch rpcErr.Code {
+	case jsonRPCRateLimitedCode, jsonRPCLimitExceeded:
+		return outcomeRateLimited
+	case jsonRPCMethodNotFound, jsonRPCMethodNotSupported:
+		return outcomeUnsupported
+	case solanaBlockStatusNotYet, solanaMinContextSlotNotHit:
+		return outcomeUnavailable
+	}
+	if httpFailure || rpcErr.Code == jsonRPCServerError || rpcErr.Code == jsonRPCInternalError {
+		switch {
+		case hasPhrase(message, rateLimitPhrases):
+			return outcomeRateLimited
+		case hasPhrase(message, unsupportedPhrases):
+			return outcomeUnsupported
+		case hasPhrase(message, unavailablePhrases):
+			return outcomeUnavailable
+		}
+	}
+	if rpcErr.Code == jsonRPCInternalError {
+		return outcomeUnavailable
+	}
+	return outcomeAnswer
 }
 
 // classifyHTTPFailure decides what a non-2xx answer means. 5xx and 408 are an
@@ -98,7 +124,7 @@ func classifyHTTPFailure(status int, body []byte) outcome {
 	}
 	var resp rpcResponse
 	if json.Unmarshal(body, &resp) == nil && resp.Error != nil {
-		return classifyRPCError(resp.Error)
+		return classifyRPCErrorOf(resp.Error, true)
 	}
 	return outcomeUnavailable
 }
