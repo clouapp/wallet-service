@@ -1170,6 +1170,26 @@ func TestFailover_SkippedSlot_IsConfirmedByACoolingPrimary(t *testing.T) {
 	assert.Equal(t, "x", block.Blockhash, "the primary's block is the answer")
 }
 
+func TestFailover_SkippedSlot_ACoolingEndpointIsAskedOncePerCoolDown(t *testing.T) {
+	primary := newFakeNode(t, answers(http.StatusServiceUnavailable, "down"))
+	fallback := newFakeNode(t, answers(rpcFailure(-32007, skippedSlot)))
+	client, clock, _ := failoverClient(primary.URL(), fallback.URL())
+	cooling := client.endpoints.Load().members[0]
+	cooling.mu.Lock()
+	cooling.trips, cooling.openUntil = 1, clock.Now().Add(endpointCooldownBase)
+	cooling.mu.Unlock()
+
+	for slot := 512; slot < 515; slot++ {
+		err := client.Call(context.Background(), "getBlock", nil, slot)
+		require.ErrorIs(t, err, chain.ErrSkippedSlotUnconfirmed)
+	}
+	assert.Equal(t, 1, primary.count("getBlock"), "a cooling endpoint that did not answer is not waited for again in the same cool-down")
+
+	clock.Advance(endpointCooldownBase + time.Second)
+	_ = client.Call(context.Background(), "getBlock", nil, 515)
+	assert.Greater(t, primary.count("getBlock"), 1, "after the cool-down it is asked again")
+}
+
 func TestFailover_SolanaHistoryAnswers_MoveOnWithoutCountingAFailure(t *testing.T) {
 	for _, failure := range []func(string) (int, string){
 		answers(rpcFailure(-32001, "Block 512 cleaned up, does not exist on node. First available block: 900")),

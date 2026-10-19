@@ -14,10 +14,22 @@ import (
 var errNoPendingStore = errors.New("no pending deposit store configured")
 
 // ReprocessResult counts what one pass over a chain's pending blocks did.
+// The scan loop's pass over pending blocks runs after each scan of the chain: it
+// retries at most pendingPassMaxBlocks due blocks, oldest first, and starts no new
+// block once pendingPassBudget is spent, so a pile of pending blocks (an outage of
+// the endpoints that confirm skipped slots) never holds the scan of new blocks back.
+// The rest wait for the next pass. An operator's forced pass has no limit.
+const (
+	pendingPassMaxBlocks = 25
+	pendingPassBudget    = 5 * time.Second
+)
+
 type ReprocessResult struct {
 	Due          int
 	Resolved     int
 	StillPending int
+	// Deferred is the due blocks left for the next pass by its limits.
+	Deferred int
 }
 
 // recordPending saves a block that failed every immediate retry, merging it with the
@@ -103,9 +115,15 @@ func (s *Service) ReprocessPending(ctx context.Context, chainID string, force bo
 		due = entries
 	}
 	result := ReprocessResult{Due: len(due)}
-	for _, entry := range due {
+	started := s.now()
+	for i, entry := range due {
 		if err := ctx.Err(); err != nil {
 			return result, err
+		}
+		if !force && (i == pendingPassMaxBlocks || s.now().Sub(started) >= pendingPassBudget) {
+			result.Deferred = len(due) - i
+			slog.Info("pending deposit blocks left for the next pass", "chain", chainID, "deferred", result.Deferred)
+			break
 		}
 		transfers, fetchErr := adapter.ScanBlock(ctx, entry.Block)
 		outcome := s.processBlock(ctx, chainID, adapter, fetchedBlock{number: entry.Block, transfers: transfers, err: fetchErr}, adapter.ScanBlock)

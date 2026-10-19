@@ -44,6 +44,9 @@ type concurrentChain struct {
 
 	chunkMu sync.Mutex
 	chunks  []*chunkGate
+
+	// onScan, when set, runs at the start of each ScanBlock.
+	onScan func(blockNum uint64)
 }
 
 // chunkGate holds one parallel fetch wave until every block has entered, then
@@ -93,6 +96,9 @@ func (c *concurrentChain) GetTransactionBlock(_ context.Context, txHash string) 
 }
 
 func (c *concurrentChain) ScanBlock(_ context.Context, blockNum uint64) ([]types.DetectedTransfer, error) {
+	if c.onScan != nil {
+		c.onScan(blockNum)
+	}
 	c.calls.Add(1)
 	current := c.inFlight.Add(1)
 	defer c.inFlight.Add(-1)

@@ -80,6 +80,9 @@ type endpoint struct {
 	// notServed holds, per call shape, the refusals in a row and until when the
 	// endpoint is not asked that shape.
 	notServed map[string]shapeRefusal
+	// askedCooling is the end of the cool-down in which the endpoint was last asked
+	// a second opinion: once per cool-down (see secondOpinionAllowed).
+	askedCooling time.Time
 }
 
 type shapeRefusal struct {
@@ -224,6 +227,22 @@ func (s *endpointSet) snapshot() []chain.RPCEndpointHealth {
 		member.mu.Unlock()
 	}
 	return out
+}
+
+// secondOpinionAllowed reports whether the endpoint may be asked a second opinion
+// now: always while it is not cooling down, and once per cool-down while it is, so
+// an endpoint that hangs costs one bounded wait per cool-down, not one per question.
+func (e *endpoint) secondOpinionAllowed(now time.Time) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if !now.Before(e.openUntil) {
+		return true
+	}
+	if e.askedCooling.Equal(e.openUntil) {
+		return false
+	}
+	e.askedCooling = e.openUntil
+	return true
 }
 
 // succeed clears the endpoint's failures and reports whether it was failing.
@@ -467,13 +486,16 @@ func (c *RPCClient) chaseNull(ctx context.Context, set *endpointSet, first candi
 }
 
 // confirmSkipped asks the other endpoints, the primary first and cooling down or
-// not, about a slot a fallback answered skipped: a fallback may only miss the slot
+// not (a cooling one once per cool-down), about a slot a fallback answered skipped: a fallback may only miss the slot
 // (a snapshot gap, a short history). The first block is the result; the first
 // "skipped" confirms the answer. When none can say, the slot is unconfirmed
 // (chain.ErrSkippedSlotUnconfirmed), an error the scan keeps pending, never a
 // skipped slot.
 func (c *RPCClient) confirmSkipped(ctx context.Context, set *endpointSet, first candidate, params []interface{}, out interface{}, skipped error, primaryLost bool, pin *endpointPin) error {
 	for _, other := range set.others(first) {
+		if !other.ep.secondOpinionAllowed(c.now()) {
+			continue
+		}
 		second := c.ask(ctx, set, other, solanaGetBlock, params)
 		switch {
 		case second.err == nil && !isJSONNull(second.result):
