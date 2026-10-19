@@ -126,8 +126,10 @@ func TestStaleOutbound_Health_NeverWaitsOnACountInFlightAndServesTheLastOneOnErr
 		time.Sleep(time.Millisecond)
 	}
 	started := time.Now()
-	follower := svc.StaleOutboundHealth(context.Background())
-	if time.Since(started) > pendingHealthTimeout+time.Second || follower.Total != 1 {
+	short, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	follower := svc.StaleOutboundHealth(short)
+	if time.Since(started) > time.Second || follower.Total != 1 {
 		t.Fatalf("follower %+v after %s: a second check gets the last counts instead of waiting on the count in flight", follower, time.Since(started))
 	}
 	if counter.calls.Load() != 2 {
