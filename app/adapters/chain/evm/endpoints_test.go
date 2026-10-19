@@ -11,6 +11,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -275,4 +278,77 @@ func fallbackList(urls []string) []chain.RPCFallback {
 		fallbacks = append(fallbacks, chain.RPCFallback{URL: url})
 	}
 	return fallbacks
+}
+
+// noEIP234Node refuses eth_getLogs by blockHash with -32602, as a node without
+// EIP-234 does, and answers a number range with byNumber. The block it returns
+// carries logsBloom.
+func noEIP234Node(t *testing.T, logsBloom string, byNumber string) *httptest.Server {
+	t.Helper()
+	block := `"result":{"hash":"` + scannedBlockHash + `","timestamp":"0x1","logsBloom":"` + logsBloom + `","transactions":[]}`
+	server, _ := logsByHashNode(t, func(filter map[string]any) string {
+		if _, byHash := filter["blockHash"]; byHash {
+			return `"error":{"code":-32602,"message":"invalid argument 0: unknown field blockHash"}`
+		}
+		return byNumber
+	})
+	server.Config.Handler = blockWithBloom(server.Config.Handler, block)
+	return server
+}
+
+// blockWithBloom answers eth_getBlockByNumber with block and passes the rest on.
+func blockWithBloom(next http.Handler, block string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req struct {
+			Method string `json:"method"`
+		}
+		_ = json.Unmarshal(body, &req)
+		if req.Method == "eth_getBlockByNumber" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,`+block+`}`)
+			return
+		}
+		r.Body = io.NopCloser(strings.NewReader(string(body)))
+		next.ServeHTTP(w, r)
+	})
+}
+
+func bloomWithTransfer() string {
+	var bloom gethtypes.Bloom
+	bloom.Add(common.HexToHash(erc20TransferTopic).Bytes())
+	return hexutil.Encode(bloom.Bytes())
+}
+
+func TestScan_Block_WithoutEIP234ReadsTheLogsByNumberAndChecksTheirBlock(t *testing.T) {
+	logOf := func(blockHash string) string {
+		return `"result":[{"address":"0x1c7d4b196cb0c7b01d743fbc6116a902379c7238","blockHash":"` + blockHash +
+			`","topics":["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef","0x0000000000000000000000001111111111111111111111111111111111111111","0x0000000000000000000000002222222222222222222222222222222222222222"],"data":"0x64","transactionHash":"0x02","logIndex":"0x0"}]`
+	}
+	emptyBloom := hexutil.Encode(make([]byte, gethtypes.BloomByteLength))
+
+	t.Run("logs of the block read", func(t *testing.T) {
+		adapter := sepoliaWithFallbacks(noEIP234Node(t, bloomWithTransfer(), logOf(scannedBlockHash)).URL)
+		transfers, err := adapter.ScanBlock(context.Background(), 0xaa)
+		require.NoError(t, err)
+		require.Len(t, transfers, 1)
+		assert.Equal(t, models.SymbolUSDC, transfers[0].Asset)
+	})
+	t.Run("a log of another block", func(t *testing.T) {
+		adapter := sepoliaWithFallbacks(noEIP234Node(t, bloomWithTransfer(), logOf("0x00000000000000000000000000000000000000000000000000000000000000bb")).URL)
+		_, err := adapter.ScanBlock(context.Background(), 0xaa)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "reorganized")
+	})
+	t.Run("no logs where the bloom says there may be some", func(t *testing.T) {
+		adapter := sepoliaWithFallbacks(noEIP234Node(t, bloomWithTransfer(), `"result":[]`).URL)
+		_, err := adapter.ScanBlock(context.Background(), 0xaa)
+		assert.Error(t, err, "a backend without the block answers no logs; the block is retried")
+	})
+	t.Run("no logs and a bloom without Transfer", func(t *testing.T) {
+		adapter := sepoliaWithFallbacks(noEIP234Node(t, emptyBloom, `"result":[]`).URL)
+		transfers, err := adapter.ScanBlock(context.Background(), 0xaa)
+		require.NoError(t, err)
+		assert.Empty(t, transfers)
+	})
 }

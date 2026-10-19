@@ -775,6 +775,7 @@ func (a *EVMLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.Detec
 	var block struct {
 		Hash         string `json:"hash"`
 		Timestamp    string `json:"timestamp"`
+		LogsBloom    string `json:"logsBloom"`
 		Transactions []struct {
 			Hash  string `json:"hash"`
 			From  string `json:"from"`
@@ -807,7 +808,7 @@ func (a *EVMLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.Detec
 	// ERC-20 Transfer events. A block whose logs did not load fails, so the deposit
 	// scanner retries it (and keeps it pending) instead of marking it scanned
 	// without its token deposits.
-	tokens, err := a.scanERC20(ctx, blockNum, block.Hash, blockTime)
+	tokens, err := a.scanERC20(ctx, blockNum, block.Hash, block.LogsBloom, blockTime)
 	if err != nil {
 		return nil, fmt.Errorf("erc20 logs of block %d: %w", blockNum, err)
 	}
@@ -816,31 +817,24 @@ func (a *EVMLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.Detec
 	return transfers, nil
 }
 
-func (a *EVMLive) scanERC20(ctx context.Context, blockNum uint64, blockHash string, blockTime time.Time) ([]types.DetectedTransfer, error) {
-	// Caller must have registered tokens in the registry — we access via package-level
-	// In production, inject registry into adapter. For POC, accept this coupling.
-	transferTopic := "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+// erc20TransferTopic is the topic of Transfer(address,address,uint256).
+const erc20TransferTopic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 
-	var logs []struct {
-		Address         string   `json:"address"`
-		BlockHash       string   `json:"blockHash"`
-		Topics          []string `json:"topics"`
-		Data            string   `json:"data"`
-		TransactionHash string   `json:"transactionHash"`
-		LogIndex        string   `json:"logIndex"`
-	}
+// jsonRPCInvalidParams is the answer of a node that does not take a filter's shape.
+const jsonRPCInvalidParams = -32602
 
-	// One getLogs call for the block, no address filter: the logs are matched
-	// against the known token contracts here. The filter names the block by the
-	// hash ScanBlock read (EIP-234), not by its number: a node, or a backend of a
-	// load-balanced provider, that does not hold that exact block answers an error
-	// (the block is retried) instead of an empty list that would skip its deposits.
-	if blockHash == "" {
-		return nil, fmt.Errorf("block %d has no hash to read its logs by", blockNum)
-	}
-	if err := a.rpc.Call(ctx, "eth_getLogs", &logs, map[string]interface{}{
-		"blockHash": blockHash, "topics": []string{transferTopic},
-	}); err != nil {
+type transferLog struct {
+	Address         string   `json:"address"`
+	BlockHash       string   `json:"blockHash"`
+	Topics          []string `json:"topics"`
+	Data            string   `json:"data"`
+	TransactionHash string   `json:"transactionHash"`
+	LogIndex        string   `json:"logIndex"`
+}
+
+func (a *EVMLive) scanERC20(ctx context.Context, blockNum uint64, blockHash, logsBloom string, blockTime time.Time) ([]types.DetectedTransfer, error) {
+	logs, err := a.transferLogs(ctx, blockNum, blockHash, logsBloom)
+	if err != nil {
 		return nil, err
 	}
 
@@ -872,6 +866,50 @@ func (a *EVMLive) scanERC20(ctx context.Context, blockNum uint64, blockHash stri
 		}
 	}
 	return result, nil
+}
+
+// transferLogs reads the Transfer logs of the block ScanBlock read. One getLogs call
+// for the block, no address filter: the logs are matched against the known token
+// contracts by the caller. The filter names the block by its hash (EIP-234), not its
+// number: a node, or a backend of a load-balanced provider, that does not hold that
+// exact block answers an error (the block is retried) instead of an empty list that
+// would skip its deposits. A node that refuses the hash filter (-32602, no EIP-234)
+// is read by number, the same node (the scope is pinned): every log must then be of
+// the block read (the caller checks), and "no logs" is believed only when the block's
+// logsBloom says it holds no Transfer.
+func (a *EVMLive) transferLogs(ctx context.Context, blockNum uint64, blockHash, logsBloom string) ([]transferLog, error) {
+	if blockHash == "" {
+		return nil, fmt.Errorf("block %d has no hash to read its logs by", blockNum)
+	}
+	var logs []transferLog
+	err := a.rpc.Call(ctx, "eth_getLogs", &logs, map[string]interface{}{
+		"blockHash": blockHash, "topics": []string{erc20TransferTopic},
+	})
+	var rpcErr *rpc.RPCError
+	if err == nil || !errors.As(err, &rpcErr) || rpcErr.Code != jsonRPCInvalidParams {
+		return logs, err
+	}
+	hexBlock := fmt.Sprintf("0x%x", blockNum)
+	logs = nil
+	if err := a.rpc.Call(ctx, "eth_getLogs", &logs, map[string]interface{}{
+		"fromBlock": hexBlock, "toBlock": hexBlock, "topics": []string{erc20TransferTopic},
+	}); err != nil {
+		return nil, err
+	}
+	if len(logs) == 0 && bloomMayHoldTransfer(logsBloom) {
+		return nil, fmt.Errorf("evm %s: no Transfer log for block %d by number, whose bloom says it may hold some (a node without the block?)", a.cfg.ChainIDStr, blockNum)
+	}
+	return logs, nil
+}
+
+// bloomMayHoldTransfer reports whether a block's logsBloom may hold a Transfer log;
+// a bloom that cannot be read may.
+func bloomMayHoldTransfer(logsBloom string) bool {
+	raw, err := hex.DecodeString(strings.TrimPrefix(strings.ToLower(strings.TrimSpace(logsBloom)), "0x"))
+	if err != nil || len(raw) != gethtypes.BloomByteLength {
+		return true
+	}
+	return gethtypes.BloomLookup(gethtypes.BytesToBloom(raw), common.HexToHash(erc20TransferTopic))
 }
 
 // ---------------------------------------------------------------------------
