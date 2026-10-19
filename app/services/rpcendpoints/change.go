@@ -329,10 +329,10 @@ func (s *Service) reload(chainID string, entries []entry) bool {
 	if s.dialer == nil {
 		return false
 	}
-	var fallbacks []string
-	for _, e := range entries[1:] {
+	var fallbacks []chain.RPCFallback
+	for i, e := range entries[1:] {
 		if e.enabled && e.usable() {
-			fallbacks = append(fallbacks, e.dial)
+			fallbacks = append(fallbacks, chain.RPCFallback{URL: e.dial, Position: i + models.ChainRPCPrimaryPosition + 1})
 		}
 	}
 	reloaded, err := s.dialer.ReplaceEndpoints(chainID, entries[0].dial, fallbacks)

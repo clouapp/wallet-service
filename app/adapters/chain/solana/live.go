@@ -20,7 +20,7 @@ type SolanaConfig struct {
 	// RPCFallbacks are tried in order after RPCURL when it cannot serve a call
 	// (rpc.RPCClient failover). Each answers getGenesisHash, which must be
 	// GenesisHash, before its first use; an empty GenesisHash checks none.
-	RPCFallbacks []string
+	RPCFallbacks []chain.RPCFallback
 	GenesisHash  string
 	// RPCHealth receives the health of the endpoints each time it changes; nil
 	// records nothing.
@@ -101,12 +101,12 @@ func (a *SolanaLive) ReplaceEndpoint(endpoint string) {
 
 // ReplaceEndpoints points later dials at primary and then fallbacks, in order.
 // An empty primary is ignored.
-func (a *SolanaLive) ReplaceEndpoints(primary string, fallbacks []string) {
+func (a *SolanaLive) ReplaceEndpoints(primary string, fallbacks []chain.RPCFallback) {
 	if a == nil || strings.TrimSpace(primary) == "" {
 		return
 	}
 	a.cfg.RPCURL = strings.TrimSpace(primary)
-	a.cfg.RPCFallbacks = append([]string(nil), fallbacks...)
+	a.cfg.RPCFallbacks = append([]chain.RPCFallback(nil), fallbacks...)
 	if a.rpc == nil {
 		a.rpc = newSolanaRPCClient(a.cfg)
 		return

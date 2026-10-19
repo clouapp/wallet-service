@@ -147,10 +147,10 @@ func TestFind_TokenByContract_SolanaMintExact(t *testing.T) {
 type listChain struct {
 	types.Chain
 	primary   string
-	fallbacks []string
+	fallbacks []RPCFallback
 }
 
-func (c *listChain) ReplaceEndpoints(primary string, fallbacks []string) {
+func (c *listChain) ReplaceEndpoints(primary string, fallbacks []RPCFallback) {
 	c.primary, c.fallbacks = primary, fallbacks
 }
 
@@ -160,7 +160,7 @@ func TestRegistry_ReplaceEndpoints_RetargetsAChainThatTakesAList(t *testing.T) {
 	r.RegisterChain(adapter)
 	r.RegisterChain(mocks.NewMockChain(models.ChainBTC))
 
-	replaced, err := r.ReplaceEndpoints(models.ChainETH, " https://primary.example ", []string{"https://fallback.example"})
+	replaced, err := r.ReplaceEndpoints(models.ChainETH, " https://primary.example ", []RPCFallback{{URL: "https://fallback.example", Position: 2}})
 	if err != nil || !replaced || adapter.primary != "https://primary.example" || len(adapter.fallbacks) != 1 {
 		t.Fatalf("replaced=%v err=%v adapter=%+v", replaced, err, adapter)
 	}

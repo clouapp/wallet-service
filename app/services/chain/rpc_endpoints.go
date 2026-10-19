@@ -22,6 +22,15 @@ const (
 	rpcFingerprintLength = 12
 )
 
+// RPCFallback is one fallback RPC endpoint handed to an adapter: the URL to call
+// and its position in the chain's stored list (2 and after). Logs and health name
+// it by that position, so a disabled endpoint before it does not shift the number
+// an operator sees. A zero Position is the endpoint's place in the list it came in.
+type RPCFallback struct {
+	URL      string
+	Position int
+}
+
 // RPCEndpointHealth is what one process last saw of one RPC endpoint of a chain.
 // Host is the URL's host (and port) only and Fingerprint identifies the URL
 // without revealing it, so neither carries a path, a query or a key.

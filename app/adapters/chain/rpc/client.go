@@ -85,7 +85,7 @@ type RPCClientDeps struct {
 	URL       string
 	User      string
 	Password  string
-	Fallbacks []string
+	Fallbacks []chain.RPCFallback
 	ChainID   string
 	Identity  IdentityCheck
 	Health    chain.RPCHealthSink
@@ -149,8 +149,9 @@ func (c *RPCClient) Endpoint() string {
 	return set.members[0].url
 }
 
-// Fallbacks are the URLs tried after the primary, in order. Callers must not log them.
-func (c *RPCClient) Fallbacks() []string {
+// Fallbacks are the endpoints tried after the primary, in order, with their
+// positions. Callers must not log the URLs.
+func (c *RPCClient) Fallbacks() []chain.RPCFallback {
 	if c == nil {
 		return nil
 	}
@@ -158,11 +159,11 @@ func (c *RPCClient) Fallbacks() []string {
 	if set == nil || len(set.members) < 2 {
 		return nil
 	}
-	urls := make([]string, 0, len(set.members)-1)
-	for _, member := range set.members[1:] {
-		urls = append(urls, member.url)
+	fallbacks := make([]chain.RPCFallback, 0, len(set.members)-1)
+	for i, member := range set.members[1:] {
+		fallbacks = append(fallbacks, chain.RPCFallback{URL: member.url, Position: set.positions[i+1]})
 	}
-	return urls
+	return fallbacks
 }
 
 // ReplaceEndpoint points later calls at endpoint as the primary and keeps the
@@ -181,7 +182,7 @@ func (c *RPCClient) ReplaceEndpoint(endpoint string) {
 
 // ReplaceEndpoints installs primary and fallbacks, in order. An endpoint already
 // in the list keeps its health; an empty primary is ignored. No URL is logged.
-func (c *RPCClient) ReplaceEndpoints(primary string, fallbacks []string) {
+func (c *RPCClient) ReplaceEndpoints(primary string, fallbacks []chain.RPCFallback) {
 	if c == nil || strings.TrimSpace(primary) == "" {
 		return
 	}

@@ -80,14 +80,14 @@ func (r *Registry) ReplaceEndpoint(chainID, endpoint string) (bool, error) {
 
 // endpointsReplacer is a live adapter whose whole endpoint list can change.
 type endpointsReplacer interface {
-	ReplaceEndpoints(primary string, fallbacks []string)
+	ReplaceEndpoints(primary string, fallbacks []RPCFallback)
 }
 
 // ReplaceEndpoints points the loaded dialer for chainID at primary and then
 // fallbacks, in order. A chain that was not loaded returns false, and one whose
 // adapter takes a single endpoint is refused. No endpoint is logged. An empty
 // primary is refused and does not wipe the current list.
-func (r *Registry) ReplaceEndpoints(chainID, primary string, fallbacks []string) (bool, error) {
+func (r *Registry) ReplaceEndpoints(chainID, primary string, fallbacks []RPCFallback) (bool, error) {
 	if r == nil {
 		return false, fmt.Errorf("replace chain endpoints: registry is required")
 	}

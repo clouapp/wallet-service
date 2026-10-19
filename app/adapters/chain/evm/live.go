@@ -51,7 +51,7 @@ type EVMConfig struct {
 	// RPCFallbacks are tried in order after RPCURL when it cannot serve a call
 	// (rpc.RPCClient failover). Each answers eth_chainId, which must be NetworkID,
 	// before its first use.
-	RPCFallbacks []string
+	RPCFallbacks []chain.RPCFallback
 	// RPCHealth receives the health of the endpoints each time it changes; nil
 	// records nothing.
 	RPCHealth     chain.RPCHealthSink
@@ -151,12 +151,12 @@ func (a *EVMLive) ReplaceEndpoint(endpoint string) {
 
 // ReplaceEndpoints points later dials at primary and then fallbacks, in order,
 // and leaves gas and dust thresholds unchanged. An empty primary is ignored.
-func (a *EVMLive) ReplaceEndpoints(primary string, fallbacks []string) {
+func (a *EVMLive) ReplaceEndpoints(primary string, fallbacks []chain.RPCFallback) {
 	if a == nil || strings.TrimSpace(primary) == "" {
 		return
 	}
 	a.cfg.RPCURL = strings.TrimSpace(primary)
-	a.cfg.RPCFallbacks = append([]string(nil), fallbacks...)
+	a.cfg.RPCFallbacks = append([]chain.RPCFallback(nil), fallbacks...)
 	if a.rpc == nil {
 		a.rpc = newEVMRPCClient(a.cfg)
 		return

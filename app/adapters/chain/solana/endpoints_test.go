@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -69,7 +70,7 @@ func devnetWithFallbacks(primary string, fallbacks ...string) *SolanaLive {
 		ChainIDStr:   models.ChainSOL,
 		NativeSymbol: models.NativeSOL,
 		RPCURL:       primary,
-		RPCFallbacks: fallbacks,
+		RPCFallbacks: fallbackList(fallbacks),
 		GenesisHash:  models.SolanaGenesisHash(models.NetworkSolanaDevnet),
 	})
 }
@@ -127,4 +128,13 @@ func TestBroadcast_AlreadyProcessedOnTheFallbackReturnsTheSignature(t *testing.T
 	if err != nil || signature != "5sig" {
 		t.Fatalf("signature=%q err=%v", signature, err)
 	}
+}
+
+// fallbackList is urls as fallbacks that take their place in the list as position.
+func fallbackList(urls []string) []chain.RPCFallback {
+	fallbacks := make([]chain.RPCFallback, 0, len(urls))
+	for _, url := range urls {
+		fallbacks = append(fallbacks, chain.RPCFallback{URL: url})
+	}
+	return fallbacks
 }

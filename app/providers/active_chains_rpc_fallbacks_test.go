@@ -12,6 +12,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/macrowallets/waas/app/models"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 )
@@ -72,7 +75,9 @@ func TestRegister_ActiveChains_GivesAnEVMChainItsOpenedFallbacksInOrder(t *testi
 	rows := []models.Chain{{
 		ID: models.ChainETH, Name: "Ethereum", AdapterType: models.AdapterTypeEVM, NativeSymbol: "ETH",
 		NativeDecimals: 18, NetworkID: &sepoliaID, RequiredConfirmations: 12, RpcURL: "sealed-primary",
-		RPCFallbacks: []string{"sealed-unopenable", "sealed-mainnet", "sealed-sepolia"},
+		RPCFallbacks: []models.ChainRPCEndpoint{
+			{URL: "sealed-unopenable", Position: 2}, {URL: "sealed-mainnet", Position: 3}, {URL: "sealed-sepolia", Position: 4},
+		},
 	}}
 
 	reg := chainpkg.NewRegistry()
@@ -96,12 +101,32 @@ func TestOpen_ChainFallbacks_IgnoresThemForAnAdapterThatDoesNotFailOverThroughTh
 	openActiveChainEndpoint = func(stored string) (string, error) { return "https://" + strings.TrimPrefix(stored, "sealed-"), nil }
 
 	for _, adapterType := range []string{models.AdapterTypeBitcoin, models.AdapterTypeTron, models.AdapterTypeXRP} {
-		if got := openChainFallbacks(models.Chain{ID: "x", AdapterType: adapterType, RPCFallbacks: []string{"sealed-a"}}); got != nil {
+		if got := openChainFallbacks(models.Chain{ID: "x", AdapterType: adapterType, RPCFallbacks: []models.ChainRPCEndpoint{{URL: "sealed-a", Position: 2}}}); got != nil {
 			t.Fatalf("%s: fallbacks = %v", adapterType, got)
 		}
 	}
-	got := openChainFallbacks(models.Chain{ID: models.ChainSOL, AdapterType: models.AdapterTypeSolana, RPCFallbacks: []string{"sealed-a", "sealed-b"}})
-	if len(got) != 2 || got[0] != "https://a" || got[1] != "https://b" {
+	got := openChainFallbacks(models.Chain{ID: models.ChainSOL, AdapterType: models.AdapterTypeSolana, RPCFallbacks: []models.ChainRPCEndpoint{
+		{URL: "sealed-a", Position: 2}, {URL: "sealed-b", Position: 3},
+	}})
+	if len(got) != 2 || got[0].URL != "https://a" || got[1].URL != "https://b" || got[1].Position != 3 {
 		t.Fatalf("solana fallbacks = %v", got)
 	}
+}
+
+func TestOpen_ChainFallbacks_KeepTheirStoredPositions(t *testing.T) {
+	previous := openActiveChainEndpoint
+	t.Cleanup(func() { openActiveChainEndpoint = previous })
+	openActiveChainEndpoint = func(stored string) (string, error) {
+		if stored == "sealed-broken" {
+			return "", errors.New("open chain rpc")
+		}
+		return "https://" + strings.TrimPrefix(stored, "sealed-"), nil
+	}
+
+	got := openChainFallbacks(models.Chain{ID: models.ChainETH, AdapterType: models.AdapterTypeEVM, RPCFallbacks: []models.ChainRPCEndpoint{
+		{URL: "sealed-broken", Position: 3, Enabled: true},
+		{URL: "sealed-b", Position: 4, Enabled: true},
+	}})
+	require.Len(t, got, 1)
+	assert.Equal(t, chainpkg.RPCFallback{URL: "https://b", Position: 4}, got[0])
 }

@@ -44,7 +44,7 @@ type HealthReader interface {
 // Dialer points the chain adapters of this process at a new list. A chain that is
 // not loaded answers false.
 type Dialer interface {
-	ReplaceEndpoints(chainID, primary string, fallbacks []string) (bool, error)
+	ReplaceEndpoints(chainID, primary string, fallbacks []chain.RPCFallback) (bool, error)
 }
 
 // VerifyFunc asks rawURL which network it serves (chainregistry.VerifyEndpoint).

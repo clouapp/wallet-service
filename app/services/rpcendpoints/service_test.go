@@ -103,10 +103,10 @@ func (n networks) verify(calls *[]string) VerifyFunc {
 
 type recordingDialer struct {
 	primary   string
-	fallbacks []string
+	fallbacks []chain.RPCFallback
 }
 
-func (d *recordingDialer) ReplaceEndpoints(_, primary string, fallbacks []string) (bool, error) {
+func (d *recordingDialer) ReplaceEndpoints(_, primary string, fallbacks []chain.RPCFallback) (bool, error) {
 	d.primary, d.fallbacks = primary, fallbacks
 	return true, nil
 }
@@ -235,7 +235,7 @@ func TestApply_Add_IsADryRunUntilApplied(t *testing.T) {
 	assert.Equal(t, []string{filteredNode, "2:" + drpc}, h.storedList(t))
 	assert.True(t, plan.Reloaded)
 	assert.Equal(t, filteredNode, h.dialer.primary)
-	assert.Equal(t, []string{drpc}, h.dialer.fallbacks)
+	assert.Equal(t, []chain.RPCFallback{{URL: drpc, Position: 2}}, h.dialer.fallbacks)
 }
 
 func TestApply_Add_RefusesAnEndpointOnAnotherNetworkOrThatDoesNotAnswer(t *testing.T) {
@@ -439,4 +439,13 @@ func TestApply_Recorded_RunsTheRecordInsideTheWriteAndFailsWithIt(t *testing.T) 
 	})
 	assert.EqualError(t, err, "activity log down")
 	assert.Len(t, recorded, 1)
+}
+
+func TestApply_Reload_HandsTheAdapterTheStoredPositionsOfTheEnabledFallbacks(t *testing.T) {
+	h := newHarness(t, filteredNode, fallbackRow(drpc, 2, false), fallbackRow(tenderly, 3, true))
+
+	_, err := h.service.Apply(context.Background(), models.ChainETH, Change{Action: ActionAdd, URL: publicnode}, true)
+	require.NoError(t, err)
+	assert.Equal(t, []chain.RPCFallback{{URL: tenderly, Position: 3}, {URL: publicnode, Position: 4}}, h.dialer.fallbacks,
+		"the disabled position 2 is not dialed and does not shift the others")
 }

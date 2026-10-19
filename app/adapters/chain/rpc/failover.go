@@ -72,10 +72,12 @@ type endpoint struct {
 	wrongNetwork        bool
 }
 
-// endpointSet is the ordered list a client calls: the primary first. It is
-// immutable; a replacement installs a new set.
+// endpointSet is the ordered list a client calls: the primary first, each member
+// with its position in the stored list (positions[0] is 1). It is immutable; a
+// replacement installs a new set.
 type endpointSet struct {
-	members []*endpoint
+	members   []*endpoint
+	positions []int
 }
 
 // newEndpointSet orders primary and fallbacks, dropping blanks and repeats. An
@@ -83,7 +85,7 @@ type endpointSet struct {
 // primary drops what a runtime identity check found: the primary is not checked at
 // runtime (its network was checked when it was written), so a former fallback seen
 // on another network is not kept out once it is the primary.
-func newEndpointSet(previous *endpointSet, primary string, fallbacks []string) *endpointSet {
+func newEndpointSet(previous *endpointSet, primary string, fallbacks []chain.RPCFallback) *endpointSet {
 	known := map[string]*endpoint{}
 	if previous != nil {
 		for _, member := range previous.members {
@@ -92,12 +94,18 @@ func newEndpointSet(previous *endpointSet, primary string, fallbacks []string) *
 	}
 	set := &endpointSet{}
 	seen := map[string]bool{}
-	for _, rawURL := range append([]string{primary}, fallbacks...) {
-		rawURL = strings.TrimSpace(rawURL)
+	for i, next := range append([]chain.RPCFallback{{URL: primary, Position: 1}}, fallbacks...) {
+		rawURL := strings.TrimSpace(next.URL)
 		if rawURL == "" || seen[rawURL] {
 			continue
 		}
 		seen[rawURL] = true
+		position := next.Position
+		if len(set.members) == 0 {
+			position = 1
+		} else if position <= 1 {
+			position = i + 1
+		}
 		member, ok := known[rawURL]
 		if !ok {
 			member = &endpoint{url: rawURL, host: chain.RPCEndpointHost(rawURL), fingerprint: chain.RPCEndpointFingerprint(rawURL)}
@@ -106,14 +114,17 @@ func newEndpointSet(previous *endpointSet, primary string, fallbacks []string) *
 			member.clearIdentity()
 		}
 		set.members = append(set.members, member)
+		set.positions = append(set.positions, position)
 	}
 	return set
 }
 
-// candidate is an endpoint with its place in the set (0 is the primary).
+// candidate is an endpoint with its place in the set (0 is the primary) and its
+// position in the stored list (what logs and health show).
 type candidate struct {
-	ep    *endpoint
-	index int
+	ep       *endpoint
+	index    int
+	position int
 }
 
 // ordered is the endpoints a call tries: the available ones in configured order,
@@ -129,9 +140,9 @@ func (s *endpointSet) ordered(now time.Time) []candidate {
 		if wrong && i > 0 {
 			continue
 		}
-		usable = append(usable, candidate{ep: member, index: i})
+		usable = append(usable, candidate{ep: member, index: i, position: s.positions[i]})
 		if !open {
-			ready = append(ready, candidate{ep: member, index: i})
+			ready = append(ready, candidate{ep: member, index: i, position: s.positions[i]})
 		}
 	}
 	if len(ready) == 0 {
@@ -140,13 +151,15 @@ func (s *endpointSet) ordered(now time.Time) []candidate {
 	return ready
 }
 
-func (s *endpointSet) indexOf(target *endpoint) int {
+// find is target as a candidate of this set; one no longer in it keeps a place
+// after the last member.
+func (s *endpointSet) find(target *endpoint) candidate {
 	for i, member := range s.members {
 		if member == target || member.url == target.url {
-			return i
+			return candidate{ep: member, index: i, position: s.positions[i]}
 		}
 	}
-	return len(s.members)
+	return candidate{ep: target, index: len(s.members), position: len(s.members) + 1}
 }
 
 // snapshot is the health of every endpoint, in order.
@@ -155,7 +168,7 @@ func (s *endpointSet) snapshot() []chain.RPCEndpointHealth {
 	for i, member := range s.members {
 		member.mu.Lock()
 		out = append(out, chain.RPCEndpointHealth{
-			Position:            i + 1,
+			Position:            s.positions[i],
 			Host:                member.host,
 			Fingerprint:         member.fingerprint,
 			ConsecutiveFailures: member.consecutiveFailures,
@@ -330,7 +343,7 @@ func (c *RPCClient) chaseNull(ctx context.Context, set *endpointSet, first candi
 // set's order.
 func (c *RPCClient) candidates(set *endpointSet, pin *endpointPin) ([]candidate, bool) {
 	if held := pin.held(); held != nil {
-		return []candidate{{ep: held, index: set.indexOf(held)}}, true
+		return []candidate{set.find(held)}, true
 	}
 	return set.ordered(c.now()), false
 }
@@ -363,7 +376,7 @@ func (c *RPCClient) verifyIdentity(ctx context.Context, set *endpointSet, cand c
 	if verified, wrong := cand.ep.identity(); verified {
 		return nil
 	} else if wrong {
-		return fmt.Errorf("rpc endpoint %d of %s: %w", cand.index+1, c.chainID, chain.ErrWrongNetwork)
+		return fmt.Errorf("rpc endpoint %d of %s: %w", cand.position, c.chainID, chain.ErrWrongNetwork)
 	}
 	attemptCtx, cancel := attemptContext(ctx, remaining, false)
 	defer cancel()
@@ -374,9 +387,9 @@ func (c *RPCClient) verifyIdentity(ctx context.Context, set *endpointSet, cand c
 		return nil
 	case errors.Is(err, chain.ErrWrongNetwork):
 		cand.ep.markIdentity(true)
-		slog.Error("rpc fallback endpoint serves another network and is not used", "chain", c.chainID, "position", cand.index+1, "host", cand.ep.host)
+		slog.Error("rpc fallback endpoint serves another network and is not used", "chain", c.chainID, "position", cand.position, "host", cand.ep.host)
 		c.report(set)
-		return fmt.Errorf("rpc endpoint %d of %s: %w", cand.index+1, c.chainID, chain.ErrWrongNetwork)
+		return fmt.Errorf("rpc endpoint %d of %s: %w", cand.position, c.chainID, chain.ErrWrongNetwork)
 	default:
 		err = scrub(cand.ep.url, err)
 		// The caller's own deadline is not the endpoint's failure.
@@ -398,7 +411,7 @@ func (c *RPCClient) failed(set *endpointSet, cand candidate, kind outcome, err e
 	cooldown, changed := cand.ep.fail(c.now(), label)
 	if cooldown > 0 && len(set.members) > 1 {
 		slog.Warn("rpc endpoint keeps failing, skipped for a cool-down",
-			"chain", c.chainID, "position", cand.index+1, "host", cand.ep.host, "error", label, "skipped_for", cooldown.String())
+			"chain", c.chainID, "position", cand.position, "host", cand.ep.host, "error", label, "skipped_for", cooldown.String())
 	}
 	if changed {
 		c.report(set)
@@ -419,7 +432,7 @@ func (c *RPCClient) served(set *endpointSet, cand candidate, primaryLost bool) {
 	}
 	if primaryLost && c.onFallback.CompareAndSwap(false, true) {
 		slog.Warn("rpc switched away from the primary endpoint",
-			"chain", c.chainID, "primary", set.members[0].host, "serving", cand.ep.host, "position", cand.index+1)
+			"chain", c.chainID, "primary", set.members[0].host, "serving", cand.ep.host, "position", cand.position)
 	}
 }
 

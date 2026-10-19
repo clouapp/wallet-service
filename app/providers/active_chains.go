@@ -74,9 +74,9 @@ func (c chainCatalog) FindActive(ctx context.Context) ([]models.Chain, error) {
 		slog.Error("failed to load chain rpc fallbacks; every chain uses its primary endpoint only", "error", err)
 		return rows, nil
 	}
-	byChain := make(map[string][]string)
+	byChain := make(map[string][]models.ChainRPCEndpoint)
 	for _, fallback := range fallbacks {
-		byChain[fallback.ChainID] = append(byChain[fallback.ChainID], fallback.URL)
+		byChain[fallback.ChainID] = append(byChain[fallback.ChainID], fallback)
 	}
 	for i := range rows {
 		rows[i].RPCFallbacks = byChain[rows[i].ID]
@@ -84,10 +84,11 @@ func (c chainCatalog) FindActive(ctx context.Context) ([]models.Chain, error) {
 	return rows, nil
 }
 
-// openChainFallbacks opens the sealed fallback URLs of ch for the adapter types
-// that fail over (EVM, Solana). One that does not open is skipped and logged with
-// the chain and position only; another adapter type keeps its own failover.
-func openChainFallbacks(ch models.Chain) []string {
+// openChainFallbacks opens the sealed fallback URLs of ch, with their stored
+// positions, for the adapter types that fail over (EVM, Solana). One that does not
+// open is skipped and logged with the chain and position only; another adapter
+// type keeps its own failover.
+func openChainFallbacks(ch models.Chain) []chainpkg.RPCFallback {
 	if len(ch.RPCFallbacks) == 0 {
 		return nil
 	}
@@ -95,14 +96,14 @@ func openChainFallbacks(ch models.Chain) []string {
 		slog.Warn("chain rpc fallbacks ignored: the adapter does not fail over through them", "chain", ch.ID, "adapter", ch.AdapterType)
 		return nil
 	}
-	opened := make([]string, 0, len(ch.RPCFallbacks))
-	for i, sealed := range ch.RPCFallbacks {
-		endpoint, err := openActiveChainEndpoint(sealed)
+	opened := make([]chainpkg.RPCFallback, 0, len(ch.RPCFallbacks))
+	for _, row := range ch.RPCFallbacks {
+		endpoint, err := openActiveChainEndpoint(row.URL)
 		if err != nil {
-			slog.Warn("failed to open chain rpc fallback, skipping it", "chain", ch.ID, "position", i+models.ChainRPCPrimaryPosition+1)
+			slog.Warn("failed to open chain rpc fallback, skipping it", "chain", ch.ID, "position", row.Position)
 			continue
 		}
-		opened = append(opened, endpoint)
+		opened = append(opened, chainpkg.RPCFallback{URL: endpoint, Position: row.Position})
 	}
 	return opened
 }

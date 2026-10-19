@@ -117,6 +117,15 @@ func (s *recordingSink) count() int {
 	return len(s.records)
 }
 
+// fallbackList is urls as fallbacks that take their place in the list as position.
+func fallbackList(urls ...string) []chain.RPCFallback {
+	fallbacks := make([]chain.RPCFallback, 0, len(urls))
+	for _, url := range urls {
+		fallbacks = append(fallbacks, chain.RPCFallback{URL: url})
+	}
+	return fallbacks
+}
+
 // healthOf is the health of every endpoint of client, in order.
 func healthOf(client *RPCClient) []chain.RPCEndpointHealth {
 	return client.endpoints.Load().snapshot()
@@ -125,7 +134,7 @@ func healthOf(client *RPCClient) []chain.RPCEndpointHealth {
 func failoverClient(primary string, fallbacks ...string) (*RPCClient, *testClock, *recordedSleeps) {
 	sleeps := &recordedSleeps{}
 	clock := &testClock{now: time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)}
-	client := NewRPCClient(RPCClientDeps{URL: primary, Fallbacks: fallbacks, ChainID: "eth"})
+	client := NewRPCClient(RPCClientDeps{URL: primary, Fallbacks: fallbackList(fallbacks...), ChainID: "eth"})
 	client.now = clock.Now
 	client.retry.sleep = sleeps.sleep
 	client.retry.jitter = func(time.Duration) time.Duration { return 0 }
@@ -583,7 +592,7 @@ func TestFailover_Identity_KeepsAFallbackOnAnotherNetworkOut(t *testing.T) {
 	})
 	sink := &recordingSink{}
 	client := NewRPCClient(RPCClientDeps{
-		URL: primary.URL(), Fallbacks: []string{wrong.URL(), right.URL()}, ChainID: "eth", Health: sink,
+		URL: primary.URL(), Fallbacks: fallbackList(wrong.URL(), right.URL()), ChainID: "eth", Health: sink,
 		Identity: func(ctx context.Context, caller chain.JSONRPCCaller) error {
 			return chain.CheckEVMNetwork(ctx, caller, 11155111)
 		},
@@ -695,7 +704,7 @@ func TestFailover_Health_IsReportedOnlyWhenItChanges(t *testing.T) {
 	})
 	fallback := newFakeNode(t, answers(result(`"0x20"`)))
 	sink := &recordingSink{}
-	client := NewRPCClient(RPCClientDeps{URL: primary.URL(), Fallbacks: []string{fallback.URL()}, ChainID: "eth", Health: sink})
+	client := NewRPCClient(RPCClientDeps{URL: primary.URL(), Fallbacks: fallbackList(fallback.URL()), ChainID: "eth", Health: sink})
 	clock := &testClock{now: time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)}
 	client.now = clock.Now
 
@@ -727,7 +736,7 @@ func TestReplace_Endpoints_KeepsTheHealthOfAnEndpointThatStays(t *testing.T) {
 	client, _, _ := failoverClient(primary, fallback.URL())
 	_ = client.Call(context.Background(), "eth_blockNumber", nil)
 
-	client.ReplaceEndpoints(fallback.URL(), []string{primary, primary, " "})
+	client.ReplaceEndpoints(fallback.URL(), fallbackList(primary, primary, " "))
 	health := healthOf(client)
 	if len(health) != 2 || health[0].Host != chain.RPCEndpointHost(fallback.URL()) || health[1].ConsecutiveFailures != 1 {
 		t.Fatalf("health = %+v", health)
@@ -738,7 +747,7 @@ func TestReplace_Endpoints_KeepsTheHealthOfAnEndpointThatStays(t *testing.T) {
 
 	replacement := closedPortURL(t)
 	client.ReplaceEndpoint(replacement)
-	if client.Endpoint() != replacement || len(client.Fallbacks()) != 1 || client.Fallbacks()[0] != primary {
+	if client.Endpoint() != replacement || len(client.Fallbacks()) != 1 || client.Fallbacks()[0].URL != primary {
 		t.Fatalf("ReplaceEndpoint must keep the fallbacks")
 	}
 }
@@ -795,7 +804,7 @@ func TestFailover_Identity_AFallbackPromotedToPrimaryIsUsed(t *testing.T) {
 		return result(`"0x99"`)
 	})
 	client := NewRPCClient(RPCClientDeps{
-		URL: primary.URL(), Fallbacks: []string{promoted.URL()}, ChainID: "eth",
+		URL: primary.URL(), Fallbacks: fallbackList(promoted.URL()), ChainID: "eth",
 		Identity: func(ctx context.Context, caller chain.JSONRPCCaller) error {
 			return chain.CheckEVMNetwork(ctx, caller, 11155111)
 		},
@@ -946,4 +955,23 @@ func TestAttempt_Context_SharesOnlyTheCallersDeadline(t *testing.T) {
 	lastDeadline, _ := last.Deadline()
 	parentDeadline, _ := parent.Deadline()
 	assert.Equal(t, parentDeadline, lastDeadline, "the last endpoint keeps what is left")
+}
+
+func TestFailover_Health_CarriesThePositionsOfTheStoredList(t *testing.T) {
+	third := newFakeNode(t, answers(http.StatusBadGateway, "down"))
+	fifth := newFakeNode(t, answers(result(`"0x20"`)))
+	client := NewRPCClient(RPCClientDeps{
+		URL:       closedPortURL(t),
+		Fallbacks: []chain.RPCFallback{{URL: third.URL(), Position: 3}, {URL: fifth.URL(), Position: 5}},
+		ChainID:   "eth",
+	})
+
+	require.NoError(t, client.Call(context.Background(), "eth_blockNumber", nil))
+	health := healthOf(client)
+	assert.Equal(t, []int{1, 3, 5}, []int{health[0].Position, health[1].Position, health[2].Position},
+		"positions 2 and 4 are disabled: the health keeps the positions an operator sees")
+
+	client.ReplaceEndpoints(fifth.URL(), []chain.RPCFallback{{URL: third.URL()}})
+	health = healthOf(client)
+	assert.Equal(t, []int{1, 2}, []int{health[0].Position, health[1].Position}, "a fallback without a stored position takes its place in the list")
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -80,7 +81,7 @@ func sepoliaWithFallbacks(primary string, fallbacks ...string) *EVMLive {
 		NativeSymbol: models.NativeETH,
 		NetworkID:    models.EVMNetworkIDEthereumSepolia,
 		RPCURL:       primary,
-		RPCFallbacks: fallbacks,
+		RPCFallbacks: fallbackList(fallbacks),
 		ERC20Tokens: []types.Token{{
 			ChainID: models.ChainETH, Symbol: models.SymbolUSDC, Contract: models.USDCContractSepolia, Decimals: 6,
 		}},
@@ -191,7 +192,7 @@ func TestReplace_Endpoints_PointsTheAdapterAtTheNewList(t *testing.T) {
 	adapter := sepoliaWithFallbacks(closedURL(t))
 	primary := adapter.Endpoint()
 
-	adapter.ReplaceEndpoints(primary, []string{fallback.server.URL})
+	adapter.ReplaceEndpoints(primary, fallbackList([]string{fallback.server.URL}))
 	block, err := adapter.GetLatestBlock(context.Background())
 	if err != nil || block != 0x20 || adapter.Endpoint() != primary {
 		t.Fatalf("block=%d err=%v", block, err)
@@ -265,4 +266,13 @@ func TestScan_Block_RefusesALogOfAnotherBlock(t *testing.T) {
 	_, err := adapter.ScanBlock(context.Background(), 0xaa)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "reorganized")
+}
+
+// fallbackList is urls as fallbacks that take their place in the list as position.
+func fallbackList(urls []string) []chain.RPCFallback {
+	fallbacks := make([]chain.RPCFallback, 0, len(urls))
+	for _, url := range urls {
+		fallbacks = append(fallbacks, chain.RPCFallback{URL: url})
+	}
+	return fallbacks
 }
