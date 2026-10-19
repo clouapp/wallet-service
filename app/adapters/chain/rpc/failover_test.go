@@ -1142,3 +1142,28 @@ func TestFailover_Null_ASecondOpinionThatHangsIsCutShort(t *testing.T) {
 	assert.Nil(t, got)
 	assert.Less(t, time.Since(started), secondOpinionTimeout+2*time.Second, "a poll without a caller deadline is not held for the HTTP timeout")
 }
+
+func TestCall_Each_AsksEveryReadyEndpointAndKeepsTheAnswers(t *testing.T) {
+	primary := newFakeNode(t, answers(result(`"0x5"`)))
+	ahead := newFakeNode(t, answers(result(`"0x7"`)))
+	down := newFakeNode(t, answers(http.StatusBadGateway, "down"))
+	client, _, _ := failoverClient(primary.URL(), ahead.URL(), down.URL())
+
+	answersGot, err := client.CallEach(context.Background(), "eth_getTransactionCount", "0xabc", "pending")
+	require.NoError(t, err)
+	got := make([]string, 0, len(answersGot))
+	for _, raw := range answersGot {
+		got = append(got, string(raw))
+	}
+	assert.ElementsMatch(t, []string{`"0x5"`, `"0x7"`}, got)
+	assert.Equal(t, 1, healthOf(client)[2].ConsecutiveFailures)
+
+	nobody, _, _ := failoverClient(closedPortURL(t), down.URL())
+	_, err = nobody.CallEach(context.Background(), "eth_getTransactionCount", "0xabc", "pending")
+	assert.ErrorIs(t, err, chain.ErrProviderUnavailable)
+
+	single := NewRPCClient(RPCClientDeps{URL: primary.URL()})
+	one, err := single.CallEach(context.Background(), "eth_getTransactionCount", "0xabc", "pending")
+	require.NoError(t, err)
+	assert.Equal(t, []json.RawMessage{json.RawMessage(`"0x5"`)}, one)
+}

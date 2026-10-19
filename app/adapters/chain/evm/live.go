@@ -6,8 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/macrowallets/waas/app/adapters/chain/rpc"
-	"github.com/macrowallets/waas/app/services/chain"
+	"log/slog"
 	"math/big"
 	"strconv"
 	"strings"
@@ -18,6 +17,8 @@ import (
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/macrowallets/waas/app/adapters/chain/rpc"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/amount"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -79,6 +80,9 @@ type EVMLive struct {
 	// noBlockReceipts is set once the node answered that it does not serve
 	// eth_getBlockReceipts; receipts are then read one transaction at a time.
 	noBlockReceipts atomic.Bool
+	// nonces is the next nonce of each sender this process broadcast for, shared by
+	// the copies WithFeePolicy makes.
+	nonces *nonceFloor
 }
 
 var (
@@ -91,7 +95,7 @@ var (
 // WithFeePolicy is this adapter bidding gas prices scaled by policy; it shares
 // the RPC client.
 func (a *EVMLive) WithFeePolicy(policy chain.FeePolicy) types.Chain {
-	return &EVMLive{cfg: a.cfg, rpc: a.rpc, fee: policy}
+	return &EVMLive{cfg: a.cfg, rpc: a.rpc, fee: policy, nonces: a.nonces}
 }
 
 // FeePolicy is the wallet fee policy this adapter prices with.
@@ -103,7 +107,7 @@ func (a *EVMLive) FeePolicy() chain.FeePolicy { return a.fee }
 const evmRPCMaxResponseBytes = 64 << 20
 
 func NewEVMLive(cfg EVMConfig) *EVMLive {
-	return &EVMLive{cfg: cfg, rpc: newEVMRPCClient(cfg)}
+	return &EVMLive{cfg: cfg, rpc: newEVMRPCClient(cfg), nonces: newNonceFloor()}
 }
 
 // newEVMRPCClient dials cfg's endpoints. A fallback serves only once its
@@ -228,8 +232,8 @@ func (a *EVMLive) BuildTransfer(ctx context.Context, req types.TransferRequest) 
 		return nil, err
 	}
 
-	var hexNonce string
-	if err := a.rpc.Call(ctx, "eth_getTransactionCount", &hexNonce, req.From, "pending"); err != nil {
+	nonce, err := a.pendingNonce(ctx, req.From)
+	if err != nil {
 		return nil, fmt.Errorf("nonce: %w", err)
 	}
 
@@ -257,7 +261,7 @@ func (a *EVMLive) BuildTransfer(ctx context.Context, req types.TransferRequest) 
 	unsigned := &types.UnsignedTx{
 		ChainID: a.cfg.ChainIDStr,
 		Metadata: map[string]interface{}{
-			"nonce":     hexToUint64(hexNonce),
+			"nonce":     nonce,
 			"to":        to,
 			"value":     value.String(),
 			"gas_limit": gasLimit,
@@ -561,9 +565,16 @@ func (a *EVMLive) BroadcastTransaction(ctx context.Context, signed *types.Signed
 	var txHash string
 	if err := a.rpc.Call(ctx, "eth_sendRawTransaction", &txHash, rawHex); err != nil {
 		if errors.Is(err, rpc.ErrBroadcastAlreadyKnown) && signed.TxHash != "" {
+			a.nonces.raise(signed.RawBytes)
 			return signed.TxHash, nil
 		}
 		return "", chain.ClassifyBroadcast(err)
+	}
+	a.nonces.raise(signed.RawBytes)
+	if signed.TxHash != "" && !strings.EqualFold(strings.TrimSpace(txHash), signed.TxHash) {
+		slog.Warn("evm node answered another hash than the signed transaction's; keeping the signed one",
+			"chain", a.cfg.ChainIDStr, "node_hash", txHash, "signed_hash", signed.TxHash)
+		return signed.TxHash, nil
 	}
 	return txHash, nil
 }

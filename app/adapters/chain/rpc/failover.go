@@ -399,6 +399,76 @@ func (c *RPCClient) confirmSkipped(ctx context.Context, set *endpointSet, first 
 	}
 }
 
+// CallEach asks method of every endpoint ready now (Call's order; a fallback once
+// checked for its network), at once, each within secondOpinionTimeout, and returns
+// the results of those that answered, in no set order. It fails only when none
+// answered, with the first endpoint's error. With one endpoint it is Call.
+func (c *RPCClient) CallEach(ctx context.Context, method string, params ...interface{}) ([]json.RawMessage, error) {
+	if c == nil {
+		return nil, fmt.Errorf("rpc call %s: client is not configured", method)
+	}
+	if params == nil {
+		params = []interface{}{}
+	}
+	set := c.endpoints.Load()
+	if set == nil || len(set.members) == 0 {
+		return nil, fmt.Errorf("rpc call %s: no endpoint is configured", method)
+	}
+	candidates := set.ordered(c.now())
+	if len(candidates) < 2 {
+		var raw json.RawMessage
+		if err := c.call(ctx, set, method, &raw, params); err != nil {
+			return nil, err
+		}
+		return []json.RawMessage{raw}, nil
+	}
+	results := make([]json.RawMessage, len(candidates))
+	errs := make([]error, len(candidates))
+	var wg sync.WaitGroup
+	for i, cand := range candidates {
+		wg.Add(1)
+		go func(i int, cand candidate) {
+			defer wg.Done()
+			askCtx, cancel := context.WithTimeout(ctx, secondOpinionTimeout)
+			defer cancel()
+			if cand.index > 0 {
+				if err := c.verifyIdentity(askCtx, set, cand, 1); err != nil {
+					errs[i] = err
+					return
+				}
+			}
+			result, kind, err := c.exchange(askCtx, cand.ep.url, method, params, false)
+			switch {
+			case err == nil || kind == outcomeAnswer:
+				c.succeeded(set, cand)
+			case kind != outcomeUnsupported && ctx.Err() == nil:
+				c.failed(set, cand, kind, err)
+			}
+			if err != nil {
+				errs[i] = scrub(cand.ep.url, err)
+				return
+			}
+			results[i] = result
+		}(i, cand)
+	}
+	wg.Wait()
+	var answered []json.RawMessage
+	for _, result := range results {
+		if result != nil {
+			answered = append(answered, result)
+		}
+	}
+	if len(answered) > 0 {
+		return answered, nil
+	}
+	for _, err := range errs {
+		if err != nil {
+			return nil, err
+		}
+	}
+	return nil, fmt.Errorf("rpc call %s: no usable endpoint", method)
+}
+
 // candidates is the pinned endpoint alone when the context holds one, else the
 // set's order.
 func (c *RPCClient) candidates(set *endpointSet, pin *endpointPin) ([]candidate, bool) {

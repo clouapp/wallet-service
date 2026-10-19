@@ -149,3 +149,13 @@ func TestScan_Block_ARateLimitWithTheSkippedSlotCodeIsNotASkippedSlot(t *testing
 	assert.Error(t, err, "the slot must be retried, not marked scanned")
 	assert.Nil(t, transfers)
 }
+
+func TestBroadcast_ReturnsTheSignedSignatureWhenTheNodeAnswersAnother(t *testing.T) {
+	odd := newCountingSolanaNode(t, map[string]string{"sendTransaction": `"result":"other-signature"`})
+	adapter := devnetWithFallbacks(odd.server.URL)
+
+	signature, err := adapter.BroadcastTransaction(context.Background(), &types.SignedTx{RawBytes: []byte{0x01}, TxHash: "5sig"})
+	if err != nil || signature != "5sig" {
+		t.Fatalf("signature=%q err=%v", signature, err)
+	}
+}
