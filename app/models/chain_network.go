@@ -88,6 +88,15 @@ const (
 
 const bitcoinTestnet4Label = "testnet4"
 
+// Genesis hashes of the Solana clusters (getGenesisHash, read on 2026-10-19 from
+// api.mainnet-beta.solana.com, api.devnet.solana.com and api.testnet.solana.com).
+// They tell which cluster an RPC endpoint serves, whatever its host says.
+var solanaGenesisHashes = map[string]string{
+	NetworkSolanaMainnet: "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d",
+	NetworkSolanaDevnet:  "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+	NetworkSolanaTestnet: "4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY",
+}
+
 var testnetNetworks = map[string]struct{}{
 	NetworkEthereumSepolia: {},
 	NetworkPolygonAmoy:     {},
@@ -269,6 +278,23 @@ func IsBitcoinTestnet4RPCURL(rpcURL string) bool {
 		}
 	}
 	return false
+}
+
+// SolanaGenesisHash is the genesis hash of a Solana cluster network, or "" for
+// any other network.
+func SolanaGenesisHash(network string) string {
+	return solanaGenesisHashes[network]
+}
+
+// SolanaNetworkOfGenesis names the Solana cluster whose genesis hash is genesis,
+// or "" when it is not a known cluster.
+func SolanaNetworkOfGenesis(genesis string) string {
+	for network, hash := range solanaGenesisHashes {
+		if hash == strings.TrimSpace(genesis) {
+			return network
+		}
+	}
+	return ""
 }
 
 // EVMNetworkName names the EVM network a chain id signs for, or "" when unknown.

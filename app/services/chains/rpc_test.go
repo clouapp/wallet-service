@@ -23,7 +23,7 @@ func TestUpdate_RPC_UnknownChainIsNotFoundBeforeTheAdminCheck(t *testing.T) {
 	store := &rpcStore{}
 	admins := &thresholdAdmins{err: errors.New("admin lookup must not run")}
 	service := chainsvc.NewRPC(chainsvc.RPCDeps{
-		Store: store, Admins: admins, Activity: &thresholdActivity{}, Sealer: prefixSeal{}, Dialer: &hostDialer{},
+		Store: store, Admins: admins, Activity: &thresholdActivity{}, Sealer: prefixSeal{}, Dialer: &hostDialer{}, Verify: servesItsNetwork,
 	})
 
 	_, err := service.Update(context.Background(), uuid.New(), "missing", thresholdObject(t, `{"rpcUrl":""}`))
@@ -37,7 +37,7 @@ func TestUpdate_RPC_NonAdminLeavesTheEndpointUnchanged(t *testing.T) {
 	store := &rpcStore{chain: ethChain("1", "1", "1"), sealed: "kept"}
 	store.chain.RpcURL = "kept"
 	service := chainsvc.NewRPC(chainsvc.RPCDeps{
-		Store: store, Admins: &thresholdAdmins{}, Activity: &thresholdActivity{}, Sealer: prefixSeal{}, Dialer: &hostDialer{},
+		Store: store, Admins: &thresholdAdmins{}, Activity: &thresholdActivity{}, Sealer: prefixSeal{}, Dialer: &hostDialer{}, Verify: servesItsNetwork,
 	})
 
 	_, err := service.Update(context.Background(), uuid.New(), "eth", thresholdObject(t, `{"rpcUrl":"https://dial.example/v2/token"}`))
@@ -52,7 +52,7 @@ func TestUpdate_RPC_EmptyURLIsNotStored(t *testing.T) {
 	store.chain.RpcURL = "kept"
 	activity := &thresholdActivity{}
 	service := chainsvc.NewRPC(chainsvc.RPCDeps{
-		Store: store, Admins: &thresholdAdmins{allow: true}, Activity: activity, Sealer: prefixSeal{}, Dialer: &hostDialer{},
+		Store: store, Admins: &thresholdAdmins{allow: true}, Activity: activity, Sealer: prefixSeal{}, Dialer: &hostDialer{}, Verify: servesItsNetwork,
 	})
 
 	_, err := service.Update(context.Background(), uuid.New(), "eth", thresholdObject(t, `{"rpcUrl":"  "}`))
@@ -73,7 +73,7 @@ func TestUpdate_RPC_AdminSealsTheURLAndTheDialerSeesTheHost(t *testing.T) {
 	dialer := &hostDialer{}
 	actor := uuid.New()
 	service := chainsvc.NewRPC(chainsvc.RPCDeps{
-		Store: store, Admins: &thresholdAdmins{allow: true}, Activity: activity, Sealer: prefixSeal{}, Dialer: dialer,
+		Store: store, Admins: &thresholdAdmins{allow: true}, Activity: activity, Sealer: prefixSeal{}, Dialer: dialer, Verify: servesItsNetwork,
 	})
 
 	view, err := service.Update(context.Background(), actor, "eth", thresholdObject(t, `{"rpcUrl":"`+endpoint+`"}`))
@@ -115,7 +115,7 @@ func TestUpdate_RPC_OpenFailureDoesNotIncludeTheURL(t *testing.T) {
 	const endpoint = "https://dial.example/v2/route-key"
 	store := &rpcStore{chain: ethChain("1", "1", "1")}
 	service := chainsvc.NewRPC(chainsvc.RPCDeps{
-		Store: store, Admins: &thresholdAdmins{allow: true}, Activity: &thresholdActivity{}, Sealer: brokenOpen{}, Dialer: &hostDialer{},
+		Store: store, Admins: &thresholdAdmins{allow: true}, Activity: &thresholdActivity{}, Sealer: brokenOpen{}, Dialer: &hostDialer{}, Verify: servesItsNetwork,
 	})
 
 	_, err := service.Update(context.Background(), uuid.New(), "eth", thresholdObject(t, `{"rpcUrl":"`+endpoint+`"}`))

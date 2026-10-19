@@ -6,8 +6,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-
+	"log/slog"
 	"math/big"
+	"strings"
 
 	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
@@ -15,6 +16,7 @@ import (
 	"github.com/gagliardetto/solana-go/programs/system"
 	"github.com/gagliardetto/solana-go/programs/token"
 
+	"github.com/macrowallets/waas/app/adapters/chain/rpc"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -231,7 +233,15 @@ func broadcastSolanaTx(ctx context.Context, a *SolanaLive, signed *types.SignedT
 	encoded := base64.StdEncoding.EncodeToString(signed.RawBytes)
 	var signature string
 	if err := a.rpc.Call(ctx, "sendTransaction", &signature, encoded, map[string]string{"encoding": "base64"}); err != nil {
+		if errors.Is(err, rpc.ErrBroadcastAlreadyKnown) && signed.TxHash != "" {
+			return signed.TxHash, nil
+		}
 		return "", chain.ClassifyBroadcast(err)
+	}
+	if signed.TxHash != "" && strings.TrimSpace(signature) != signed.TxHash {
+		slog.Warn("solana node answered another signature than the signed transaction's; keeping the signed one",
+			"chain", a.cfg.ChainIDStr, "node_signature", signature, "signed_signature", signed.TxHash)
+		return signed.TxHash, nil
 	}
 	return signature, nil
 }

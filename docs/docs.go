@@ -2686,6 +2686,498 @@ const docTemplate = `{
                 }
             }
         },
+        "/platform/chains/{chainId}/rpc-endpoints": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The ordered endpoints of the chain: position 1 is the primary (rpc_url), the others are the fallbacks tried in order when the ones before cannot serve a call. Each endpoint is its host and a fingerprint of its URL; no URL is returned. health is what a running process last recorded for it (consecutive failures, the cool-down it is skipped until, the last error, whether it serves another network); null when none did. With probe=true each endpoint is asked now for its network and head. failsOver is false for a chain whose adapter does not use the fallbacks (Bitcoin family, TRON, XRP). An unknown chain is 404 for a platform admin.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Chains"
+                ],
+                "summary": "List a chain's RPC endpoints",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Chain id",
+                        "name": "chainId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Ask every endpoint now",
+                        "name": "probe",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/chains.RPCEndpointList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Body {\"urls\": [...]}: the whole list, the primary first, each an http(s) URL or env:NAME. Every endpoint that was not in the list, and the new primary, is first asked which network it serves; one on another network, one that does not answer, a repeated URL or a chain whose adapter does not use the list is 422 and nothing is written. The URLs are sealed and never returned. An unknown chain is 404 for a platform admin.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Chains"
+                ],
+                "summary": "Replace a chain's RPC endpoint list",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Chain id",
+                        "name": "chainId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Endpoints",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/chains.RPCEndpointListSwagger"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/chains.RPCEndpointChange"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Body {\"url\", \"position\"}: an http(s) URL or env:NAME, at the end of the list or at position (1 makes it the primary and moves the others down). The endpoint is first asked which network it serves (eth_chainId on EVM, getGenesisHash on Solana); one on another network, one that does not answer, a URL already in the list or a chain whose adapter does not use the list (Bitcoin family, TRON, XRP) is 422 and nothing is written. The URL is sealed and never returned. The process that answers uses the new list at once; the others load it on restart. An unknown chain is 404 for a platform admin.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Chains"
+                ],
+                "summary": "Add a chain RPC endpoint",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Chain id",
+                        "name": "chainId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Endpoint",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/chains.RPCEndpointAddSwagger"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/chains.RPCEndpointChange"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/chains/{chainId}/rpc-endpoints/defaults": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Appends the checked default fallbacks of the chain's network that the list does not hold yet (ethereum-sepolia: sepolia.drpc.org, sepolia.gateway.tenderly.co, ethereum-sepolia-rpc.publicnode.com), each asked first which network it serves. A network without defaults, or a refusal, is 422 and nothing is written. An unknown chain is 404 for a platform admin.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Chains"
+                ],
+                "summary": "Add the default fallbacks of a chain's network",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Chain id",
+                        "name": "chainId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/chains.RPCEndpointChange"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/chains/{chainId}/rpc-endpoints/order": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Body {\"order\": [2, 1, 3]}: every current position once, in the new order, so the first becomes the primary. A disabled endpoint cannot become the primary, and a new primary is first asked which network it serves; a refusal is 422 and nothing is written. An unknown chain is 404 for a platform admin.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Chains"
+                ],
+                "summary": "Reorder a chain's RPC endpoints",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Chain id",
+                        "name": "chainId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New order",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/chains.RPCEndpointOrderSwagger"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/chains.RPCEndpointChange"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/platform/chains/{chainId}/rpc-endpoints/{position}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes the fallback at position (2 or more); the ones after it move up. The primary (position 1) is 422: move another endpoint to position 1 first. An unknown chain is 404 for a platform admin.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Chains"
+                ],
+                "summary": "Remove a chain RPC fallback",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Chain id",
+                        "name": "chainId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Position in the list",
+                        "name": "position",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/chains.RPCEndpointChange"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Body {\"enabled\": bool} for the fallback at position (2 or more): a disabled fallback stays in the list and is not called; one enabled again is first asked which network it serves. The primary (position 1) is always used and is 422. An unknown chain is 404 for a platform admin.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Chains"
+                ],
+                "summary": "Enable or disable a chain RPC fallback",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Chain id",
+                        "name": "chainId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Position in the list",
+                        "name": "position",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Enabled",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/chains.RPCEndpointEnabledSwagger"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/chains.RPCEndpointChange"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
         "/platform/features": {
             "get": {
                 "security": [
@@ -6711,6 +7203,218 @@ const docTemplate = `{
                 "wallet": {},
                 "wallet_id": {
                     "type": "string"
+                }
+            }
+        },
+        "chains.RPCEndpoint": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "envVar": {
+                    "type": "string",
+                    "example": ""
+                },
+                "fingerprint": {
+                    "type": "string",
+                    "example": "3f1c0a9b7e2d"
+                },
+                "health": {
+                    "$ref": "#/definitions/chains.RPCEndpointHealth"
+                },
+                "host": {
+                    "type": "string",
+                    "example": "sepolia.drpc.org"
+                },
+                "position": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "primary": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "probe": {
+                    "$ref": "#/definitions/chains.RPCEndpointProbe"
+                },
+                "usable": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "chains.RPCEndpointAddSwagger": {
+            "type": "object",
+            "properties": {
+                "position": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "url": {
+                    "type": "string",
+                    "example": "https://sepolia.drpc.org"
+                }
+            }
+        },
+        "chains.RPCEndpointChange": {
+            "type": "object",
+            "properties": {
+                "adapterType": {
+                    "type": "string",
+                    "example": "evm"
+                },
+                "chainId": {
+                    "type": "string",
+                    "example": "eth"
+                },
+                "changed": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "endpoints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/chains.RPCEndpoint"
+                    }
+                },
+                "failsOver": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "healthObservedAt": {
+                    "type": "string"
+                },
+                "healthProcess": {
+                    "type": "string",
+                    "example": "deposit_scanner"
+                },
+                "network": {
+                    "type": "string",
+                    "example": "ethereum-sepolia"
+                },
+                "reloaded": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "chains.RPCEndpointEnabledSwagger": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "chains.RPCEndpointHealth": {
+            "type": "object",
+            "properties": {
+                "consecutiveFailures": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "coolingDownUntil": {
+                    "type": "string"
+                },
+                "lastError": {
+                    "type": "string",
+                    "example": "timeout"
+                },
+                "lastErrorAt": {
+                    "type": "string"
+                },
+                "wrongNetwork": {
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "chains.RPCEndpointList": {
+            "type": "object",
+            "properties": {
+                "adapterType": {
+                    "type": "string",
+                    "example": "evm"
+                },
+                "chainId": {
+                    "type": "string",
+                    "example": "eth"
+                },
+                "endpoints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/chains.RPCEndpoint"
+                    }
+                },
+                "failsOver": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "healthObservedAt": {
+                    "type": "string"
+                },
+                "healthProcess": {
+                    "type": "string",
+                    "example": "deposit_scanner"
+                },
+                "network": {
+                    "type": "string",
+                    "example": "ethereum-sepolia"
+                }
+            }
+        },
+        "chains.RPCEndpointListSwagger": {
+            "type": "object",
+            "properties": {
+                "urls": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "https://sepolia.drpc.org",
+                        "https://sepolia.gateway.tenderly.co",
+                        "https://ethereum-sepolia-rpc.publicnode.com"
+                    ]
+                }
+            }
+        },
+        "chains.RPCEndpointOrderSwagger": {
+            "type": "object",
+            "properties": {
+                "order": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    },
+                    "example": [
+                        2,
+                        1,
+                        3
+                    ]
+                }
+            }
+        },
+        "chains.RPCEndpointProbe": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "head": {
+                    "type": "integer",
+                    "example": 11937030
+                },
+                "latencyMs": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "network": {
+                    "type": "string",
+                    "example": "ethereum-sepolia"
                 }
             }
         },

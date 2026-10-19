@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/macrowallets/waas/app/adapters/chain/rpc"
@@ -78,15 +79,22 @@ func (a *SolanaLive) ScanBlock(ctx context.Context, slot uint64) ([]types.Detect
 	if err != nil {
 		return nil, err
 	}
+	if block.Blockhash == "" {
+		return nil, fmt.Errorf("solana %s: no endpoint returned slot %d", a.cfg.ChainIDStr, slot)
+	}
 	return solanaBlockCredits(slot, &block, a.cfg.NativeSymbol, a.tokens)
 }
 
+// isSolanaSkippedSlot reports a getBlock answer that the slot was skipped: the
+// code and a message that says "skipped" (a provider answering its request limit
+// with -32007 is not a skipped slot).
 func isSolanaSkippedSlot(err error) bool {
 	var rpcErr *rpc.RPCError
 	if !errors.As(err, &rpcErr) {
 		return false
 	}
-	return rpcErr.Code == solanaRPCSlotSkipped || rpcErr.Code == solanaRPCSlotSkippedLongTermStorage
+	return (rpcErr.Code == solanaRPCSlotSkipped || rpcErr.Code == solanaRPCSlotSkippedLongTermStorage) &&
+		strings.Contains(strings.ToLower(rpcErr.Message), "skipped")
 }
 
 // solanaBlockCredits returns, per successful transaction in block order, its lamport

@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/currencies"
+	"github.com/macrowallets/waas/app/services/rpcendpoints"
 	"github.com/macrowallets/waas/app/services/settings"
 )
 
@@ -21,16 +22,25 @@ import (
 type ChainServiceProvider struct{}
 
 func (p *ChainServiceProvider) Register(app foundation.Application) {
+	// Before any RPC client is built: fingerprints are keyed with APP_KEY.
+	chainpkg.SetRPCFingerprintKey([]byte(facades.Config().GetString("app.key")))
 	app.Singleton((*repositories.ChainRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewChainRepository(nil), nil
+	})
+	app.Singleton((*repositories.ChainRPCEndpointRepository)(nil), func(foundation.Application) (any, error) {
+		return repositories.NewChainRPCEndpointRepository(nil), nil
 	})
 	app.Singleton((*chainregistry.ChainRegistryService)(nil), func(app foundation.Application) (any, error) {
 		chains, err := resolve[*repositories.ChainRepository](app)
 		if err != nil {
 			return nil, err
 		}
+		endpoints, err := resolve[*repositories.ChainRPCEndpointRepository](app)
+		if err != nil {
+			return nil, err
+		}
 		return chainregistry.NewChainRegistryService(chainregistry.ChainRegistryDeps{
-			Store:    chainCatalog{repo: chains},
+			Store:    chainCatalog{repo: chains, endpoints: endpoints},
 			Cache:    chainregistry.NewCatalogCache(),
 			Install:  registerActiveChains,
 			Registry: chainpkg.NewRegistry(),
@@ -100,7 +110,42 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 			Activity: activityLog,
 			Sealer:   chainRPCSealer{},
 			Dialer:   registry,
+			Verify:   platformPrimaryVerifier(),
 		}), nil
+	})
+	app.Singleton((*rpcendpoints.Service)(nil), func(app foundation.Application) (any, error) {
+		chains, err := resolve[*repositories.ChainRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		endpoints, err := resolve[*repositories.ChainRPCEndpointRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		registry, err := resolve[*chainpkg.Registry](app)
+		if err != nil {
+			return nil, err
+		}
+		deps := rpcendpoints.Deps{Chains: chains, Endpoints: endpoints, Sealer: chainRPCSealer{}, Dialer: registry}
+		if store := chainRPCHealthStore(); store != nil {
+			deps.Health = store
+		}
+		return rpcendpoints.NewService(deps), nil
+	})
+	app.Singleton((*chainsvc.RPCEndpoints)(nil), func(app foundation.Application) (any, error) {
+		list, err := resolve[*rpcendpoints.Service](app)
+		if err != nil {
+			return nil, err
+		}
+		admins, err := resolve[*repositories.PlatformAdminRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		activityLog, err := resolve[*repositories.AccountActivityRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		return chainsvc.NewRPCEndpoints(chainsvc.RPCEndpointsDeps{List: list, Admins: admins, Activity: activityLog}), nil
 	})
 	app.Singleton((*repositories.TokenRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewTokenRepository(nil), nil
@@ -170,4 +215,11 @@ func (chainRPCSealer) Open(stored string) (string, error) {
 		return "", fmt.Errorf("open chain rpc")
 	}
 	return opened, nil
+}
+
+// platformPrimaryVerifier checks a new primary written by the platform API. It has
+// no network profile: the platform API never moves a chain to another network
+// (chains:set-rpc then chains:align-network do, from artisan).
+func platformPrimaryVerifier() *chainregistry.PrimaryVerifier {
+	return chainregistry.NewPrimaryVerifier(openChainEndpoint, nil)
 }

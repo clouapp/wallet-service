@@ -90,8 +90,10 @@ func TestEVM_TransactionsSucceeded_ReadsEachReceiptWhereTheNodeHasNoBlockReceipt
 			t.Fatalf("pass %d: statuses %v", pass, statuses)
 		}
 	}
-	if blocks, receipts := len(node.CallsTo("eth_getBlockReceipts")), len(node.CallsTo("eth_getTransactionReceipt")); blocks != 1 || receipts != 4 {
-		t.Fatalf("a node without eth_getBlockReceipts is asked once, then each receipt is read: %d eth_getBlockReceipts, %d eth_getTransactionReceipt", blocks, receipts)
+	// A single endpoint is never skipped (a misrouted "method not found" must not
+	// turn the method off), so each read asks it once, then reads each receipt.
+	if blocks, receipts := len(node.CallsTo("eth_getBlockReceipts")), len(node.CallsTo("eth_getTransactionReceipt")); blocks != 2 || receipts != 4 {
+		t.Fatalf("a node without eth_getBlockReceipts is asked once per read, then each receipt is read: %d eth_getBlockReceipts, %d eth_getTransactionReceipt", blocks, receipts)
 	}
 }
 

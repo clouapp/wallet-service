@@ -30,7 +30,9 @@ func largeEVMBlockBody(credited string) string {
 		txs = append(txs, fmt.Sprintf(`{"hash":"0x%064x","from":"0x%040x","to":"0x%040x","value":"0x0","input":"%s"}`, i, i, i+1, input))
 	}
 	txs = append(txs, fmt.Sprintf(`{"hash":"0x%064x","from":"0x%040x","to":"%s","value":"0x2386f26fc10000","input":"0x"}`, largeBlockTransactions, 1, credited))
-	return `{"jsonrpc":"2.0","id":1,"result":{"hash":"0xb1","timestamp":"0x1","transactions":[` + strings.Join(txs, ",") + `]}}`
+	// An empty logsBloom: the block holds no log, so its empty getLogs answer is believed.
+	emptyBloom := "0x" + strings.Repeat("00", 256)
+	return `{"jsonrpc":"2.0","id":1,"result":{"hash":"0xb1","timestamp":"0x1","logsBloom":"` + emptyBloom + `","transactions":[` + strings.Join(txs, ",") + `]}}`
 }
 
 func serveBody(t *testing.T, body string) *httptest.Server {
