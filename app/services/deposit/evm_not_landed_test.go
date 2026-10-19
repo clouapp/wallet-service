@@ -237,3 +237,31 @@ func TestRunConfirmationCheck_EVMUnknownOutcomeWithoutTheStateIsRetriedHourly(t 
 		t.Fatal("after the back-off the proof is tried again")
 	}
 }
+
+// countingSpendReader is a chain that proves nonce spends, counting the proofs asked.
+type countingSpendReader struct {
+	*mocks.MockChain
+	asked int
+}
+
+func (c *countingSpendReader) NonceSpend(context.Context, string, string, uint64, uint64) (chain.NonceSpend, error) {
+	c.asked++
+	return chain.NonceSpend{Spent: true, Block: 7}, nil
+}
+
+func TestSettle_ByNonceSpend_ReadsOnlyUnknownOutcomes(t *testing.T) {
+	reader := &countingSpendReader{MockChain: mocks.NewMockChain("teth")}
+	svc := &Service{now: time.Now}
+	row := func(payload string) models.Transaction {
+		return models.Transaction{ID: uuid.New(), TxHash: "0xabc", FromAddress: notLandedSender(1), RawPayload: payload}
+	}
+	accepted := fmt.Sprintf(`{"%s":41,"%s":900}`, chain.SenderNoncePayloadKey, chain.BroadcastHeadPayloadKey)
+	unknown := fmt.Sprintf(`{"%s":41,"%s":900,"%s":"%s"}`, chain.SenderNoncePayloadKey, chain.BroadcastHeadPayloadKey, chain.BroadcastOutcomePayloadKey, chain.BroadcastOutcomeUnknown)
+
+	if _, settled := svc.settleByNonceSpend(context.Background(), reader, row(accepted)); settled || reader.asked != 0 {
+		t.Fatalf("settled %v, asked %d: a broadcast the node accepted is never settled by the proof", settled, reader.asked)
+	}
+	if _, settled := svc.settleByNonceSpend(context.Background(), reader, row(unknown)); !settled || reader.asked != 1 {
+		t.Fatalf("settled %v, asked %d: an unknown outcome is", settled, reader.asked)
+	}
+}
