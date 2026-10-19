@@ -833,3 +833,71 @@ func TestFailover_Call_AContractRevertNeverMovesOnNorCountsAFailure(t *testing.T
 	assert.Zero(t, health.ConsecutiveFailures)
 	assert.True(t, health.CoolingDownUntil.IsZero())
 }
+
+// sepoliaIdentityClient is failoverClient with fallbacks checked for Sepolia.
+func sepoliaIdentityClient(primary string, fallbacks ...string) *RPCClient {
+	client, _, _ := failoverClient(primary, fallbacks...)
+	client.identity = func(ctx context.Context, caller chain.JSONRPCCaller) error {
+		return chain.CheckEVMNetwork(ctx, caller, 11155111)
+	}
+	return client
+}
+
+func TestFailover_Identity_AFailedCheckNeverReplacesTheErrorOfASend(t *testing.T) {
+	t.Run("broadcast refused by the primary", func(t *testing.T) {
+		primary := newFakeNode(t, answers(http.StatusTooManyRequests, "slow down"))
+		silent := newFakeNode(t, answers(http.StatusServiceUnavailable, "down"))
+		client := sepoliaIdentityClient(primary.URL(), silent.URL())
+
+		err := client.Call(context.Background(), "eth_sendRawTransaction", nil, "0xraw")
+		require.ErrorIs(t, err, chain.ErrRateLimited, "the error is the primary's refusal, not the fallback's check")
+		assert.True(t, chain.KnownFailure(chain.ClassifyBroadcast(err)), "a rate-limited broadcast stays a known failure")
+		assert.Zero(t, silent.count("eth_sendRawTransaction"))
+	})
+	t.Run("read failed by the primary", func(t *testing.T) {
+		primary := newFakeNode(t, answers(http.StatusBadGateway, "down"))
+		mainnet := newFakeNode(t, answers(result(`"0x1"`)))
+		client := sepoliaIdentityClient(primary.URL(), mainnet.URL())
+
+		err := client.Call(context.Background(), "eth_blockNumber", nil)
+		var failure *chain.Failure
+		require.ErrorAs(t, err, &failure)
+		assert.Equal(t, http.StatusBadGateway, failure.Status)
+		assert.NotErrorIs(t, err, chain.ErrWrongNetwork)
+	})
+	t.Run("broadcast the primary may have taken", func(t *testing.T) {
+		release := make(chan struct{})
+		hanging := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			select {
+			case <-release:
+			case <-r.Context().Done():
+			}
+		}))
+		t.Cleanup(func() { close(release); hanging.Close() })
+		fallback := newFakeNode(t, answers(result(`"0xaa36a7"`)))
+		client := sepoliaIdentityClient(hanging.URL, fallback.URL())
+		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+		defer cancel()
+
+		err := client.Call(ctx, "eth_sendRawTransaction", nil, "0xraw")
+		assert.ErrorIs(t, chain.ClassifyBroadcast(err), chain.ErrUnknownOutcome)
+		assert.Zero(t, fallback.total(), "nothing is asked of a fallback after a send that may have been taken")
+	})
+}
+
+func TestFailover_Identity_TheCallersDeadlineIsNotTheFallbacksFailure(t *testing.T) {
+	release := make(chan struct{})
+	hanging := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(func() { close(release); hanging.Close() })
+	client := sepoliaIdentityClient(closedPortURL(t), hanging.URL)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	_ = client.Call(ctx, "eth_blockNumber", nil)
+	assert.Zero(t, healthOf(client)[1].ConsecutiveFailures, "the identity check ran out of the caller's time, not the fallback's")
+}

@@ -244,7 +244,11 @@ func (c *RPCClient) call(ctx context.Context, set *endpointSet, method string, o
 		remaining := len(candidates) - i
 		if cand.index > 0 && !pinned {
 			if err := c.verifyIdentity(ctx, set, cand, remaining); err != nil {
-				lastErr = err
+				// A fallback that could not be checked was not called: the error of a
+				// send stays the one returned (a broadcast is classified by it).
+				if lastErr == nil {
+					lastErr = err
+				}
 				if ctx.Err() != nil {
 					break
 				}
@@ -359,7 +363,10 @@ func (c *RPCClient) verifyIdentity(ctx context.Context, set *endpointSet, cand c
 		return fmt.Errorf("rpc endpoint %d of %s: %w", cand.index+1, c.chainID, chain.ErrWrongNetwork)
 	default:
 		err = scrub(cand.ep.url, err)
-		c.failed(set, cand, outcomeUnavailable, err)
+		// The caller's own deadline is not the endpoint's failure.
+		if ctx.Err() == nil {
+			c.failed(set, cand, outcomeUnavailable, err)
+		}
 		return err
 	}
 }
