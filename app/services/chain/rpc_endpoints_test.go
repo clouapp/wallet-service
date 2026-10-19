@@ -47,37 +47,30 @@ func TestRPC_EndpointHost_KeepsOnlyTheHost(t *testing.T) {
 	}
 }
 
-func TestCheck_EVMNetwork_RefusesAnotherChainID(t *testing.T) {
+func TestEVM_ChainID_ReadsTheHexAnswer(t *testing.T) {
 	sepolia := &answeringCaller{results: map[string]string{"eth_chainId": `"0xaa36a7"`}}
-	if err := CheckEVMNetwork(context.Background(), sepolia, 11155111); err != nil {
-		t.Fatalf("Sepolia endpoint refused: %v", err)
-	}
-	mainnet := &answeringCaller{results: map[string]string{"eth_chainId": `"0x1"`}}
-	err := CheckEVMNetwork(context.Background(), mainnet, 11155111)
-	if !errors.Is(err, ErrWrongNetwork) || !strings.Contains(err.Error(), "eth_chainId is 1") {
-		t.Fatalf("err = %v", err)
+	id, err := EVMChainID(context.Background(), sepolia)
+	if err != nil || id != 11155111 {
+		t.Fatalf("id=%d err=%v", id, err)
 	}
 	unreachable := &answeringCaller{err: ErrProviderUnavailable}
-	if err := CheckEVMNetwork(context.Background(), unreachable, 11155111); errors.Is(err, ErrWrongNetwork) || !errors.Is(err, ErrProviderUnavailable) {
-		t.Fatalf("an unreachable endpoint is not a wrong network: %v", err)
+	if _, err := EVMChainID(context.Background(), unreachable); !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("err = %v", err)
 	}
-	if err := CheckEVMNetwork(context.Background(), unreachable, 0); err != nil || len(unreachable.asked) != 1 {
-		t.Fatalf("a chain without network id must not be checked: err=%v asked=%v", err, unreachable.asked)
+	garbled := &answeringCaller{results: map[string]string{"eth_chainId": `"0xzz"`}}
+	if _, err := EVMChainID(context.Background(), garbled); err == nil || !strings.Contains(err.Error(), "eth_chainId returned") {
+		t.Fatalf("err = %v", err)
 	}
 }
 
-func TestCheck_SolanaGenesis_RefusesAnotherCluster(t *testing.T) {
+func TestSolana_Genesis_RefusesAnEmptyAnswer(t *testing.T) {
 	const devnet = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
-	mainnet := &answeringCaller{results: map[string]string{"getGenesisHash": `"5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"`}}
-	if err := CheckSolanaGenesis(context.Background(), mainnet, devnet); !errors.Is(err, ErrWrongNetwork) {
-		t.Fatalf("err = %v", err)
-	}
 	same := &answeringCaller{results: map[string]string{"getGenesisHash": `"` + devnet + `"`}}
-	if err := CheckSolanaGenesis(context.Background(), same, devnet); err != nil {
-		t.Fatalf("devnet endpoint refused: %v", err)
+	if got, err := SolanaGenesis(context.Background(), same); err != nil || got != devnet {
+		t.Fatalf("got=%q err=%v", got, err)
 	}
 	empty := &answeringCaller{results: map[string]string{"getGenesisHash": `""`}}
-	if err := CheckSolanaGenesis(context.Background(), empty, devnet); err == nil || errors.Is(err, ErrWrongNetwork) {
-		t.Fatalf("an empty genesis is an unusable answer, not a network: %v", err)
+	if _, err := SolanaGenesis(context.Background(), empty); err == nil {
+		t.Fatal("an empty genesis is an unusable answer")
 	}
 }

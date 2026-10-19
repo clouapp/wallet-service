@@ -55,22 +55,22 @@ func NewSolanaLive(cfg SolanaConfig) *SolanaLive {
 	}
 }
 
-// newSolanaRPCClient dials cfg's endpoints. A fallback must answer the cluster's
-// genesis hash before it serves a call.
+// newSolanaRPCClient dials cfg's endpoints. A fallback serves only once its genesis
+// hash is the cluster's (GenesisHash) and the primary's own.
 func newSolanaRPCClient(cfg SolanaConfig) *rpc.RPCClient {
-	var identity rpc.IdentityCheck
-	if genesis := strings.TrimSpace(cfg.GenesisHash); genesis != "" {
-		identity = func(ctx context.Context, caller chain.JSONRPCCaller) error {
-			return chain.CheckSolanaGenesis(ctx, caller, genesis)
-		}
-	}
 	return rpc.NewRPCClient(rpc.RPCClientDeps{
 		URL:       cfg.RPCURL,
 		Fallbacks: cfg.RPCFallbacks,
 		ChainID:   cfg.ChainIDStr,
-		Identity:  identity,
+		Identity:  solanaNetworkOf,
+		Network:   strings.TrimSpace(cfg.GenesisHash),
 		Health:    cfg.RPCHealth,
 	}).WithMaxResponseBytes(solanaRPCMaxResponseBytes)
+}
+
+// solanaNetworkOf is the genesis hash an endpoint answers.
+func solanaNetworkOf(ctx context.Context, caller chain.JSONRPCCaller) (string, error) {
+	return chain.SolanaGenesis(ctx, caller)
 }
 
 // Endpoint is the URL of the primary endpoint. Callers must not log it.

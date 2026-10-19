@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -115,6 +116,15 @@ func (s *recordingSink) count() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.records)
+}
+
+// evmChainIDReader reads eth_chainId as a decimal string, as the EVM adapter does.
+func evmChainIDReader(ctx context.Context, caller chain.JSONRPCCaller) (string, error) {
+	id, err := chain.EVMChainID(ctx, caller)
+	if err != nil {
+		return "", err
+	}
+	return strconv.FormatInt(id, 10), nil
 }
 
 // fallbackList is urls as fallbacks that take their place in the list as position.
@@ -593,9 +603,7 @@ func TestFailover_Identity_KeepsAFallbackOnAnotherNetworkOut(t *testing.T) {
 	sink := &recordingSink{}
 	client := NewRPCClient(RPCClientDeps{
 		URL: primary.URL(), Fallbacks: fallbackList(wrong.URL(), right.URL()), ChainID: "eth", Health: sink,
-		Identity: func(ctx context.Context, caller chain.JSONRPCCaller) error {
-			return chain.CheckEVMNetwork(ctx, caller, 11155111)
-		},
+		Identity: evmChainIDReader, Network: "11155111",
 	})
 
 	for i := 0; i < 2; i++ {
@@ -613,8 +621,8 @@ func TestFailover_Identity_KeepsAFallbackOnAnotherNetworkOut(t *testing.T) {
 	if health := healthOf(client); !health[1].WrongNetwork || health[2].WrongNetwork {
 		t.Fatalf("health = %+v", health)
 	}
-	if primary.count("eth_chainId") != 0 {
-		t.Fatal("the primary was asked for its identity")
+	if primary.count("eth_chainId") != 1 {
+		t.Fatalf("the primary was asked its network %d times; once, then not again within %s", primary.count("eth_chainId"), primaryIdentityRetry)
 	}
 }
 
@@ -805,9 +813,7 @@ func TestFailover_Identity_AFallbackPromotedToPrimaryIsUsed(t *testing.T) {
 	})
 	client := NewRPCClient(RPCClientDeps{
 		URL: primary.URL(), Fallbacks: fallbackList(promoted.URL()), ChainID: "eth",
-		Identity: func(ctx context.Context, caller chain.JSONRPCCaller) error {
-			return chain.CheckEVMNetwork(ctx, caller, 11155111)
-		},
+		Identity: evmChainIDReader, Network: "11155111",
 	})
 	_ = client.Call(context.Background(), "eth_blockNumber", nil)
 	require.True(t, healthOf(client)[1].WrongNetwork, "the fallback was first seen on another network")
@@ -871,9 +877,7 @@ func TestFailover_Call_AContractRevertNeverMovesOnNorCountsAFailure(t *testing.T
 // sepoliaIdentityClient is failoverClient with fallbacks checked for Sepolia.
 func sepoliaIdentityClient(primary string, fallbacks ...string) *RPCClient {
 	client, _, _ := failoverClient(primary, fallbacks...)
-	client.identity = func(ctx context.Context, caller chain.JSONRPCCaller) error {
-		return chain.CheckEVMNetwork(ctx, caller, 11155111)
-	}
+	client.identity, client.network = evmChainIDReader, "11155111"
 	return client
 }
 
@@ -974,4 +978,65 @@ func TestFailover_Health_CarriesThePositionsOfTheStoredList(t *testing.T) {
 	client.ReplaceEndpoints(fifth.URL(), []chain.RPCFallback{{URL: third.URL()}})
 	health = healthOf(client)
 	assert.Equal(t, []int{1, 2}, []int{health[0].Position, health[1].Position}, "a fallback without a stored position takes its place in the list")
+}
+
+// chainIDNode answers eth_chainId with chainIDHex and every other call with
+// otherStatus (200 answers 0x20).
+func chainIDNode(t *testing.T, chainIDHex string, otherStatus int) *fakeNode {
+	return newFakeNode(t, func(method string) (int, string) {
+		if method == "eth_chainId" {
+			return result(`"` + chainIDHex + `"`)
+		}
+		if otherStatus != http.StatusOK {
+			return otherStatus, "down"
+		}
+		return result(`"0x20"`)
+	})
+}
+
+func TestFailover_Identity_AFallbackMustAlsoServeThePrimarysNetwork(t *testing.T) {
+	// The primary was pointed at mainnet (a profile move) while network_id still says
+	// Sepolia: a Sepolia fallback must not answer for it.
+	movedPrimary := chainIDNode(t, "0x1", http.StatusServiceUnavailable)
+	sepolia := chainIDNode(t, "0xaa36a7", http.StatusOK)
+	client := sepoliaIdentityClient(movedPrimary.URL(), sepolia.URL())
+
+	err := client.Call(context.Background(), "eth_blockNumber", nil)
+	var failure *chain.Failure
+	require.ErrorAs(t, err, &failure, "the primary's failure is returned")
+	assert.Equal(t, http.StatusServiceUnavailable, failure.Status)
+	assert.Zero(t, sepolia.count("eth_blockNumber"), "a fallback on another network than the primary never serves")
+	assert.False(t, healthOf(client)[1].WrongNetwork, "the fallback serves the chain's network; it is the primary that differs")
+}
+
+func TestFailover_Identity_WithAnUnreachablePrimaryAFallbackOnTheChainsNetworkServes(t *testing.T) {
+	sepolia := chainIDNode(t, "0xaa36a7", http.StatusOK)
+	client := sepoliaIdentityClient(closedPortURL(t), sepolia.URL())
+
+	var block string
+	require.NoError(t, client.Call(context.Background(), "eth_blockNumber", &block))
+	assert.Equal(t, "0x20", block)
+}
+
+func TestFailover_Identity_IsAskedAgainWhenThePrimaryChanges(t *testing.T) {
+	sepoliaPrimary := chainIDNode(t, "0xaa36a7", http.StatusServiceUnavailable)
+	sepolia := chainIDNode(t, "0xaa36a7", http.StatusOK)
+	client := sepoliaIdentityClient(sepoliaPrimary.URL(), sepolia.URL())
+	require.NoError(t, client.Call(context.Background(), "eth_blockNumber", nil))
+	require.Equal(t, 1, sepolia.count("eth_chainId"))
+
+	mainnetPrimary := chainIDNode(t, "0x1", http.StatusServiceUnavailable)
+	client.ReplaceEndpoint(mainnetPrimary.URL())
+	before := sepolia.count("eth_blockNumber")
+	_ = client.Call(context.Background(), "eth_blockNumber", nil)
+	assert.Equal(t, before, sepolia.count("eth_blockNumber"), "after the primary moved, the fallback no longer serves")
+}
+
+func TestEndpoint_Identity_AWrongNetworkStaysWrong(t *testing.T) {
+	member := &endpoint{}
+	member.markIdentity(true)
+	member.markIdentity(false)
+	verified, wrong := member.identity()
+	assert.False(t, verified)
+	assert.True(t, wrong, "a concurrent check that passed does not clear a wrong network")
 }

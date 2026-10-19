@@ -101,13 +101,13 @@ func TestOpen_ChainFallbacks_IgnoresThemForAnAdapterThatDoesNotFailOverThroughTh
 	openActiveChainEndpoint = func(stored string) (string, error) { return "https://" + strings.TrimPrefix(stored, "sealed-"), nil }
 
 	for _, adapterType := range []string{models.AdapterTypeBitcoin, models.AdapterTypeTron, models.AdapterTypeXRP} {
-		if got := openChainFallbacks(models.Chain{ID: "x", AdapterType: adapterType, RPCFallbacks: []models.ChainRPCEndpoint{{URL: "sealed-a", Position: 2}}}); got != nil {
+		if got := openChainFallbacks(models.Chain{ID: "x", AdapterType: adapterType, RPCFallbacks: []models.ChainRPCEndpoint{{URL: "sealed-a", Position: 2}}}, ""); got != nil {
 			t.Fatalf("%s: fallbacks = %v", adapterType, got)
 		}
 	}
 	got := openChainFallbacks(models.Chain{ID: models.ChainSOL, AdapterType: models.AdapterTypeSolana, RPCFallbacks: []models.ChainRPCEndpoint{
 		{URL: "sealed-a", Position: 2}, {URL: "sealed-b", Position: 3},
-	}})
+	}}, models.NetworkSolanaDevnet)
 	if len(got) != 2 || got[0].URL != "https://a" || got[1].URL != "https://b" || got[1].Position != 3 {
 		t.Fatalf("solana fallbacks = %v", got)
 	}
@@ -123,10 +123,40 @@ func TestOpen_ChainFallbacks_KeepTheirStoredPositions(t *testing.T) {
 		return "https://" + strings.TrimPrefix(stored, "sealed-"), nil
 	}
 
-	got := openChainFallbacks(models.Chain{ID: models.ChainETH, AdapterType: models.AdapterTypeEVM, RPCFallbacks: []models.ChainRPCEndpoint{
+	sepoliaID := models.EVMNetworkIDEthereumSepolia
+	got := openChainFallbacks(models.Chain{ID: models.ChainETH, AdapterType: models.AdapterTypeEVM, NetworkID: &sepoliaID, RPCFallbacks: []models.ChainRPCEndpoint{
 		{URL: "sealed-broken", Position: 3, Enabled: true},
 		{URL: "sealed-b", Position: 4, Enabled: true},
-	}})
+	}}, models.NetworkEthereumSepolia)
 	require.Len(t, got, 1)
 	assert.Equal(t, chainpkg.RPCFallback{URL: "https://b", Position: 4}, got[0])
+}
+
+func TestRegister_ActiveChains_InstallsNoFallbackWithoutANetworkToCheckThemAgainst(t *testing.T) {
+	sepolia, served := chainIDNode(t, "0xaa36a7")
+	previous := openActiveChainEndpoint
+	t.Cleanup(func() { openActiveChainEndpoint = previous })
+	opened := map[string]string{"sealed-primary": refusedURL(t), "sealed-fallback": sepolia.URL}
+	openActiveChainEndpoint = func(stored string) (string, error) {
+		if url, ok := opened[stored]; ok {
+			return url, nil
+		}
+		return "", errors.New("open chain rpc")
+	}
+	rows := []models.Chain{
+		{ID: models.ChainETH, Name: "Ethereum", AdapterType: models.AdapterTypeEVM, NativeSymbol: "ETH", NativeDecimals: 18,
+			RequiredConfirmations: 12, RpcURL: "sealed-primary", RPCFallbacks: []models.ChainRPCEndpoint{{URL: "sealed-fallback", Position: 2}}},
+	}
+
+	reg := chainpkg.NewRegistry()
+	registerActiveChains(reg, rows, nil)
+	eth, err := reg.Chain(models.ChainETH)
+	require.NoError(t, err)
+	_, err = eth.GetLatestBlock(context.Background())
+	assert.Error(t, err, "an EVM chain without network_id runs on its primary only")
+	assert.Zero(t, served.Load())
+
+	assert.Nil(t, openChainFallbacks(models.Chain{ID: "x", AdapterType: models.AdapterTypeEVM, RPCFallbacks: rows[0].RPCFallbacks}, ""))
+	assert.Nil(t, openChainFallbacks(models.Chain{ID: models.ChainSOL, AdapterType: models.AdapterTypeSolana, RPCFallbacks: rows[0].RPCFallbacks}, ""),
+		"a Solana chain whose cluster is unknown has no genesis to check against")
 }

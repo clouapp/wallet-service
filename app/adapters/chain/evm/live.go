@@ -9,6 +9,7 @@ import (
 	"github.com/macrowallets/waas/app/adapters/chain/rpc"
 	"github.com/macrowallets/waas/app/services/chain"
 	"math/big"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -105,22 +106,30 @@ func NewEVMLive(cfg EVMConfig) *EVMLive {
 	return &EVMLive{cfg: cfg, rpc: newEVMRPCClient(cfg)}
 }
 
-// newEVMRPCClient dials cfg's endpoints. A fallback must answer the chain's
-// eth_chainId before it serves a call; a chain without a network id checks none.
+// newEVMRPCClient dials cfg's endpoints. A fallback serves only once its
+// eth_chainId is the chain's NetworkID and the primary's own eth_chainId.
 func newEVMRPCClient(cfg EVMConfig) *rpc.RPCClient {
-	var identity rpc.IdentityCheck
-	if networkID := cfg.NetworkID; networkID > 0 {
-		identity = func(ctx context.Context, caller chain.JSONRPCCaller) error {
-			return chain.CheckEVMNetwork(ctx, caller, networkID)
-		}
+	network := ""
+	if cfg.NetworkID > 0 {
+		network = strconv.FormatInt(cfg.NetworkID, 10)
 	}
 	return rpc.NewRPCClient(rpc.RPCClientDeps{
 		URL:       cfg.RPCURL,
 		Fallbacks: cfg.RPCFallbacks,
 		ChainID:   cfg.ChainIDStr,
-		Identity:  identity,
+		Identity:  evmNetworkOf,
+		Network:   network,
 		Health:    cfg.RPCHealth,
 	}).WithMaxResponseBytes(evmRPCMaxResponseBytes)
+}
+
+// evmNetworkOf is the eth_chainId an endpoint answers, in decimal.
+func evmNetworkOf(ctx context.Context, caller chain.JSONRPCCaller) (string, error) {
+	id, err := chain.EVMChainID(ctx, caller)
+	if err != nil {
+		return "", err
+	}
+	return strconv.FormatInt(id, 10), nil
 }
 
 // Endpoint is the URL of the primary endpoint. Callers must not log it.

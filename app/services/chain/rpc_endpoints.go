@@ -96,22 +96,6 @@ func EVMChainID(ctx context.Context, caller JSONRPCCaller) (int64, error) {
 	return networkID, nil
 }
 
-// CheckEVMNetwork refuses an endpoint whose eth_chainId is not want with
-// ErrWrongNetwork. A want of zero or less checks nothing.
-func CheckEVMNetwork(ctx context.Context, caller JSONRPCCaller, want int64) error {
-	if want <= 0 {
-		return nil
-	}
-	got, err := EVMChainID(ctx, caller)
-	if err != nil {
-		return err
-	}
-	if got != want {
-		return fmt.Errorf("%w: eth_chainId is %d, the chain signs for %d", ErrWrongNetwork, got, want)
-	}
-	return nil
-}
-
 // SolanaGenesis asks caller for getGenesisHash.
 func SolanaGenesis(ctx context.Context, caller JSONRPCCaller) (string, error) {
 	if caller == nil {
@@ -126,21 +110,4 @@ func SolanaGenesis(ctx context.Context, caller JSONRPCCaller) (string, error) {
 		return "", fmt.Errorf("%s returned an empty hash", solanaGenesisMethod)
 	}
 	return genesis, nil
-}
-
-// CheckSolanaGenesis refuses an endpoint whose genesis hash is not want with
-// ErrWrongNetwork. An empty want checks nothing.
-func CheckSolanaGenesis(ctx context.Context, caller JSONRPCCaller, want string) error {
-	want = strings.TrimSpace(want)
-	if want == "" {
-		return nil
-	}
-	got, err := SolanaGenesis(ctx, caller)
-	if err != nil {
-		return err
-	}
-	if got != want {
-		return fmt.Errorf("%w: genesis is %s, the chain's cluster is %s", ErrWrongNetwork, got, want)
-	}
-	return nil
 }

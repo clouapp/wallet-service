@@ -38,7 +38,8 @@ type RPCClient struct {
 	maxResponseBytes int
 
 	chainID    string
-	identity   IdentityCheck
+	identity   IdentityReader
+	network    string
 	health     chain.RPCHealthSink
 	now        func() time.Time
 	onFallback atomic.Bool
@@ -69,25 +70,28 @@ func (e *rpcError) Error() string {
 	return fmt.Sprintf("RPC error %d: %s", e.Code, e.Message)
 }
 
-// IdentityCheck asks one endpoint which network it serves, through caller, which
-// reaches that endpoint only. chain.ErrWrongNetwork keeps the endpoint out; any
-// other error counts as a failure of the endpoint, which is asked again later.
-type IdentityCheck func(ctx context.Context, caller chain.JSONRPCCaller) error
+// IdentityReader asks one endpoint which network it serves, through caller, which
+// reaches that endpoint only, and returns it as a token (an EVM chain id, a Solana
+// genesis hash). An error is a failure of the endpoint, which is asked again later.
+type IdentityReader func(ctx context.Context, caller chain.JSONRPCCaller) (string, error)
 
 // RPCClientDeps is the endpoint and optional basic-auth pair NewRPCClient stores.
 // Empty User and Password send no basic auth. No URL is logged.
 //
-// Fallbacks are tried in order after URL when it cannot serve a call; the same
-// basic auth and headers go to every endpoint. ChainID names the chain in logs and
-// health records. Identity, when set, is asked once per fallback before its first
-// use. Health receives the endpoint health each time it changes.
+// Fallbacks are tried in order after URL when it cannot serve a call. ChainID names
+// the chain in logs and health records. With Identity set, a fallback serves only
+// once its answer equals Network (the chain's recorded network) and the primary's
+// own answer, read once per list: a primary pointed at another network than the
+// record says keeps every fallback out. Health receives the endpoint health each
+// time it changes.
 type RPCClientDeps struct {
 	URL       string
 	User      string
 	Password  string
 	Fallbacks []chain.RPCFallback
 	ChainID   string
-	Identity  IdentityCheck
+	Identity  IdentityReader
+	Network   string
 	Health    chain.RPCHealthSink
 }
 
@@ -99,6 +103,7 @@ func NewRPCClient(deps RPCClientDeps) *RPCClient {
 		retry:    defaultRateLimitRetry(),
 		chainID:  strings.TrimSpace(deps.ChainID),
 		identity: deps.Identity,
+		network:  strings.TrimSpace(deps.Network),
 		health:   deps.Health,
 		now:      time.Now,
 	}

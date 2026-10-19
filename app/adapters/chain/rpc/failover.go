@@ -78,19 +78,28 @@ type endpoint struct {
 type endpointSet struct {
 	members   []*endpoint
 	positions []int
+
+	// primaryNetwork is the identity the primary answered, once it did; the
+	// fallbacks must answer the same.
+	identityMu     sync.Mutex
+	primaryNetwork string
+	primaryAskedAt time.Time
+	mismatchLogged bool
 }
 
 // newEndpointSet orders primary and fallbacks, dropping blanks and repeats. An
-// endpoint of previous with the same URL is kept with its health, except that the
-// primary drops what a runtime identity check found: the primary is not checked at
-// runtime (its network was checked when it was written), so a former fallback seen
-// on another network is not kept out once it is the primary.
+// endpoint of previous with the same URL is kept with its health. The primary
+// drops what a runtime identity check found (it is not checked at runtime: its
+// network was checked when it was written), and when the primary changes every
+// fallback is checked again, against the new primary's network.
 func newEndpointSet(previous *endpointSet, primary string, fallbacks []chain.RPCFallback) *endpointSet {
 	known := map[string]*endpoint{}
+	samePrimary := false
 	if previous != nil {
 		for _, member := range previous.members {
 			known[member.url] = member
 		}
+		samePrimary = len(previous.members) > 0 && previous.members[0].url == strings.TrimSpace(primary)
 	}
 	set := &endpointSet{}
 	seen := map[string]bool{}
@@ -110,7 +119,7 @@ func newEndpointSet(previous *endpointSet, primary string, fallbacks []chain.RPC
 		if !ok {
 			member = &endpoint{url: rawURL, host: chain.RPCEndpointHost(rawURL), fingerprint: chain.RPCEndpointFingerprint(rawURL)}
 		}
-		if len(set.members) == 0 {
+		if len(set.members) == 0 || !samePrimary {
 			member.clearIdentity()
 		}
 		set.members = append(set.members, member)
@@ -227,13 +236,18 @@ func (e *endpoint) clearIdentity() {
 	e.verified, e.wrongNetwork = false, false
 }
 
+// markIdentity records what an identity check found. Another network is sticky:
+// a concurrent check that passed does not clear it for the life of the set.
 func (e *endpoint) markIdentity(wrong bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.verified = !wrong
-	e.wrongNetwork = wrong
 	if wrong {
+		e.verified, e.wrongNetwork = false, true
 		e.lastError = "wrong network"
+		return
+	}
+	if !e.wrongNetwork {
+		e.verified = true
 	}
 }
 
@@ -366,12 +380,27 @@ func attemptContext(ctx context.Context, remaining int, broadcast bool) (context
 	return context.WithTimeout(ctx, max(share, failoverMinAttempt))
 }
 
-// verifyIdentity asks a fallback which network it serves before its first use. A
-// fallback on another network is never used again by this client and is logged at
-// error level; one that cannot answer counts a failure and is asked next time.
+// verifyIdentity asks a fallback which network it serves before its first use: it
+// must be the chain's recorded network and, once the primary answered its own, the
+// primary's. A fallback on another network is never used again for the life of the
+// list and is logged at error level; one that cannot answer counts a failure and is
+// asked next time. When the primary itself serves another network than the record
+// says (moved, not yet aligned), no fallback is used and that is logged once.
 func (c *RPCClient) verifyIdentity(ctx context.Context, set *endpointSet, cand candidate, remaining int) error {
 	if c.identity == nil {
 		return nil
+	}
+	primary := c.primaryIdentity(ctx, set)
+	if primary != "" && c.network != "" && primary != c.network {
+		set.identityMu.Lock()
+		first := !set.mismatchLogged
+		set.mismatchLogged = true
+		set.identityMu.Unlock()
+		if first {
+			slog.Error("rpc primary endpoint serves another network than the chain records; fallbacks are not used",
+				"chain", c.chainID, "host", set.members[0].host)
+		}
+		return fmt.Errorf("rpc endpoint %d of %s: the primary serves another network than the chain records: %w", cand.position, c.chainID, chain.ErrWrongNetwork)
 	}
 	if verified, wrong := cand.ep.identity(); verified {
 		return nil
@@ -380,17 +409,8 @@ func (c *RPCClient) verifyIdentity(ctx context.Context, set *endpointSet, cand c
 	}
 	attemptCtx, cancel := attemptContext(ctx, remaining, false)
 	defer cancel()
-	err := c.identity(attemptCtx, endpointCaller{client: c, url: cand.ep.url})
-	switch {
-	case err == nil:
-		cand.ep.markIdentity(false)
-		return nil
-	case errors.Is(err, chain.ErrWrongNetwork):
-		cand.ep.markIdentity(true)
-		slog.Error("rpc fallback endpoint serves another network and is not used", "chain", c.chainID, "position", cand.position, "host", cand.ep.host)
-		c.report(set)
-		return fmt.Errorf("rpc endpoint %d of %s: %w", cand.position, c.chainID, chain.ErrWrongNetwork)
-	default:
+	network, err := c.identity(attemptCtx, endpointCaller{client: c, url: cand.ep.url})
+	if err != nil {
 		err = scrub(cand.ep.url, err)
 		// The caller's own deadline is not the endpoint's failure.
 		if ctx.Err() == nil {
@@ -398,6 +418,56 @@ func (c *RPCClient) verifyIdentity(ctx context.Context, set *endpointSet, cand c
 		}
 		return err
 	}
+	want := c.network
+	if want == "" {
+		want = primary
+	}
+	if want == "" || network != want || (primary != "" && network != primary) {
+		cand.ep.markIdentity(true)
+		slog.Error("rpc fallback endpoint serves another network and is not used", "chain", c.chainID, "position", cand.position, "host", cand.ep.host)
+		c.report(set)
+		return fmt.Errorf("rpc endpoint %d of %s: %w", cand.position, c.chainID, chain.ErrWrongNetwork)
+	}
+	cand.ep.markIdentity(false)
+	return nil
+}
+
+const (
+	// primaryIdentityTimeout bounds the question asked of the primary about its network.
+	primaryIdentityTimeout = 5 * time.Second
+	// primaryIdentityRetry spaces the questions while the primary does not answer,
+	// so a primary that hangs costs one bounded wait per interval, not one per call.
+	primaryIdentityRetry = endpointCooldownBase
+)
+
+// primaryIdentity is the network the primary of set answers, kept once it answered;
+// "" while it has not (asked again after primaryIdentityRetry).
+func (c *RPCClient) primaryIdentity(ctx context.Context, set *endpointSet) string {
+	now := c.now()
+	set.identityMu.Lock()
+	known, asked := set.primaryNetwork, set.primaryAskedAt
+	if known == "" && (asked.IsZero() || now.Sub(asked) >= primaryIdentityRetry) {
+		set.primaryAskedAt = now
+	} else {
+		set.identityMu.Unlock()
+		return known
+	}
+	set.identityMu.Unlock()
+	if len(set.members) == 0 {
+		return ""
+	}
+	askCtx, cancel := context.WithTimeout(ctx, primaryIdentityTimeout)
+	defer cancel()
+	network, err := c.identity(askCtx, endpointCaller{client: c, url: set.members[0].url})
+	if err != nil || strings.TrimSpace(network) == "" {
+		return ""
+	}
+	set.identityMu.Lock()
+	defer set.identityMu.Unlock()
+	if set.primaryNetwork == "" {
+		set.primaryNetwork = strings.TrimSpace(network)
+	}
+	return set.primaryNetwork
 }
 
 func (c *RPCClient) succeeded(set *endpointSet, cand candidate) {
