@@ -64,7 +64,7 @@ func TestBroadcast_Unknown_OutcomeIsNotAKnownFailure(t *testing.T) {
 	})
 }
 
-func TestBroadcast_Server_ErrorStaysAKnownFailure(t *testing.T) {
+func TestBroadcast_ARESTServerErrorIsAnUnknownOutcome(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
 	}))
@@ -74,8 +74,8 @@ func TestBroadcast_Server_ErrorStaysAKnownFailure(t *testing.T) {
 	live.restAPI = true
 	live.http = httpclient.Wrap(srv.Client())
 	_, err := live.BroadcastTransaction(context.Background(), &types.SignedTx{RawBytes: []byte{0x01}})
-	if !chain.KnownFailure(err) || errors.Is(err, chain.ErrUnknownOutcome) {
-		t.Fatalf("HTTP 502 broadcast: %v", err)
+	if !errors.Is(err, chain.ErrUnknownOutcome) || chain.KnownFailure(err) {
+		t.Fatalf("an Esplora 502 to POST /tx may have relayed the bytes (a gateway failing after the send): %v", err)
 	}
 }
 
