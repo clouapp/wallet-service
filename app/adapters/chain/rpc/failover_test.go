@@ -901,3 +901,24 @@ func TestFailover_Identity_TheCallersDeadlineIsNotTheFallbacksFailure(t *testing
 	_ = client.Call(ctx, "eth_blockNumber", nil)
 	assert.Zero(t, healthOf(client)[1].ConsecutiveFailures, "the identity check ran out of the caller's time, not the fallback's")
 }
+
+func TestAttempt_Context_SharesOnlyTheCallersDeadline(t *testing.T) {
+	ctx, cancel := attemptContext(context.Background(), 3, false)
+	defer cancel()
+	_, bounded := ctx.Deadline()
+	assert.False(t, bounded, "without a caller deadline an attempt keeps the HTTP timeout, as before (a 64 MiB block may take long)")
+
+	parent, cancelParent := context.WithTimeout(context.Background(), 9*time.Second)
+	defer cancelParent()
+	shared, cancelShared := attemptContext(parent, 3, false)
+	defer cancelShared()
+	deadline, bounded := shared.Deadline()
+	require.True(t, bounded)
+	assert.InDelta(t, 3*time.Second, time.Until(deadline), float64(200*time.Millisecond), "a third of the caller's time for the first of three")
+
+	last, cancelLast := attemptContext(parent, 1, false)
+	defer cancelLast()
+	lastDeadline, _ := last.Deadline()
+	parentDeadline, _ := parent.Deadline()
+	assert.Equal(t, parentDeadline, lastDeadline, "the last endpoint keeps what is left")
+}

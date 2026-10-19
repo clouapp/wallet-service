@@ -25,12 +25,12 @@ const (
 	endpointCooldownMax    = 5 * time.Minute
 	endpointMaxTripShift   = 8
 
-	// An attempt that has another endpoint behind it gets at most
-	// failoverAttemptTimeout, or its share of the caller's deadline (never under
-	// failoverMinAttempt), so a node that hangs leaves time to ask the next one.
-	// The last endpoint of a call keeps the whole remaining budget.
-	failoverAttemptTimeout = 15 * time.Second
-	failoverMinAttempt     = 2 * time.Second
+	// Under a caller deadline, an attempt that has another endpoint behind it gets
+	// its share of the time left (never under failoverMinAttempt), so a node that
+	// hangs leaves time to ask the next one; the last endpoint keeps what is left.
+	// Without a deadline every attempt keeps the HTTP client's timeout, as with one
+	// endpoint: a large answer (a 64 MiB EVM block, a busy Solana slot) is not cut.
+	failoverMinAttempt = 2 * time.Second
 )
 
 // Methods whose answer is a signed transaction handed to the network. They move to
@@ -326,15 +326,12 @@ func (c *RPCClient) attempt(ctx context.Context, rawURL, method string, params [
 }
 
 func attemptContext(ctx context.Context, remaining int, broadcast bool) (context.Context, context.CancelFunc) {
-	if remaining <= 1 || broadcast {
+	deadline, bounded := ctx.Deadline()
+	if remaining <= 1 || broadcast || !bounded {
 		return ctx, func() {}
 	}
-	budget := failoverAttemptTimeout
-	if deadline, ok := ctx.Deadline(); ok {
-		share := time.Until(deadline) / time.Duration(remaining)
-		budget = min(budget, max(share, failoverMinAttempt))
-	}
-	return context.WithTimeout(ctx, budget)
+	share := time.Until(deadline) / time.Duration(remaining)
+	return context.WithTimeout(ctx, max(share, failoverMinAttempt))
 }
 
 // verifyIdentity asks a fallback which network it serves before its first use. A
