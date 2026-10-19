@@ -352,7 +352,7 @@ func (c *RPCClient) call(ctx context.Context, set *endpointSet, method string, o
 				continue
 			}
 		}
-		result, kind, err := c.attempt(ctx, cand.ep.url, method, params, remaining, broadcast)
+		result, kind, err := c.attempt(ctx, cand.ep.url, method, params, remaining, broadcast, remaining == 1 || backsOffEverywhere(ctx))
 		if shape != "" {
 			switch {
 			case shapeRefused(err):
@@ -490,41 +490,43 @@ func (c *RPCClient) confirmSkipped(ctx context.Context, set *endpointSet, first 
 		solanaGetBlock, first.position, c.chainID, chain.ErrSkippedSlotUnconfirmed))
 }
 
-// CallEach asks method of every endpoint ready now (Call's order; a fallback once
-// checked for its network), at once, each within secondOpinionTimeout, and returns
-// the results of those that answered, in no set order. It fails only when none
-// answered, with the first endpoint's error. With one endpoint it is Call.
-func (c *RPCClient) CallEach(ctx context.Context, method string, params ...interface{}) ([]json.RawMessage, error) {
+// CallOthers asks method of every endpoint ready now other than the one ctx is
+// pinned to (the primary when it is not pinned), at once, each within budget, and
+// returns the results of those that answered, in no set order. A fallback is checked
+// for its network first. It never fails: an endpoint that does not answer gives
+// nothing and counts a failure, unless budget ran out first. With one endpoint it
+// asks nobody.
+func (c *RPCClient) CallOthers(ctx context.Context, budget time.Duration, method string, params ...interface{}) []json.RawMessage {
 	if c == nil {
-		return nil, fmt.Errorf("rpc call %s: client is not configured", method)
+		return nil
 	}
 	if params == nil {
 		params = []interface{}{}
 	}
 	set := c.endpoints.Load()
-	if set == nil || len(set.members) == 0 {
-		return nil, fmt.Errorf("rpc call %s: no endpoint is configured", method)
+	if set == nil || len(set.members) < 2 {
+		return nil
 	}
-	candidates := set.ordered(c.now())
-	if len(candidates) < 2 {
-		var raw json.RawMessage
-		if err := c.call(ctx, set, method, &raw, params); err != nil {
-			return nil, err
+	skip := set.members[0].url
+	if held := pinFrom(ctx).held(); held != nil {
+		skip = held.url
+	}
+	var others []candidate
+	for _, cand := range set.ordered(c.now()) {
+		if cand.ep.url != skip {
+			others = append(others, cand)
 		}
-		return []json.RawMessage{raw}, nil
 	}
-	results := make([]json.RawMessage, len(candidates))
-	errs := make([]error, len(candidates))
+	results := make([]json.RawMessage, len(others))
 	var wg sync.WaitGroup
-	for i, cand := range candidates {
+	for i, cand := range others {
 		wg.Add(1)
 		go func(i int, cand candidate) {
 			defer wg.Done()
-			askCtx, cancel := context.WithTimeout(ctx, secondOpinionTimeout)
+			askCtx, cancel := context.WithTimeout(ctx, budget)
 			defer cancel()
 			if cand.index > 0 {
 				if err := c.verifyIdentity(askCtx, set, cand, 1); err != nil {
-					errs[i] = err
 					return
 				}
 			}
@@ -532,14 +534,12 @@ func (c *RPCClient) CallEach(ctx context.Context, method string, params ...inter
 			switch {
 			case err == nil || kind == outcomeAnswer:
 				c.succeeded(set, cand)
-			case kind != outcomeUnsupported && ctx.Err() == nil:
+			case kind != outcomeUnsupported && askCtx.Err() == nil:
 				c.failed(set, cand, kind, err)
 			}
-			if err != nil {
-				errs[i] = scrub(cand.ep.url, err)
-				return
+			if err == nil {
+				results[i] = result
 			}
-			results[i] = result
 		}(i, cand)
 	}
 	wg.Wait()
@@ -549,15 +549,7 @@ func (c *RPCClient) CallEach(ctx context.Context, method string, params ...inter
 			answered = append(answered, result)
 		}
 	}
-	if len(answered) > 0 {
-		return answered, nil
-	}
-	for _, err := range errs {
-		if err != nil {
-			return nil, err
-		}
-	}
-	return nil, fmt.Errorf("rpc call %s: no usable endpoint", method)
+	return answered
 }
 
 // servingCandidates drops the endpoints remembered as refusing shape. When that
@@ -588,10 +580,33 @@ func (c *RPCClient) candidates(set *endpointSet, pin *endpointPin) ([]candidate,
 // attempt runs one exchange on one endpoint inside its share of the deadline. A
 // broadcast keeps the caller's whole deadline: it never moves on after a timeout,
 // so cutting it short would only turn an answer into an unknown outcome.
-func (c *RPCClient) attempt(ctx context.Context, rawURL, method string, params []interface{}, remaining int, broadcast bool) (json.RawMessage, outcome, error) {
+// retryRateLimits waits out a rate limit on this endpoint (the last one, or every
+// one under BackOffOnRateLimits) instead of moving on.
+func (c *RPCClient) attempt(ctx context.Context, rawURL, method string, params []interface{}, remaining int, broadcast, retryRateLimits bool) (json.RawMessage, outcome, error) {
 	attemptCtx, cancel := attemptContext(ctx, remaining, broadcast)
 	defer cancel()
-	return c.exchange(attemptCtx, rawURL, method, params, remaining == 1)
+	return c.exchange(attemptCtx, rawURL, method, params, retryRateLimits)
+}
+
+type backoffKey struct{}
+
+// BackOffOnRateLimits returns a context whose calls wait out a rate limit on each
+// endpoint, the backoff one endpoint alone gets, before moving to the next: for a
+// read whose answer should come from the primary even while it is only slow to
+// serve (the pending nonce).
+func BackOffOnRateLimits(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, backoffKey{}, true)
+}
+
+func backsOffEverywhere(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	on, _ := ctx.Value(backoffKey{}).(bool)
+	return on
 }
 
 func attemptContext(ctx context.Context, remaining int, broadcast bool) (context.Context, context.CancelFunc) {

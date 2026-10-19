@@ -3,11 +3,14 @@ package evm
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
+
+	"github.com/macrowallets/waas/app/adapters/chain/rpc"
 )
 
 // nonceFloorTTL is how long a broadcast keeps the next nonce of its sender up in this
@@ -71,22 +74,47 @@ func (f *nonceFloor) floor(sender string) uint64 {
 	return entry.nonce
 }
 
-// pendingNonce is the nonce the next transaction of from must use: the highest
-// pending nonce the ready endpoints answer (a node that holds the last broadcast in
-// its mempool counts it), and never below the next nonce of a transaction this
-// process broadcast for from in the last nonceFloorTTL.
+const (
+	// nonceOthersBudget is how long the other endpoints are given to answer the
+	// pending nonce, while the primary is asked.
+	nonceOthersBudget = time.Second
+	// maxNonceRaise is the most the other endpoints may raise the primary's pending
+	// nonce: one transfer of the sender broadcast elsewhere that the primary has not
+	// seen yet. A node holding a transaction that was dropped everywhere else must
+	// not leave a wider gap that holds the sender's next transactions.
+	maxNonceRaise = 1
+)
+
+// pendingNonce is the nonce the next transaction of from must use. The primary's
+// pending nonce decides (read with the backoff one endpoint gets; when it cannot
+// answer, the failover order); the other ready endpoints, asked at the same time
+// within nonceOthersBudget, may only raise it by maxNonceRaise (a node that holds
+// the last broadcast in its mempool), and a divergence is logged. An endpoint that
+// does not answer never fails the read. The result is never below the next nonce
+// of a transaction this process broadcast for from in the last nonceFloorTTL.
 func (a *EVMLive) pendingNonce(ctx context.Context, from string) (uint64, error) {
-	answers, err := a.rpc.CallEach(ctx, "eth_getTransactionCount", from, "pending")
-	if err != nil {
+	others := make(chan []json.RawMessage, 1)
+	go func() {
+		others <- a.rpc.CallOthers(ctx, nonceOthersBudget, "eth_getTransactionCount", from, "pending")
+	}()
+	var hexNonce string
+	if err := a.rpc.Call(rpc.BackOffOnRateLimits(ctx), "eth_getTransactionCount", &hexNonce, from, "pending"); err != nil {
 		return 0, err
 	}
-	var highest uint64
-	for _, raw := range answers {
-		var hexNonce string
-		if json.Unmarshal(raw, &hexNonce) != nil {
+	nonce := hexToUint64(hexNonce)
+	lowest, highest := nonce, nonce
+	for _, raw := range <-others {
+		var other string
+		if json.Unmarshal(raw, &other) != nil {
 			continue
 		}
-		highest = max(highest, hexToUint64(hexNonce))
+		lowest, highest = min(lowest, hexToUint64(other)), max(highest, hexToUint64(other))
 	}
-	return max(highest, a.nonces.floor(from)), nil
+	if lowest != nonce || highest != nonce {
+		used := min(highest, nonce+maxNonceRaise)
+		slog.Warn("evm pending nonce differs between endpoints",
+			"chain", a.cfg.ChainIDStr, "from", from, "primary", nonce, "lowest", lowest, "highest", highest, "used", used)
+		nonce = used
+	}
+	return max(nonce, a.nonces.floor(from)), nil
 }

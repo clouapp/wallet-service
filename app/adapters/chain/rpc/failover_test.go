@@ -1177,29 +1177,71 @@ func TestFailover_Null_ASecondOpinionThatHangsIsCutShort(t *testing.T) {
 	assert.Less(t, time.Since(started), secondOpinionTimeout+2*time.Second, "a poll without a caller deadline is not held for the HTTP timeout")
 }
 
-func TestCall_Each_AsksEveryReadyEndpointAndKeepsTheAnswers(t *testing.T) {
+func TestCall_Others_AsksTheOtherReadyEndpointsWithinTheBudget(t *testing.T) {
 	primary := newFakeNode(t, answers(result(`"0x5"`)))
 	ahead := newFakeNode(t, answers(result(`"0x7"`)))
 	down := newFakeNode(t, answers(http.StatusBadGateway, "down"))
-	client, _, _ := failoverClient(primary.URL(), ahead.URL(), down.URL())
+	release := make(chan struct{})
+	hanging := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(func() { close(release); hanging.Close() })
+	client, _, _ := failoverClient(primary.URL(), ahead.URL(), down.URL(), hanging.URL)
 
-	answersGot, err := client.CallEach(context.Background(), "eth_getTransactionCount", "0xabc", "pending")
-	require.NoError(t, err)
-	got := make([]string, 0, len(answersGot))
-	for _, raw := range answersGot {
-		got = append(got, string(raw))
+	started := time.Now()
+	got := client.CallOthers(context.Background(), 300*time.Millisecond, "eth_getTransactionCount", "0xabc", "pending")
+	assert.Less(t, time.Since(started), 2*time.Second, "a hanging endpoint is not waited for past the budget")
+	answered := make([]string, 0, len(got))
+	for _, raw := range got {
+		answered = append(answered, string(raw))
 	}
-	assert.ElementsMatch(t, []string{`"0x5"`, `"0x7"`}, got)
-	assert.Equal(t, 1, healthOf(client)[2].ConsecutiveFailures)
-
-	nobody, _, _ := failoverClient(closedPortURL(t), down.URL())
-	_, err = nobody.CallEach(context.Background(), "eth_getTransactionCount", "0xabc", "pending")
-	assert.ErrorIs(t, err, chain.ErrProviderUnavailable)
+	assert.Equal(t, []string{`"0x7"`}, answered, "the primary is not asked; the endpoints that did not answer give nothing")
+	assert.Zero(t, primary.total())
+	assert.Equal(t, 1, healthOf(client)[2].ConsecutiveFailures, "an endpoint that failed counts it")
+	assert.Zero(t, healthOf(client)[3].ConsecutiveFailures, "running out of the caller's budget is not the endpoint's failure")
 
 	single := NewRPCClient(RPCClientDeps{URL: primary.URL()})
-	one, err := single.CallEach(context.Background(), "eth_getTransactionCount", "0xabc", "pending")
-	require.NoError(t, err)
-	assert.Equal(t, []json.RawMessage{json.RawMessage(`"0x5"`)}, one)
+	assert.Empty(t, single.CallOthers(context.Background(), time.Second, "eth_getTransactionCount", "0xabc", "pending"))
+}
+
+func TestCall_Others_InAPinnedScopeLeaveOutThePinnedEndpoint(t *testing.T) {
+	primary := newFakeNode(t, answers(http.StatusBadGateway, "down"))
+	pinned := newFakeNode(t, answers(result(`"pinned"`)))
+	other := newFakeNode(t, answers(result(`"other"`)))
+	client, _, _ := failoverClient(primary.URL(), pinned.URL(), other.URL())
+	ctx := PinEndpoint(context.Background())
+	var first string
+	require.NoError(t, client.Call(ctx, "eth_blockNumber", &first))
+	require.Equal(t, "pinned", first)
+
+	got := client.CallOthers(ctx, time.Second, "eth_getLogs")
+	require.Len(t, got, 1, "the primary failed, the pinned endpoint is left out")
+	assert.JSONEq(t, `"other"`, string(got[0]))
+	assert.Equal(t, 1, pinned.total())
+}
+
+func TestFailover_BackOffOnRateLimits_KeepsThePrimarysBackoffBeforeMovingOn(t *testing.T) {
+	var limited atomic.Int32
+	limited.Store(1)
+	primary := newFakeNode(t, func(string) (int, string) {
+		if limited.Add(-1) >= 0 {
+			return http.StatusTooManyRequests, `{"error":"slow down"}`
+		}
+		return result(`"0x5"`)
+	})
+	client, _, sleeps := failoverClient(primary.URL(), closedPortURL(t))
+
+	var nonce string
+	require.Error(t, client.Call(context.Background(), "eth_getTransactionCount", &nonce, "0xabc", "pending"),
+		"by default a rate-limited endpoint with another behind it is left at once (and the other is down)")
+
+	limited.Store(1)
+	require.NoError(t, client.Call(BackOffOnRateLimits(context.Background()), "eth_getTransactionCount", &nonce, "0xabc", "pending"))
+	assert.Equal(t, "0x5", nonce)
+	assert.Len(t, sleeps.delays, 1, "the primary was waited for once, as with one endpoint")
 }
 
 func TestFailover_MethodNotFound_IsNeverRemembered(t *testing.T) {

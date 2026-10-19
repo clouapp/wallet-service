@@ -2,7 +2,11 @@ package evm
 
 import (
 	"context"
+	"io"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,14 +20,72 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-func TestPending_Nonce_IsTheHighestTheReadyEndpointsAnswer(t *testing.T) {
-	primary := newCountingNode(t, map[string]string{"eth_getTransactionCount": `"result":"0x5"`})
-	ahead := newCountingNode(t, map[string]string{"eth_chainId": sepoliaChainIDResult, "eth_getTransactionCount": `"result":"0x7"`})
-	adapter := sepoliaWithFallbacks(primary.server.URL, ahead.server.URL)
+func TestPending_Nonce_IsThePrimarysRaisedByAtMostOneByTheOthers(t *testing.T) {
+	const sender = "0x1111111111111111111111111111111111111111"
+	for _, tc := range []struct {
+		name, other string
+		want        uint64
+	}{
+		{"another endpoint holds a later broadcast", `"result":"0x6"`, 6},
+		{"a raise is bounded", `"result":"0x9"`, 6},
+		{"a lower answer changes nothing", `"result":"0x3"`, 5},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			primary := newCountingNode(t, map[string]string{"eth_getTransactionCount": `"result":"0x5"`})
+			other := newCountingNode(t, map[string]string{"eth_chainId": sepoliaChainIDResult, "eth_getTransactionCount": tc.other})
+			adapter := sepoliaWithFallbacks(primary.server.URL, other.server.URL)
+
+			nonce, err := adapter.pendingNonce(context.Background(), sender)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, nonce)
+		})
+	}
+}
+
+// rateLimitedOnceNode answers 429 to its first eth_getTransactionCount, then nonce.
+func rateLimitedOnceNode(t *testing.T, nonce string) *httptest.Server {
+	t.Helper()
+	var limited atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if limited.CompareAndSwap(false, true) {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":"`+nonce+`"}`)
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func TestPending_Nonce_ARateLimitedPrimaryWithFallbacksDownStillAnswers(t *testing.T) {
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	t.Cleanup(down.Close)
+	adapter := sepoliaWithFallbacks(rateLimitedOnceNode(t, "0x5").URL, down.URL)
 
 	nonce, err := adapter.pendingNonce(context.Background(), "0x1111111111111111111111111111111111111111")
+	require.NoError(t, err, "the primary is waited for, as with one endpoint, and a fallback that does not answer never fails the build")
+	assert.Equal(t, uint64(5), nonce)
+}
+
+func TestPending_Nonce_DoesNotWaitForAHangingFallback(t *testing.T) {
+	release := make(chan struct{})
+	hanging := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(func() { close(release); hanging.Close() })
+	primary := newCountingNode(t, map[string]string{"eth_getTransactionCount": `"result":"0x5"`})
+	adapter := sepoliaWithFallbacks(primary.server.URL, hanging.URL)
+
+	started := time.Now()
+	nonce, err := adapter.pendingNonce(context.Background(), "0x1111111111111111111111111111111111111111")
 	require.NoError(t, err)
-	assert.Equal(t, uint64(7), nonce, "a node that has the last broadcast in its mempool knows the next nonce")
+	assert.Equal(t, uint64(5), nonce)
+	assert.Less(t, time.Since(started), 2*time.Second, "the other endpoints get a short budget")
 }
 
 // signedSepoliaTransfer is a real signed transfer of nonce from a fresh key.
