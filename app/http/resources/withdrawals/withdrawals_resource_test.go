@@ -35,6 +35,7 @@ func TestFailure_Codes_TheServicePersistsAreThePublicList(t *testing.T) {
 		{withdraw.FailureDestinationTag, resources.CodeDestinationTagRequired},
 		{withdraw.FailureDestinationTagUnsupported, resources.CodeDestinationTagUnsupported},
 		{withdraw.FailureExpired, resources.CodeExpired},
+		{withdraw.FailureNotLanded, resources.CodeNotLanded},
 		{withdraw.FailureOnChainPrefix, resources.CodeOnChainPrefix},
 		{withdraw.FailureInternalError, resources.CodeInternalError},
 	}

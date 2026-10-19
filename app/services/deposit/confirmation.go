@@ -154,7 +154,7 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 				continue
 			}
 			if block == 0 {
-				if s.transactionExpired(ctx, adapter, tx) && s.failOnChain(ctx, adapter, tx, models.WithdrawalFailureExpired, 0) {
+				if code, never := s.neverLands(ctx, adapter, tx); never && s.failOnChain(ctx, adapter, tx, code, 0) {
 					confirmedWallets.add(tx.WalletID)
 				}
 				continue
@@ -245,6 +245,48 @@ func onChainFailureCode(result string) string {
 		return models.WithdrawalFailureOnChainPrefix + "failed"
 	}
 	return code
+}
+
+// neverLands reports a sent transaction the node does not have that can never be
+// included, with its failure code: past its last valid block (XRP, expired) or its
+// nonce spent by another transaction (EVM, not_landed). Anything else, including
+// a check that could not be made, keeps the transaction pending.
+func (s *Service) neverLands(ctx context.Context, adapter types.Chain, tx models.Transaction) (string, bool) {
+	if s.transactionExpired(ctx, adapter, tx) {
+		return models.WithdrawalFailureExpired, true
+	}
+	if s.transactionSuperseded(ctx, adapter, tx) {
+		return models.WithdrawalFailureNotLanded, true
+	}
+	return "", false
+}
+
+// transactionSuperseded asks an adapter that can prove it (EVM) whether another
+// transaction spent the sender nonce kept in raw_payload. A row without that nonce
+// (recorded before it was kept) is never superseded.
+func (s *Service) transactionSuperseded(ctx context.Context, adapter types.Chain, tx models.Transaction) bool {
+	checker, ok := adapter.(chain.TransactionSupersededChecker)
+	if !ok {
+		return false
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(tx.RawPayload), &payload); err != nil {
+		return false
+	}
+	raw, ok := payload[chain.SenderNoncePayloadKey]
+	if !ok {
+		return false
+	}
+	var nonce uint64
+	if err := json.Unmarshal(raw, &nonce); err != nil {
+		return false
+	}
+	superseded, err := checker.TransactionSuperseded(ctx, tx.TxHash, tx.FromAddress, nonce)
+	if err != nil {
+		slog.Warn("check transaction superseded", "tx_id", tx.ID, "tx_hash", tx.TxHash, "error", err)
+		return false
+	}
+	return superseded
 }
 
 // transactionExpired asks an adapter that can prove expiry (XRP) whether the

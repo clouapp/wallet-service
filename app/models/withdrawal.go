@@ -16,10 +16,13 @@ const (
 // chain. A payment a validated ledger (XRP) or a block (EVM) includes with a
 // failure result is WithdrawalFailureOnChainPrefix + its lowercase result code,
 // e.g. onchain_tecno_dst_insuf_xrp, onchain_out_of_gas or onchain_reverted; an
-// XRP payment that can no longer be included is WithdrawalFailureExpired.
+// XRP payment that can no longer be included is WithdrawalFailureExpired; an EVM
+// transfer no node knows whose nonce another transaction spent (it can never be
+// included) is WithdrawalFailureNotLanded.
 const (
 	WithdrawalFailureOnChainPrefix = "onchain_"
 	WithdrawalFailureExpired       = "expired"
+	WithdrawalFailureNotLanded     = "not_landed"
 )
 
 type Withdrawal struct {
