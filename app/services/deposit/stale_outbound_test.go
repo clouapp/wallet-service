@@ -2,6 +2,8 @@ package deposit
 
 import (
 	"context"
+	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -84,5 +86,61 @@ func TestStaleOutbound_Health_CountsTheUnsettledTransfersPerChain(t *testing.T) 
 	recordedAgo(t, fresh.ID, 10*time.Hour)
 	if again := svc.StaleOutboundHealth(context.Background()); again.Total != 3 {
 		t.Fatalf("a health check within a minute reads the cached counts, got %+v", again)
+	}
+}
+
+// gatedCounter counts stale outbound rows as told, after gate opens when it is set.
+type gatedCounter struct {
+	*sweepConfirmMemory
+	gate   chan struct{}
+	counts map[string]int
+	err    error
+	calls  atomic.Int32
+}
+
+func (g *gatedCounter) CountStaleOutbound(ctx context.Context, _ time.Time) (map[string]int, error) {
+	g.calls.Add(1)
+	if g.gate != nil {
+		select {
+		case <-g.gate:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return g.counts, g.err
+}
+
+func TestStaleOutbound_Health_NeverWaitsOnACountInFlightAndServesTheLastOneOnError(t *testing.T) {
+	counter := &gatedCounter{sweepConfirmMemory: &sweepConfirmMemory{}, counts: map[string]int{"eth": 1}}
+	clock := &testClock{now: time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)}
+	svc := &Service{txRepo: counter, now: clock.Now}
+	if got := svc.StaleOutboundHealth(context.Background()); got.Total != 1 || got.Err != nil {
+		t.Fatalf("first count %+v", got)
+	}
+
+	clock.advance(staleOutboundCacheFor + time.Second)
+	counter.gate, counter.counts = make(chan struct{}), map[string]int{"eth": 2}
+	leader := make(chan StaleOutboundHealth, 1)
+	go func() { leader <- svc.StaleOutboundHealth(context.Background()) }()
+	for counter.calls.Load() < 2 {
+		time.Sleep(time.Millisecond)
+	}
+	started := time.Now()
+	follower := svc.StaleOutboundHealth(context.Background())
+	if time.Since(started) > pendingHealthTimeout+time.Second || follower.Total != 1 {
+		t.Fatalf("follower %+v after %s: a second check gets the last counts instead of waiting on the count in flight", follower, time.Since(started))
+	}
+	if counter.calls.Load() != 2 {
+		t.Fatalf("%d counts: one at a time", counter.calls.Load())
+	}
+	close(counter.gate)
+	if got := <-leader; got.Total != 2 {
+		t.Fatalf("leader %+v", got)
+	}
+
+	clock.advance(staleOutboundCacheFor + time.Second)
+	counter.gate, counter.err = nil, errors.New("dial tcp 10.0.0.2:5432: connect: connection refused")
+	if got := svc.StaleOutboundHealth(context.Background()); got.Total != 2 || got.Err != nil {
+		t.Fatalf("a count that fails serves the last one: %+v", got)
 	}
 }
