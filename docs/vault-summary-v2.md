@@ -451,6 +451,9 @@ Cada config só recebe eventos de wallets da própria conta (configs legadas sem
 ```
 
 - `amount` é decimal (string); `amount_base_units` é inteiro na menor unidade do ativo (string), com `decimals`.
+- `broadcast_outcome` (campo adicional, só presente quando aplicável): `"unknown"` quando a resposta do broadcast
+  não disse se a rede aceitou a transação (timeout depois do envio, HTTP 5xx, resposta ilegível). O saque fica
+  `broadcast` e é resolvido pelo hash; o cliente pode mostrá-lo como "em verificação". Ausente nos restantes casos.
 - `failure_code` ∈ `insufficient_funds`, `wallet_not_gas_ready`, `unsupported_chain`, `sweep_limit_exceeded`,
   `invalid_passphrase`, `passphrase_too_short`, `concurrent_withdrawal`, `too_many_attempts`, `internal_error`,
   e no XRP `destination_below_reserve` (destino inexistente recebendo menos que a reserva base),

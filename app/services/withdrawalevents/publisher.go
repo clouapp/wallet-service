@@ -5,6 +5,7 @@ package withdrawalevents
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -15,6 +16,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/amount"
 	"github.com/macrowallets/waas/pkg/types"
@@ -67,6 +69,10 @@ type Payload struct {
 	Status                string  `json:"status"`
 	FailureCode           *string `json:"failure_code"`
 	OccurredAt            string  `json:"occurred_at"`
+	// BroadcastOutcome is "unknown" when the broadcast answer did not say whether the
+	// network took the transfer: it is settled by its hash (show it as pending
+	// verification). Left out otherwise.
+	BroadcastOutcome *string `json:"broadcast_outcome,omitempty"`
 }
 
 // FailedAttempt describes what was requested for a withdrawal that never produced a transaction.
@@ -301,6 +307,9 @@ func (p *Publisher) transactionPayload(withdrawal *models.Withdrawal, tx *models
 	if contract := strings.TrimSpace(tx.TokenContract); contract != "" {
 		payload.TokenContract = &contract
 	}
+	if outcome := broadcastOutcomeOf(tx); outcome != "" {
+		payload.BroadcastOutcome = &outcome
+	}
 
 	requestedAmount := ""
 	if withdrawal != nil {
@@ -386,4 +395,15 @@ func idempotencyKey(withdrawal *models.Withdrawal, tx *models.Transaction) strin
 		return strings.TrimSpace(*tx.IdempotencyKey)
 	}
 	return tx.ID.String()
+}
+
+// broadcastOutcomeOf is the broadcast outcome the transaction's raw_payload keeps
+// ("unknown"), or "".
+func broadcastOutcomeOf(tx *models.Transaction) string {
+	var payload map[string]json.RawMessage
+	var outcome string
+	if json.Unmarshal([]byte(tx.RawPayload), &payload) == nil {
+		_ = json.Unmarshal(payload[chain.BroadcastOutcomePayloadKey], &outcome)
+	}
+	return outcome
 }
