@@ -313,12 +313,14 @@ func unknownOutcomeProof(tx models.Transaction) (nonceProof, bool) {
 	return proof, true
 }
 
-// transactionExpired asks an adapter that can prove expiry (XRP, Solana) whether
-// the transaction is past its last valid block, read from raw_payload. Every other
-// adapter, a row without that block, or a check that failed (logged) is never
-// expired.
+// expiryWitnessGap is how long apart one endpoint alone must be seen not to know a
+// Solana transfer past its last valid block before it is expired.
+const expiryWitnessGap = 10 * time.Minute
+
+// transactionExpired is the tracker's expiry check (expiryOf, automatic, recording
+// a first sight). A check that failed is logged and never expired.
 func (s *Service) transactionExpired(ctx context.Context, adapter types.Chain, tx models.Transaction) bool {
-	expired, err := s.expiryOf(ctx, adapter, tx)
+	expired, err := s.expiryOf(ctx, adapter, tx, true, true)
 	if err != nil {
 		slog.Warn("check transaction expiry", "tx_id", tx.ID, "tx_hash", tx.TxHash, "error", err)
 		return false
@@ -326,17 +328,79 @@ func (s *Service) transactionExpired(ctx context.Context, adapter types.Chain, t
 	return expired
 }
 
-// expiryOf is transactionExpired with the error of a check that failed.
-func (s *Service) expiryOf(ctx context.Context, adapter types.Chain, tx models.Transaction) (bool, error) {
-	checker, ok := adapter.(chain.TransactionExpiryChecker)
-	if !ok {
-		return false, nil
-	}
+// expiryOf reports a transaction past its last valid block (kept in raw_payload)
+// that can never be included. XRP: the node searched every ledger up to it (one
+// node's complete search is the proof). Solana (chain.ExpiryEvidenceReader): no
+// endpoint knows it, and two endpoints answering for the finalized slot or later
+// say so, or one does twice expiryWitnessGap apart (its first sight is kept in
+// raw_payload when record is set). automatic, the tracker's check, reads Solana only
+// for a row whose broadcast outcome was unknown; withdrawals:reconcile reads any.
+func (s *Service) expiryOf(ctx context.Context, adapter types.Chain, tx models.Transaction, automatic, record bool) (bool, error) {
 	lastValid := lastValidBlockOf(tx)
 	if lastValid == 0 {
 		return false, nil
 	}
-	return checker.TransactionExpired(ctx, tx.TxHash, lastValid)
+	if checker, ok := adapter.(chain.TransactionExpiryChecker); ok {
+		return checker.TransactionExpired(ctx, tx.TxHash, lastValid)
+	}
+	reader, ok := adapter.(chain.ExpiryEvidenceReader)
+	if !ok || (automatic && !isUnknownOutcome(tx)) {
+		return false, nil
+	}
+	evidence, err := reader.ExpiryEvidence(ctx, tx.TxHash, lastValid)
+	switch {
+	case err != nil:
+		return false, err
+	case !evidence.Past || evidence.Known || evidence.Witnesses == 0:
+		return false, nil
+	case evidence.Witnesses >= 2:
+		return true, nil
+	}
+	seen := payloadUnixTime(tx, chain.ExpiryWitnessedAtPayloadKey)
+	if seen.IsZero() {
+		if record {
+			s.recordPayloadValue(ctx, tx, chain.ExpiryWitnessedAtPayloadKey, s.now().Unix())
+		}
+		return false, nil
+	}
+	return s.now().Sub(seen) >= expiryWitnessGap, nil
+}
+
+// isUnknownOutcome reports a row whose broadcast answer did not say whether the
+// network took it.
+func isUnknownOutcome(tx models.Transaction) bool {
+	var payload map[string]json.RawMessage
+	var outcome string
+	if json.Unmarshal([]byte(tx.RawPayload), &payload) == nil {
+		_ = json.Unmarshal(payload[chain.BroadcastOutcomePayloadKey], &outcome)
+	}
+	return outcome == chain.BroadcastOutcomeUnknown
+}
+
+// payloadUnixTime is a time raw_payload keeps under key in unix seconds, zero for
+// none.
+func payloadUnixTime(tx models.Transaction, key string) time.Time {
+	var payload map[string]json.RawMessage
+	var seconds int64
+	if json.Unmarshal([]byte(tx.RawPayload), &payload) != nil || json.Unmarshal(payload[key], &seconds) != nil || seconds <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(seconds, 0)
+}
+
+// recordPayloadValue keeps value under key in the row's raw_payload. A write that
+// fails is logged: the check runs again next pass.
+func (s *Service) recordPayloadValue(ctx context.Context, tx models.Transaction, key string, value any) {
+	payload := map[string]any{}
+	_ = json.Unmarshal([]byte(tx.RawPayload), &payload)
+	payload[key] = value
+	raw, err := json.Marshal(payload)
+	if err == nil {
+		err = s.txRepo.SetRawPayload(ctx, tx.ID, string(raw))
+	}
+	if err != nil {
+		slog.Error("record transaction payload", "tx_id", tx.ID, "key", key, "error", err)
+	}
 }
 
 // lastValidBlockOf is the last valid block raw_payload keeps, 0 for none.

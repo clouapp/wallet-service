@@ -3,6 +3,7 @@ package solana
 import (
 	"context"
 	"crypto/ed25519"
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -14,7 +15,7 @@ import (
 )
 
 var (
-	_ chain.TransactionExpiryChecker = (*SolanaLive)(nil)
+	_ chain.ExpiryEvidenceReader = (*SolanaLive)(nil)
 	_ interface {
 		LastValidBlock(*types.SignedTx) (uint64, error)
 	} = (*SolanaLive)(nil)
@@ -60,34 +61,43 @@ func TestSolana_LastValidBlock_IsTheHeightTheNodeGaveTheBlockhash(t *testing.T) 
 	assert.Error(t, err)
 }
 
-func TestSolana_TransactionExpired_OnlyPastItsHeightAndUnknownToEveryEndpoint(t *testing.T) {
-	unknown := `"result":{"context":{"slot":900},"value":[null]}`
-	known := `"result":{"context":{"slot":900},"value":[{"slot":450,"confirmations":null,"err":null,"confirmationStatus":"finalized"}]}`
+func TestSolana_ExpiryEvidence_CountsOnlyFreshAnswersThatDoNotKnowIt(t *testing.T) {
+	const epoch = `"result":{"absoluteSlot":900,"blockHeight":501,"epoch":1,"slotIndex":1,"slotsInEpoch":432000}`
+	status := func(slot int, known bool) string {
+		value := `[null]`
+		if known {
+			value = `[{"slot":450,"confirmations":null,"err":null,"confirmationStatus":"finalized"}]`
+		}
+		return fmt.Sprintf(`"result":{"context":{"slot":%d},"value":%s}`, slot, value)
+	}
 	for _, tc := range []struct {
 		name            string
 		height          string
 		primary, others string
-		expired         bool
+		want            chain.ExpiryEvidence
 	}{
-		{"still valid", `"result":500`, unknown, unknown, false},
-		{"past its height and unknown everywhere", `"result":501`, unknown, unknown, true},
-		{"past its height but another endpoint has it", `"result":501`, unknown, known, false},
+		{"still valid", `"result":{"absoluteSlot":900,"blockHeight":500}`, status(900, false), status(900, false), chain.ExpiryEvidence{}},
+		{"two fresh endpoints do not know it", epoch, status(900, false), status(901, false), chain.ExpiryEvidence{Past: true, Witnesses: 2}},
+		{"a backend behind the finalized slot is no witness", epoch, status(900, false), status(899, false), chain.ExpiryEvidence{Past: true, Witnesses: 1}},
+		{"another endpoint has it", epoch, status(900, false), status(905, true), chain.ExpiryEvidence{Past: true, Known: true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			primary := newCountingSolanaNode(t, map[string]string{"getBlockHeight": tc.height, "getSignatureStatuses": tc.primary})
-			fallback := newCountingSolanaNode(t, map[string]string{"getGenesisHash": devnetGenesisResult, "getBlockHeight": tc.height, "getSignatureStatuses": tc.others})
+			primary := newCountingSolanaNode(t, map[string]string{"getEpochInfo": tc.height, "getSignatureStatuses": tc.primary})
+			fallback := newCountingSolanaNode(t, map[string]string{"getGenesisHash": devnetGenesisResult, "getEpochInfo": tc.height, "getSignatureStatuses": tc.others})
 			adapter := devnetWithFallbacks(primary.server.URL, fallback.server.URL)
 
-			expired, err := adapter.TransactionExpired(context.Background(), "sig", 500)
+			got, err := adapter.ExpiryEvidence(context.Background(), "sig", 500)
 			require.NoError(t, err)
-			assert.Equal(t, tc.expired, expired)
-			if tc.name != "still valid" {
-				assert.Equal(t, 1, fallback.count("getSignatureStatuses"), "every endpoint is asked before a transfer is called expired")
-			}
+			assert.Equal(t, tc.want, got)
 		})
 	}
 
-	down := newCountingSolanaNode(t, map[string]string{"getBlockHeight": `"result":501`, "getSignatureStatuses": `"error":{"code":-32603,"message":"internal error"}`})
-	_, err := devnetWithFallbacks(down.server.URL).TransactionExpired(context.Background(), "sig", 500)
+	alone := newCountingSolanaNode(t, map[string]string{"getEpochInfo": epoch, "getSignatureStatuses": status(900, false)})
+	got, err := devnetWithFallbacks(alone.server.URL).ExpiryEvidence(context.Background(), "sig", 500)
+	require.NoError(t, err)
+	assert.Equal(t, chain.ExpiryEvidence{Past: true, Witnesses: 1}, got, "one endpoint is one witness: the tracker waits for a second look")
+
+	down := newCountingSolanaNode(t, map[string]string{"getEpochInfo": epoch, "getSignatureStatuses": `"error":{"code":-32603,"message":"internal error"}`})
+	_, err = devnetWithFallbacks(down.server.URL).ExpiryEvidence(context.Background(), "sig", 500)
 	assert.Error(t, err, "a status that cannot be read proves nothing")
 }

@@ -350,6 +350,12 @@ func (r *TransactionRepository) RecordBroadcast(ctx context.Context, id uuid.UUI
 	return r.updateColumns(ctx, id, map[string]any{"tx_hash": txHash, "raw_payload": rawPayload}, "record transaction broadcast")
 }
 
+// SetRawPayload rewrites raw_payload: what the confirmation tracker keeps between
+// passes (a first sight of an expiry, the next try of a proof).
+func (r *TransactionRepository) SetRawPayload(ctx context.Context, id uuid.UUID, rawPayload string) error {
+	return r.updateColumns(ctx, id, map[string]any{"raw_payload": rawPayload}, "set transaction raw payload")
+}
+
 // RecordConfirmations stores the confirmation count, status, and confirmed_at together.
 func (r *TransactionRepository) RecordConfirmations(ctx context.Context, id uuid.UUID, confirmations int, status string, confirmedAt *time.Time) error {
 	return r.updateColumns(ctx, id, map[string]any{

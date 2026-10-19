@@ -101,7 +101,7 @@ func (s *Service) ReconcileWithdrawal(ctx context.Context, in WithdrawalReconcil
 	if err != nil {
 		return report, err
 	}
-	s.judge(ctx, adapter, *tx, &report)
+	s.judge(ctx, adapter, *tx, &report, in.Apply)
 	if link {
 		report.Reason += "; the withdrawal is not linked to this transaction (sent under its key, never marked)"
 	}
@@ -146,8 +146,9 @@ func (s *Service) reconcileTarget(ctx context.Context, id uuid.UUID, report *Wit
 	return tx, false, nil
 }
 
-// judge reads what the chain proves about tx into report.
-func (s *Service) judge(ctx context.Context, adapter types.Chain, tx models.Transaction, report *WithdrawalReconcileReport) {
+// judge reads what the chain proves about tx into report; record keeps what a
+// proof needs between two looks (a first sight of a Solana expiry).
+func (s *Service) judge(ctx context.Context, adapter types.Chain, tx models.Transaction, report *WithdrawalReconcileReport, record bool) {
 	block, err := searchTransactionBlock(ctx, adapter, tx.TxHash)
 	var onChain *chain.TransactionFailedError
 	switch {
@@ -184,7 +185,7 @@ func (s *Service) judge(ctx context.Context, adapter types.Chain, tx models.Tran
 			}
 		}
 	}
-	expired, err := s.expiryOf(ctx, adapter, tx)
+	expired, err := s.expiryOf(ctx, adapter, tx, false, record)
 	switch {
 	case err != nil:
 		report.Verdict, report.Reason = ReconcileUnknown, "its expiry cannot be checked: "+chain.ClientText(err)

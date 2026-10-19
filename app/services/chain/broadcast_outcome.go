@@ -18,6 +18,13 @@ const (
 	// BroadcastHeadPayloadKey is the chain head read just before the send (EVM): no
 	// block before it can hold the transfer.
 	BroadcastHeadPayloadKey = "broadcast_head"
+	// ExpiryWitnessedAtPayloadKey is when (unix seconds) the tracker first saw one
+	// endpoint alone not know a Solana transfer past its last valid block: a second
+	// sight minutes later proves its expiry.
+	ExpiryWitnessedAtPayloadKey = "expiry_witnessed_at"
+	// NonceProofRetryAtPayloadKey is when (unix seconds) the tracker next tries the
+	// nonce proof of a row the endpoints had no state to prove.
+	NonceProofRetryAtPayloadKey = "nonce_proof_retry_at"
 )
 
 // SenderNonceReader is an adapter whose signed transactions spend a sender nonce
@@ -55,4 +62,24 @@ type NonceSpendReader interface {
 // operator's reconciliation uses it; the tracker keeps the failover order.
 type TransactionSearcher interface {
 	SearchTransactionBlock(ctx context.Context, txHash string) (uint64, error)
+}
+
+// ExpiryEvidence is what the endpoints say about a transfer whose last valid block
+// may be past (Solana).
+type ExpiryEvidence struct {
+	// Past is true when the finalized block height is past the last valid block.
+	Past bool
+	// Known is true when an endpoint has the transaction: it is not expired.
+	Known bool
+	// Witnesses counts the endpoints that answered, for a slot at or past the
+	// finalized one, that they do not know it.
+	Witnesses int
+}
+
+// ExpiryEvidenceReader is an adapter whose expiry is proven by witnesses (Solana): a
+// backend of a load-balanced endpoint behind the transaction's slot answers "not
+// known" without an error, so one answer alone is not a proof (the tracker wants
+// two witnesses, or one seen twice minutes apart).
+type ExpiryEvidenceReader interface {
+	ExpiryEvidence(ctx context.Context, txHash string, lastValidBlock uint64) (ExpiryEvidence, error)
 }

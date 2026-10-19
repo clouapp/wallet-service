@@ -10,6 +10,7 @@ import (
 	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -68,37 +69,49 @@ func (a *SolanaLive) LastValidBlock(signed *types.SignedTx) (uint64, error) {
 	return a.blockhashes.height(tx.Message.RecentBlockhash.String()), nil
 }
 
-// TransactionExpired reports a transfer that can never be processed: the chain's
-// finalized block height is past lastValidBlock (its blockhash expired) and no
-// endpoint, asked with searchTransactionHistory, knows its signature. Any read that
-// fails is an error: the transfer stays pending.
-func (a *SolanaLive) TransactionExpired(ctx context.Context, signature string, lastValidBlock uint64) (bool, error) {
+// ExpiryEvidence reads, for a transfer whose blockhash's last valid block height is
+// lastValidBlock, whether the finalized block height is past it (getEpochInfo, which
+// gives the finalized slot and height together) and what each endpoint (the primary,
+// then every other ready one, with searchTransactionHistory) says of its signature.
+// An answer whose context slot is behind that finalized slot comes from a backend
+// that may not have the transfer's slot yet: it is no witness. Any read that fails
+// is an error.
+func (a *SolanaLive) ExpiryEvidence(ctx context.Context, signature string, lastValidBlock uint64) (chain.ExpiryEvidence, error) {
 	if signature == "" || lastValidBlock == 0 {
-		return false, fmt.Errorf("sol expiry: signature and last valid block height are required")
+		return chain.ExpiryEvidence{}, fmt.Errorf("sol expiry: signature and last valid block height are required")
 	}
-	var height uint64
-	if err := a.rpc.Call(ctx, "getBlockHeight", &height, map[string]string{"commitment": solanaCommitmentFinalized}); err != nil {
-		return false, err
+	var epoch struct {
+		AbsoluteSlot uint64 `json:"absoluteSlot"`
+		BlockHeight  uint64 `json:"blockHeight"`
 	}
-	if height <= lastValidBlock {
-		return false, nil
+	if err := a.rpc.Call(ctx, "getEpochInfo", &epoch, map[string]string{"commitment": solanaCommitmentFinalized}); err != nil {
+		return chain.ExpiryEvidence{}, err
+	}
+	if epoch.BlockHeight <= lastValidBlock {
+		return chain.ExpiryEvidence{}, nil
 	}
 	params := []interface{}{[]string{signature}, map[string]bool{"searchTransactionHistory": true}}
 	var first json.RawMessage
 	if err := a.rpc.Call(ctx, "getSignatureStatuses", &first, params...); err != nil {
-		return false, err
+		return chain.ExpiryEvidence{}, err
 	}
-	answers := append([]json.RawMessage{first}, a.rpc.CallOthers(ctx, statusesBudget, "getSignatureStatuses", params...)...)
-	for _, raw := range answers {
+	evidence := chain.ExpiryEvidence{Past: true}
+	for _, raw := range append([]json.RawMessage{first}, a.rpc.CallOthers(ctx, statusesBudget, "getSignatureStatuses", params...)...) {
 		var statuses struct {
+			Context struct {
+				Slot uint64 `json:"slot"`
+			} `json:"context"`
 			Value []*solanaSignatureStatus `json:"value"`
 		}
 		if err := json.Unmarshal(raw, &statuses); err != nil {
-			return false, fmt.Errorf("sol expiry: signature status: %w", err)
+			return chain.ExpiryEvidence{}, fmt.Errorf("sol expiry: signature status: %w", err)
 		}
 		if len(statuses.Value) > 0 && statuses.Value[0] != nil {
-			return false, nil
+			return chain.ExpiryEvidence{Past: true, Known: true}, nil
+		}
+		if statuses.Context.Slot >= epoch.AbsoluteSlot {
+			evidence.Witnesses++
 		}
 	}
-	return true, nil
+	return evidence, nil
 }
