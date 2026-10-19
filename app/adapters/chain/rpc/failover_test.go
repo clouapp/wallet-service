@@ -114,6 +114,11 @@ func (s *recordingSink) count() int {
 	return len(s.records)
 }
 
+// healthOf is the health of every endpoint of client, in order.
+func healthOf(client *RPCClient) []chain.RPCEndpointHealth {
+	return client.endpoints.Load().snapshot()
+}
+
 func failoverClient(primary string, fallbacks ...string) (*RPCClient, *testClock, *recordedSleeps) {
 	sleeps := &recordedSleeps{}
 	clock := &testClock{now: time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)}
@@ -207,7 +212,7 @@ func TestFailover_Call_ReturnsAnswersAboutTheRequestWithoutMovingOn(t *testing.T
 			if fallback.total() != 0 {
 				t.Fatalf("an answer about the request moved on to the fallback")
 			}
-			if health := client.Health(); health[0].ConsecutiveFailures != 0 {
+			if health := healthOf(client); health[0].ConsecutiveFailures != 0 {
 				t.Fatalf("an endpoint that answered counted a failure: %+v", health[0])
 			}
 		})
@@ -268,7 +273,7 @@ func TestFailover_Null_AsksTheNextEndpointBeforeBelievingIt(t *testing.T) {
 	if primary.total() != 1 || second.total() != 1 || third.total() != 1 {
 		t.Fatalf("primary=%d second=%d third=%d", primary.total(), second.total(), third.total())
 	}
-	if health := client.Health(); health[0].ConsecutiveFailures != 0 || health[1].ConsecutiveFailures != 0 {
+	if health := healthOf(client); health[0].ConsecutiveFailures != 0 || health[1].ConsecutiveFailures != 0 {
 		t.Fatalf("a null answer counted as a failure: %+v", health)
 	}
 }
@@ -339,7 +344,7 @@ func TestFailover_Cooldown_SkipsAFailingEndpointAndRetriesItLater(t *testing.T) 
 	if primary.total() != endpointFailuresToOpen {
 		t.Fatalf("primary calls = %d", primary.total())
 	}
-	health := client.Health()[0]
+	health := healthOf(client)[0]
 	if !health.CoolingDownUntil.Equal(clock.Now().Add(endpointCooldownBase)) || health.LastError != "http 502" {
 		t.Fatalf("primary health = %+v", health)
 	}
@@ -354,7 +359,7 @@ func TestFailover_Cooldown_SkipsAFailingEndpointAndRetriesItLater(t *testing.T) 
 	if primary.total() != endpointFailuresToOpen+1 {
 		t.Fatal("the endpoint was not retried after its cool-down")
 	}
-	if until := client.Health()[0].CoolingDownUntil; !until.Equal(clock.Now().Add(2 * endpointCooldownBase)) {
+	if until := healthOf(client)[0].CoolingDownUntil; !until.Equal(clock.Now().Add(2 * endpointCooldownBase)) {
 		t.Fatalf("one failure after a cool-down must skip it again for twice as long, until %s", until)
 	}
 
@@ -363,7 +368,7 @@ func TestFailover_Cooldown_SkipsAFailingEndpointAndRetriesItLater(t *testing.T) 
 	if block := call(); block != "0x10" {
 		t.Fatalf("block = %s", block)
 	}
-	recovered := client.Health()[0]
+	recovered := healthOf(client)[0]
 	if recovered.ConsecutiveFailures != 0 || !recovered.CoolingDownUntil.IsZero() {
 		t.Fatalf("a success did not clear the endpoint: %+v", recovered)
 	}
@@ -412,7 +417,7 @@ func TestFailover_Unsupported_MovesOnWithoutCountingAFailure(t *testing.T) {
 			t.Fatalf("Call: %v", err)
 		}
 	}
-	if health := client.Health()[0]; health.ConsecutiveFailures != 0 || !health.CoolingDownUntil.IsZero() {
+	if health := healthOf(client)[0]; health.ConsecutiveFailures != 0 || !health.CoolingDownUntil.IsZero() {
 		t.Fatalf("an unsupported method put the endpoint in a cool-down: %+v", health)
 	}
 	if err := client.Call(context.Background(), "eth_blockNumber", nil); err != nil || primary.count("eth_blockNumber") != 1 {
@@ -568,7 +573,7 @@ func TestFailover_Identity_KeepsAFallbackOnAnotherNetworkOut(t *testing.T) {
 	if wrong.count("eth_chainId") != 1 || right.count("eth_chainId") != 1 {
 		t.Fatalf("identity asked wrong=%d right=%d, want once each", wrong.count("eth_chainId"), right.count("eth_chainId"))
 	}
-	if health := client.Health(); !health[1].WrongNetwork || health[2].WrongNetwork {
+	if health := healthOf(client); !health[1].WrongNetwork || health[2].WrongNetwork {
 		t.Fatalf("health = %+v", health)
 	}
 	if primary.count("eth_chainId") != 0 {
@@ -633,7 +638,7 @@ func TestFailover_Deadline_LeavesTimeForTheNextEndpoint(t *testing.T) {
 	if err := client.Call(ctx, "eth_blockNumber", &block); err != nil || block != "0x20" {
 		t.Fatalf("block=%s err=%v", block, err)
 	}
-	if label := client.Health()[0].LastError; label != "timeout" {
+	if label := healthOf(client)[0].LastError; label != "timeout" {
 		t.Fatalf("primary last error = %q", label)
 	}
 }
@@ -695,7 +700,7 @@ func TestReplace_Endpoints_KeepsTheHealthOfAnEndpointThatStays(t *testing.T) {
 	_ = client.Call(context.Background(), "eth_blockNumber", nil)
 
 	client.ReplaceEndpoints(fallback.URL(), []string{primary, primary, " "})
-	health := client.Health()
+	health := healthOf(client)
 	if len(health) != 2 || health[0].Host != chain.RPCEndpointHost(fallback.URL()) || health[1].ConsecutiveFailures != 1 {
 		t.Fatalf("health = %+v", health)
 	}

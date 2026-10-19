@@ -219,10 +219,12 @@ func (c *RPCClient) call(ctx context.Context, set *endpointSet, method string, o
 	askNextOnNull := nullMeansAskNext[method] && !pinned
 
 	var (
-		lastErr     error
-		nullFrom    *candidate
-		nullResult  json.RawMessage
-		primaryLost = len(candidates) > 0 && candidates[0].index != 0
+		lastErr    error
+		nullFrom   *candidate
+		nullResult json.RawMessage
+		// A pinned call follows the endpoint its scope started on; it says nothing
+		// about the primary.
+		primaryLost = !pinned && len(candidates) > 0 && candidates[0].index != 0
 	)
 	for i := range candidates {
 		cand := candidates[i]
@@ -262,7 +264,8 @@ func (c *RPCClient) call(ctx context.Context, set *endpointSet, method string, o
 			}
 			return scrub(cand.ep.url, err)
 		}
-		if kind != outcomeUnsupported {
+		// The caller's own deadline is not the endpoint's failure.
+		if kind != outcomeUnsupported && ctx.Err() == nil {
 			c.failed(set, cand, kind, err)
 		}
 		lastErr = scrub(cand.ep.url, err)
@@ -389,18 +392,6 @@ func (c *RPCClient) report(set *endpointSet) {
 		return
 	}
 	c.health.RecordRPCHealth(c.chainID, set.snapshot())
-}
-
-// Health is the current health of every endpoint of the client, in order.
-func (c *RPCClient) Health() []chain.RPCEndpointHealth {
-	if c == nil {
-		return nil
-	}
-	set := c.endpoints.Load()
-	if set == nil {
-		return nil
-	}
-	return set.snapshot()
 }
 
 // endpointCaller reaches one endpoint of a client, with no failover. The identity

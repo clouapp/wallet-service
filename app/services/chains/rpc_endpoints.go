@@ -74,7 +74,7 @@ func (s *RPCEndpoints) List(ctx context.Context, actorID uuid.UUID, chainID stri
 	if err != nil {
 		return rpcendpoints.View{}, endpointError(err)
 	}
-	if err := s.requireAdmin(ctx, actorID); err != nil {
+	if err = s.requireAdmin(ctx, actorID); err != nil {
 		return rpcendpoints.View{}, err
 	}
 	if !probe {

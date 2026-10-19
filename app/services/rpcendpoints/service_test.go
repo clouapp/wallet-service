@@ -326,8 +326,8 @@ func TestApply_Order_PromotesAFallbackAfterAskingIt(t *testing.T) {
 	assert.Contains(t, refusal.Reason, "disabled endpoint cannot be the primary")
 
 	for _, bad := range [][]int{{2, 1}, {2, 2, 1}, {0, 1, 2}, {2, 1, 4}} {
-		_, err := h.service.Apply(ctx, models.ChainETH, Change{Action: ActionOrder, Order: bad}, true)
-		assert.ErrorAs(t, err, &refusal, "%v", bad)
+		_, orderErr := h.service.Apply(ctx, models.ChainETH, Change{Action: ActionOrder, Order: bad}, true)
+		assert.ErrorAs(t, orderErr, &refusal, "%v", bad)
 	}
 
 	plan, err := h.service.Apply(ctx, models.ChainETH, Change{Action: ActionOrder, Order: []int{2, 3, 1}}, true)

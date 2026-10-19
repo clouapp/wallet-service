@@ -3,6 +3,7 @@ package repositories_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/goravel/framework/facades"
@@ -36,7 +37,7 @@ func (s *ChainRPCEndpointRepositoryTestSuite) SetupTest() {
 }
 
 func sealedFallback(position int, enabled bool) models.ChainRPCEndpoint {
-	return models.ChainRPCEndpoint{URL: "enc:v1:fallback-" + string(rune('0'+position)), Position: position, Enabled: enabled}
+	return models.ChainRPCEndpoint{URL: fmt.Sprintf("enc:v1:fallback-%d", position), Position: position, Enabled: enabled}
 }
 
 func (s *ChainRPCEndpointRepositoryTestSuite) TestList_ByChain_OfAChainWithoutFallbacksIsEmpty() {

@@ -70,7 +70,7 @@ func (c *ChainController) AddRPCEndpoint(ctx http.Context) http.Response {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}
 	var req chainsrequests.RPCEndpointsRequest
-	if err := req.Decode(ctx); err != nil {
+	if err = req.Decode(ctx); err != nil {
 		return mapError(ctx, err, "add chain rpc endpoint")
 	}
 
@@ -103,7 +103,7 @@ func (c *ChainController) ReplaceRPCEndpoints(ctx http.Context) http.Response {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}
 	var req chainsrequests.RPCEndpointsRequest
-	if err := req.Decode(ctx); err != nil {
+	if err = req.Decode(ctx); err != nil {
 		return mapError(ctx, err, "replace chain rpc endpoints")
 	}
 
@@ -136,7 +136,7 @@ func (c *ChainController) ReorderRPCEndpoints(ctx http.Context) http.Response {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
 	}
 	var req chainsrequests.RPCEndpointsRequest
-	if err := req.Decode(ctx); err != nil {
+	if err = req.Decode(ctx); err != nil {
 		return mapError(ctx, err, "reorder chain rpc endpoints")
 	}
 
@@ -200,7 +200,7 @@ func (c *ChainController) UpdateRPCEndpoint(ctx http.Context) http.Response {
 		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "position must be a positive integer")
 	}
 	var req chainsrequests.RPCEndpointsRequest
-	if err := req.Decode(ctx); err != nil {
+	if err = req.Decode(ctx); err != nil {
 		return mapError(ctx, err, "update chain rpc endpoint")
 	}
 
