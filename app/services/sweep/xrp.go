@@ -40,8 +40,9 @@ func supportsDestinationTag(adapter types.Chain) bool {
 }
 
 // lastValidBlocker is implemented by adapters whose signed transactions expire
-// after a block (XRP LastLedgerSequence); the confirmation tracker reads it back
-// from the transaction's raw_payload to tell an expired payment from a slow one.
+// after a block (XRP LastLedgerSequence, Solana lastValidBlockHeight; 0 when not
+// known); the confirmation tracker reads it back from the transaction's raw_payload
+// to tell an expired payment from a slow one.
 type lastValidBlocker interface {
 	LastValidBlock(signed *types.SignedTx) (uint64, error)
 }
@@ -57,7 +58,9 @@ func broadcastRawPayload(adapter types.Chain, signed *types.SignedTx, head uint6
 		if err != nil {
 			return "", err
 		}
-		payload[chain.LastValidBlockPayloadKey] = last
+		if last > 0 {
+			payload[chain.LastValidBlockPayloadKey] = last
+		}
 	}
 	if reader, ok := adapter.(chain.SenderNonceReader); ok {
 		if nonce, err := reader.SenderNonce(signed); err == nil {

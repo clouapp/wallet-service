@@ -1468,3 +1468,24 @@ func TestExecute_Withdrawal_ASentTransferIsNeverFailedByItsRecording(t *testing.
 		})
 	}
 }
+
+// expiringChain gives its signed transactions a last valid block, or 0 when it does
+// not know it (a Solana blockhash this process did not fetch).
+type expiringChain struct {
+	*mocks.MockChain
+	last uint64
+}
+
+func (c expiringChain) LastValidBlock(*types.SignedTx) (uint64, error) { return c.last, nil }
+
+func TestBroadcast_RawPayload_KeepsOnlyAKnownLastValidBlock(t *testing.T) {
+	signed := &types.SignedTx{RawBytes: []byte("signed"), TxHash: "sig"}
+	known, err := broadcastRawPayload(expiringChain{MockChain: mocks.NewMockChain("sol"), last: 500}, signed, 0, false)
+	if err != nil || known != `{"`+chain.LastValidBlockPayloadKey+`":500}` {
+		t.Fatalf("payload %s, %v", known, err)
+	}
+	unknown, err := broadcastRawPayload(expiringChain{MockChain: mocks.NewMockChain("sol"), last: 0}, signed, 0, false)
+	if err != nil || unknown != "{}" {
+		t.Fatalf("payload %s, %v; want no last valid block when it is not known", unknown, err)
+	}
+}

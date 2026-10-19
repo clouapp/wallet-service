@@ -37,6 +37,9 @@ type SolanaLive struct {
 	rpc       *rpc.RPCClient
 	tokens    map[string]types.Token
 	tokensErr error
+	// blockhashes keeps the last valid block height of the blockhashes this process
+	// built transfers on (expiry.go).
+	blockhashes *blockhashHeights
 }
 
 var _ types.Chain = (*SolanaLive)(nil)
@@ -48,10 +51,11 @@ const solanaRPCMaxResponseBytes = 32 << 20
 func NewSolanaLive(cfg SolanaConfig) *SolanaLive {
 	tokens, tokensErr := indexSolanaTokens(cfg.ChainIDStr, cfg.Tokens)
 	return &SolanaLive{
-		cfg:       cfg,
-		rpc:       newSolanaRPCClient(cfg),
-		tokens:    tokens,
-		tokensErr: tokensErr,
+		cfg:         cfg,
+		rpc:         newSolanaRPCClient(cfg),
+		tokens:      tokens,
+		tokensErr:   tokensErr,
+		blockhashes: newBlockhashHeights(),
 	}
 }
 
