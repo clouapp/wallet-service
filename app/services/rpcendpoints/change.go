@@ -291,8 +291,11 @@ func refusedChecks(checks []Check) error {
 }
 
 // write stores the primary (only when it changed) and the fallbacks, then runs
-// recorded, in one transaction. Every fallback is sealed again: a former primary
-// may hold the older envelope, which chain_rpc_endpoints does not accept.
+// recorded, in one transaction that first locks the chain row and reads the list
+// again: a list another writer changed since this change was planned refuses it,
+// so two edits on one stale view never silently drop one. Every fallback is
+// sealed again: a former primary may hold the older envelope, which
+// chain_rpc_endpoints does not accept.
 func (s *Service) write(ctx context.Context, record *models.Chain, before, after []entry, recorded func(context.Context) error) error {
 	primary := ""
 	if after[0].stored == "" || after[0].stored != before[0].stored {
@@ -317,6 +320,9 @@ func (s *Service) write(ctx context.Context, record *models.Chain, before, after
 		})
 	}
 	return s.endpoints.Within(ctx, func(ctx context.Context) error {
+		if err := s.unchangedSince(ctx, record.ID, before); err != nil {
+			return err
+		}
 		if primary != "" {
 			if err := s.chains.UpdateRPCURL(ctx, record.ID, primary); err != nil {
 				return fmt.Errorf("write the primary of %s: %w", record.ID, err)
@@ -327,6 +333,27 @@ func (s *Service) write(ctx context.Context, record *models.Chain, before, after
 		}
 		return recorded(ctx)
 	})
+}
+
+// unchangedSince locks the chain row and refuses when its primary or its fallbacks
+// are no longer the ones before was read from.
+func (s *Service) unchangedSince(ctx context.Context, chainID string, before []entry) error {
+	locked, err := s.chains.LockByID(ctx, chainID)
+	if err != nil {
+		return fmt.Errorf("lock chain %s: %w", chainID, err)
+	}
+	rows, err := s.endpoints.ListByChain(ctx, chainID)
+	if err != nil {
+		return fmt.Errorf("read the rpc endpoints of %s again: %w", chainID, err)
+	}
+	same := locked.RpcURL == before[0].stored && len(rows) == len(before)-1
+	for i := 0; same && i < len(rows); i++ {
+		same = rows[i].URL == before[i+1].stored && rows[i].Enabled == before[i+1].enabled
+	}
+	if !same {
+		return refuse("chain", "the endpoint list of %s changed while this change was planned; nothing written, run it again", chainID)
+	}
+	return nil
 }
 
 func (s *Service) seal(plain string) (string, error) {

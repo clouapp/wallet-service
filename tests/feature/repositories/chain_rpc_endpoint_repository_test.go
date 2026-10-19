@@ -185,3 +185,16 @@ func (s *ChainRPCEndpointRepositoryTestSuite) TestDisable_Positions_TurnsOffOnly
 	s.Equal([]int{3, 3}, []int{rows[0].Position, rows[1].Position})
 	s.Equal([]string{models.ChainETH, models.ChainSOL}, []string{rows[0].ChainID, rows[1].ChainID})
 }
+
+func (s *ChainRPCEndpointRepositoryTestSuite) TestLock_ByID_ReadsTheChainInsideTheTransaction() {
+	ctx := context.Background()
+	err := s.repo.Within(ctx, func(ctx context.Context) error {
+		locked, err := s.chains.LockByID(ctx, models.ChainETH)
+		s.Require().NoError(err)
+		s.Equal("enc:v1:primary", locked.RpcURL)
+		_, err = s.chains.LockByID(ctx, "missing")
+		s.ErrorIs(err, models.ErrRepositoryNotFound)
+		return nil
+	})
+	s.Require().NoError(err)
+}

@@ -15,9 +15,11 @@ import (
 	"github.com/macrowallets/waas/app/services/chainregistry"
 )
 
-// ChainStore reads a chain and writes its sealed primary endpoint.
+// ChainStore reads a chain, locks its row inside a transaction, and writes its
+// sealed primary endpoint.
 type ChainStore interface {
 	FindByID(ctx context.Context, id string) (*models.Chain, error)
+	LockByID(ctx context.Context, id string) (*models.Chain, error)
 	UpdateRPCURL(ctx context.Context, id, sealed string) error
 }
 

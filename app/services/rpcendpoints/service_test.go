@@ -53,6 +53,17 @@ type memoryStore struct {
 	fallbacks    map[string][]models.ChainRPCEndpoint
 	primaryWrite int
 	replaceWrite int
+	locks        int
+	// beforeLock runs when the write locks the chain: another writer's change.
+	beforeLock func()
+}
+
+func (m *memoryStore) LockByID(ctx context.Context, id string) (*models.Chain, error) {
+	m.locks++
+	if m.beforeLock != nil {
+		m.beforeLock()
+	}
+	return m.FindByID(ctx, id)
 }
 
 func (m *memoryStore) FindByID(_ context.Context, id string) (*models.Chain, error) {
@@ -141,6 +152,7 @@ func newHarness(t *testing.T, primary string, fallbacks ...models.ChainRPCEndpoi
 		filteredNode: models.EVMNetworkIDEthereumSepolia, drpc: models.EVMNetworkIDEthereumSepolia,
 		tenderly: models.EVMNetworkIDEthereumSepolia, publicnode: models.EVMNetworkIDEthereumSepolia,
 		keyedEndpoint: models.EVMNetworkIDEthereumSepolia, mainnetNode: models.EVMNetworkIDEthereumMainnet,
+		tenderly + "/v2": models.EVMNetworkIDEthereumSepolia,
 	}
 	h.service = NewService(Deps{
 		Chains: h.store, Endpoints: h.store, Sealer: fakeSealer{}, Verify: known.verify(&h.verified), Dialer: h.dialer,
@@ -472,4 +484,36 @@ func TestApply_Always_ChecksTheNetwork(t *testing.T) {
 	_, err := h.service.Apply(context.Background(), models.ChainETH, Change{Action: ActionAdd, URL: "https://unreachable.example/rpc"}, true)
 	var refusal *Refusal
 	assert.ErrorAs(t, err, &refusal, "the platform API (Apply, ApplyRecorded) has no way to skip the check")
+}
+
+func TestApply_Refuses_AChangePlannedOnAListAnotherWriterChanged(t *testing.T) {
+	cases := map[string]func(h *harness){
+		"fallback added": func(h *harness) {
+			h.store.fallbacks[models.ChainETH] = append(h.store.fallbacks[models.ChainETH], fallbackRow(publicnode, 3, true))
+		},
+		"fallback disabled": func(h *harness) {
+			h.store.fallbacks[models.ChainETH][0].Enabled = false
+		},
+		"primary replaced": func(h *harness) {
+			h.store.chains[models.ChainETH].RpcURL = sealed(tenderly)
+		},
+	}
+	for name, concurrent := range cases {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t, filteredNode, fallbackRow(drpc, 2, true))
+			h.store.beforeLock = func() { concurrent(h) }
+
+			_, err := h.service.Apply(context.Background(), models.ChainETH, Change{Action: ActionAdd, URL: tenderly + "/v2"}, true)
+			var refusal *Refusal
+			require.ErrorAs(t, err, &refusal)
+			assert.Contains(t, refusal.Reason, "changed while this change was planned")
+			assert.Zero(t, h.store.replaceWrite)
+			assert.Equal(t, 1, h.store.locks)
+		})
+	}
+
+	h := newHarness(t, filteredNode, fallbackRow(drpc, 2, true))
+	_, err := h.service.Apply(context.Background(), models.ChainETH, Change{Action: ActionDisable, Position: 2}, true)
+	require.NoError(t, err)
+	assert.Equal(t, 1, h.store.locks, "every write locks the chain row first")
 }
