@@ -36,6 +36,15 @@ type RPCEndpointHealth struct {
 	WrongNetwork        bool
 }
 
+// RPCHealthSnapshot is the endpoint health of one chain as the last process that
+// saw it change recorded it. Process is the LAMBDA_MODE of that process ("local"
+// for the HTTP server, its workers and artisan).
+type RPCHealthSnapshot struct {
+	ObservedAt time.Time
+	Process    string
+	Endpoints  []RPCEndpointHealth
+}
+
 // RPCHealthSink receives the endpoint health of a chain each time it changes
 // (an endpoint starts failing, is skipped for a cool-down, or recovers). It must
 // not block the call that reports it.

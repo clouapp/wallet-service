@@ -24,13 +24,20 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 	app.Singleton((*repositories.ChainRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewChainRepository(nil), nil
 	})
+	app.Singleton((*repositories.ChainRPCEndpointRepository)(nil), func(foundation.Application) (any, error) {
+		return repositories.NewChainRPCEndpointRepository(nil), nil
+	})
 	app.Singleton((*chainregistry.ChainRegistryService)(nil), func(app foundation.Application) (any, error) {
 		chains, err := resolve[*repositories.ChainRepository](app)
 		if err != nil {
 			return nil, err
 		}
+		endpoints, err := resolve[*repositories.ChainRPCEndpointRepository](app)
+		if err != nil {
+			return nil, err
+		}
 		return chainregistry.NewChainRegistryService(chainregistry.ChainRegistryDeps{
-			Store:    chainCatalog{repo: chains},
+			Store:    chainCatalog{repo: chains, endpoints: endpoints},
 			Cache:    chainregistry.NewCatalogCache(),
 			Install:  registerActiveChains,
 			Registry: chainpkg.NewRegistry(),
