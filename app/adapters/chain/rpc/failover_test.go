@@ -1248,3 +1248,20 @@ func TestFailover_CredentialsAndHeadersGoToThePrimaryOnly(t *testing.T) {
 	assert.Empty(t, atFallback[0].auth, "the primary's basic auth never reaches another provider")
 	assert.Empty(t, atFallback[0].key, "the primary's API key never reaches another provider")
 }
+
+func TestFailover_Health_TheCallersDeadlineIsNotTheEndpointsFailure(t *testing.T) {
+	release := make(chan struct{})
+	hanging := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(func() { close(release); hanging.Close() })
+	client := NewRPCClient(RPCClientDeps{URL: hanging.URL, ChainID: "eth"})
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	require.Error(t, client.Call(ctx, "eth_blockNumber", nil))
+	assert.Zero(t, healthOf(client)[0].ConsecutiveFailures, "the call ran out of the caller's time, not the endpoint's")
+}

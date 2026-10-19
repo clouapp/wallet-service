@@ -555,3 +555,12 @@ func TestApply_Checks_TheNewEndpointsAtOnce(t *testing.T) {
 	assert.Len(t, h.verified, 3)
 	assert.Less(t, time.Since(started), 500*time.Millisecond, "three checks of 200 ms run at once, under the API Gateway limit")
 }
+
+func TestApply_Set_ChecksADisabledFallbackItPutsBackInUse(t *testing.T) {
+	h := newHarness(t, filteredNode, fallbackRow(drpc, 2, false), fallbackRow(tenderly, 3, true))
+
+	_, err := h.service.Apply(context.Background(), models.ChainETH, Change{Action: ActionSet, URLs: []string{filteredNode, drpc, tenderly}}, true)
+	require.NoError(t, err)
+	assert.Equal(t, []string{drpc}, h.verified, "the disabled fallback is asked again; the primary and the enabled one are not")
+	assert.Equal(t, []string{filteredNode, "2:" + drpc, "3:" + tenderly}, h.storedList(t))
+}
