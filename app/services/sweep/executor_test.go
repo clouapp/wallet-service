@@ -1489,3 +1489,34 @@ func TestBroadcast_RawPayload_KeepsOnlyAKnownLastValidBlock(t *testing.T) {
 		t.Fatalf("payload %s, %v; want no last valid block when it is not known", unknown, err)
 	}
 }
+
+func TestExecute_Linked_AnUnknownGasSeedOutcomeIsAwaitedLikeASentOne(t *testing.T) {
+	fixture := newLinkedTokenLeg(t)
+	registry := chain.NewRegistry()
+	registry.RegisterChain(finalizingChain{MockChain: fixture.chain})
+	registry.RegisterToken(types.Token{Symbol: "usdt", Name: "Tether", Contract: "0xTETHER", Decimals: 6, ChainID: "eth"})
+	fixture.svc.registry = registry
+	fixture.chain.GetLatestBlockFn = func(context.Context) (uint64, error) { return 777, nil }
+	var broadcasts int
+	fixture.chain.BroadcastTransactionFn = func(_ context.Context, signed *types.SignedTx) (string, error) {
+		broadcasts++
+		if broadcasts == 1 {
+			return "", chain.ClassifyBroadcast(chain.FromProviderHTTP(504, "gateway timeout"))
+		}
+		return signed.TxHash, nil
+	}
+
+	res := runLinkedLeg(t, fixture)
+	if res.FailedStep != nil || res.FinalWithdrawTx == nil || len(res.Sweeps) != 1 {
+		t.Fatalf("a gas seed that may have landed is awaited, not a failed leg (a second seed would over-fund the child): %+v", res)
+	}
+	seed := fixture.txRepo.created[0]
+	if seed.TxType != models.TxTypeGasSeed || seed.TxHash != "0xsignedhash" {
+		t.Fatalf("first row %s %s, want the gas seed under its signed hash", seed.TxType, seed.TxHash)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(seed.RawPayload), &payload); err != nil || payload[chain.BroadcastOutcomePayloadKey] != chain.BroadcastOutcomeUnknown ||
+		payload[chain.SenderNoncePayloadKey] != float64(41) || payload[chain.BroadcastHeadPayloadKey] != float64(777) {
+		t.Fatalf("gas seed raw_payload %s, %v", seed.RawPayload, err)
+	}
+}

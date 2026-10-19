@@ -243,7 +243,9 @@ type linkedLegRow struct {
 
 // broadcastGasSeed signs a base to child native transfer with the base key,
 // broadcasts it, records it as a gas_seed row and waits until it is in a block
-// where the chain requires it.
+// where the chain requires it. A seed whose broadcast outcome is unknown (with a
+// signed hash) is recorded and awaited the same way: it may land, and failing the
+// leg would make the next run seed the child again.
 func (s *service) broadcastGasSeed(
 	ctx context.Context,
 	adapter types.Chain,
@@ -259,11 +261,23 @@ func (s *service) broadcastGasSeed(
 	if err != nil {
 		return fmt.Errorf("sign transaction: %w", err)
 	}
+	head := s.broadcastHead(ctx, adapter, plan.Chain)
 	hash, err := adapter.BroadcastTransaction(ctx, signed)
-	if err != nil {
+	unknown := err != nil && strings.TrimSpace(signed.TxHash) != "" && errors.Is(err, chain.ErrUnknownOutcome)
+	if err != nil && !unknown {
 		return fmt.Errorf("broadcast: %w", err)
 	}
+	if unknown {
+		hash = signed.TxHash
+		slog.Warn("gas_seed broadcast outcome unknown; recorded and awaited by its signed hash",
+			"chain", plan.Chain, "tx_hash", hash, "child", leg.From.Address, "error", chain.ClientText(err))
+	}
 	tx := sweepLegTransaction(wallet, plan, leg, uuid.New(), opts, unsigned, hash, nil, true, adapter)
+	if unknown {
+		if tx.RawPayload, err = broadcastRawPayload(adapter, signed, head, true); err != nil {
+			return fmt.Errorf("record gas_seed payload: %w", err)
+		}
+	}
 	if err := s.txRepo.Create(ctx, tx); err != nil {
 		return fmt.Errorf("persist %s tx: %w", models.TxTypeGasSeed, err)
 	}
