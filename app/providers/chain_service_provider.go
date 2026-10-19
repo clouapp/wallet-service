@@ -13,6 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/currencies"
+	"github.com/macrowallets/waas/app/services/rpcendpoints"
 	"github.com/macrowallets/waas/app/services/settings"
 )
 
@@ -110,6 +111,25 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 			Dialer:   registry,
 			Verify:   chainregistry.NewPrimaryVerifier(openChainEndpoint, configuredChainNetworkProfile),
 		}), nil
+	})
+	app.Singleton((*rpcendpoints.Service)(nil), func(app foundation.Application) (any, error) {
+		chains, err := resolve[*repositories.ChainRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		endpoints, err := resolve[*repositories.ChainRPCEndpointRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		registry, err := resolve[*chainpkg.Registry](app)
+		if err != nil {
+			return nil, err
+		}
+		deps := rpcendpoints.Deps{Chains: chains, Endpoints: endpoints, Sealer: chainRPCSealer{}, Dialer: registry}
+		if store := chainRPCHealthStore(); store != nil {
+			deps.Health = store
+		}
+		return rpcendpoints.NewService(deps), nil
 	})
 	app.Singleton((*repositories.TokenRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewTokenRepository(nil), nil

@@ -107,25 +107,32 @@ func openChainFallbacks(ch models.Chain) []string {
 	return opened
 }
 
-// chainRPCHealth is where the RPC clients record endpoint health: the Redis store
-// the platform API and chains:rpc-endpoints read. Without Redis nothing is recorded.
-func chainRPCHealth() chainpkg.RPCHealthSink {
+// chainRPCHealthStore is the Redis store of RPC endpoint health: the RPC clients
+// record into it, the platform API and chains:rpc-endpoints read it. It is nil
+// without Redis.
+func chainRPCHealthStore() *rpchealth.Store {
 	rpcHealthOnce.Do(func() {
 		client, err := facades.Redis()
 		if err != nil {
 			return
 		}
-		mode := strings.TrimSpace(facades.Config().GetString("vault.lambda_mode"))
-		if store := rpchealth.New(client, mode); store != nil {
-			rpcHealthSink = store
-		}
+		rpcHealthStore = rpchealth.New(client, strings.TrimSpace(facades.Config().GetString("vault.lambda_mode")))
 	})
-	return rpcHealthSink
+	return rpcHealthStore
+}
+
+// chainRPCHealth is chainRPCHealthStore as the sink the RPC clients take; nil
+// without Redis, so nothing is recorded.
+func chainRPCHealth() chainpkg.RPCHealthSink {
+	if store := chainRPCHealthStore(); store != nil {
+		return store
+	}
+	return nil
 }
 
 var (
-	rpcHealthOnce sync.Once
-	rpcHealthSink chainpkg.RPCHealthSink
+	rpcHealthOnce  sync.Once
+	rpcHealthStore *rpchealth.Store
 )
 
 // refreshChainRegistry loads the sealed catalog and builds the chain registry.

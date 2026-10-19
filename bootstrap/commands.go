@@ -28,6 +28,7 @@ import (
 	"github.com/macrowallets/waas/app/services/keyexport"
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/rpcendpoints"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/sharemigration"
 	"github.com/macrowallets/waas/app/services/sweep"
@@ -90,6 +91,7 @@ func Commands() []console.Command {
 			Checkpoints: deposits,
 			Profile:     configuredChainProfile,
 		})),
+		commands.NewChainsRPCEndpoints(container.MustMake[*rpcendpoints.Service]()),
 		commands.NewChainsAddMissing(chainregistry.NewMissingChains(seedMissingAddedChains)),
 		commands.NewChainsAlignTokens(chainregistry.NewNetworkTokens(alignNetworkTokens)),
 		commands.NewWithdrawPreflight(commands.WithdrawPreflightDeps{
