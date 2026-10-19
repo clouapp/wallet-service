@@ -459,7 +459,10 @@ Cada config só recebe eventos de wallets da própria conta (configs legadas sem
   `LastLedgerSequence` sem entrar num ledger validado) e `onchain_<resultado em minúsculas>` (pagamento validado com
   resultado `tec…`, ex. `onchain_tecno_dst_insuf_xrp`; a fee foi paga). Nas chains EVM, uma transação minerada com
   recibo de status `0x0` termina com `onchain_out_of_gas` (consumiu todo o limite de gas) ou `onchain_reverted`
-  (revertida); a fee foi paga e o valor não foi transferido.
+  (revertida); a fee foi paga e o valor não foi transferido. Um saque cuja resposta de broadcast não diz se a rede o
+  aceitou (timeout depois do envio, HTTP 5xx, resposta ilegível) fica `broadcast` e é resolvido pelo hash da
+  transação assinada; numa chain EVM, se nenhum nó a conhece e outra transação já gastou o seu nonce, termina com
+  `not_landed` (nunca poderá entrar num bloco).
 - `destination_tag` (inteiro 0..4294967295, só XRP) vem ao lado de `destination_address` quando o saque tem tag;
   omitido nos demais.
 - Deduplicação: no máximo um evento por (config, tipo, saque) — índice único `webhook_events_subject_dedup_unique`.
