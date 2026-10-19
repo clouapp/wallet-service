@@ -11,11 +11,15 @@ import (
 
 // Request is one run of chains:rpc-endpoints: a list (Change nil, with Probe to
 // ask every endpoint now) or one change, written only with Apply.
+// SkipNetworkCheck (--skip-network-check, emergency only) writes the change
+// without asking any endpoint which network it serves; the platform API has no
+// such switch.
 type Request struct {
-	ChainID string
-	Change  *Change
-	Probe   bool
-	Apply   bool
+	ChainID          string
+	Change           *Change
+	Probe            bool
+	Apply            bool
+	SkipNetworkCheck bool
 }
 
 // Report is what the command prints. No line holds a URL: an endpoint is its host.
@@ -35,7 +39,7 @@ func (s *Service) Run(ctx context.Context, req Request) (Report, error) {
 		s.describeList(&report, view)
 		return report, nil
 	}
-	plan, err := s.Apply(ctx, req.ChainID, *req.Change, req.Apply)
+	plan, err := s.apply(ctx, req.ChainID, *req.Change, req.Apply, nil, req.SkipNetworkCheck)
 	describePlan(&report, plan, err == nil)
 	if err != nil {
 		return report, err
@@ -75,6 +79,10 @@ func describePlan(report *Report, plan Plan, ok bool) {
 		report.Info = append(report.Info, "  now   "+describeEndpoint(endpoint))
 	}
 	for _, check := range plan.Checks {
+		if check.Skipped {
+			report.Warning = append(report.Warning, fmt.Sprintf("position %d %s: network NOT checked (--skip-network-check)", check.Position, check.Host))
+			continue
+		}
 		if check.Err != nil {
 			report.Warning = append(report.Warning, fmt.Sprintf("position %d %s: %s", check.Position, check.Host, check.Err))
 			continue

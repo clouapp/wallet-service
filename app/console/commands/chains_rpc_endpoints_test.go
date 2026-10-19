@@ -42,7 +42,7 @@ func rpcEndpointsContext(t *testing.T, chainID string, options endpointOptions, 
 	for _, name := range bools {
 		set[name] = true
 	}
-	for _, name := range []string{"defaults", "probe", "apply"} {
+	for _, name := range []string{"defaults", "probe", "apply", "skip-network-check"} {
 		ctx.EXPECT().OptionBool(name).Return(set[name]).Maybe()
 	}
 	return ctx
@@ -64,7 +64,7 @@ func TestChains_RPCEndpoints_OffersEveryChangeAndApply(t *testing.T) {
 			flags[typed.Name] = true
 		}
 	}
-	for _, name := range []string{"add", "position", "remove", "enable", "disable", "order", "set", "defaults", "probe", "apply"} {
+	for _, name := range []string{"add", "position", "remove", "enable", "disable", "order", "set", "defaults", "probe", "apply", "skip-network-check"} {
 		assert.True(t, flags[name], "missing --%s", name)
 	}
 }
@@ -139,4 +139,12 @@ func TestChains_RPCEndpoints_PrintsTheReportAndFailsOnARefusal(t *testing.T) {
 	err := NewChainsRPCEndpoints(runner).Handle(ctx)
 	var got *rpcendpoints.Refusal
 	assert.True(t, errors.As(err, &got))
+}
+
+func TestChains_RPCEndpoints_PassesTheSkipFlagToTheService(t *testing.T) {
+	runner := &fakeEndpointRunner{}
+	ctx := rpcEndpointsContext(t, "eth", endpointOptions{"add": "http://10.0.0.5:8545"}, "apply", "skip-network-check")
+
+	require.NoError(t, NewChainsRPCEndpoints(runner).Handle(ctx))
+	assert.True(t, runner.req.SkipNetworkCheck)
 }

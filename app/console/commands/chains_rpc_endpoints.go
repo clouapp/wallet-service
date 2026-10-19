@@ -56,6 +56,7 @@ func (c *ChainsRPCEndpoints) Extend() command.Extend {
 			&command.BoolFlag{Name: "defaults", Usage: "append the default fallbacks of the chain's network that the list does not hold"},
 			&command.BoolFlag{Name: "probe", Usage: "with the list: ask every endpoint now for its network and head"},
 			&command.BoolFlag{Name: "apply", Usage: "write the change (default: print it only)"},
+			&command.BoolFlag{Name: "skip-network-check", Usage: "emergency only: write without asking the endpoints which network they serve (logged)"},
 		},
 	}
 }
@@ -76,9 +77,10 @@ func (c *ChainsRPCEndpoints) Handle(ctx console.Context) error {
 // rpcEndpointsRequest reads the chain and at most one change from the flags.
 func rpcEndpointsRequest(ctx console.Context) (rpcendpoints.Request, error) {
 	req := rpcendpoints.Request{
-		ChainID: strings.TrimSpace(ctx.ArgumentString("chain_id")),
-		Probe:   ctx.OptionBool("probe"),
-		Apply:   ctx.OptionBool("apply"),
+		ChainID:          strings.TrimSpace(ctx.ArgumentString("chain_id")),
+		Probe:            ctx.OptionBool("probe"),
+		Apply:            ctx.OptionBool("apply"),
+		SkipNetworkCheck: ctx.OptionBool("skip-network-check"),
 	}
 	var changes []rpcendpoints.Change
 	if url := strings.TrimSpace(ctx.Option("add")); url != "" {

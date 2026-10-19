@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 
@@ -44,11 +45,13 @@ type Change struct {
 }
 
 // Check is what an endpoint a change adds said about the network it serves.
+// Skipped is an endpoint written under --skip-network-check, never asked.
 type Check struct {
 	Position int
 	Host     string
 	Network  string
 	Err      error
+	Skipped  bool
 }
 
 // Plan is a change: the list before and after it, the checks of the endpoints it
@@ -71,17 +74,17 @@ type Plan struct {
 // over through this list refuses every change. The primary and the fallbacks are
 // written in one transaction.
 func (s *Service) Apply(ctx context.Context, chainID string, change Change, apply bool) (Plan, error) {
-	return s.apply(ctx, chainID, change, apply, nil)
+	return s.apply(ctx, chainID, change, apply, nil, false)
 }
 
 // ApplyRecorded is Apply with apply set, running record inside the transaction
 // that writes the change, after the write: a record that fails rolls the change
 // back. A change that changes nothing calls no record.
 func (s *Service) ApplyRecorded(ctx context.Context, chainID string, change Change, record func(ctx context.Context, plan Plan) error) (Plan, error) {
-	return s.apply(ctx, chainID, change, true, record)
+	return s.apply(ctx, chainID, change, true, record, false)
 }
 
-func (s *Service) apply(ctx context.Context, chainID string, change Change, apply bool, recordFn func(context.Context, Plan) error) (Plan, error) {
+func (s *Service) apply(ctx context.Context, chainID string, change Change, apply bool, recordFn func(context.Context, Plan) error, skipNetworkCheck bool) (Plan, error) {
 	record, before, err := s.load(ctx, chainID)
 	if err != nil {
 		return Plan{}, err
@@ -107,7 +110,7 @@ func (s *Service) apply(ctx context.Context, chainID string, change Change, appl
 	if after[0].stored == "" || after[0].stored != before[0].stored {
 		after[0].verify = true
 	}
-	plan.Checks = s.check(ctx, record, goal, after)
+	plan.Checks = s.check(ctx, record, goal, after, skipNetworkCheck)
 	if err := refusedChecks(plan.Checks); err != nil {
 		return plan, err
 	}
@@ -124,6 +127,11 @@ func (s *Service) apply(ctx context.Context, chainID string, change Change, appl
 	}
 	plan.Applied = true
 	plan.Reloaded = s.reload(record.ID, after)
+	for _, check := range plan.Checks {
+		if check.Skipped {
+			slog.Warn("chain rpc endpoint written without a network check", "chain", record.ID, "position", check.Position, "host", check.Host)
+		}
+	}
 	return plan, nil
 }
 
@@ -246,11 +254,16 @@ func validate(entries []entry) error {
 	return nil
 }
 
-// check asks every endpoint marked for it which network it serves, in list order.
-func (s *Service) check(ctx context.Context, record *models.Chain, goal chainregistry.EndpointTarget, entries []entry) []Check {
+// check asks every endpoint marked for it which network it serves, in list order;
+// with skip it asks none and marks them Skipped.
+func (s *Service) check(ctx context.Context, record *models.Chain, goal chainregistry.EndpointTarget, entries []entry, skip bool) []Check {
 	var checks []Check
 	for i, e := range entries {
 		if !e.verify || !e.enabled {
+			continue
+		}
+		if skip {
+			checks = append(checks, Check{Position: i + 1, Host: e.host(), Skipped: true})
 			continue
 		}
 		network, err := s.verify(ctx, record.AdapterType, goal, e.dial)

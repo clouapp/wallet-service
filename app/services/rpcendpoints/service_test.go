@@ -449,3 +449,27 @@ func TestApply_Reload_HandsTheAdapterTheStoredPositionsOfTheEnabledFallbacks(t *
 	assert.Equal(t, []chain.RPCFallback{{URL: tenderly, Position: 3}, {URL: publicnode, Position: 4}}, h.dialer.fallbacks,
 		"the disabled position 2 is not dialed and does not shift the others")
 }
+
+func TestRun_SkipNetworkCheck_WritesUncheckedAndWarnsAboutEachEndpoint(t *testing.T) {
+	h := newHarness(t, filteredNode)
+	const silent = "https://unreachable.example/rpc"
+
+	_, err := h.service.Run(context.Background(), Request{ChainID: models.ChainETH, Change: &Change{Action: ActionAdd, URL: silent}, Apply: true})
+	require.Error(t, err, "without the flag an endpoint that does not answer is refused")
+
+	h.verified = nil
+	report, err := h.service.Run(context.Background(), Request{
+		ChainID: models.ChainETH, Change: &Change{Action: ActionAdd, URL: silent}, Apply: true, SkipNetworkCheck: true,
+	})
+	require.NoError(t, err)
+	assert.Empty(t, h.verified, "--skip-network-check asks nothing")
+	assert.Equal(t, []string{filteredNode, "2:" + silent}, h.storedList(t))
+	assert.Contains(t, strings.Join(report.Warning, "\n"), "position 2 unreachable.example: network NOT checked (--skip-network-check)")
+}
+
+func TestApply_Always_ChecksTheNetwork(t *testing.T) {
+	h := newHarness(t, filteredNode)
+	_, err := h.service.Apply(context.Background(), models.ChainETH, Change{Action: ActionAdd, URL: "https://unreachable.example/rpc"}, true)
+	var refusal *Refusal
+	assert.ErrorAs(t, err, &refusal, "the platform API (Apply, ApplyRecorded) has no way to skip the check")
+}

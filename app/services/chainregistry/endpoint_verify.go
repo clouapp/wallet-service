@@ -22,6 +22,11 @@ var ErrEndpointIdentityUnsupported = errors.New("this chain's rpc endpoints cann
 // (unreachable, timed out, refused the call). It is not saved.
 var ErrEndpointUnverified = errors.New("rpc endpoint did not say which network it serves")
 
+// noNetworkIDHelp says how to get past an EVM chain without network_id.
+const noNetworkIDHelp = "the chain has no network_id, so eth_chainId cannot be compared: set it " +
+	"(chains:align-network --apply sets it on a primary record, from CHAIN_NETWORK_PROFILE) or, " +
+	"from artisan only, pass --skip-network-check"
+
 // EndpointTarget is the network an endpoint of a chain must serve: the EVM chain id
 // it signs with, or the Solana cluster.
 type EndpointTarget struct {
@@ -67,7 +72,7 @@ func VerifyEndpoint(ctx context.Context, adapterType string, target EndpointTarg
 	switch adapterType {
 	case models.AdapterTypeEVM:
 		if target.EVMNetworkID <= 0 {
-			return "", fmt.Errorf("%w: the chain has no network_id to compare eth_chainId with", ErrEndpointUnverified)
+			return "", fmt.Errorf("%w: %s", ErrEndpointUnverified, noNetworkIDHelp)
 		}
 		served, err := chain.EVMChainID(ctx, caller)
 		if err != nil {

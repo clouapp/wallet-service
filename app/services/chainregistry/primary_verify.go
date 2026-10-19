@@ -17,6 +17,14 @@ type PrimaryVerifier struct {
 	profile func() string
 }
 
+// profileName is the configured profile, or "" without one.
+func (v *PrimaryVerifier) profileName() string {
+	if v == nil || v.profile == nil {
+		return ""
+	}
+	return v.profile()
+}
+
 // NewPrimaryVerifier builds the verifier. open turns a stored rpc_url into the URL
 // it dials (it decides the Solana cluster the chain is on now); profile is
 // CHAIN_NETWORK_PROFILE. Either may be nil.
@@ -44,12 +52,22 @@ func (v *PrimaryVerifier) Verify(ctx context.Context, record models.Chain, candi
 			current = opened
 		}
 	}
-	network, err = VerifyEndpoint(ctx, record.AdapterType, ChainEndpointTarget(record, current), dial)
-	if err == nil || !errors.Is(err, chain.ErrWrongNetwork) || v == nil || v.profile == nil {
-		return network, false, err
+	own := ChainEndpointTarget(record, current)
+	goal, profiled := ProfileEndpointTarget(v.profileName(), record)
+	if record.AdapterType == models.AdapterTypeEVM && own.EVMNetworkID <= 0 {
+		// Without network_id there is nothing of the chain's own to compare with:
+		// the profile's chain id stands in (align-network writes it next), else the
+		// refusal says how to set it.
+		if !profiled || goal.EVMNetworkID <= 0 {
+			return "", false, fmt.Errorf("%w: chain %s has no network_id, so eth_chainId cannot be compared: "+
+				"set it (chains:align-network --apply sets it on a primary record, from CHAIN_NETWORK_PROFILE) or, "+
+				"from artisan only, pass --skip-network-check", ErrEndpointUnverified, record.ID)
+		}
+		network, err = VerifyEndpoint(ctx, record.AdapterType, goal, dial)
+		return network, err == nil, err
 	}
-	goal, ok := ProfileEndpointTarget(v.profile(), record)
-	if !ok {
+	network, err = VerifyEndpoint(ctx, record.AdapterType, own, dial)
+	if err == nil || !errors.Is(err, chain.ErrWrongNetwork) || !profiled {
 		return network, false, err
 	}
 	if _, profileErr := VerifyEndpoint(ctx, record.AdapterType, goal, dial); profileErr != nil {

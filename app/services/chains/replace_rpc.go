@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/macrowallets/waas/app/models"
+	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/chainregistry"
 )
 
@@ -40,9 +42,11 @@ func NewReplaceRPC(deps ReplaceRPCDeps) *ReplaceRPC {
 // chainID. An endpoint on another network than the chain's (or than the one the
 // profile moves the chain to), or one that does not answer, is refused and nothing
 // is written; a chain whose endpoints cannot be asked (Bitcoin family, TRON, XRP)
-// is written unchecked, as before. The returned line is the operator message. The
-// endpoint is not part of the line or the error.
-func (r *ReplaceRPC) Replace(ctx context.Context, chainID, rawURL string) (string, error) {
+// is written unchecked, as before. skipNetworkCheck (artisan --skip-network-check,
+// never the platform API) writes without asking, says so in the line and logs a
+// warning. The returned line is the operator message. The endpoint is not part of
+// the line, the log or the error.
+func (r *ReplaceRPC) Replace(ctx context.Context, chainID, rawURL string, skipNetworkCheck bool) (string, error) {
 	chainID = strings.TrimSpace(chainID)
 	rawURL = strings.TrimSpace(rawURL)
 	if chainID == "" {
@@ -72,13 +76,19 @@ func (r *ReplaceRPC) Replace(ctx context.Context, chainID, rawURL string) (strin
 	if chain == nil || chain.ID == "" {
 		return "", fmt.Errorf("chain not found: %s", chainID)
 	}
-	if r.verify == nil {
-		return "", fmt.Errorf("endpoint verifier is not configured")
-	}
-	network, moved, err := r.verify.Verify(ctx, *chain, rawURL)
-	note, err := primaryCheckNote(chain.ID, network, moved, err)
-	if err != nil {
-		return "", err
+	note := "WITHOUT a network check (--skip-network-check)"
+	if skipNetworkCheck {
+		slog.Warn("chain rpc_url written without a network check", "chain", chain.ID, "host", chainpkg.RPCEndpointHost(rawURL))
+	} else {
+		if r.verify == nil {
+			return "", fmt.Errorf("endpoint verifier is not configured")
+		}
+		network, moved, verifyErr := r.verify.Verify(ctx, *chain, rawURL)
+		checked, refused := primaryCheckNote(chain.ID, network, moved, verifyErr)
+		if refused != nil {
+			return "", refused
+		}
+		note = checked
 	}
 	if r.seal == nil {
 		return "", fmt.Errorf("failed to encrypt url: sealer is required")

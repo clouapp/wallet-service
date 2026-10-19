@@ -74,3 +74,20 @@ func TestPrimary_Verifier_LeavesAChainWithoutAnIdentityCallUnchecked(t *testing.
 	_, _, err = NewPrimaryVerifier(nil, nil).Verify(context.Background(), eth, "env:PRIMARY_VERIFY_TEST_UNSET")
 	assert.ErrorIs(t, err, ErrEndpointUnverified, "an env reference that does not resolve here cannot be checked")
 }
+
+func TestPrimary_Verifier_OfAnEVMChainWithoutNetworkIDUsesTheProfileOrSaysHowToSetIt(t *testing.T) {
+	ctx := context.Background()
+	unset := models.Chain{ID: models.ChainETH, AdapterType: models.AdapterTypeEVM, IsTestnet: true, RpcURL: "stored"}
+	sepolia := answeringNode(t, map[string]string{"eth_chainId": `"0xaa36a7"`})
+
+	network, moved, err := NewPrimaryVerifier(nil, func() string { return models.ChainNetworkProfileTestnet }).Verify(ctx, unset, sepolia)
+	require.NoError(t, err, "the profile names the chain id eth signs with")
+	assert.True(t, moved, "chains:align-network writes the network_id next")
+	assert.Equal(t, models.NetworkEthereumSepolia, network)
+
+	_, _, err = NewPrimaryVerifier(nil, nil).Verify(ctx, unset, sepolia)
+	require.ErrorIs(t, err, ErrEndpointUnverified)
+	assert.Contains(t, err.Error(), "has no network_id")
+	assert.Contains(t, err.Error(), "chains:align-network --apply")
+	assert.Contains(t, err.Error(), "--skip-network-check")
+}
