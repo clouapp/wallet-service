@@ -237,7 +237,9 @@ func (c *RPCClient) exchange(ctx context.Context, rawURL, method string, params 
 			delay := c.retry.delay(attempt, header.Get("Retry-After"), time.Now())
 			slog.Warn("rpc rate limited, backing off", "chain", c.chainID, "method", method, "status", status, "attempt", attempt, "delay", delay.String())
 			if err := c.retry.sleep(ctx, delay); err != nil {
-				return nil, outcomeUnavailable, fmt.Errorf("rpc call %s: %w", method, err)
+				// The caller's deadline cut the wait: the last answer was a rate limit, so
+				// the call was not served (a broadcast was not taken).
+				return nil, outcomeRateLimited, fmt.Errorf("rpc call %s: %w (HTTP %d), backoff cut: %w", method, chain.ErrRateLimited, status, err)
 			}
 			continue
 		}

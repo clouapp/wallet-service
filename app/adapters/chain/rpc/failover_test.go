@@ -591,6 +591,19 @@ func TestFailover_Broadcast_ThatReachedNoNodeIsNeverAnUnknownOutcome(t *testing.
 	assert.False(t, errors.Is(classified, chain.ErrUnknownOutcome), "the 502 of an identity check says nothing about the transaction: %v", classified)
 }
 
+func TestFailover_Broadcast_ARateLimitBackoffCutByTheDeadlineWasNeverSent(t *testing.T) {
+	limited := newFakeNode(t, answers(http.StatusTooManyRequests, `{"error":"slow down"}`))
+	client := NewRPCClient(RPCClientDeps{URL: limited.URL()})
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+
+	err := client.Call(ctx, "eth_sendRawTransaction", nil, "0xraw")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, chain.ErrRateLimited, "every answer was a rate limit: %v", err)
+	classified := chain.ClassifyBroadcast(err)
+	assert.False(t, errors.Is(classified, chain.ErrUnknownOutcome), "no endpoint took the bytes, the deadline only cut the wait: %v", classified)
+}
+
 func TestFailover_Broadcast_AlreadyKnownOnTheNextEndpointIsASuccess(t *testing.T) {
 	for _, message := range []string{"already known", "Transaction simulation failed: This transaction has already been processed"} {
 		fallback := newFakeNode(t, answers(rpcFailure(-32000, message)))
