@@ -47,6 +47,7 @@ var broadcastMethods = map[string]bool{
 // lookup polled until it exists asks every endpoint in turn without multiplying the
 // load on each poll.
 var nullMeansAskNext = map[string]bool{
+	"eth_getBlockReceipts":      true,
 	"eth_getTransactionReceipt": true,
 	"eth_getTransactionByHash":  true,
 	"eth_getBlockByNumber":      true,
@@ -70,6 +71,8 @@ type endpoint struct {
 	lastErrorAt         time.Time
 	verified            bool
 	wrongNetwork        bool
+	// notServed holds the methods this endpoint answered it does not serve.
+	notServed map[string]bool
 }
 
 // endpointSet is the ordered list a client calls: the primary first, each member
@@ -222,6 +225,22 @@ func (e *endpoint) fail(now time.Time, label string) (time.Duration, bool) {
 	return cooldown, true
 }
 
+// serves reports whether the endpoint has not answered that it does not serve method.
+func (e *endpoint) serves(method string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return !e.notServed[method]
+}
+
+func (e *endpoint) markNotServed(method string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.notServed == nil {
+		e.notServed = map[string]bool{}
+	}
+	e.notServed[method] = true
+}
+
 // identity reports what is known of the network the endpoint serves.
 func (e *endpoint) identity() (verified, wrong bool) {
 	e.mu.Lock()
@@ -256,6 +275,10 @@ func (e *endpoint) markIdentity(wrong bool) {
 func (c *RPCClient) call(ctx context.Context, set *endpointSet, method string, out interface{}, params []interface{}) error {
 	pin := pinFrom(ctx)
 	candidates, pinned := c.candidates(set, pin)
+	candidates = servingCandidates(candidates, method)
+	if len(candidates) == 0 {
+		return &rpcError{Code: jsonRPCMethodNotFound, Message: "method " + method + " is not served by any endpoint"}
+	}
 	broadcast := broadcastMethods[method]
 	askNextOnNull := nullMeansAskNext[method] && !pinned
 
@@ -282,6 +305,10 @@ func (c *RPCClient) call(ctx context.Context, set *endpointSet, method string, o
 			}
 		}
 		result, kind, err := c.attempt(ctx, cand.ep.url, method, params, remaining, broadcast)
+		if err != nil && methodNotServed(method, err) {
+			cand.ep.markNotServed(method)
+			kind = outcomeUnsupported
+		}
 		if err == nil {
 			c.succeeded(set, cand)
 			if askNextOnNull && remaining > 1 && isJSONNull(result) {
@@ -467,6 +494,17 @@ func (c *RPCClient) CallEach(ctx context.Context, method string, params ...inter
 		}
 	}
 	return nil, fmt.Errorf("rpc call %s: no usable endpoint", method)
+}
+
+// servingCandidates drops the endpoints that answered they do not serve method.
+func servingCandidates(candidates []candidate, method string) []candidate {
+	serving := candidates[:0:0]
+	for _, cand := range candidates {
+		if cand.ep.serves(method) {
+			serving = append(serving, cand)
+		}
+	}
+	return serving
 }
 
 // candidates is the pinned endpoint alone when the context holds one, else the

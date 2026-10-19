@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -351,4 +352,47 @@ func TestScan_Block_WithoutEIP234ReadsTheLogsByNumberAndChecksTheirBlock(t *test
 		require.NoError(t, err)
 		assert.Empty(t, transfers)
 	})
+}
+
+func TestTransactions_Succeeded_AFallbackWithoutBlockReceiptsDoesNotTurnThemOffForThePrimary(t *testing.T) {
+	const hashA, hashB = "0x00000000000000000000000000000000000000000000000000000000000000a1", "0x00000000000000000000000000000000000000000000000000000000000000b2"
+	receipt := func(hash string) string {
+		return `{"transactionHash":"` + hash + `","blockHash":"` + scannedBlockHash + `","blockNumber":"0xaa","status":"0x1"}`
+	}
+	var primaryDown atomic.Bool
+	primaryDown.Store(true)
+	var primaryBlockReceipts atomic.Int32
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Method string            `json:"method"`
+			Params []json.RawMessage `json:"params"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		w.Header().Set("Content-Type", "application/json")
+		switch req.Method {
+		case "eth_getBlockReceipts":
+			primaryBlockReceipts.Add(1)
+			if primaryDown.Load() {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":[`+receipt(hashA)+`,`+receipt(hashB)+`]}`)
+		case "eth_getTransactionReceipt":
+			var hash string
+			_ = json.Unmarshal(req.Params[0], &hash)
+			_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":`+receipt(hash)+`}`)
+		}
+	}))
+	t.Cleanup(primary.Close)
+	oldNode := newCountingNode(t, map[string]string{"eth_chainId": sepoliaChainIDResult})
+	adapter := sepoliaWithFallbacks(primary.URL, oldNode.server.URL)
+
+	statuses, err := adapter.TransactionsSucceeded(context.Background(), 0xaa, scannedBlockHash, []string{hashA, hashB})
+	require.NoError(t, err)
+	assert.Len(t, statuses, 2)
+
+	primaryDown.Store(false)
+	_, err = adapter.TransactionsSucceeded(context.Background(), 0xaa, scannedBlockHash, []string{hashA, hashB})
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), primaryBlockReceipts.Load(), "the primary is asked for the block's receipts again")
 }

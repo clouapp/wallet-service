@@ -45,6 +45,7 @@ const (
 	solanaHistoryNotAvailable   = -32011
 	jsonRPCExecutionReverted    = 3
 	jsonRPCServerError          = -32000
+	jsonRPCInvalidParams        = -32602
 	jsonRPCMethodNotFound       = -32601
 	jsonRPCInternalError        = -32603
 	jsonRPCMethodNotSupported   = -32004
@@ -144,6 +145,32 @@ func classifyHTTPFailure(status int, body []byte) outcome {
 		return classifyRPCErrorOf(resp.Error, true)
 	}
 	return outcomeUnavailable
+}
+
+// shapeNotServed names, per method, the JSON-RPC codes that mean the endpoint does
+// not take the call's shape at all (not that this one request is wrong): a node
+// that answers eth_getBlockReceipts with -32602 does not take a block number.
+var shapeNotServed = map[string]int{
+	"eth_getBlockReceipts": jsonRPCInvalidParams,
+}
+
+// methodNotServed reports an answer that the endpoint does not serve method at all
+// (-32601, a "method not found/not supported/..." server error, or a shape
+// refusal): it is remembered for that endpoint and the method is not asked of it
+// again. Answers about one block or slot (-32004, -32001, -32011) are not.
+func methodNotServed(method string, err error) bool {
+	var rpcErr *rpcError
+	if !errors.As(err, &rpcErr) || rpcErr == nil {
+		return false
+	}
+	if rpcErr.Code == jsonRPCMethodNotFound {
+		return true
+	}
+	if code, ok := shapeNotServed[method]; ok && rpcErr.Code == code {
+		return true
+	}
+	generic := rpcErr.Code == jsonRPCServerError || rpcErr.Code == jsonRPCInternalError
+	return generic && hasPhrase(strings.ToLower(rpcErr.Message), unsupportedPhrases)
 }
 
 // skippedSlotAnswer reports a Solana getBlock answer that the slot was skipped (or

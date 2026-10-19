@@ -1167,3 +1167,53 @@ func TestCall_Each_AsksEveryReadyEndpointAndKeepsTheAnswers(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []json.RawMessage{json.RawMessage(`"0x5"`)}, one)
 }
+
+func TestFailover_MethodNotServed_IsRememberedPerEndpointOnly(t *testing.T) {
+	var primaryDown atomic.Bool
+	primaryDown.Store(true)
+	primary := newFakeNode(t, func(string) (int, string) {
+		if primaryDown.Load() {
+			return http.StatusServiceUnavailable, "down"
+		}
+		return result(`[]`)
+	})
+	oldNode := newFakeNode(t, func(method string) (int, string) {
+		if method == "eth_getBlockReceipts" {
+			return rpcFailure(-32601, "the method eth_getBlockReceipts does not exist")
+		}
+		return result(`"0x20"`)
+	})
+	client, _, _ := failoverClient(primary.URL(), oldNode.URL())
+
+	err := client.Call(context.Background(), "eth_getBlockReceipts", nil, "0x1")
+	var rpcErr *RPCError
+	require.ErrorAs(t, err, &rpcErr)
+	primaryDown.Store(false)
+	require.NoError(t, client.Call(context.Background(), "eth_getBlockReceipts", nil, "0x1"), "the primary still serves it")
+
+	primaryDown.Store(true)
+	_ = client.Call(context.Background(), "eth_getBlockReceipts", nil, "0x1")
+	assert.Equal(t, 1, oldNode.count("eth_getBlockReceipts"), "an endpoint that does not serve a method is not asked it again")
+	require.NoError(t, client.Call(context.Background(), "eth_blockNumber", nil), "it serves the other methods")
+}
+
+func TestFailover_BlockReceipts_InvalidParamsIsAMethodNotServed(t *testing.T) {
+	primary := newFakeNode(t, answers(rpcFailure(-32602, "invalid argument 0: json: cannot unmarshal hex string")))
+	fallback := newFakeNode(t, answers(result(`[]`)))
+	client, _, _ := failoverClient(primary.URL(), fallback.URL())
+
+	require.NoError(t, client.Call(context.Background(), "eth_getBlockReceipts", nil, "0x1"))
+	require.NoError(t, client.Call(context.Background(), "eth_getBlockReceipts", nil, "0x1"))
+	assert.Equal(t, 1, primary.count("eth_getBlockReceipts"))
+	assert.Equal(t, 2, fallback.count("eth_getBlockReceipts"))
+}
+
+func TestFailover_BlockReceipts_NullAsksOneMoreEndpoint(t *testing.T) {
+	lagging := newFakeNode(t, answers(result(`null`)))
+	synced := newFakeNode(t, answers(result(`[{"transactionHash":"0x1"}]`)))
+	client, _, _ := failoverClient(lagging.URL(), synced.URL())
+
+	var receipts []map[string]string
+	require.NoError(t, client.Call(context.Background(), "eth_getBlockReceipts", &receipts, "0x1"))
+	assert.Len(t, receipts, 1)
+}
