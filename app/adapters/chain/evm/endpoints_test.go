@@ -3,6 +3,7 @@ package evm
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -380,6 +382,16 @@ func TestScan_Block_NoLogsByHashWhereTheBloomMayHoldSomeIsCheckedElsewhere(t *te
 		transfers, err := adapter.ScanBlock(context.Background(), 0xaa)
 		require.NoError(t, err, "two endpoints agree: the bloom matched by chance")
 		assert.Empty(t, transfers)
+	})
+	t.Run("alone, a recent block is never believed empty", func(t *testing.T) {
+		recent := `"result":{"hash":"` + scannedBlockHash + `","timestamp":"` + fmt.Sprintf("0x%x", time.Now().Unix()) + `","logsBloom":"` + bloomWithTransfer() + `","transactions":[]}`
+		server, _ := logsByHashNode(t, func(map[string]any) string { return `"result":[]` })
+		server.Config.Handler = blockWithBloom(server.Config.Handler, recent)
+		adapter := sepoliaWithFallbacks(server.URL)
+		for i := 1; i <= emptyBloomAnswersToAccept+1; i++ {
+			_, err := adapter.ScanBlock(context.Background(), 0xaa)
+			require.Error(t, err, "answer %d: a block minutes old may still be missing from a backend; it waits for the pending retries", i)
+		}
 	})
 	t.Run("alone, the same answer is believed the third time", func(t *testing.T) {
 		adapter := sepoliaWithFallbacks(emptyByHash().URL)
