@@ -286,6 +286,14 @@ go run . artisan chains:rpc-endpoints eth --defaults --apply                    
   (or `--set`), then disable or remove the old one. A disabled endpoint cannot become the primary.
 - An `env:NAME` entry must name a variable set in the shell that runs the command (it is resolved to
   check the network) and in the environment of every process.
+- An EVM chain without `network_id` cannot be checked: set it first (`chains:align-network --apply`
+  sets it on a primary record from `CHAIN_NETWORK_PROFILE`; `chains:set-rpc` already compares with the
+  profile's chain id).
+- **Emergency only:** when the endpoint you must switch to does not answer from the host that runs the
+  command, add `--skip-network-check` to `chains:set-rpc` or `chains:rpc-endpoints`. The change is
+  written without asking any endpoint; the output says so as a warning and the logs record the chain
+  and host. Check the endpoint with `chains:rpc-endpoints <chain> --probe` as soon as you can. The
+  platform API cannot skip the check.
 - **Restart the API, the workers and the Lambdas after a change**: the chain adapters read the list at
   boot. A change through the platform API is used by the API process at once.
 - Defaults (`app/services/rpcendpoints/defaults.go`): Sepolia only, in this order:
@@ -301,19 +309,24 @@ go run . artisan chains:rpc-endpoints eth --defaults --apply                    
 
 | Moves on | Answered at once |
 |---|---|
-| transport error, timeout, unreadable body, HTTP 5xx/408 | invalid params, execution reverted |
-| HTTP 429/403, JSON-RPC 429/-32005, a rate-limit message | nonce too low, insufficient funds, underpriced |
-| JSON-RPC -32603, -32014, -32016, "header not found", "missing trie node", "unknown block" | a skipped Solana slot, a transaction version not supported |
-| method not found / not supported / not allowed (-32601, -32004; not counted as a failure) | any other JSON-RPC error |
+| transport error, timeout, unreadable body, HTTP 5xx/408 | invalid params |
+| HTTP 429/403, JSON-RPC 429/-32005 | a contract revert (code 3, "execution reverted…", whatever its reason says) |
+| JSON-RPC -32603, -32014, -32016; on -32000/-32603 or a non-2xx status: "rate limit", "header not found", "missing trie node", "unknown block", ... | nonce too low, insufficient funds, underpriced |
+| method not found / not supported (-32601, -32004; not counted as a failure) | a skipped Solana slot, a transaction version not supported, any other JSON-RPC error |
 
 - A `null` receipt, transaction or block (`eth_getTransactionReceipt`, `eth_getTransactionByHash`,
-  `eth_getBlockByNumber`, `eth_getBlockByHash`, Solana `getTransaction`, `getBlock`) asks the next
-  endpoint before it is believed: a load-balanced provider can answer from a node that does not have it.
+  `eth_getBlockByNumber`, `eth_getBlockByHash`, Solana `getTransaction`, `getBlock`) asks one more
+  endpoint, a different one on each call, before it is believed: a load-balanced provider can answer
+  from a node that does not have it. A fallback that rate-limits that second opinion is not counted
+  as failing.
+- Under a caller deadline each attempt gets its share of the time left; without one an attempt keeps
+  the 30 s HTTP timeout.
 - A broadcast moves on only when the previous endpoint certainly did not take the transaction (the
   connection was never made, it rate-limited the call, or it does not serve the method); after a
   timeout or a 5xx it stops and the withdrawal reconciles as before. "already known" from a later
   endpoint is a success.
-- An EVM block and its logs are read from the same endpoint.
+- An EVM block and its logs are read from the same endpoint, and the logs by the block's hash, so a
+  backend without that block fails the block (retried) instead of answering no logs.
 
 ## Rate Limits & Best Practices
 

@@ -672,26 +672,35 @@ list writes are refused.
   written. `chains:set-rpc` and `PATCH .../rpc` check a new primary the same way, except that a primary
   record may also be pointed at the network `CHAIN_NETWORK_PROFILE` names for it (then run
   `chains:align-network --apply`); Bitcoin-family, TRON and XRP primaries are written unchecked, as
-  before. An `env:NAME` must resolve in the process that runs the check.
+  before. An `env:NAME` must resolve in the process that runs the check. An EVM chain without
+  `network_id` is checked against the chain id its profile names, else refused with how to set it.
+  For an emergency switch to an endpoint the command's host cannot reach, `chains:set-rpc` and
+  `chains:rpc-endpoints` take `--skip-network-check`: written unchecked, printed as a warning and
+  logged (chain and host); the platform API has no such switch.
 - **Failover** (`app/adapters/chain/rpc/failover.go`, `classify.go`): a call moves to the next endpoint
   on a transport error, a timeout, an unreadable body, HTTP 5xx or 408, HTTP 429/403 or a JSON-RPC
-  429/-32005 or rate-limit message, another non-2xx status unless its body is a JSON-RPC answer about
-  the request, a JSON-RPC error that names the node (-32603, -32014, -32016, "header not
-  found", "missing trie node", "unknown block", ...) or a method it does not serve (-32601, -32004,
-  "method not found/not supported/not allowed"; this one does not count against the endpoint). An
-  answer about the request (invalid params, reverted, nonce too low, insufficient funds, a skipped
-  Solana slot, ...) is returned at once. The last endpoint of a call keeps the 429 backoff; earlier ones
-  move on at once. An attempt with another endpoint behind it gets at most 15 s, or its share of the
-  caller's deadline (never under 2 s).
+  429/-32005, another non-2xx status unless its body is a JSON-RPC answer about the request, a
+  JSON-RPC -32603, -32014 or -32016, or a method it does not serve (-32601, -32004; this one does not
+  count against the endpoint). The phrases ("rate limit", "header not found", "missing trie node",
+  "unknown block", "method not allowed", ...) are read only for the generic -32000/-32603 and for an
+  error carried by a non-2xx status. A contract revert (code 3, "execution reverted…") is always an
+  answer, whatever its reason string says, and so is every other answer about the request (invalid
+  params, nonce too low, insufficient funds, a skipped Solana slot, ...): returned at once. The last
+  endpoint of a call keeps the 429 backoff; earlier ones move on at once. Under a caller deadline an
+  attempt with another endpoint behind it gets its share of the time left (never under 2 s); without
+  one every attempt keeps the 30 s HTTP timeout, so a large block is never cut short.
 - **Null is asked again**: a null result of `eth_getTransactionReceipt`, `eth_getTransactionByHash`,
-  `eth_getBlockByNumber`, `eth_getBlockByHash`, `getTransaction` or `getBlock` asks the next healthy
-  endpoint; only when every one answers null (or cannot answer) is it missing. A block or slot no
-  endpoint returns fails `ScanBlock` (retried, then pending) instead of reading as an empty block.
+  `eth_getBlockByNumber`, `eth_getBlockByHash`, `getTransaction` or `getBlock` asks one more healthy
+  endpoint, the next in turn on each call (so a polled lookup reaches every endpoint without
+  multiplying the load); the chase does not back off, and a fallback that rate-limits it or does not
+  serve the method is not counted against. A block or slot no endpoint returns fails `ScanBlock`
+  (retried, then pending) instead of reading as an empty block.
 - **Health**: an endpoint failing 3 calls in a row is skipped for 30 s, doubling up to 5 min; after a
   cool-down one more failure skips it again, a success clears it. When every endpoint is cooling down
   all are tried. A fallback must answer the chain's `eth_chainId` / genesis before its first use; one on
-  another network is never used by that process (logged at error level). Logs carry the chain and
-  hosts only: `rpc switched away from the primary endpoint`, `rpc back on the primary endpoint`,
+  another network is never used by that process (logged at error level). The primary is never kept
+  out that way (it was checked when written), also after a fallback is promoted. Logs and health name
+  an endpoint by its stored position, and carry the chain and hosts only: `rpc switched away from the primary endpoint`, `rpc back on the primary endpoint`,
   `rpc endpoint keeps failing, skipped for a cool-down`. Each change of health is written to Redis
   (`vault:rpc-health:<chain>`, 24 h TTL, last writer wins, with the writing process's `LAMBDA_MODE`)
   by a background writer; `chains:rpc-endpoints` and `GET .../rpc-endpoints` read it.
@@ -701,9 +710,11 @@ list writes are refused.
   (`chain.ClassifyBroadcast` as before). A later endpoint answering "already known" / "already been
   processed" is a success with the hash of the signed bytes.
 - **One node per block**: EVM `ScanBlock` reads the block and its `Transfer` logs through
-  `rpc.PinEndpoint`, from the endpoint that returned the block; a failure of that endpoint fails the
-  block (retried) instead of reading the logs from another node. Receipts keep their block number and
-  hash check.
+  `rpc.PinEndpoint`, from the endpoint that returned the block, and asks the logs by that block's hash
+  (`eth_getLogs` `{"blockHash"}`, EIP-234): a backend of a load-balanced provider without that exact
+  block answers an error (-32001 "block not found" on drpc, tenderly and publicnode), never an empty
+  list, so the block is retried instead of losing its ERC-20 deposits. A log of another block is
+  refused as reorganized. Receipts keep their block number and hash check.
 
 — guarded by `app/adapters/chain/rpc/failover_test.go`, `app/adapters/chain/evm/endpoints_test.go`,
 `app/adapters/chain/solana/endpoints_test.go`, `app/services/chainregistry/endpoint_verify_test.go`,
