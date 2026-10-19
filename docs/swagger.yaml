@@ -988,6 +988,24 @@ definitions:
       suspended_at:
         type: string
     type: object
+  health.ConfirmationTracker:
+    properties:
+      error:
+        type: string
+      stale:
+        additionalProperties:
+          type: integer
+        type: object
+      stale_after_hours:
+        example: 6
+        type: integer
+      stale_total:
+        example: 0
+        type: integer
+      status:
+        example: ok
+        type: string
+    type: object
   health.DepositScanner:
     properties:
       error:
@@ -1005,6 +1023,8 @@ definitions:
     type: object
   health.Health:
     properties:
+      confirmation_tracker:
+        $ref: '#/definitions/health.ConfirmationTracker'
       deposit_scanner:
         $ref: '#/definitions/health.DepositScanner'
       status:
@@ -3433,8 +3453,9 @@ paths:
       - Auth
   /health:
     get:
-      description: Returns service status and version, and how many deposit blocks
-        per chain wait for a retry
+      description: Returns service status and version, how many deposit blocks per
+        chain wait for a retry, and how many outbound transfers per chain are still
+        unsettled after WITHDRAWAL_STALE_AFTER_HOURS (settle them with artisan withdrawals:reconcile)
       produces:
       - application/json
       responses:

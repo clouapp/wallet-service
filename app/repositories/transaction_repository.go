@@ -200,6 +200,29 @@ func (r *TransactionRepository) FindPendingByChain(ctx context.Context, chainID 
 	return pending, nil
 }
 
+// CountStaleOutbound counts, per chain, the withdrawals, sweeps and gas seeds still
+// pending or confirming that were recorded before olderThan.
+func (r *TransactionRepository) CountStaleOutbound(ctx context.Context, olderThan time.Time) (map[string]int, error) {
+	var rows []struct {
+		Chain string
+		Count int
+	}
+	if err := r.Query(ctx).Raw(
+		`SELECT chain, COUNT(*) AS count FROM transactions
+		 WHERE tx_type IN (?, ?, ?) AND status IN (?, ?) AND created_at < ?
+		 GROUP BY chain`,
+		models.TxTypeWithdrawal, models.TxTypeSweep, models.TxTypeGasSeed,
+		string(types.TxStatusPending), string(types.TxStatusConfirming), olderThan.UTC(),
+	).Scan(&rows); err != nil {
+		return nil, fmt.Errorf("count stale outbound transactions: %w", err)
+	}
+	counts := make(map[string]int, len(rows))
+	for _, row := range rows {
+		counts[row.Chain] = row.Count
+	}
+	return counts, nil
+}
+
 // FindConfirmedOutboundWithoutFee lists confirmed withdrawals, sweeps and gas seeds
 // of chainID whose paid fee was never recorded, oldest first.
 func (r *TransactionRepository) FindConfirmedOutboundWithoutFee(ctx context.Context, chainID string, limit int) ([]models.Transaction, error) {

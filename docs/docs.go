@@ -1993,7 +1993,7 @@ const docTemplate = `{
         },
         "/health": {
             "get": {
-                "description": "Returns service status and version, and how many deposit blocks per chain wait for a retry",
+                "description": "Returns service status and version, how many deposit blocks per chain wait for a retry, and how many outbound transfers per chain are still unsettled after WITHDRAWAL_STALE_AFTER_HOURS (settle them with artisan withdrawals:reconcile)",
                 "produces": [
                     "application/json"
                 ],
@@ -8143,6 +8143,32 @@ const docTemplate = `{
                 }
             }
         },
+        "health.ConfirmationTracker": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "stale": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "stale_after_hours": {
+                    "type": "integer",
+                    "example": 6
+                },
+                "stale_total": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "status": {
+                    "type": "string",
+                    "example": "ok"
+                }
+            }
+        },
         "health.DepositScanner": {
             "type": "object",
             "properties": {
@@ -8168,6 +8194,9 @@ const docTemplate = `{
         "health.Health": {
             "type": "object",
             "properties": {
+                "confirmation_tracker": {
+                    "$ref": "#/definitions/health.ConfirmationTracker"
+                },
                 "deposit_scanner": {
                     "$ref": "#/definitions/health.DepositScanner"
                 },

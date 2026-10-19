@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/goravel/framework/contracts/foundation"
 	"github.com/redis/go-redis/v9"
@@ -150,6 +151,7 @@ func newDepositService(app foundation.Application) (*deposit.Service, error) {
 	})
 	service.SetWithdrawalConfirmations(withdrawalEvents)
 	service.SetDepositEvents(depositEvents)
+	service.SetStaleOutboundAfter(time.Duration(facades.Config().GetInt("vault.withdrawals.stale_after_hours")) * time.Hour)
 	// Each ScanLatestBlocks call reads deposit_scan and runs
 	// deposit.ScanOptionsFromSettings. A stored value overrides DEPOSIT_SCAN_*.
 	// A missing row, an invalid value, or a failed read keeps the environment

@@ -529,6 +529,7 @@ func (s *Service) runConfirmationCheck(ctx context.Context, onlyTxType string) {
 			slog.Error("find pending by chain", "chain", chainID, "error", err)
 			continue
 		}
+		s.warnStaleOutbound(chainID, pending)
 		pending = filterByTxType(pending, onlyTxType)
 		if len(pending) == 0 {
 			continue

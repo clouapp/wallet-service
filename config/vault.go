@@ -91,6 +91,12 @@ func registerVault() {
 			"balance_refresh_interval_seconds": envInt("LOCAL_BALANCE_REFRESH_INTERVAL_SECONDS", 60),
 			"balance_refresh_spacing_ms":       envInt("LOCAL_BALANCE_REFRESH_SPACING_MS", 500),
 		},
+		// An outbound transfer (withdrawal, sweep, gas seed) still pending or confirming
+		// this many hours after it was recorded is warned about on every tracker pass
+		// and counted by the health check (withdrawals:reconcile settles it).
+		"withdrawals": map[string]any{
+			"stale_after_hours": envInt("WITHDRAWAL_STALE_AFTER_HOURS", 6),
+		},
 		// secp256k1 keygen pre-parameters (Paillier safe primes) kept generated ahead, in
 		// memory only, by a background goroutine of the local HTTP mode (it runs with the
 		// local workers); one keygen takes two sets. 0 leaves each keygen to search its

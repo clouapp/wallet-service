@@ -65,6 +65,9 @@ type Service struct {
 	pending              pending.Store
 	sleep                func(ctx context.Context, d time.Duration) error
 	now                  func() time.Time
+	// staleAfter is how long an outbound transfer may stay unsettled (stale_outbound.go).
+	staleAfter time.Duration
+	staleCache staleOutboundCache
 }
 
 // transactionStore is the deposit rows the scanner writes and the tracker updates.
