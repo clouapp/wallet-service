@@ -642,6 +642,78 @@ cache, the deposit scanner's watched addresses and its copy of the scan checkpoi
 Postgres): the app needs it reachable. `.env.dev.example` / `.env.example` carry the full lists,
 with the throttle variables.
 
+### RPC endpoints and failover (EVM, Solana)
+
+Each chain has an ordered list of RPC endpoints. Position 1 is the primary, `chains.rpc_url`
+(unchanged, so a chain without fallbacks behaves as before); positions 2 and after are its
+fallbacks, rows of `chain_rpc_endpoints` (migration 650: sealed like `rpc_url`, `enc:v1:` only by
+CHECK, an `enabled` flag, one row per position, deleted with the chain). The registry loads the
+enabled fallbacks with the active chains at boot; a failed read leaves every chain on its primary.
+EVM and Solana fail over through the list (they share `app/adapters/chain/rpc`). The Bitcoin family
+keeps its own list (next section); TRON and XRP have their own transports and no fallback yet: their
+list writes are refused.
+
+- **Configure** (the processes load a changed list on restart; the platform API reloads its own at once):
+  `go run . artisan chains:rpc-endpoints <chain>` lists position, host, enabled flag and recorded
+  health (`--probe` also asks every endpoint for its network and head now). One change per run, dry
+  run unless `--apply`: `--add=<url|env:NAME> [--position=N]` (1 makes it the primary),
+  `--remove=N`, `--enable=N`, `--disable=N`, `--order=2,1,3` (current positions in their new order),
+  `--set=<url>,<url>,...` (the whole list, primary first), `--defaults` (the network's list in
+  `app/services/rpcendpoints/defaults.go`; Sepolia: `sepolia.drpc.org`, `sepolia.gateway.tenderly.co`,
+  `ethereum-sepolia-rpc.publicnode.com`). Position 1 is never removed or disabled (reorder first) and a
+  disabled endpoint never becomes the primary. The same operations are
+  `/v1/platform/chains/{chainId}/rpc-endpoints` (GET, POST, PUT, POST `/order`, POST `/defaults`,
+  PATCH and DELETE `/{position}`), platform admin only, 422 on a refusal, one `chains.updated` row
+  (`{"fields":["rpc_endpoints"]}`) in the write's transaction. No URL is ever printed, logged, stored
+  in health or returned: an endpoint is its host and a 12-hex fingerprint of its URL.
+- **Every write checks the network.** Each endpoint a change adds or enables, and a new primary, must
+  answer `eth_chainId` equal to `network_id` (EVM) or `getGenesisHash` equal to its cluster's
+  (`models.SolanaGenesisHash`, Solana); another network or no answer refuses the change and nothing is
+  written. `chains:set-rpc` and `PATCH .../rpc` check a new primary the same way, except that a primary
+  record may also be pointed at the network `CHAIN_NETWORK_PROFILE` names for it (then run
+  `chains:align-network --apply`); Bitcoin-family, TRON and XRP primaries are written unchecked, as
+  before. An `env:NAME` must resolve in the process that runs the check.
+- **Failover** (`app/adapters/chain/rpc/failover.go`, `classify.go`): a call moves to the next endpoint
+  on a transport error, a timeout, an unreadable body, HTTP 5xx or 408, HTTP 429/403 or a JSON-RPC
+  429/-32005 or rate-limit message, another non-2xx status unless its body is a JSON-RPC answer about
+  the request, a JSON-RPC error that names the node (-32603, -32014, -32016, "header not
+  found", "missing trie node", "unknown block", ...) or a method it does not serve (-32601, -32004,
+  "method not found/not supported/not allowed"; this one does not count against the endpoint). An
+  answer about the request (invalid params, reverted, nonce too low, insufficient funds, a skipped
+  Solana slot, ...) is returned at once. The last endpoint of a call keeps the 429 backoff; earlier ones
+  move on at once. An attempt with another endpoint behind it gets at most 15 s, or its share of the
+  caller's deadline (never under 2 s).
+- **Null is asked again**: a null result of `eth_getTransactionReceipt`, `eth_getTransactionByHash`,
+  `eth_getBlockByNumber`, `eth_getBlockByHash`, `getTransaction` or `getBlock` asks the next healthy
+  endpoint; only when every one answers null (or cannot answer) is it missing. A block or slot no
+  endpoint returns fails `ScanBlock` (retried, then pending) instead of reading as an empty block.
+- **Health**: an endpoint failing 3 calls in a row is skipped for 30 s, doubling up to 5 min; after a
+  cool-down one more failure skips it again, a success clears it. When every endpoint is cooling down
+  all are tried. A fallback must answer the chain's `eth_chainId` / genesis before its first use; one on
+  another network is never used by that process (logged at error level). Logs carry the chain and
+  hosts only: `rpc switched away from the primary endpoint`, `rpc back on the primary endpoint`,
+  `rpc endpoint keeps failing, skipped for a cool-down`. Each change of health is written to Redis
+  (`vault:rpc-health:<chain>`, 24 h TTL, last writer wins, with the writing process's `LAMBDA_MODE`)
+  by a background writer; `chains:rpc-endpoints` and `GET .../rpc-endpoints` read it.
+- **Broadcasts** (`eth_sendRawTransaction`, Solana `sendTransaction`) move on only when the previous
+  endpoint certainly did not take the bytes: the connection was never made (dial error), it rate-limited
+  the call, or it does not serve the method. A timeout, a reset, a 5xx or any answer stops there
+  (`chain.ClassifyBroadcast` as before). A later endpoint answering "already known" / "already been
+  processed" is a success with the hash of the signed bytes.
+- **One node per block**: EVM `ScanBlock` reads the block and its `Transfer` logs through
+  `rpc.PinEndpoint`, from the endpoint that returned the block; a failure of that endpoint fails the
+  block (retried) instead of reading the logs from another node. Receipts keep their block number and
+  hash check.
+
+— guarded by `app/adapters/chain/rpc/failover_test.go`, `app/adapters/chain/evm/endpoints_test.go`,
+`app/adapters/chain/solana/endpoints_test.go`, `app/services/chainregistry/endpoint_verify_test.go`,
+`primary_verify_test.go`, `app/services/rpcendpoints/service_test.go`,
+`app/services/chains/rpc_endpoints_test.go`, `primary_verify_test.go`, `replace_rpc_test.go`,
+`app/console/commands/chains_rpc_endpoints_test.go`, `app/adapters/redis/rpchealth/store_test.go`,
+`app/providers/active_chains_rpc_fallbacks_test.go`, `TestChain_RPCEndpoint_RepositorySuite`
+(`tests/feature/repositories`), `tests/migrations/create_chain_rpc_endpoints_test.go` and
+`tests/feature/api/platform/chains` (`TestB_Platform_*`). Operator steps: `docs/RPC_PROVIDERS.md`.
+
 ### Bitcoin-family provider failover
 
 BTC, TBTC, LTC and TLTC take fallback providers after `<PREFIX>_RPC_URL`:

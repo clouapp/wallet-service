@@ -226,6 +226,95 @@ BTC_RPC_URL=https://your-btc-endpoint.quiknode.pro/YOUR_API_KEY/
 
 ---
 
+## Fallback Endpoints and Failover
+
+Each chain has an ordered endpoint list. Position 1 is the primary (`chains.rpc_url`, what
+`chains:set-rpc` writes); positions 2 and after are fallbacks (`chain_rpc_endpoints`), tried in order
+when the endpoints before them cannot serve a call. URLs are sealed with `APP_KEY` at rest and are
+never printed: commands and the platform API show an endpoint by its host and a fingerprint.
+EVM chains (`eth`, `polygon`, `bsc`, `base`, `arbitrum` and their `t`-prefixed records) and Solana
+(`sol`, `tsol`) fail over through this list. Bitcoin-family chains use `<PREFIX>_FALLBACK_RPC_URL`;
+TRON and XRP have no fallback yet.
+
+### Read the list and its health
+
+```bash
+go run . artisan chains:rpc-endpoints eth           # position, host, enabled, recorded health
+go run . artisan chains:rpc-endpoints eth --probe   # also asks every endpoint now: network, head, latency
+```
+
+```
+chain eth (evm, ethereum-sepolia): 3 endpoint(s)
+1 primary  enabled  sepolia.drpc.org  health: healthy  probe: ethereum-sepolia, head 11947549, 140ms
+2 fallback enabled  sepolia.gateway.tenderly.co  health: skipped until 2026-10-19T12:04:00Z, 3 failure(s) in a row, last error timeout at 2026-10-19T12:03:30Z
+3 fallback disabled ethereum-sepolia-rpc.publicnode.com  health: not recorded
+health recorded by the deposit_scanner process at 2026-10-19T12:03:30Z
+```
+
+- `health` is what the last process that saw a change recorded (Redis `vault:rpc-health:<chain>`, kept
+  24 h): `healthy`, `failing` (N failures in a row), `skipped until <time>` (in a cool-down: 3 failures
+  in a row skip an endpoint for 30 s, doubling up to 5 min; one more failure after a cool-down skips it
+  again, a success clears it), or `serves another network, not used`. `not recorded` means no process
+  saw that endpoint change state in the last day (it answered every call, or was never called).
+- `last error` is a coarse class (`timeout`, `connection refused`, `http 503`, `rate limited`,
+  `json-rpc error -32603`, ...), never the provider's text.
+- The logs of the API, the workers and the Lambdas say when a chain leaves its primary and when it comes
+  back (`rpc switched away from the primary endpoint`, `rpc back on the primary endpoint`, with the chain
+  and hosts), and when an endpoint is skipped for a cool-down.
+- Platform API: `GET /v1/platform/chains/{chainId}/rpc-endpoints[?probe=true]`.
+
+### Add, reorder, enable, disable, remove
+
+Every command is a dry run until `--apply`, and takes one change at a time:
+
+```bash
+go run . artisan chains:rpc-endpoints eth --add=https://sepolia.drpc.org            # at the end
+go run . artisan chains:rpc-endpoints eth --add=env:ETH_FALLBACK_RPC_URL --position=2 # a URL with a key, kept in the env
+go run . artisan chains:rpc-endpoints eth --order=2,1,3 --apply                       # position 2 becomes the primary
+go run . artisan chains:rpc-endpoints eth --disable=3 --apply                         # kept in the list, not called
+go run . artisan chains:rpc-endpoints eth --enable=3 --apply
+go run . artisan chains:rpc-endpoints eth --remove=3 --apply
+go run . artisan chains:rpc-endpoints eth --set=https://a.example,https://b.example --apply  # the whole list, primary first
+go run . artisan chains:rpc-endpoints eth --defaults --apply                          # the network's checked defaults
+```
+
+- Before anything is written, every endpoint the change adds or enables, and a new primary, is asked
+  which network it serves: `eth_chainId` must be the chain's `network_id`, a Solana `getGenesisHash`
+  must be its cluster's. An endpoint on another network, or one that does not answer (a filtered port,
+  a typo), refuses the change. `chains:set-rpc` checks a new primary the same way.
+- Position 1 (the primary) is always used: to stop using it, move another endpoint there with `--order`
+  (or `--set`), then disable or remove the old one. A disabled endpoint cannot become the primary.
+- An `env:NAME` entry must name a variable set in the shell that runs the command (it is resolved to
+  check the network) and in the environment of every process.
+- **Restart the API, the workers and the Lambdas after a change**: the chain adapters read the list at
+  boot. A change through the platform API is used by the API process at once.
+- Defaults (`app/services/rpcendpoints/defaults.go`): Sepolia only, in this order:
+  `https://sepolia.drpc.org`, `https://sepolia.gateway.tenderly.co`,
+  `https://ethereum-sepolia-rpc.publicnode.com` (load-balanced, answered `null` for a mined receipt
+  6 of 6 times on 2026-10-18, so it comes last). `1rpc.io/sepolia` is not listed: it rate-limits
+  `eth_getLogs` and refuses `eth_getBlockReceipts`.
+- Platform API (platform admins): `POST .../rpc-endpoints` `{"url","position"}`, `PUT .../rpc-endpoints`
+  `{"urls":[...]}`, `POST .../rpc-endpoints/order` `{"order":[2,1,3]}`, `POST .../rpc-endpoints/defaults`,
+  `PATCH .../rpc-endpoints/{position}` `{"enabled":false}`, `DELETE .../rpc-endpoints/{position}`.
+
+### What moves a call to the next endpoint
+
+| Moves on | Answered at once |
+|---|---|
+| transport error, timeout, unreadable body, HTTP 5xx/408 | invalid params, execution reverted |
+| HTTP 429/403, JSON-RPC 429/-32005, a rate-limit message | nonce too low, insufficient funds, underpriced |
+| JSON-RPC -32603, -32014, -32016, "header not found", "missing trie node", "unknown block" | a skipped Solana slot, a transaction version not supported |
+| method not found / not supported / not allowed (-32601, -32004; not counted as a failure) | any other JSON-RPC error |
+
+- A `null` receipt, transaction or block (`eth_getTransactionReceipt`, `eth_getTransactionByHash`,
+  `eth_getBlockByNumber`, `eth_getBlockByHash`, Solana `getTransaction`, `getBlock`) asks the next
+  endpoint before it is believed: a load-balanced provider can answer from a node that does not have it.
+- A broadcast moves on only when the previous endpoint certainly did not take the transaction (the
+  connection was never made, it rate-limited the call, or it does not serve the method); after a
+  timeout or a 5xx it stops and the withdrawal reconciles as before. "already known" from a later
+  endpoint is a success.
+- An EVM block and its logs are read from the same endpoint.
+
 ## Rate Limits & Best Practices
 
 ### Public Endpoints (Free)
@@ -243,14 +332,10 @@ BTC_RPC_URL=https://your-btc-endpoint.quiknode.pro/YOUR_API_KEY/
   - Set up alerts for quota limits
 
 ### Redundancy Strategy
-For production, consider using **multiple providers** with fallback logic:
-
-```go
-primaryRPC := os.Getenv("ETH_RPC_URL")        // Alchemy
-fallbackRPC := os.Getenv("ETH_RPC_URL_BACKUP") // Infura
-
-// Try primary, fallback to backup on failure
-```
+Give every EVM and Solana chain **fallback endpoints from other providers**: the service tries them in
+order when the primary cannot serve a call. See [Fallback Endpoints and Failover](#fallback-endpoints-and-failover)
+below. Bitcoin-family chains take their fallbacks from `<PREFIX>_FALLBACK_RPC_URL` (`CLAUDE.md`,
+"Bitcoin-family provider failover").
 
 ---
 
