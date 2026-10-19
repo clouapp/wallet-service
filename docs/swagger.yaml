@@ -338,6 +338,155 @@ definitions:
       wallet_id:
         type: string
     type: object
+  chains.RPCEndpoint:
+    properties:
+      enabled:
+        example: true
+        type: boolean
+      envVar:
+        example: ""
+        type: string
+      fingerprint:
+        example: 3f1c0a9b7e2d
+        type: string
+      health:
+        $ref: '#/definitions/chains.RPCEndpointHealth'
+      host:
+        example: sepolia.drpc.org
+        type: string
+      position:
+        example: 1
+        type: integer
+      primary:
+        example: true
+        type: boolean
+      probe:
+        $ref: '#/definitions/chains.RPCEndpointProbe'
+      usable:
+        example: true
+        type: boolean
+    type: object
+  chains.RPCEndpointAddSwagger:
+    properties:
+      position:
+        example: 2
+        type: integer
+      url:
+        example: https://sepolia.drpc.org
+        type: string
+    type: object
+  chains.RPCEndpointChange:
+    properties:
+      adapterType:
+        example: evm
+        type: string
+      chainId:
+        example: eth
+        type: string
+      changed:
+        example: true
+        type: boolean
+      endpoints:
+        items:
+          $ref: '#/definitions/chains.RPCEndpoint'
+        type: array
+      failsOver:
+        example: true
+        type: boolean
+      healthObservedAt:
+        type: string
+      healthProcess:
+        example: deposit_scanner
+        type: string
+      network:
+        example: ethereum-sepolia
+        type: string
+      reloaded:
+        example: true
+        type: boolean
+    type: object
+  chains.RPCEndpointEnabledSwagger:
+    properties:
+      enabled:
+        example: false
+        type: boolean
+    type: object
+  chains.RPCEndpointHealth:
+    properties:
+      consecutiveFailures:
+        example: 0
+        type: integer
+      coolingDownUntil:
+        type: string
+      lastError:
+        example: timeout
+        type: string
+      lastErrorAt:
+        type: string
+      wrongNetwork:
+        example: false
+        type: boolean
+    type: object
+  chains.RPCEndpointList:
+    properties:
+      adapterType:
+        example: evm
+        type: string
+      chainId:
+        example: eth
+        type: string
+      endpoints:
+        items:
+          $ref: '#/definitions/chains.RPCEndpoint'
+        type: array
+      failsOver:
+        example: true
+        type: boolean
+      healthObservedAt:
+        type: string
+      healthProcess:
+        example: deposit_scanner
+        type: string
+      network:
+        example: ethereum-sepolia
+        type: string
+    type: object
+  chains.RPCEndpointListSwagger:
+    properties:
+      urls:
+        example:
+        - https://sepolia.drpc.org
+        - https://sepolia.gateway.tenderly.co
+        - https://ethereum-sepolia-rpc.publicnode.com
+        items:
+          type: string
+        type: array
+    type: object
+  chains.RPCEndpointOrderSwagger:
+    properties:
+      order:
+        example:
+        - 2
+        - 1
+        - 3
+        items:
+          type: integer
+        type: array
+    type: object
+  chains.RPCEndpointProbe:
+    properties:
+      error:
+        type: string
+      head:
+        example: 11937030
+        type: integer
+      latencyMs:
+        example: 120
+        type: integer
+      network:
+        example: ethereum-sepolia
+        type: string
+    type: object
   chains.RPCView:
     properties:
       rpcUrlSet:
@@ -3774,6 +3923,356 @@ paths:
       security:
       - BearerAuth: []
       summary: Replace a chain RPC endpoint
+      tags:
+      - Platform Chains
+  /platform/chains/{chainId}/rpc-endpoints:
+    get:
+      description: 'The ordered endpoints of the chain: position 1 is the primary
+        (rpc_url), the others are the fallbacks tried in order when the ones before
+        cannot serve a call. Each endpoint is its host and a fingerprint of its URL;
+        no URL is returned. health is what a running process last recorded for it
+        (consecutive failures, the cool-down it is skipped until, the last error,
+        whether it serves another network); null when none did. With probe=true each
+        endpoint is asked now for its network and head. failsOver is false for a chain
+        whose adapter does not use the fallbacks (Bitcoin family, TRON, XRP). An unknown
+        chain is 404 for a platform admin.'
+      parameters:
+      - description: Chain id
+        in: path
+        name: chainId
+        required: true
+        type: string
+      - description: Ask every endpoint now
+        in: query
+        name: probe
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/chains.RPCEndpointList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: List a chain's RPC endpoints
+      tags:
+      - Platform Chains
+    post:
+      consumes:
+      - application/json
+      description: 'Body {"url", "position"}: an http(s) URL or env:NAME, at the end
+        of the list or at position (1 makes it the primary and moves the others down).
+        The endpoint is first asked which network it serves (eth_chainId on EVM, getGenesisHash
+        on Solana); one on another network, one that does not answer, a URL already
+        in the list or a chain whose adapter does not use the list (Bitcoin family,
+        TRON, XRP) is 422 and nothing is written. The URL is sealed and never returned.
+        The process that answers uses the new list at once; the others load it on
+        restart. An unknown chain is 404 for a platform admin.'
+      parameters:
+      - description: Chain id
+        in: path
+        name: chainId
+        required: true
+        type: string
+      - description: Endpoint
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/chains.RPCEndpointAddSwagger'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/chains.RPCEndpointChange'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Add a chain RPC endpoint
+      tags:
+      - Platform Chains
+    put:
+      consumes:
+      - application/json
+      description: 'Body {"urls": [...]}: the whole list, the primary first, each
+        an http(s) URL or env:NAME. Every endpoint that was not in the list, and the
+        new primary, is first asked which network it serves; one on another network,
+        one that does not answer, a repeated URL or a chain whose adapter does not
+        use the list is 422 and nothing is written. The URLs are sealed and never
+        returned. An unknown chain is 404 for a platform admin.'
+      parameters:
+      - description: Chain id
+        in: path
+        name: chainId
+        required: true
+        type: string
+      - description: Endpoints
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/chains.RPCEndpointListSwagger'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/chains.RPCEndpointChange'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Replace a chain's RPC endpoint list
+      tags:
+      - Platform Chains
+  /platform/chains/{chainId}/rpc-endpoints/{position}:
+    delete:
+      description: 'Removes the fallback at position (2 or more); the ones after it
+        move up. The primary (position 1) is 422: move another endpoint to position
+        1 first. An unknown chain is 404 for a platform admin.'
+      parameters:
+      - description: Chain id
+        in: path
+        name: chainId
+        required: true
+        type: string
+      - description: Position in the list
+        in: path
+        name: position
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/chains.RPCEndpointChange'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Remove a chain RPC fallback
+      tags:
+      - Platform Chains
+    patch:
+      consumes:
+      - application/json
+      description: 'Body {"enabled": bool} for the fallback at position (2 or more):
+        a disabled fallback stays in the list and is not called; one enabled again
+        is first asked which network it serves. The primary (position 1) is always
+        used and is 422. An unknown chain is 404 for a platform admin.'
+      parameters:
+      - description: Chain id
+        in: path
+        name: chainId
+        required: true
+        type: string
+      - description: Position in the list
+        in: path
+        name: position
+        required: true
+        type: integer
+      - description: Enabled
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/chains.RPCEndpointEnabledSwagger'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/chains.RPCEndpointChange'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Enable or disable a chain RPC fallback
+      tags:
+      - Platform Chains
+  /platform/chains/{chainId}/rpc-endpoints/defaults:
+    post:
+      description: 'Appends the checked default fallbacks of the chain''s network
+        that the list does not hold yet (ethereum-sepolia: sepolia.drpc.org, sepolia.gateway.tenderly.co,
+        ethereum-sepolia-rpc.publicnode.com), each asked first which network it serves.
+        A network without defaults, or a refusal, is 422 and nothing is written. An
+        unknown chain is 404 for a platform admin.'
+      parameters:
+      - description: Chain id
+        in: path
+        name: chainId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/chains.RPCEndpointChange'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Add the default fallbacks of a chain's network
+      tags:
+      - Platform Chains
+  /platform/chains/{chainId}/rpc-endpoints/order:
+    post:
+      consumes:
+      - application/json
+      description: 'Body {"order": [2, 1, 3]}: every current position once, in the
+        new order, so the first becomes the primary. A disabled endpoint cannot become
+        the primary, and a new primary is first asked which network it serves; a refusal
+        is 422 and nothing is written. An unknown chain is 404 for a platform admin.'
+      parameters:
+      - description: Chain id
+        in: path
+        name: chainId
+        required: true
+        type: string
+      - description: New order
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/chains.RPCEndpointOrderSwagger'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/chains.RPCEndpointChange'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Reorder a chain's RPC endpoints
       tags:
       - Platform Chains
   /platform/features:

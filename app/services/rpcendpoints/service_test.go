@@ -417,3 +417,26 @@ func TestRun_Describes_APlanWithoutAnyURL(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, strings.Join(report.Warning, "\n"), "position 2 ethereum-rpc.publicnode.com")
 }
+
+func TestApply_Recorded_RunsTheRecordInsideTheWriteAndFailsWithIt(t *testing.T) {
+	h := newHarness(t, filteredNode)
+	var recorded []Plan
+	record := func(_ context.Context, plan Plan) error {
+		recorded = append(recorded, plan)
+		return nil
+	}
+
+	plan, err := h.service.ApplyRecorded(context.Background(), models.ChainETH, Change{Action: ActionAdd, URL: drpc}, record)
+	require.NoError(t, err)
+	assert.True(t, plan.Applied)
+	require.Len(t, recorded, 1)
+	assert.Equal(t, models.ChainETH, recorded[0].Before.ChainID)
+
+	_, err = h.service.ApplyRecorded(context.Background(), models.ChainETH, Change{Action: ActionAdd, URL: drpc}, record)
+	assert.Error(t, err, "a repeat is refused")
+	_, err = h.service.ApplyRecorded(context.Background(), models.ChainETH, Change{Action: ActionDisable, Position: 2}, func(context.Context, Plan) error {
+		return errors.New("activity log down")
+	})
+	assert.EqualError(t, err, "activity log down")
+	assert.Len(t, recorded, 1)
+}

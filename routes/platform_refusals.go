@@ -19,8 +19,15 @@ var platformRefusals = map[string]error{
 	"PUT /v1/platform/features/{scope}/{id}/{feature}": featuressvc.ErrPlatformForbidden,
 	"PUT /v1/platform/features/{scope}/{id}":           featuressvc.ErrPlatformForbidden,
 
-	"PATCH /v1/platform/chains/{chainId}/rpc": chainsvc.ErrPlatformForbidden,
-	"PATCH /v1/platform/chains/{chainId}":     chainsvc.ErrPlatformForbidden,
+	"PATCH /v1/platform/chains/{chainId}/rpc":                       chainsvc.ErrPlatformForbidden,
+	"PATCH /v1/platform/chains/{chainId}":                           chainsvc.ErrPlatformForbidden,
+	"GET /v1/platform/chains/{chainId}/rpc-endpoints":               chainsvc.ErrPlatformForbidden,
+	"POST /v1/platform/chains/{chainId}/rpc-endpoints":              chainsvc.ErrPlatformForbidden,
+	"PUT /v1/platform/chains/{chainId}/rpc-endpoints":               chainsvc.ErrPlatformForbidden,
+	"POST /v1/platform/chains/{chainId}/rpc-endpoints/order":        chainsvc.ErrPlatformForbidden,
+	"POST /v1/platform/chains/{chainId}/rpc-endpoints/defaults":     chainsvc.ErrPlatformForbidden,
+	"PATCH /v1/platform/chains/{chainId}/rpc-endpoints/{position}":  chainsvc.ErrPlatformForbidden,
+	"DELETE /v1/platform/chains/{chainId}/rpc-endpoints/{position}": chainsvc.ErrPlatformForbidden,
 
 	"POST /v1/platform/settings/mail/test":                   settingssvc.ErrPlatformForbidden,
 	"GET /v1/platform/settings":                              settingssvc.ErrPlatformViewForbidden,

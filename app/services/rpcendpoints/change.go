@@ -71,6 +71,17 @@ type Plan struct {
 // over through this list refuses every change. The primary and the fallbacks are
 // written in one transaction.
 func (s *Service) Apply(ctx context.Context, chainID string, change Change, apply bool) (Plan, error) {
+	return s.apply(ctx, chainID, change, apply, nil)
+}
+
+// ApplyRecorded is Apply with apply set, running record inside the transaction
+// that writes the change, after the write: a record that fails rolls the change
+// back. A change that changes nothing calls no record.
+func (s *Service) ApplyRecorded(ctx context.Context, chainID string, change Change, record func(ctx context.Context, plan Plan) error) (Plan, error) {
+	return s.apply(ctx, chainID, change, true, record)
+}
+
+func (s *Service) apply(ctx context.Context, chainID string, change Change, apply bool, recordFn func(context.Context, Plan) error) (Plan, error) {
 	record, before, err := s.load(ctx, chainID)
 	if err != nil {
 		return Plan{}, err
@@ -103,7 +114,12 @@ func (s *Service) Apply(ctx context.Context, chainID string, change Change, appl
 	if !apply {
 		return plan, nil
 	}
-	if err := s.write(ctx, record, before, after); err != nil {
+	if err := s.write(ctx, record, before, after, func(ctx context.Context) error {
+		if recordFn == nil {
+			return nil
+		}
+		return recordFn(ctx, plan)
+	}); err != nil {
 		return plan, err
 	}
 	plan.Applied = true
@@ -261,10 +277,10 @@ func refusedChecks(checks []Check) error {
 	return refuse("url", "refused, nothing written: %s", strings.Join(reasons, "; "))
 }
 
-// write stores the primary (only when it changed) and the fallbacks in one
-// transaction. Every fallback is sealed again: a former primary may hold the
-// older envelope, which chain_rpc_endpoints does not accept.
-func (s *Service) write(ctx context.Context, record *models.Chain, before, after []entry) error {
+// write stores the primary (only when it changed) and the fallbacks, then runs
+// recorded, in one transaction. Every fallback is sealed again: a former primary
+// may hold the older envelope, which chain_rpc_endpoints does not accept.
+func (s *Service) write(ctx context.Context, record *models.Chain, before, after []entry, recorded func(context.Context) error) error {
 	primary := ""
 	if after[0].stored == "" || after[0].stored != before[0].stored {
 		sealed, err := s.seal(after[0].plain)
@@ -296,7 +312,7 @@ func (s *Service) write(ctx context.Context, record *models.Chain, before, after
 		if err := s.endpoints.Replace(ctx, record.ID, rows); err != nil {
 			return fmt.Errorf("write the fallbacks of %s: %w", record.ID, err)
 		}
-		return nil
+		return recorded(ctx)
 	})
 }
 

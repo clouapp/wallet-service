@@ -9,8 +9,9 @@ import (
 func TestNew_ChainController_KeepsItsDependencies(t *testing.T) {
 	thresholds := &chainsvc.Thresholds{}
 	rpc := &chainsvc.RPC{}
+	endpoints := &chainsvc.RPCEndpoints{}
 
-	ctrl := NewChainController(thresholds, rpc)
+	ctrl := NewChainController(ChainControllerDeps{Thresholds: thresholds, RPC: rpc, Endpoints: endpoints})
 	if ctrl == nil {
 		t.Fatal("NewChainController returned nil")
 	}
@@ -19,6 +20,9 @@ func TestNew_ChainController_KeepsItsDependencies(t *testing.T) {
 	}
 	if ctrl.rpc != rpc {
 		t.Fatal("platform chains controller did not keep the rpc service")
+	}
+	if ctrl.endpoints != endpoints {
+		t.Fatal("platform chains controller did not keep the rpc endpoints service")
 	}
 }
 
@@ -29,14 +33,25 @@ func TestNew_ChainController_RequiresEveryDependency(t *testing.T) {
 		panic string
 	}{
 		{
-			name:  "thresholds service",
-			build: func() { NewChainController(nil, &chainsvc.RPC{}) },
+			name: "thresholds service",
+			build: func() {
+				NewChainController(ChainControllerDeps{RPC: &chainsvc.RPC{}, Endpoints: &chainsvc.RPCEndpoints{}})
+			},
 			panic: "platform chains controller: thresholds service is required",
 		},
 		{
-			name:  "rpc service",
-			build: func() { NewChainController(&chainsvc.Thresholds{}, nil) },
+			name: "rpc service",
+			build: func() {
+				NewChainController(ChainControllerDeps{Thresholds: &chainsvc.Thresholds{}, Endpoints: &chainsvc.RPCEndpoints{}})
+			},
 			panic: "platform chains controller: rpc service is required",
+		},
+		{
+			name: "rpc endpoints service",
+			build: func() {
+				NewChainController(ChainControllerDeps{Thresholds: &chainsvc.Thresholds{}, RPC: &chainsvc.RPC{}})
+			},
+			panic: "platform chains controller: rpc endpoints service is required",
 		},
 	}
 	for _, tc := range cases {
