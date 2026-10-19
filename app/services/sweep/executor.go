@@ -2,9 +2,11 @@ package sweep
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/big"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -461,13 +463,28 @@ func (s *service) broadcastWithdrawal(
 	if err != nil {
 		return nil, err
 	}
-	rawPayload, err := broadcastRawPayload(adapter, signed)
+	rawPayload, err := broadcastRawPayload(adapter, signed, false)
 	if err != nil {
 		return nil, fmt.Errorf("record last valid block: %w", err)
 	}
 	hash, err := adapter.BroadcastTransaction(ctx, signed)
-	if err != nil {
+	// An answer that does not say whether the network took the transfer (a timeout
+	// after the send, a 5xx, an unreadable body) is not a failure: the transfer may
+	// land. It is recorded under the hash of its signed bytes and tracked like any
+	// sent transfer, so the withdrawal stays broadcast instead of failed (and
+	// refunded); the tracker settles it. Without that hash it cannot be tracked and
+	// fails as before.
+	unknown := err != nil && errors.Is(err, chain.ErrUnknownOutcome) && strings.TrimSpace(signed.TxHash) != ""
+	if err != nil && !unknown {
 		return nil, fmt.Errorf("broadcast: %w", err)
+	}
+	if unknown {
+		hash = signed.TxHash
+		slog.Warn("withdrawal broadcast outcome unknown; recorded and tracked by its signed hash",
+			"tx_id", txID, "tx_hash", hash, "chain", plan.Chain, "error", chain.ClientText(err))
+		if rawPayload, err = broadcastRawPayload(adapter, signed, true); err != nil {
+			return nil, fmt.Errorf("record last valid block: %w", err)
+		}
 	}
 
 	sourceID := source.ID

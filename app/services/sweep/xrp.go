@@ -46,18 +46,28 @@ type lastValidBlocker interface {
 	LastValidBlock(signed *types.SignedTx) (uint64, error)
 }
 
-// broadcastRawPayload is the raw_payload of a broadcast transaction: "{}", or the
-// last valid block of a transaction that expires.
-func broadcastRawPayload(adapter types.Chain, signed *types.SignedTx) (string, error) {
-	blocker, ok := adapter.(lastValidBlocker)
-	if !ok {
-		return "{}", nil
+// broadcastRawPayload is the raw_payload of a broadcast transaction: "{}", the last
+// valid block of a transaction that expires (XRP), the sender nonce it spends
+// (EVM), and, when the broadcast answer did not say whether the network took it,
+// the unknown outcome.
+func broadcastRawPayload(adapter types.Chain, signed *types.SignedTx, unknownOutcome bool) (string, error) {
+	payload := map[string]any{}
+	if blocker, ok := adapter.(lastValidBlocker); ok {
+		last, err := blocker.LastValidBlock(signed)
+		if err != nil {
+			return "", err
+		}
+		payload[chain.LastValidBlockPayloadKey] = last
 	}
-	last, err := blocker.LastValidBlock(signed)
-	if err != nil {
-		return "", err
+	if reader, ok := adapter.(chain.SenderNonceReader); ok {
+		if nonce, err := reader.SenderNonce(signed); err == nil {
+			payload[chain.SenderNoncePayloadKey] = nonce
+		}
 	}
-	raw, err := json.Marshal(map[string]uint64{chain.LastValidBlockPayloadKey: last})
+	if unknownOutcome {
+		payload[chain.BroadcastOutcomePayloadKey] = chain.BroadcastOutcomeUnknown
+	}
+	raw, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
 	}

@@ -2,6 +2,7 @@ package sweep
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math/big"
 	"strings"
@@ -1256,5 +1257,99 @@ func TestExecute_InsufficientStrategy_ReturnsErr(t *testing.T) {
 	}
 	if len(txRepo.created) != 0 {
 		t.Fatalf("expected no persisted txs on insufficient plan, got %d", len(txRepo.created))
+	}
+}
+
+// finalizingChain is a mock chain whose MPC signature finalizer gives the signed
+// transaction its hash and whose sender nonce reader reads nonce 41, as the EVM
+// adapter does.
+type finalizingChain struct {
+	*mocks.MockChain
+}
+
+func (finalizingChain) FinalizeMPCSignature(unsigned *types.UnsignedTx, _ []byte, _ []byte) (*types.SignedTx, error) {
+	return &types.SignedTx{ChainID: unsigned.ChainID, RawBytes: []byte("signed"), TxHash: "0xsignedhash"}, nil
+}
+
+func (finalizingChain) SenderNonce(*types.SignedTx) (uint64, error) { return 41, nil }
+
+func unknownOutcomeService(t *testing.T, broadcast func(context.Context, *types.SignedTx) (string, error)) (*service, *fakeTxRepo, models.Address, uuid.UUID) {
+	t.Helper()
+	walletID := uuid.New()
+	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE", ExternalUserID: "user-1"}
+	wallet := &models.Wallet{ID: walletID, Chain: "eth", DepositAddress: &baseAddr, MPCCurve: "secp256k1"}
+	assignDerivedEVMAddresses(t, wallet, &baseAddr)
+	mockChain := sweepMockChain("eth", "eth")
+	mockChain.BroadcastTransactionFn = broadcast
+	svc, txRepo := newExecutorService(t, wallet, mockChain)
+	registry := chain.NewRegistry()
+	registry.RegisterChain(finalizingChain{MockChain: mockChain})
+	svc.registry = registry
+	return svc, txRepo, baseAddr, walletID
+}
+
+func TestExecute_Withdrawal_AnUnknownBroadcastOutcomeIsRecordedAndTrackedByItsHash(t *testing.T) {
+	gatewayTimeout := chain.ClassifyBroadcast(chain.FromProviderHTTP(504, "upstream timed out"))
+	svc, txRepo, baseAddr, walletID := unknownOutcomeService(t, func(context.Context, *types.SignedTx) (string, error) {
+		return "", gatewayTimeout
+	})
+
+	res, err := svc.ExecutePlan(context.Background(), directWithdrawalPlan(walletID, baseAddr),
+		SigningCredentials{ShareA: []byte("fake-share-a")}, uuid.New(), "0xDEST", "user-1")
+	if err != nil {
+		t.Fatalf("an unknown outcome is not a failed withdrawal: %v", err)
+	}
+	if res == nil || res.FinalWithdrawTx == nil || len(txRepo.created) != 1 {
+		t.Fatalf("res=%+v rows=%d", res, len(txRepo.created))
+	}
+	row := txRepo.created[0]
+	if row.TxHash != "0xsignedhash" || row.Status != string(types.TxStatusConfirming) {
+		t.Fatalf("row hash=%q status=%q: tracked by the signed hash like a sent transfer", row.TxHash, row.Status)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(row.RawPayload), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload[chain.BroadcastOutcomePayloadKey] != chain.BroadcastOutcomeUnknown || payload[chain.SenderNoncePayloadKey] != float64(41) {
+		t.Fatalf("raw_payload = %s", row.RawPayload)
+	}
+}
+
+func TestExecute_Withdrawal_AnUnknownOutcomeWithoutAHashOrARejectionStillFails(t *testing.T) {
+	for name, broadcastErr := range map[string]error{
+		"rejection":     chain.ClassifyBroadcast(errors.New("nonce too low")),
+		"rate limited":  chain.ClassifyBroadcast(errors.Join(errors.New("rpc call"), chain.ErrRateLimited)),
+		"never sent":    chain.ClassifyBroadcast(errors.New("dial tcp: connection refused")),
+		"unknown, hash": nil,
+	} {
+		if broadcastErr == nil {
+			continue
+		}
+		t.Run(name, func(t *testing.T) {
+			svc, txRepo, baseAddr, walletID := unknownOutcomeService(t, func(context.Context, *types.SignedTx) (string, error) {
+				return "", broadcastErr
+			})
+			if _, err := svc.ExecutePlan(context.Background(), directWithdrawalPlan(walletID, baseAddr),
+				SigningCredentials{ShareA: []byte("fake-share-a")}, uuid.New(), "0xDEST", "user-1"); err == nil {
+				t.Fatal("a definite failure fails the withdrawal")
+			}
+			if len(txRepo.created) != 0 {
+				t.Fatalf("rows = %d", len(txRepo.created))
+			}
+		})
+	}
+
+	walletID := uuid.New()
+	baseAddr := models.Address{ID: uuid.New(), WalletID: walletID, Address: "0xBASE", ExternalUserID: "user-1"}
+	wallet := &models.Wallet{ID: walletID, Chain: "eth", DepositAddress: &baseAddr, MPCCurve: "secp256k1"}
+	assignDerivedEVMAddresses(t, wallet, &baseAddr)
+	hashless := sweepMockChain("eth", "eth")
+	hashless.BroadcastTransactionFn = func(context.Context, *types.SignedTx) (string, error) {
+		return "", chain.UnknownOutcome(errors.New("read eth_sendRawTransaction response: unexpected EOF"))
+	}
+	svc, txRepo := newExecutorService(t, wallet, hashless)
+	if _, err := svc.ExecutePlan(context.Background(), directWithdrawalPlan(walletID, baseAddr),
+		SigningCredentials{ShareA: []byte("fake-share-a")}, uuid.New(), "0xDEST", "user-1"); err == nil || len(txRepo.created) != 0 {
+		t.Fatalf("a signed transaction without a hash cannot be tracked: err=%v rows=%d", err, len(txRepo.created))
 	}
 }
