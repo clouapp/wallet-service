@@ -34,6 +34,35 @@ type fakeTxRepo struct {
 	withins       int
 	inside        bool
 	createdInside bool
+	// failed holds the reason each row was marked failed with.
+	failed map[uuid.UUID]string
+	// recordErr fails RecordBroadcast; recorded holds the raw payload it wrote per row.
+	recordErr error
+	recorded  map[uuid.UUID]string
+}
+
+func (f *fakeTxRepo) MarkFailed(_ context.Context, id uuid.UUID, reason string) error {
+	if f.failed == nil {
+		f.failed = map[uuid.UUID]string{}
+	}
+	f.failed[id] = reason
+	return nil
+}
+
+func (f *fakeTxRepo) RecordBroadcast(_ context.Context, id uuid.UUID, txHash, rawPayload string) error {
+	if f.recordErr != nil {
+		return f.recordErr
+	}
+	if f.recorded == nil {
+		f.recorded = map[uuid.UUID]string{}
+	}
+	f.recorded[id] = rawPayload
+	for _, row := range f.created {
+		if row.ID == id {
+			row.TxHash, row.RawPayload = txHash, rawPayload
+		}
+	}
+	return nil
 }
 
 func (f *fakeTxRepo) Within(ctx context.Context, fn func(context.Context) error) error {
@@ -570,6 +599,7 @@ type recordingSweepEvents struct {
 	withdrawalStagedIn bool
 	withdrawalSent     int
 	failWithdrawal     bool
+	withdrawalStages   int
 }
 
 func (r *recordingSweepEvents) EnqueueEvent(context.Context, uuid.UUID, types.EventType, interface{}) {
@@ -586,6 +616,7 @@ func (r *recordingSweepEvents) StageSweepBroadcast(context.Context, *models.Tran
 }
 
 func (r *recordingSweepEvents) StageWithdrawalBroadcasting(context.Context, *models.Transaction) (func(context.Context), error) {
+	r.withdrawalStages++
 	if r.inside != nil {
 		r.withdrawalStagedIn = *r.inside
 	}
@@ -766,7 +797,9 @@ func TestExecute_Withdrawal_RollsBackWhenTheWebhookInsertFails(t *testing.T) {
 	svc, txRepo := newExecutorService(t, wallet, mockChain)
 	events := &recordingSweepEvents{inside: &txRepo.inside, failWithdrawal: true}
 	svc.webhookSvc = events
+	svc.sleep = func(context.Context, time.Duration) error { return nil }
 
+	// The mock signs without a hash, so the row can only be recorded after the send.
 	_, err := svc.ExecutePlan(
 		context.Background(), directWithdrawalPlan(walletID, baseAddr),
 		SigningCredentials{ShareA: []byte("fake-share-a")}, uuid.New(), "0xDEST", "user-1",
@@ -774,7 +807,7 @@ func TestExecute_Withdrawal_RollsBackWhenTheWebhookInsertFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("want the webhook insert to fail the withdrawal")
 	}
-	if !events.withdrawalStagedIn || events.withdrawalSent != 0 || len(txRepo.created) != 0 || txRepo.withins != 1 {
+	if !events.withdrawalStagedIn || events.withdrawalSent != 0 || len(txRepo.created) != 0 || txRepo.withins != len(persistRetryDelays)+1 {
 		t.Fatalf("stagedIn=%v sent=%d rows=%d withins=%d", events.withdrawalStagedIn, events.withdrawalSent, len(txRepo.created), txRepo.withins)
 	}
 }
@@ -1333,8 +1366,8 @@ func TestExecute_Withdrawal_AnUnknownOutcomeWithoutAHashOrARejectionStillFails(t
 				SigningCredentials{ShareA: []byte("fake-share-a")}, uuid.New(), "0xDEST", "user-1"); err == nil {
 				t.Fatal("a definite failure fails the withdrawal")
 			}
-			if len(txRepo.created) != 0 {
-				t.Fatalf("rows = %d", len(txRepo.created))
+			if len(txRepo.created) != 1 || txRepo.failed[txRepo.created[0].ID] != broadcastRefusedReason {
+				t.Fatalf("the row recorded before the send is marked failed: rows=%d failed=%v", len(txRepo.created), txRepo.failed)
 			}
 		})
 	}
@@ -1351,5 +1384,81 @@ func TestExecute_Withdrawal_AnUnknownOutcomeWithoutAHashOrARejectionStillFails(t
 	if _, err := svc.ExecutePlan(context.Background(), directWithdrawalPlan(walletID, baseAddr),
 		SigningCredentials{ShareA: []byte("fake-share-a")}, uuid.New(), "0xDEST", "user-1"); err == nil || len(txRepo.created) != 0 {
 		t.Fatalf("a signed transaction without a hash cannot be tracked: err=%v rows=%d", err, len(txRepo.created))
+	}
+}
+
+func TestExecute_Withdrawal_IsRecordedUnderItsSignedHashBeforeTheBytesLeave(t *testing.T) {
+	var recordedAtSend []models.Transaction
+	var svc *service
+	var txRepo *fakeTxRepo
+	svc, txRepo, baseAddr, walletID := unknownOutcomeService(t, func(context.Context, *types.SignedTx) (string, error) {
+		for _, row := range txRepo.created {
+			recordedAtSend = append(recordedAtSend, *row)
+		}
+		return "0xsignedhash", nil
+	})
+	events := &recordingSweepEvents{inside: &txRepo.inside}
+	svc.webhookSvc = events
+
+	res, err := svc.ExecutePlan(context.Background(), directWithdrawalPlan(walletID, baseAddr),
+		SigningCredentials{ShareA: []byte("fake-share-a")}, uuid.New(), "0xDEST", "user-1")
+	if err != nil || res == nil || res.FinalWithdrawTx == nil {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if len(recordedAtSend) != 1 || recordedAtSend[0].TxHash != "0xsignedhash" || recordedAtSend[0].Status != string(types.TxStatusConfirming) {
+		t.Fatalf("rows when the bytes left: %+v; want the withdrawal recorded under the signed hash", recordedAtSend)
+	}
+	if len(txRepo.created) != 1 || events.withdrawalSent != 1 || !events.withdrawalStagedIn {
+		t.Fatalf("rows=%d sent=%d stagedIn=%v", len(txRepo.created), events.withdrawalSent, events.withdrawalStagedIn)
+	}
+}
+
+func TestExecute_Withdrawal_ARowThatCannotBeRecordedStopsBeforeTheBroadcast(t *testing.T) {
+	sent := 0
+	svc, txRepo, baseAddr, walletID := unknownOutcomeService(t, func(context.Context, *types.SignedTx) (string, error) {
+		sent++
+		return "0xsignedhash", nil
+	})
+	txRepo.createErr = errors.New("insert withdrawal row: connection refused")
+
+	if _, err := svc.ExecutePlan(context.Background(), directWithdrawalPlan(walletID, baseAddr),
+		SigningCredentials{ShareA: []byte("fake-share-a")}, uuid.New(), "0xDEST", "user-1"); err == nil {
+		t.Fatal("a withdrawal that cannot be recorded fails")
+	}
+	if sent != 0 {
+		t.Fatalf("broadcasts = %d; nothing is sent before the row exists", sent)
+	}
+}
+
+func TestExecute_Withdrawal_ASentTransferIsNeverFailedByItsRecording(t *testing.T) {
+	for name, broadcast := range map[string]func(context.Context, *types.SignedTx) (string, error){
+		"accepted": func(context.Context, *types.SignedTx) (string, error) { return "0xsignedhash", nil },
+		"unknown outcome": func(context.Context, *types.SignedTx) (string, error) {
+			return "", chain.ClassifyBroadcast(chain.FromProviderHTTP(502, "bad gateway"))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc, txRepo, baseAddr, walletID := unknownOutcomeService(t, broadcast)
+			events := &recordingSweepEvents{inside: &txRepo.inside, failWithdrawal: true}
+			svc.webhookSvc = events
+			txRepo.recordErr = errors.New("update withdrawal row: connection refused")
+			var waits []time.Duration
+			svc.sleep = func(_ context.Context, d time.Duration) error {
+				waits = append(waits, d)
+				return nil
+			}
+
+			res, err := svc.ExecutePlan(context.Background(), directWithdrawalPlan(walletID, baseAddr),
+				SigningCredentials{ShareA: []byte("fake-share-a")}, uuid.New(), "0xDEST", "user-1")
+			if err != nil || res == nil || res.FinalWithdrawTx == nil {
+				t.Fatalf("a transfer that may have left is never a failed withdrawal: res=%+v err=%v", res, err)
+			}
+			if txRepo.withins != len(persistRetryDelays)+1 || len(waits) != len(persistRetryDelays) {
+				t.Fatalf("tries=%d waits=%v: the recording is retried", txRepo.withins, waits)
+			}
+			if len(txRepo.created) != 1 || txRepo.created[0].TxHash != "0xsignedhash" || len(txRepo.failed) != 0 {
+				t.Fatalf("the row recorded before the send stays, tracked by its hash: rows=%+v failed=%v", txRepo.created, txRepo.failed)
+			}
+		})
 	}
 }

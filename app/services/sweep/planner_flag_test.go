@@ -149,6 +149,16 @@ func (c *countingTxRepo) Create(context.Context, *models.Transaction) error {
 	return errors.New("plan must not persist")
 }
 
+func (c *countingTxRepo) RecordBroadcast(context.Context, uuid.UUID, string, string) error {
+	c.creates++
+	return errors.New("plan must not persist")
+}
+
+func (c *countingTxRepo) MarkFailed(context.Context, uuid.UUID, string) error {
+	c.creates++
+	return errors.New("plan must not persist")
+}
+
 type balanceCountingChain struct {
 	*mocks.MockChain
 	balanceCalls int

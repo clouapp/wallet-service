@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -314,6 +315,16 @@ func (r *TransactionRepository) MarkFailed(ctx context.Context, id uuid.UUID, re
 		"error_message":   reason,
 		"idempotency_key": nil,
 	}, "mark transaction failed")
+}
+
+// RecordBroadcast stores what a send answered on a row recorded before it: the hash
+// the node returned and the raw payload (an unknown outcome is kept there). r.Query
+// joins the caller's transaction.
+func (r *TransactionRepository) RecordBroadcast(ctx context.Context, id uuid.UUID, txHash, rawPayload string) error {
+	if strings.TrimSpace(txHash) == "" {
+		return fmt.Errorf("record transaction broadcast: tx hash is required")
+	}
+	return r.updateColumns(ctx, id, map[string]any{"tx_hash": txHash, "raw_payload": rawPayload}, "record transaction broadcast")
 }
 
 // RecordConfirmations stores the confirmation count, status, and confirmed_at together.
