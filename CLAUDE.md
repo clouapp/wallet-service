@@ -689,8 +689,11 @@ list writes are refused.
   on a transport error, a timeout, an unreadable body, HTTP 5xx or 408, HTTP 429/403 or a JSON-RPC
   429/-32005, another non-2xx status unless its body is a JSON-RPC answer about the request, a
   JSON-RPC -32603, -32014 or -32016, or a method it does not serve (-32601, -32004; this one does not
-  count against the endpoint, and an endpoint that answered it does not serve a method is not asked
-  that method again; -32602 to `eth_getBlockReceipts` counts as such). Solana -32001 (block cleaned up)
+  count against the endpoint and is never remembered: a misrouted answer must not turn a method off).
+  Only a refused call shape is remembered: -32602 to `eth_getBlockReceipts` by number or to
+  `eth_getLogs` by `blockHash`, twice in a row (any other answer to that shape starts the count
+  again), for 10 minutes, per endpoint; the last endpoint that might serve a call is never skipped,
+  and a broadcast has no shape. Solana -32001 (block cleaned up)
   and -32011 (no history) move on without counting a failure. The phrases ("rate limit", "header not found", "missing trie node",
   "unknown block", "method not allowed", ...) are read only for the generic -32000/-32603 and for an
   error carried by a non-2xx status. A contract revert (code 3, "execution reverted…") is always an
@@ -706,13 +709,18 @@ list writes are refused.
   not back off, and a fallback that rate-limits it or does not serve the method is not counted
   against. A block or slot no endpoint returns fails `ScanBlock` (retried, then pending) instead of
   reading as an empty block. A Solana "skipped" slot (-32007/-32009, only with "skipped" in the
-  message) from a fallback must be confirmed by one more endpoint: its block wins, its own "skipped"
-  confirms, anything else is an error the scan retries; the primary's answer is believed.
+  message) from a fallback must be confirmed by another endpoint, asked in turn, the primary first and
+  cooling down or not: the first block wins, the first "skipped" confirms; when none can say, the error
+  carries `chain.ErrSkippedSlotUnconfirmed` and the deposit scan saves the slot pending at once, without
+  immediate retries and without counting it against the cycle's limit of failing blocks. The
+  primary's answer is believed.
 - **Health**: an endpoint failing 3 calls in a row is skipped for 30 s, doubling up to 5 min; after a
   cool-down one more failure skips it again, a success clears it. When every endpoint is cooling down
   all are tried. A fallback must answer the chain's `eth_chainId` / genesis before its first use, and
-  the primary's own answer too (asked once per list, again after 30 s while it does not answer): a
-  primary on another network than `network_id` keeps every fallback out (logged once). One on another
+  the primary's own answer too (asked once per list, in the background under its own 5 s deadline,
+  again after 30 s while it does not answer; a caller waits for it at most half of its own time left,
+  then checks against `network_id` alone): a primary on another network than `network_id` keeps
+  every fallback out (logged once). One on another
   network is never used for the life of the list (logged at error level); a new primary has every
   fallback checked again. The primary is never kept out that way (it was checked when written). A chain
   with nothing to check against (EVM without `network_id`, an unknown Solana cluster) gets no
@@ -726,9 +734,11 @@ list writes are refused.
   the call, or it does not serve the method. A timeout, a reset, a 5xx or any answer stops there
   (`chain.ClassifyBroadcast` as before). A later endpoint answering "already known" / "already been
   processed" is a success with the hash of the signed bytes, and a node that answers another hash
-  than the signed bytes' is logged and the signed one returned. **Nonce**: the pending nonce of an EVM
-  transfer is the highest that the ready endpoints answer (`RPCClient.CallEach`, 5 s each), and never
-  below the next nonce of a transaction this process broadcast for that sender in the last 10 minutes
+  than the signed bytes' is logged and the signed one returned. **Nonce**: the primary's pending nonce
+  decides, read with the backoff one endpoint gets (`rpc.BackOffOnRateLimits`; the failover order when
+  it cannot answer); the other ready endpoints, asked at the same time within 1 s
+  (`RPCClient.CallOthers`, which never fails), may only raise it by one, and a divergence is logged. It
+  is never below the next nonce of a transaction this process broadcast for that sender in the last 10 minutes
   (so a fallback that has not seen it yet does not hand the same nonce out again; past that the nodes
   decide, so a dropped transaction does not hold the sender forever). The records hold no nonce.
 - **One node per block**: EVM `ScanBlock` reads the block and its `Transfer` logs through
@@ -737,8 +747,10 @@ list writes are refused.
   block answers an error (-32001 "block not found" on drpc, tenderly and publicnode), never an empty
   list, so the block is retried instead of losing its ERC-20 deposits. A log of another block is
   refused as reorganized. A node without EIP-234 (-32602) is read by number, the same node, every log
-  checked against the block's hash, and "no logs" believed only when the block's `logsBloom` holds no
-  `Transfer`. Receipts keep their block number and hash check.
+  checked against the block's hash. On either path, "no logs" for a block whose `logsBloom` may hold a
+  `Transfer` asks the other ready endpoints by the block's hash: their logs are the answer, an empty
+  answer from one agrees; with nobody else to ask the block is retried and believed empty the third
+  time the same hash is answered so (logged). Receipts keep their block number and hash check.
 
 — guarded by `app/adapters/chain/rpc/failover_test.go`, `app/adapters/chain/evm/endpoints_test.go`,
 `app/adapters/chain/solana/endpoints_test.go`, `app/services/chainregistry/endpoint_verify_test.go`,

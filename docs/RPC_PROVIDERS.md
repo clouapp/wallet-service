@@ -321,13 +321,19 @@ go run . artisan chains:rpc-endpoints eth --defaults --apply                    
 | transport error, timeout, unreadable body, HTTP 5xx/408 | invalid params |
 | HTTP 429/403, JSON-RPC 429/-32005 | a contract revert (code 3, "execution reverted…", whatever its reason says) |
 | JSON-RPC -32603, -32014, -32016; on -32000/-32603 or a non-2xx status: "rate limit", "header not found", "missing trie node", "unknown block", ... | nonce too low, insufficient funds, underpriced |
-| method not found / not supported (-32601, -32004; not counted, and that endpoint is not asked the method again); Solana -32001, -32011 | a skipped Solana slot (confirmed by a second endpoint when a fallback says it), a transaction version not supported, any other JSON-RPC error |
+| method not found / not supported (-32601, -32004; not counted and never remembered); Solana -32001, -32011 | a skipped Solana slot (confirmed by another endpoint when a fallback says it), a transaction version not supported, any other JSON-RPC error |
 
 - A `null` receipt, transaction or block (`eth_getTransactionReceipt`, `eth_getTransactionByHash`,
   `eth_getBlockByNumber`, `eth_getBlockByHash`, Solana `getTransaction`, `getBlock`) asks one more
   endpoint, a different one on each call, before it is believed: a load-balanced provider can answer
   from a node that does not have it. A fallback that rate-limits that second opinion is not counted
   as failing.
+- Only a refused call shape is remembered per endpoint: -32602 to `eth_getBlockReceipts` by number or to
+  `eth_getLogs` by `blockHash`, after two in a row, for 10 minutes. The last endpoint that might serve
+  a call is always asked, and a broadcast is never remembered.
+- A Solana slot a fallback answers skipped is confirmed by another endpoint (the primary first, even
+  while it cools down). When none can say, the deposit scan keeps the slot pending without counting it
+  as a failing block.
 - Under a caller deadline each attempt gets its share of the time left; without one an attempt keeps
   the 30 s HTTP timeout.
 - A broadcast moves on only when the previous endpoint certainly did not take the transaction (the
@@ -336,9 +342,11 @@ go run . artisan chains:rpc-endpoints eth --defaults --apply                    
   endpoint is a success.
 - An EVM block and its logs are read from the same endpoint, and the logs by the block's hash, so a
   backend without that block fails the block (retried) instead of answering no logs. A node without
-  EIP-234 is read by number, with every log and the block's bloom checked.
-- The pending nonce is the highest the ready endpoints answer, and never below the next nonce of a
-  transaction the same process broadcast in the last 10 minutes.
+  EIP-234 is read by number, with every log checked. "No logs" where the block's bloom may hold a
+  `Transfer` is checked with the other endpoints (by hash), else believed the third time.
+- The primary's pending nonce decides (with its rate-limit backoff); the other endpoints, asked for 1 s
+  at the same time, may raise it by one at most. It is never below the next nonce of a transaction
+  the same process broadcast in the last 10 minutes.
 - An endpoint's basic auth and extra headers are sent to the primary only: put a fallback's key in
   its own URL (or an `env:NAME`).
 
