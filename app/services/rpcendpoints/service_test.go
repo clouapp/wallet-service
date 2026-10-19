@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -516,4 +517,41 @@ func TestApply_Refuses_AChangePlannedOnAListAnotherWriterChanged(t *testing.T) {
 	_, err := h.service.Apply(context.Background(), models.ChainETH, Change{Action: ActionDisable, Position: 2}, true)
 	require.NoError(t, err)
 	assert.Equal(t, 1, h.store.locks, "every write locks the chain row first")
+}
+
+func TestApply_Refuses_AListLongerThanFive(t *testing.T) {
+	h := newHarness(t, filteredNode, fallbackRow(drpc, 2, true), fallbackRow(tenderly, 3, true), fallbackRow(publicnode, 4, true), fallbackRow(keyedEndpoint, 5, true))
+
+	_, err := h.service.Apply(context.Background(), models.ChainETH, Change{Action: ActionAdd, URL: "https://sixth.example"}, true)
+	var refusal *Refusal
+	require.ErrorAs(t, err, &refusal)
+	assert.Contains(t, refusal.Reason, "at most 5")
+
+	_, err = h.service.Apply(context.Background(), models.ChainETH, Change{Action: ActionSet, URLs: []string{
+		"https://a.example", "https://b.example", "https://c.example", "https://d.example", "https://e.example", "https://f.example",
+	}}, true)
+	require.ErrorAs(t, err, &refusal)
+	assert.Empty(t, h.verified, "nothing is asked of a list that is refused anyway")
+}
+
+func TestApply_Checks_TheNewEndpointsAtOnce(t *testing.T) {
+	h := newHarness(t, filteredNode)
+	var mu sync.Mutex
+	h.service.verify = func(ctx context.Context, _ string, target chainregistry.EndpointTarget, rawURL string) (string, error) {
+		time.Sleep(200 * time.Millisecond)
+		mu.Lock()
+		h.verified = append(h.verified, rawURL)
+		mu.Unlock()
+		_, bounded := ctx.Deadline()
+		if !bounded {
+			return "", errors.New("the checks must run under one budget")
+		}
+		return models.NetworkEthereumSepolia, nil
+	}
+
+	started := time.Now()
+	_, err := h.service.Apply(context.Background(), models.ChainETH, Change{Action: ActionSet, URLs: []string{drpc, tenderly, publicnode}}, true)
+	require.NoError(t, err)
+	assert.Len(t, h.verified, 3)
+	assert.Less(t, time.Since(started), 500*time.Millisecond, "three checks of 200 ms run at once, under the API Gateway limit")
 }

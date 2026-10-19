@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
@@ -43,6 +45,14 @@ type Change struct {
 	Order    []int
 	URLs     []string
 }
+
+const (
+	// maxEndpoints is the longest list a chain keeps, the primary included.
+	maxEndpoints = 5
+	// checkBudget bounds all the network checks of one change together, under the
+	// 29 s API Gateway limit of the platform routes.
+	checkBudget = 20 * time.Second
+)
 
 // Check is what an endpoint a change adds said about the network it serves.
 // Skipped is an endpoint written under --skip-network-check, never asked.
@@ -240,10 +250,14 @@ func reorder(entries []entry, order []int) ([]entry, error) {
 	return moved, nil
 }
 
-// validate refuses a list whose primary is disabled or cannot be dialed here.
+// validate refuses a list longer than maxEndpoints or whose primary is disabled or
+// cannot be dialed here.
 func validate(entries []entry) error {
 	if len(entries) == 0 {
 		return refuse("urls", "the list needs at least the primary")
+	}
+	if len(entries) > maxEndpoints {
+		return refuse("urls", "a chain keeps at most %d endpoints, the primary included", maxEndpoints)
 	}
 	if !entries[0].enabled {
 		return refuse("order", "a disabled endpoint cannot be the primary; enable it first")
@@ -254,21 +268,33 @@ func validate(entries []entry) error {
 	return nil
 }
 
-// check asks every endpoint marked for it which network it serves, in list order;
-// with skip it asks none and marks them Skipped.
+// check asks every endpoint marked for it which network it serves, all at once
+// under checkBudget, and returns the answers in list order; with skip it asks none
+// and marks them Skipped.
 func (s *Service) check(ctx context.Context, record *models.Chain, goal chainregistry.EndpointTarget, entries []entry, skip bool) []Check {
 	var checks []Check
+	var dials []string
 	for i, e := range entries {
 		if !e.verify || !e.enabled {
 			continue
 		}
-		if skip {
-			checks = append(checks, Check{Position: i + 1, Host: e.host(), Skipped: true})
-			continue
-		}
-		network, err := s.verify(ctx, record.AdapterType, goal, e.dial)
-		checks = append(checks, Check{Position: i + 1, Host: e.host(), Network: network, Err: err})
+		checks = append(checks, Check{Position: i + 1, Host: e.host(), Skipped: skip})
+		dials = append(dials, e.dial)
 	}
+	if skip {
+		return checks
+	}
+	budget, cancel := context.WithTimeout(ctx, checkBudget)
+	defer cancel()
+	var wg sync.WaitGroup
+	for i := range checks {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			checks[i].Network, checks[i].Err = s.verify(budget, record.AdapterType, goal, dials[i])
+		}(i)
+	}
+	wg.Wait()
 	return checks
 }
 

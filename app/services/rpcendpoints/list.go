@@ -172,8 +172,11 @@ func (s *Service) attachHealth(ctx context.Context, view *View) {
 	}
 }
 
-// attachProbes asks every usable endpoint, at once, its network and head.
+// attachProbes asks every usable endpoint, at once and under checkBudget, its
+// network and head.
 func (s *Service) attachProbes(ctx context.Context, record *models.Chain, entries []entry, view *View) {
+	ctx, cancel := context.WithTimeout(ctx, checkBudget)
+	defer cancel()
 	goal := target(record, entries)
 	var wg sync.WaitGroup
 	for i, e := range entries {
