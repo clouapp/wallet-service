@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"github.com/macrowallets/waas/app/adapters/chain/rpc"
 	"github.com/macrowallets/waas/app/services/chain"
@@ -47,6 +48,13 @@ type EVMConfig struct {
 	NativeDecimal uint8
 	NetworkID     int64
 	RPCURL        string
+	// RPCFallbacks are tried in order after RPCURL when it cannot serve a call
+	// (rpc.RPCClient failover). Each answers eth_chainId, which must be NetworkID,
+	// before its first use.
+	RPCFallbacks []string
+	// RPCHealth receives the health of the endpoints each time it changes; nil
+	// records nothing.
+	RPCHealth     chain.RPCHealthSink
 	Confirmations uint64
 	// ERC20Tokens lists registered ERC-20s for deposit log matching (from DB at boot).
 	ERC20Tokens []types.Token
@@ -94,13 +102,28 @@ func (a *EVMLive) FeePolicy() chain.FeePolicy { return a.fee }
 const evmRPCMaxResponseBytes = 64 << 20
 
 func NewEVMLive(cfg EVMConfig) *EVMLive {
-	return &EVMLive{
-		cfg: cfg,
-		rpc: rpc.NewRPCClient(rpc.RPCClientDeps{URL: cfg.RPCURL}).WithMaxResponseBytes(evmRPCMaxResponseBytes),
-	}
+	return &EVMLive{cfg: cfg, rpc: newEVMRPCClient(cfg)}
 }
 
-// Endpoint is the URL the next dial uses. Callers must not log it.
+// newEVMRPCClient dials cfg's endpoints. A fallback must answer the chain's
+// eth_chainId before it serves a call; a chain without a network id checks none.
+func newEVMRPCClient(cfg EVMConfig) *rpc.RPCClient {
+	var identity rpc.IdentityCheck
+	if networkID := cfg.NetworkID; networkID > 0 {
+		identity = func(ctx context.Context, caller chain.JSONRPCCaller) error {
+			return chain.CheckEVMNetwork(ctx, caller, networkID)
+		}
+	}
+	return rpc.NewRPCClient(rpc.RPCClientDeps{
+		URL:       cfg.RPCURL,
+		Fallbacks: cfg.RPCFallbacks,
+		ChainID:   cfg.ChainIDStr,
+		Identity:  identity,
+		Health:    cfg.RPCHealth,
+	}).WithMaxResponseBytes(evmRPCMaxResponseBytes)
+}
+
+// Endpoint is the URL of the primary endpoint. Callers must not log it.
 func (a *EVMLive) Endpoint() string {
 	if a == nil || a.rpc == nil {
 		return ""
@@ -120,10 +143,25 @@ func (a *EVMLive) ReplaceEndpoint(endpoint string) {
 	}
 	a.cfg.RPCURL = endpoint
 	if a.rpc == nil {
-		a.rpc = rpc.NewRPCClient(rpc.RPCClientDeps{URL: endpoint})
+		a.rpc = newEVMRPCClient(a.cfg)
 		return
 	}
 	a.rpc.ReplaceEndpoint(endpoint)
+}
+
+// ReplaceEndpoints points later dials at primary and then fallbacks, in order,
+// and leaves gas and dust thresholds unchanged. An empty primary is ignored.
+func (a *EVMLive) ReplaceEndpoints(primary string, fallbacks []string) {
+	if a == nil || strings.TrimSpace(primary) == "" {
+		return
+	}
+	a.cfg.RPCURL = strings.TrimSpace(primary)
+	a.cfg.RPCFallbacks = append([]string(nil), fallbacks...)
+	if a.rpc == nil {
+		a.rpc = newEVMRPCClient(a.cfg)
+		return
+	}
+	a.rpc.ReplaceEndpoints(a.cfg.RPCURL, a.cfg.RPCFallbacks)
 }
 
 func (a *EVMLive) ID() string                    { return a.cfg.ChainIDStr }
@@ -513,6 +551,9 @@ func (a *EVMLive) BroadcastTransaction(ctx context.Context, signed *types.Signed
 	rawHex := "0x" + hex.EncodeToString(signed.RawBytes)
 	var txHash string
 	if err := a.rpc.Call(ctx, "eth_sendRawTransaction", &txHash, rawHex); err != nil {
+		if errors.Is(err, rpc.ErrBroadcastAlreadyKnown) && signed.TxHash != "" {
+			return signed.TxHash, nil
+		}
 		return "", chain.ClassifyBroadcast(err)
 	}
 	return txHash, nil
@@ -715,7 +756,12 @@ func (a *EVMLive) failedReceiptResult(ctx context.Context, txHash, gasUsedHex st
 	return evmResultReverted, nil
 }
 
+// ScanBlock reads one block and its ERC-20 Transfer logs from one endpoint: the
+// first that answers the block (rpc.PinEndpoint), so the logs never come from a
+// node that does not have that block. A block every endpoint answers null for is
+// an error (the scanner retries it), never an empty block.
 func (a *EVMLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.DetectedTransfer, error) {
+	ctx = rpc.PinEndpoint(ctx)
 	hexBlock := fmt.Sprintf("0x%x", blockNum)
 	var block struct {
 		Hash         string `json:"hash"`
@@ -729,6 +775,9 @@ func (a *EVMLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.Detec
 	}
 	if err := a.rpc.Call(ctx, "eth_getBlockByNumber", &block, hexBlock, true); err != nil {
 		return nil, err
+	}
+	if block.Hash == "" {
+		return nil, fmt.Errorf("evm %s: no endpoint returned block %d", a.cfg.ChainIDStr, blockNum)
 	}
 
 	blockTime := time.Unix(int64(hexToUint64(block.Timestamp)), 0)

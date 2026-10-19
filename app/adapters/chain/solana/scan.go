@@ -78,6 +78,9 @@ func (a *SolanaLive) ScanBlock(ctx context.Context, slot uint64) ([]types.Detect
 	if err != nil {
 		return nil, err
 	}
+	if block.Blockhash == "" {
+		return nil, fmt.Errorf("solana %s: no endpoint returned slot %d", a.cfg.ChainIDStr, slot)
+	}
 	return solanaBlockCredits(slot, &block, a.cfg.NativeSymbol, a.tokens)
 }
 

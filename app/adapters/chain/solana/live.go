@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/macrowallets/waas/app/adapters/chain/rpc"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -16,6 +17,14 @@ type SolanaConfig struct {
 	NativeSymbol  string
 	NativeDecimal uint8
 	RPCURL        string
+	// RPCFallbacks are tried in order after RPCURL when it cannot serve a call
+	// (rpc.RPCClient failover). Each answers getGenesisHash, which must be
+	// GenesisHash, before its first use; an empty GenesisHash checks none.
+	RPCFallbacks []string
+	GenesisHash  string
+	// RPCHealth receives the health of the endpoints each time it changes; nil
+	// records nothing.
+	RPCHealth     chain.RPCHealthSink
 	Confirmations uint64
 	// Tokens lists the registered SPL mints whose deposits ScanBlock reports.
 	Tokens []types.Token
@@ -40,13 +49,31 @@ func NewSolanaLive(cfg SolanaConfig) *SolanaLive {
 	tokens, tokensErr := indexSolanaTokens(cfg.ChainIDStr, cfg.Tokens)
 	return &SolanaLive{
 		cfg:       cfg,
-		rpc:       rpc.NewRPCClient(rpc.RPCClientDeps{URL: cfg.RPCURL}).WithMaxResponseBytes(solanaRPCMaxResponseBytes),
+		rpc:       newSolanaRPCClient(cfg),
 		tokens:    tokens,
 		tokensErr: tokensErr,
 	}
 }
 
-// Endpoint is the URL the next dial uses. Callers must not log it.
+// newSolanaRPCClient dials cfg's endpoints. A fallback must answer the cluster's
+// genesis hash before it serves a call.
+func newSolanaRPCClient(cfg SolanaConfig) *rpc.RPCClient {
+	var identity rpc.IdentityCheck
+	if genesis := strings.TrimSpace(cfg.GenesisHash); genesis != "" {
+		identity = func(ctx context.Context, caller chain.JSONRPCCaller) error {
+			return chain.CheckSolanaGenesis(ctx, caller, genesis)
+		}
+	}
+	return rpc.NewRPCClient(rpc.RPCClientDeps{
+		URL:       cfg.RPCURL,
+		Fallbacks: cfg.RPCFallbacks,
+		ChainID:   cfg.ChainIDStr,
+		Identity:  identity,
+		Health:    cfg.RPCHealth,
+	}).WithMaxResponseBytes(solanaRPCMaxResponseBytes)
+}
+
+// Endpoint is the URL of the primary endpoint. Callers must not log it.
 func (a *SolanaLive) Endpoint() string {
 	if a == nil || a.rpc == nil {
 		return ""
@@ -66,10 +93,25 @@ func (a *SolanaLive) ReplaceEndpoint(endpoint string) {
 	}
 	a.cfg.RPCURL = endpoint
 	if a.rpc == nil {
-		a.rpc = rpc.NewRPCClient(rpc.RPCClientDeps{URL: endpoint}).WithMaxResponseBytes(solanaRPCMaxResponseBytes)
+		a.rpc = newSolanaRPCClient(a.cfg)
 		return
 	}
 	a.rpc.ReplaceEndpoint(endpoint)
+}
+
+// ReplaceEndpoints points later dials at primary and then fallbacks, in order.
+// An empty primary is ignored.
+func (a *SolanaLive) ReplaceEndpoints(primary string, fallbacks []string) {
+	if a == nil || strings.TrimSpace(primary) == "" {
+		return
+	}
+	a.cfg.RPCURL = strings.TrimSpace(primary)
+	a.cfg.RPCFallbacks = append([]string(nil), fallbacks...)
+	if a.rpc == nil {
+		a.rpc = newSolanaRPCClient(a.cfg)
+		return
+	}
+	a.rpc.ReplaceEndpoints(a.cfg.RPCURL, a.cfg.RPCFallbacks)
 }
 
 func (a *SolanaLive) ID() string                    { return a.cfg.ChainIDStr }

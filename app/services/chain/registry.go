@@ -78,6 +78,38 @@ func (r *Registry) ReplaceEndpoint(chainID, endpoint string) (bool, error) {
 	return true, nil
 }
 
+// endpointsReplacer is a live adapter whose whole endpoint list can change.
+type endpointsReplacer interface {
+	ReplaceEndpoints(primary string, fallbacks []string)
+}
+
+// ReplaceEndpoints points the loaded dialer for chainID at primary and then
+// fallbacks, in order. A chain that was not loaded returns false, and one whose
+// adapter takes a single endpoint is refused. No endpoint is logged. An empty
+// primary is refused and does not wipe the current list.
+func (r *Registry) ReplaceEndpoints(chainID, primary string, fallbacks []string) (bool, error) {
+	if r == nil {
+		return false, fmt.Errorf("replace chain endpoints: registry is required")
+	}
+	chainID = strings.TrimSpace(chainID)
+	primary = strings.TrimSpace(primary)
+	if chainID == "" || primary == "" {
+		return false, fmt.Errorf("replace chain endpoints: chain and primary endpoint are required")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	current, ok := r.chains[chainID]
+	if !ok {
+		return false, nil
+	}
+	replacer, ok := current.(endpointsReplacer)
+	if !ok {
+		return false, fmt.Errorf("replace chain endpoints: chain takes a single endpoint")
+	}
+	replacer.ReplaceEndpoints(primary, fallbacks)
+	return true, nil
+}
+
 func (r *Registry) RegisterToken(t types.Token) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
