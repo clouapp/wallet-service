@@ -257,27 +257,52 @@ func TestFailover_Call_KeepsTheBackoffOnTheLastEndpoint(t *testing.T) {
 	}
 }
 
-func TestFailover_Null_AsksTheNextEndpointBeforeBelievingIt(t *testing.T) {
+func TestFailover_Null_AsksOneMoreEndpointPerCallInTurn(t *testing.T) {
 	receipt := `{"blockNumber":"0xb62506","status":"0x1"}`
 	primary := newFakeNode(t, answers(result(`null`)))
 	second := newFakeNode(t, answers(result(`null`)))
 	third := newFakeNode(t, answers(result(receipt)))
 	client, _, _ := failoverClient(primary.URL(), second.URL(), third.URL())
-
-	var got *struct {
+	lookup := func() *struct {
 		BlockNumber string `json:"blockNumber"`
+	} {
+		var got *struct {
+			BlockNumber string `json:"blockNumber"`
+		}
+		require.NoError(t, client.Call(context.Background(), "eth_getTransactionReceipt", &got, "0xabc"))
+		return got
 	}
-	if err := client.Call(context.Background(), "eth_getTransactionReceipt", &got, "0xabc"); err != nil {
-		t.Fatalf("Call: %v", err)
+
+	assert.Nil(t, lookup(), "the primary and the second endpoint answered null")
+	assert.Equal(t, []int{1, 1, 0}, []int{primary.total(), second.total(), third.total()}, "one more endpoint per call, not every one")
+
+	got := lookup()
+	require.NotNil(t, got, "the next call asks the next endpoint in turn")
+	assert.Equal(t, "0xb62506", got.BlockNumber)
+	assert.Equal(t, []int{2, 1, 1}, []int{primary.total(), second.total(), third.total()})
+	for _, health := range healthOf(client) {
+		assert.Zero(t, health.ConsecutiveFailures, "a null answer is not a failure")
 	}
-	if got == nil || got.BlockNumber != "0xb62506" {
-		t.Fatalf("receipt = %+v", got)
-	}
-	if primary.total() != 1 || second.total() != 1 || third.total() != 1 {
-		t.Fatalf("primary=%d second=%d third=%d", primary.total(), second.total(), third.total())
-	}
-	if health := healthOf(client); health[0].ConsecutiveFailures != 0 || health[1].ConsecutiveFailures != 0 {
-		t.Fatalf("a null answer counted as a failure: %+v", health)
+}
+
+func TestFailover_Null_AChaseThatIsRateLimitedOrRefusedCountsNothing(t *testing.T) {
+	for name, refusal := range map[string]func(string) (int, string){
+		"rate limited":      answers(http.StatusTooManyRequests, "slow down"),
+		"method not served": answers(rpcFailure(-32601, "method not found")),
+	} {
+		t.Run(name, func(t *testing.T) {
+			primary := newFakeNode(t, answers(result(`null`)))
+			keyless := newFakeNode(t, refusal)
+			client, _, sleeps := failoverClient(primary.URL(), keyless.URL())
+
+			for i := 0; i < endpointFailuresToOpen; i++ {
+				got := &struct{}{}
+				require.NoError(t, client.Call(context.Background(), "getTransaction", &got, "sig"))
+				assert.Nil(t, got, "the primary's null stands")
+			}
+			assert.Zero(t, healthOf(client)[1].ConsecutiveFailures, "a second opinion the fallback declined is not its failure")
+			assert.Empty(t, sleeps.delays, "the chase does not back off")
+		})
 	}
 }
 

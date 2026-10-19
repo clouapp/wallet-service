@@ -42,6 +42,7 @@ type RPCClient struct {
 	health     chain.RPCHealthSink
 	now        func() time.Time
 	onFallback atomic.Bool
+	nullChase  atomic.Uint64
 }
 
 type rpcRequest struct {
