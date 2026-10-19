@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
@@ -137,4 +139,13 @@ func fallbackList(urls []string) []chain.RPCFallback {
 		fallbacks = append(fallbacks, chain.RPCFallback{URL: url})
 	}
 	return fallbacks
+}
+
+func TestScan_Block_ARateLimitWithTheSkippedSlotCodeIsNotASkippedSlot(t *testing.T) {
+	quicknode := newCountingSolanaNode(t, map[string]string{"getBlock": `"error":{"code":-32007,"message":"request limit reached"}`})
+	adapter := devnetWithFallbacks(quicknode.server.URL)
+
+	transfers, err := adapter.ScanBlock(context.Background(), 512)
+	assert.Error(t, err, "the slot must be retried, not marked scanned")
+	assert.Nil(t, transfers)
 }

@@ -1040,3 +1040,105 @@ func TestEndpoint_Identity_AWrongNetworkStaysWrong(t *testing.T) {
 	assert.False(t, verified)
 	assert.True(t, wrong, "a concurrent check that passed does not clear a wrong network")
 }
+
+func TestClassify_RPCError_ReadsSolanaSlotAnswersByTheirMessage(t *testing.T) {
+	cases := []struct {
+		code    int
+		message string
+		want    outcome
+	}{
+		{-32007, "Slot 512 was skipped, or missing due to ledger jump to recent snapshot", outcomeAnswer},
+		{-32009, "Slot 512 was skipped, or missing in long-term storage", outcomeAnswer},
+		{-32007, "request limit reached", outcomeRateLimited},
+		{-32009, "upstream unavailable", outcomeUnavailable},
+		{-32001, "Block 512 cleaned up, does not exist on node. First available block: 900", outcomeUnsupported},
+		{-32011, "Transaction history is not available from this node", outcomeUnsupported},
+	}
+	for _, tc := range cases {
+		if got := classifyRPCError(&rpcError{Code: tc.code, Message: tc.message}); got != tc.want {
+			t.Errorf("%d %q: got %d, want %d", tc.code, tc.message, got, tc.want)
+		}
+	}
+}
+
+const skippedSlot = "Slot 512 was skipped, or missing due to ledger jump to recent snapshot"
+
+func TestFailover_SkippedSlot_FromTheprimaryIsBelievedAtOnce(t *testing.T) {
+	primary := newFakeNode(t, answers(rpcFailure(-32007, skippedSlot)))
+	fallback := newFakeNode(t, answers(result(`{"blockhash":"x"}`)))
+	client, _, _ := failoverClient(primary.URL(), fallback.URL())
+
+	err := client.Call(context.Background(), "getBlock", nil, 512)
+	var rpcErr *RPCError
+	require.ErrorAs(t, err, &rpcErr)
+	assert.Equal(t, -32007, rpcErr.Code)
+	assert.Zero(t, fallback.total())
+}
+
+func TestFailover_SkippedSlot_FromAFallbackMustBeConfirmed(t *testing.T) {
+	t.Run("another endpoint has the block", func(t *testing.T) {
+		gap := newFakeNode(t, answers(rpcFailure(-32007, skippedSlot)))
+		full := newFakeNode(t, answers(result(`{"blockhash":"x"}`)))
+		client, _, _ := failoverClient(closedPortURL(t), gap.URL(), full.URL())
+
+		var block struct {
+			Blockhash string `json:"blockhash"`
+		}
+		require.NoError(t, client.Call(context.Background(), "getBlock", &block, 512))
+		assert.Equal(t, "x", block.Blockhash, "a snapshot gap on one fallback is not a skipped slot")
+	})
+	t.Run("another endpoint says skipped too", func(t *testing.T) {
+		first := newFakeNode(t, answers(rpcFailure(-32007, skippedSlot)))
+		second := newFakeNode(t, answers(rpcFailure(-32009, "Slot 512 was skipped, or missing in long-term storage")))
+		client, _, _ := failoverClient(closedPortURL(t), first.URL(), second.URL())
+
+		err := client.Call(context.Background(), "getBlock", nil, 512)
+		var rpcErr *RPCError
+		require.ErrorAs(t, err, &rpcErr, "two endpoints agree: the slot was skipped")
+		assert.Equal(t, -32007, rpcErr.Code)
+	})
+	t.Run("no other endpoint to ask", func(t *testing.T) {
+		gap := newFakeNode(t, answers(rpcFailure(-32007, skippedSlot)))
+		client, _, _ := failoverClient(closedPortURL(t), gap.URL())
+
+		err := client.Call(context.Background(), "getBlock", nil, 512)
+		var rpcErr *RPCError
+		require.Error(t, err)
+		assert.False(t, errors.As(err, &rpcErr), "an unconfirmed skip is not a skip: the scan retries the slot")
+		assert.ErrorIs(t, err, chain.ErrProviderUnavailable)
+	})
+}
+
+func TestFailover_SolanaHistoryAnswers_MoveOnWithoutCountingAFailure(t *testing.T) {
+	for _, failure := range []func(string) (int, string){
+		answers(rpcFailure(-32001, "Block 512 cleaned up, does not exist on node. First available block: 900")),
+		answers(rpcFailure(-32011, "Transaction history is not available from this node")),
+	} {
+		shortHistory := newFakeNode(t, failure)
+		archive := newFakeNode(t, answers(result(`{"blockhash":"x"}`)))
+		client, _, _ := failoverClient(shortHistory.URL(), archive.URL())
+
+		require.NoError(t, client.Call(context.Background(), "getBlock", nil, 512))
+		assert.Equal(t, 1, archive.total())
+		assert.Zero(t, healthOf(client)[0].ConsecutiveFailures)
+	}
+}
+
+func TestFailover_Null_ASecondOpinionThatHangsIsCutShort(t *testing.T) {
+	release := make(chan struct{})
+	hanging := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(func() { close(release); hanging.Close() })
+	primary := newFakeNode(t, answers(result(`null`)))
+	client, _, _ := failoverClient(primary.URL(), hanging.URL)
+
+	started := time.Now()
+	got := &struct{}{}
+	require.NoError(t, client.Call(context.Background(), "eth_getTransactionReceipt", &got, "0xabc"))
+	assert.Nil(t, got)
+	assert.Less(t, time.Since(started), secondOpinionTimeout+2*time.Second, "a poll without a caller deadline is not held for the HTTP timeout")
+}

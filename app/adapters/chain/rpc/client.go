@@ -43,7 +43,8 @@ type RPCClient struct {
 	health     chain.RPCHealthSink
 	now        func() time.Time
 	onFallback atomic.Bool
-	nullChase  atomic.Uint64
+	// secondOpinions turns the endpoint a null or a skipped slot asks next.
+	secondOpinions atomic.Uint64
 }
 
 type rpcRequest struct {

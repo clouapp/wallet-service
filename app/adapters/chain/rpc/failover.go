@@ -293,6 +293,9 @@ func (c *RPCClient) call(ctx context.Context, set *endpointSet, method string, o
 		}
 		if kind == outcomeAnswer {
 			c.succeeded(set, cand)
+			if method == solanaGetBlock && cand.index > 0 && !pinned && skippedSlotAnswer(err) {
+				return c.confirmSkipped(ctx, set, cand, candidates[i+1:], params, out, err, primaryLost, pin)
+			}
 			c.served(set, cand, primaryLost)
 			pin.hold(cand.ep)
 			if broadcast && i > 0 && alreadyKnown(err) {
@@ -321,36 +324,79 @@ func (c *RPCClient) call(ctx context.Context, set *endpointSet, method string, o
 	return lastErr
 }
 
-// chaseNull asks one more endpoint for a lookup first answered null by first: the
-// next in turn among the healthy ones after it. A non-null answer is the result;
-// otherwise first's null stands. The chase does not back off, and a fallback that
-// rate-limits it or does not serve the method is not counted as failing: it was a
-// second opinion, not the call.
-func (c *RPCClient) chaseNull(ctx context.Context, set *endpointSet, first candidate, rest []candidate, method string, params []interface{}, out interface{}, null json.RawMessage, primaryLost bool, pin *endpointPin) error {
-	next := rest[(c.nullChase.Add(1)-1)%uint64(len(rest))]
-	believe := func() error {
-		c.served(set, first, primaryLost)
-		pin.hold(first.ep)
-		return unmarshalResult(null, out)
+// secondOpinionTimeout bounds the one extra question a null or a skipped slot asks,
+// whatever the caller's deadline: a poll is not held for the HTTP timeout.
+const secondOpinionTimeout = 5 * time.Second
+
+// solanaGetBlock is the Solana lookup whose "skipped" answer a fallback alone may not give.
+const solanaGetBlock = "getBlock"
+
+// opinion is what a second endpoint answered; asked is false when none could be asked.
+type opinion struct {
+	from   candidate
+	result json.RawMessage
+	err    error
+	asked  bool
+}
+
+// secondOpinion asks one more endpoint, the next in turn among rest, within
+// secondOpinionTimeout and without backoff. A fallback that rate-limits the
+// question or does not serve the method is not counted as failing: it was a second
+// opinion, not the call.
+func (c *RPCClient) secondOpinion(ctx context.Context, set *endpointSet, rest []candidate, method string, params []interface{}) opinion {
+	if len(rest) == 0 {
+		return opinion{}
 	}
+	next := rest[(c.secondOpinions.Add(1)-1)%uint64(len(rest))]
+	askCtx, cancel := context.WithTimeout(ctx, secondOpinionTimeout)
+	defer cancel()
 	if next.index > 0 {
-		if err := c.verifyIdentity(ctx, set, next, 1); err != nil {
-			return believe()
+		if err := c.verifyIdentity(askCtx, set, next, 1); err != nil {
+			return opinion{from: next, err: err}
 		}
 	}
-	result, kind, err := c.exchange(ctx, next.ep.url, method, params, false)
+	result, kind, err := c.exchange(askCtx, next.ep.url, method, params, false)
 	switch {
-	case err == nil && !isJSONNull(result):
-		c.succeeded(set, next)
-		c.served(set, next, primaryLost)
-		pin.hold(next.ep)
-		return unmarshalResult(result, out)
 	case err == nil || kind == outcomeAnswer:
 		c.succeeded(set, next)
 	case kind == outcomeUnavailable && ctx.Err() == nil:
 		c.failed(set, next, kind, err)
 	}
-	return believe()
+	return opinion{from: next, result: result, err: err, asked: true}
+}
+
+// chaseNull asks one more endpoint for a lookup first answered null by first. A
+// non-null answer is the result; otherwise first's null stands.
+func (c *RPCClient) chaseNull(ctx context.Context, set *endpointSet, first candidate, rest []candidate, method string, params []interface{}, out interface{}, null json.RawMessage, primaryLost bool, pin *endpointPin) error {
+	second := c.secondOpinion(ctx, set, rest, method, params)
+	if second.asked && second.err == nil && !isJSONNull(second.result) {
+		c.served(set, second.from, primaryLost)
+		pin.hold(second.from.ep)
+		return unmarshalResult(second.result, out)
+	}
+	c.served(set, first, primaryLost)
+	pin.hold(first.ep)
+	return unmarshalResult(null, out)
+}
+
+// confirmSkipped asks one more endpoint about a slot a fallback answered skipped: a
+// fallback may only miss the slot (a snapshot gap, a short history). Its block is
+// the result; its own "skipped" confirms the answer; anything else leaves the slot
+// unconfirmed, an error the scan retries, never a skipped slot.
+func (c *RPCClient) confirmSkipped(ctx context.Context, set *endpointSet, first candidate, rest []candidate, params []interface{}, out interface{}, skipped error, primaryLost bool, pin *endpointPin) error {
+	second := c.secondOpinion(ctx, set, rest, solanaGetBlock, params)
+	switch {
+	case second.asked && second.err == nil && !isJSONNull(second.result):
+		c.served(set, second.from, primaryLost)
+		pin.hold(second.from.ep)
+		return unmarshalResult(second.result, out)
+	case second.asked && skippedSlotAnswer(second.err):
+		c.served(set, first, primaryLost)
+		pin.hold(first.ep)
+		return scrub(first.ep.url, skipped)
+	default:
+		return chain.Unavailable(fmt.Errorf("rpc call %s: endpoint %d of %s answered the slot skipped and no other endpoint confirmed it", solanaGetBlock, first.position, c.chainID))
+	}
 }
 
 // candidates is the pinned endpoint alone when the context holds one, else the

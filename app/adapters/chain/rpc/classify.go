@@ -39,6 +39,10 @@ const (
 // standard range; -32004 is "method not supported" (EIP-1474) and "block not
 // available for slot" (Solana), both answers this node cannot give.
 const (
+	solanaBlockCleanedUp        = -32001
+	solanaSlotSkipped           = -32007
+	solanaSlotMissingLongTerm   = -32009
+	solanaHistoryNotAvailable   = -32011
 	jsonRPCExecutionReverted    = 3
 	jsonRPCServerError          = -32000
 	jsonRPCMethodNotFound       = -32601
@@ -66,6 +70,7 @@ var (
 		"node is unhealthy", "timeout", "timed out",
 	}
 	executionRevertedPhrase = "execution reverted"
+	skippedPhrase           = "skipped"
 	alreadyKnownPhrases     = []string{
 		"already known", "known transaction", "alreadyknown", "already imported", "already exists",
 		"already in mempool", "already been processed", "alreadyprocessed",
@@ -94,9 +99,21 @@ func classifyRPCErrorOf(rpcErr *rpcError, httpFailure bool) outcome {
 	switch rpcErr.Code {
 	case jsonRPCRateLimitedCode, jsonRPCLimitExceeded:
 		return outcomeRateLimited
-	case jsonRPCMethodNotFound, jsonRPCMethodNotSupported:
+	case jsonRPCMethodNotFound, jsonRPCMethodNotSupported, solanaBlockCleanedUp, solanaHistoryNotAvailable:
+		// -32001 (block cleaned up) and -32011 (no transaction history) are a node
+		// with a short history: another one may serve the call.
 		return outcomeUnsupported
 	case solanaBlockStatusNotYet, solanaMinContextSlotNotHit:
+		return outcomeUnavailable
+	case solanaSlotSkipped, solanaSlotMissingLongTerm:
+		// A skipped slot says "skipped"; QuickNode answers its request limit with
+		// the same code, which is not an answer about the slot.
+		if strings.Contains(message, skippedPhrase) {
+			return outcomeAnswer
+		}
+		if hasPhrase(message, rateLimitPhrases) {
+			return outcomeRateLimited
+		}
 		return outcomeUnavailable
 	}
 	if httpFailure || rpcErr.Code == jsonRPCServerError || rpcErr.Code == jsonRPCInternalError {
@@ -127,6 +144,17 @@ func classifyHTTPFailure(status int, body []byte) outcome {
 		return classifyRPCErrorOf(resp.Error, true)
 	}
 	return outcomeUnavailable
+}
+
+// skippedSlotAnswer reports a Solana getBlock answer that the slot was skipped (or
+// is missing from the node's ledger, which a node also reports as "skipped").
+func skippedSlotAnswer(err error) bool {
+	var rpcErr *rpcError
+	if !errors.As(err, &rpcErr) || rpcErr == nil {
+		return false
+	}
+	return (rpcErr.Code == solanaSlotSkipped || rpcErr.Code == solanaSlotMissingLongTerm) &&
+		strings.Contains(strings.ToLower(rpcErr.Message), skippedPhrase)
 }
 
 // alreadyKnown reports a broadcast refusal that means the network already holds
