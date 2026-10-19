@@ -150,6 +150,16 @@ func (r *WithdrawalRepository) MarkFailed(ctx context.Context, id uuid.UUID, fai
 	}, "mark withdrawal failed")
 }
 
+// LinkTransaction points the withdrawal at its transaction, its status unchanged:
+// the executor does it in the transaction that records the transfer, before the
+// bytes leave. r.Query joins the caller's transaction.
+func (r *WithdrawalRepository) LinkTransaction(ctx context.Context, id, transactionID uuid.UUID) error {
+	if transactionID == uuid.Nil {
+		return fmt.Errorf("link withdrawal transaction: transaction id is required")
+	}
+	return r.updateColumns(ctx, id, map[string]any{"transaction_id": transactionID}, "link withdrawal transaction")
+}
+
 // MarkBroadcast stores the broadcast status and the transaction that carries it.
 func (r *WithdrawalRepository) MarkBroadcast(ctx context.Context, id uuid.UUID, transactionID *uuid.UUID) error {
 	return r.updateColumns(ctx, id, map[string]any{

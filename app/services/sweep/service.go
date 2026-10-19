@@ -143,6 +143,14 @@ type service struct {
 	fetchShareBFn func(ctx context.Context, wallet *models.Wallet) ([]byte, error)
 	// sleep waits between tries of a recording after a send; nil waits for real.
 	sleep func(ctx context.Context, d time.Duration) error
+	// withdrawalLinks points a withdrawal at its transaction; nil links nothing.
+	withdrawalLinks withdrawalLinker
+}
+
+// withdrawalLinker sets withdrawals.transaction_id inside the caller's database
+// transaction (the withdrawal repository).
+type withdrawalLinker interface {
+	LinkTransaction(ctx context.Context, withdrawalID, transactionID uuid.UUID) error
 }
 
 // Deps is everything the sweep service needs. A nil field means that
@@ -161,25 +169,28 @@ type Deps struct {
 	Flags        accountGate
 	GasDefaults  map[string]GasReadinessDefault
 	TokenPricer  TokenPricer
+	// WithdrawalLinks links a withdrawal to its transaction before the send.
+	WithdrawalLinks withdrawalLinker
 }
 
 // NewService wires the sweep service from Deps. All concrete methods are
 // implemented in planner.go / executor.go / gas_readiness.go / limits.go.
 func NewService(deps Deps) Service {
 	return &service{
-		registry:    deps.Registry,
-		mpc:         deps.MPC,
-		secrets:     deps.Secrets,
-		cache:       deps.Cache,
-		webhookSvc:  deps.Webhook,
-		walletRepo:  deps.Wallets,
-		addressRepo: deps.Addresses,
-		txRepo:      deps.Transactions,
-		sweepLimits: deps.SweepLimits,
-		chainRepo:   deps.Chains,
-		flags:       deps.Flags,
-		gasDefaults: cloneGasDefaults(deps.GasDefaults),
-		tokenPricer: deps.TokenPricer,
+		registry:        deps.Registry,
+		mpc:             deps.MPC,
+		secrets:         deps.Secrets,
+		cache:           deps.Cache,
+		webhookSvc:      deps.Webhook,
+		walletRepo:      deps.Wallets,
+		addressRepo:     deps.Addresses,
+		txRepo:          deps.Transactions,
+		sweepLimits:     deps.SweepLimits,
+		chainRepo:       deps.Chains,
+		flags:           deps.Flags,
+		gasDefaults:     cloneGasDefaults(deps.GasDefaults),
+		withdrawalLinks: deps.WithdrawalLinks,
+		tokenPricer:     deps.TokenPricer,
 	}
 }
 

@@ -25,14 +25,18 @@ const (
 	ReconcileUnknown = "unknown"
 )
 
-// WithdrawalFinder finds a withdrawal row (the withdrawal repository).
+// WithdrawalFinder finds a withdrawal row and links it to its transaction (the
+// withdrawal repository).
 type WithdrawalFinder interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Withdrawal, error)
+	LinkTransaction(ctx context.Context, id, transactionID uuid.UUID) error
 }
 
-// TransactionFinder finds a transaction row (the transaction repository).
+// TransactionFinder finds a transaction row by id or idempotency key (the
+// transaction repository).
 type TransactionFinder interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Transaction, error)
+	FindByIdempotencyKey(ctx context.Context, key string) (*models.Transaction, error)
 }
 
 // SetWithdrawalReconciliation wires the rows withdrawals:reconcile reads.
@@ -40,14 +44,16 @@ func (s *Service) SetWithdrawalReconciliation(withdrawals WithdrawalFinder, tran
 	s.reconcileWithdrawals, s.reconcileTransactions = withdrawals, transactions
 }
 
-// WithdrawalReconciliation asks ReconcileWithdrawal about one withdrawal; Apply
-// records what it proves.
+// WithdrawalReconciliation asks ReconcileWithdrawal about one withdrawal, or one
+// outbound transaction (a sweep, a gas seed, a row no withdrawal points at), by its
+// id; Apply records what it proves.
 type WithdrawalReconciliation struct {
-	WithdrawalID uuid.UUID
-	Apply        bool
+	ID    uuid.UUID
+	Apply bool
 }
 
 // WithdrawalReconcileReport is what the chain says about a withdrawal's transaction.
+// WithdrawalID is nil for a transaction reconciled by its own id.
 type WithdrawalReconcileReport struct {
 	WithdrawalID  uuid.UUID
 	TransactionID uuid.UUID
@@ -62,7 +68,9 @@ type WithdrawalReconcileReport struct {
 	Applied bool
 }
 
-// ReconcileWithdrawal settles a withdrawal whose transaction nothing settled: it
+// ReconcileWithdrawal settles a withdrawal whose transaction nothing settled (or an
+// outbound transaction named by its own id; see reconcileTarget, which also finds
+// the transfer of a withdrawal sent but never linked, and links it with Apply): it
 // reads the transaction by its hash on every endpoint (chain.TransactionSearcher),
 // then, for an EVM row with its sender nonce, the transaction that spent the nonce
 // (positive proof, whatever the broadcast answered), then an expiry the chain can
@@ -71,20 +79,13 @@ type WithdrawalReconcileReport struct {
 // withdrawal.failed once; unknown says why and changes nothing. Nothing is written
 // without Apply.
 func (s *Service) ReconcileWithdrawal(ctx context.Context, in WithdrawalReconciliation) (WithdrawalReconcileReport, error) {
-	report := WithdrawalReconcileReport{WithdrawalID: in.WithdrawalID}
+	report := WithdrawalReconcileReport{}
 	if s.reconcileWithdrawals == nil || s.reconcileTransactions == nil {
 		return report, fmt.Errorf("withdrawal reconciliation is not configured")
 	}
-	withdrawal, err := s.reconcileWithdrawals.FindByID(ctx, in.WithdrawalID)
-	if err != nil || withdrawal == nil {
-		return report, fmt.Errorf("withdrawal %s: %w", in.WithdrawalID, errors.Join(models.ErrRepositoryNotFound, err))
-	}
-	if withdrawal.TransactionID == nil {
-		return report, fmt.Errorf("withdrawal %s (%s) has no transaction: nothing was sent", withdrawal.ID, withdrawal.Status)
-	}
-	tx, err := s.reconcileTransactions.FindByID(ctx, *withdrawal.TransactionID)
-	if err != nil || tx == nil {
-		return report, fmt.Errorf("transaction %s of withdrawal %s: %w", *withdrawal.TransactionID, withdrawal.ID, errors.Join(models.ErrRepositoryNotFound, err))
+	tx, link, err := s.reconcileTarget(ctx, in.ID, &report)
+	if err != nil {
+		return report, err
 	}
 	report.TransactionID, report.Chain, report.TxHash, report.Status = tx.ID, tx.Chain, tx.TxHash, tx.Status
 	switch {
@@ -101,10 +102,48 @@ func (s *Service) ReconcileWithdrawal(ctx context.Context, in WithdrawalReconcil
 		return report, err
 	}
 	s.judge(ctx, adapter, *tx, &report)
+	if link {
+		report.Reason += "; the withdrawal is not linked to this transaction (sent under its key, never marked)"
+	}
 	if in.Apply {
+		if link {
+			if err := s.reconcileWithdrawals.LinkTransaction(ctx, report.WithdrawalID, tx.ID); err != nil {
+				return report, fmt.Errorf("link withdrawal %s to transaction %s: %w", report.WithdrawalID, tx.ID, err)
+			}
+		}
 		s.applyReconciliation(ctx, adapter, *tx, &report)
 	}
 	return report, nil
+}
+
+// reconcileTarget is the transaction id names: a withdrawal's (the one it points at,
+// or, when it points at none, the one recorded under its key: sent, never marked,
+// and link is true), else an outbound transaction of that id.
+func (s *Service) reconcileTarget(ctx context.Context, id uuid.UUID, report *WithdrawalReconcileReport) (*models.Transaction, bool, error) {
+	withdrawal, err := s.reconcileWithdrawals.FindByID(ctx, id)
+	if err == nil && withdrawal != nil {
+		report.WithdrawalID = withdrawal.ID
+		if withdrawal.TransactionID != nil {
+			tx, findErr := s.reconcileTransactions.FindByID(ctx, *withdrawal.TransactionID)
+			if findErr != nil || tx == nil {
+				return nil, false, fmt.Errorf("transaction %s of withdrawal %s: %w", *withdrawal.TransactionID, withdrawal.ID, errors.Join(models.ErrRepositoryNotFound, findErr))
+			}
+			return tx, false, nil
+		}
+		tx, findErr := s.reconcileTransactions.FindByIdempotencyKey(ctx, withdrawal.ID.String())
+		if findErr != nil || tx == nil {
+			return nil, false, fmt.Errorf("withdrawal %s (%s) has no transaction: nothing was sent", withdrawal.ID, withdrawal.Status)
+		}
+		return tx, true, nil
+	}
+	tx, findErr := s.reconcileTransactions.FindByID(ctx, id)
+	if findErr != nil || tx == nil {
+		return nil, false, fmt.Errorf("no withdrawal or transaction %s: %w", id, errors.Join(models.ErrRepositoryNotFound, err, findErr))
+	}
+	if !isOutboundTxType(tx.TxType) {
+		return nil, false, fmt.Errorf("transaction %s is a %s, not an outbound transfer", tx.ID, tx.TxType)
+	}
+	return tx, false, nil
 }
 
 // judge reads what the chain proves about tx into report.

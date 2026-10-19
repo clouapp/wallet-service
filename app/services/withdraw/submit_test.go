@@ -446,3 +446,72 @@ func TestSubmit_Retry_SendsAgainWhenTheKeysTransactionFailedOnChain(t *testing.T
 		}
 	}
 }
+
+// sendingSweep executes a plan as the sweep executor does: it signs, records the
+// final transfer under the plan's idempotency key and links the plan's withdrawal
+// to it before the bytes leave, then sends. It counts the transfers it signed.
+type sendingSweep struct {
+	planSweep
+	txs    *memTransactions
+	rows   *submitRows
+	signed int
+}
+
+func (s *sendingSweep) ExecutePlan(_ context.Context, plan *sweep.Plan, _ sweep.SigningCredentials, txID uuid.UUID, _, _ string) (*sweep.Result, error) {
+	s.signed++
+	if plan.IdempotencyKey == "" || plan.WithdrawalID == uuid.Nil {
+		return nil, errors.New("the plan names no withdrawal: the transfer could not be found by a retry")
+	}
+	key := plan.IdempotencyKey
+	tx := &models.Transaction{ID: txID, TxHash: "0xsent", Status: string(types.TxStatusConfirming), IdempotencyKey: &key}
+	if s.txs.byKey == nil {
+		s.txs.byKey = map[string]*models.Transaction{}
+	}
+	s.txs.byKey[key] = tx
+	if withdrawal := s.rows.byID[plan.WithdrawalID]; withdrawal != nil {
+		withdrawal.TransactionID = &tx.ID
+	}
+	return &sweep.Result{FinalWithdrawTx: tx}, nil
+}
+
+func TestSubmit_Retry_AfterACrashBetweenTheSendAndItsMarkNeverSignsAgain(t *testing.T) {
+	wallet := sealedCreateWallet(t, "eth", nil)
+	rows := newSubmitRows()
+	events := &submitEvents{}
+	txs := newMemTransactions()
+	runner := &sendingSweep{planSweep: planSweep{strategy: sweep.StrategyDirectFromBase}, txs: txs, rows: rows}
+	svc := newSubmitService(t, wallet, &runner.planSweep, rows, events)
+	svc.sweep = runner
+	svc.transactionRepo = txs
+	in := submitInput(wallet)
+
+	// The process sent the transfer, then could not mark the withdrawal broadcast
+	// (it crashed, or the database failed): the withdrawal stays broadcasting.
+	rows.markBroadErr = errors.New("db down")
+	if _, err := svc.Submit(context.Background(), in); err == nil {
+		t.Fatal("setup: the mark failed")
+	}
+	withdrawalID := uuid.MustParse(in.IdempotencyKey)
+	stored := rows.byID[withdrawalID]
+	if stored == nil || stored.TransactionID == nil {
+		t.Fatalf("withdrawal %+v: linked to the transfer sent", stored)
+	}
+	// The in-memory row is the object Submit changed; the database kept what the
+	// failed mark did not overwrite.
+	stored.Status, stored.TxHash = models.WithdrawalStatusBroadcasting, ""
+	if len(rows.failed) != 0 || len(events.failures) != 0 {
+		t.Fatalf("failed=%v events=%v: a transfer that left is never failed", rows.failed, events.failures)
+	}
+
+	rows.markBroadErr = nil
+	result, err := svc.Submit(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runner.signed != 1 {
+		t.Fatalf("signed %d transfers: the retry with the same key must find the first one, never pay twice", runner.signed)
+	}
+	if w := result.Withdrawal; w.Status != models.WithdrawalStatusBroadcast || w.TxHash != "0xsent" {
+		t.Fatalf("retry result %+v: the transfer sent the first time", w)
+	}
+}

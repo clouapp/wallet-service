@@ -47,7 +47,7 @@ func (c *WithdrawalsReconcile) Extend() command.Extend {
 	return command.Extend{
 		Category: "withdraw",
 		Arguments: []command.Argument{
-			&command.ArgumentString{Name: "withdrawal", Usage: "withdrawal id", Required: true},
+			&command.ArgumentString{Name: "id", Usage: "withdrawal id, or the id of an outbound transaction (a sweep, a gas seed, a row no withdrawal points at)", Required: true},
 		},
 		Flags: []command.Flag{
 			&command.BoolFlag{Name: "apply", Usage: "record the block of a landed transfer, or fail a transfer proven unable to land (default: print the verdict only)"},
@@ -56,13 +56,13 @@ func (c *WithdrawalsReconcile) Extend() command.Extend {
 }
 
 func (c *WithdrawalsReconcile) Handle(ctx console.Context) error {
-	raw := strings.TrimSpace(ctx.ArgumentString("withdrawal"))
+	raw := strings.TrimSpace(ctx.ArgumentString("id"))
 	apply := ctx.OptionBool("apply")
 	id, err := uuid.Parse(raw)
 	if err != nil {
-		return fail(ctx, fmt.Errorf("withdrawal id %q is not a uuid", raw))
+		return fail(ctx, fmt.Errorf("id %q is not a uuid", raw))
 	}
-	report, err := c.withdrawals.ReconcileWithdrawal(context.Background(), deposit.WithdrawalReconciliation{WithdrawalID: id, Apply: apply})
+	report, err := c.withdrawals.ReconcileWithdrawal(context.Background(), deposit.WithdrawalReconciliation{ID: id, Apply: apply})
 	if err != nil {
 		return fail(ctx, err)
 	}
@@ -83,7 +83,11 @@ func reconcileLine(report deposit.WithdrawalReconcileReport, apply bool) string 
 	if report.Block > 0 {
 		verdict += fmt.Sprintf(" at block %d", report.Block)
 	}
-	line := fmt.Sprintf("withdrawal %s %s tx %s (%s): %s: %s", report.WithdrawalID, report.Chain, report.TxHash, report.Status, verdict, report.Reason)
+	subject := fmt.Sprintf("withdrawal %s", report.WithdrawalID)
+	if report.WithdrawalID == uuid.Nil {
+		subject = fmt.Sprintf("transaction %s", report.TransactionID)
+	}
+	line := fmt.Sprintf("%s %s tx %s (%s): %s: %s", subject, report.Chain, report.TxHash, report.Status, verdict, report.Reason)
 	switch {
 	case report.Applied:
 		return line + "; applied"

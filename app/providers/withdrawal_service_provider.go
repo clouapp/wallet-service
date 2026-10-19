@@ -139,6 +139,10 @@ func newSweepService(app foundation.Application) (sweep.Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	withdrawalRows, err := resolve[*repositories.WithdrawalRepository](app)
+	if err != nil {
+		return nil, err
+	}
 	return sweep.NewService(sweep.Deps{
 		Registry:     registry,
 		MPC:          mpcService,
@@ -153,8 +157,9 @@ func newSweepService(app foundation.Application) (sweep.Service, error) {
 		Flags: func(ctx context.Context, accountID uuid.UUID) error {
 			return flags.Gate(ctx, accountID, features.FlagSweepEnabled, features.CodeSweepPaused)
 		},
-		GasDefaults: nil,
-		TokenPricer: prices,
+		GasDefaults:     nil,
+		TokenPricer:     prices,
+		WithdrawalLinks: withdrawalRows,
 	}), nil
 }
 

@@ -1459,8 +1459,9 @@ func TestExecute_Withdrawal_ASentTransferIsNeverFailedByItsRecording(t *testing.
 			if err != nil || res == nil || res.FinalWithdrawTx == nil {
 				t.Fatalf("a transfer that may have left is never a failed withdrawal: res=%+v err=%v", res, err)
 			}
-			if txRepo.withins != len(persistRetryDelays)+1 || len(waits) != len(persistRetryDelays) {
-				t.Fatalf("tries=%d waits=%v: the recording is retried", txRepo.withins, waits)
+			// One transaction for the insert before the send, then the tries after it.
+			if txRepo.withins != 1+len(persistRetryDelays)+1 || len(waits) != len(persistRetryDelays) {
+				t.Fatalf("transactions=%d waits=%v: the recording is retried", txRepo.withins, waits)
 			}
 			if len(txRepo.created) != 1 || txRepo.created[0].TxHash != "0xsignedhash" || len(txRepo.failed) != 0 {
 				t.Fatalf("the row recorded before the send stays, tracked by its hash: rows=%+v failed=%v", txRepo.created, txRepo.failed)
@@ -1518,5 +1519,77 @@ func TestExecute_Linked_AnUnknownGasSeedOutcomeIsAwaitedLikeASentOne(t *testing.
 	if err := json.Unmarshal([]byte(seed.RawPayload), &payload); err != nil || payload[chain.BroadcastOutcomePayloadKey] != chain.BroadcastOutcomeUnknown ||
 		payload[chain.SenderNoncePayloadKey] != float64(41) || payload[chain.BroadcastHeadPayloadKey] != float64(777) {
 		t.Fatalf("gas seed raw_payload %s, %v", seed.RawPayload, err)
+	}
+}
+
+// recordingLinks records the withdrawals linked to their transaction, and whether
+// the link was made inside the insert's database transaction.
+type recordingLinks struct {
+	inside *bool
+	links  map[uuid.UUID]uuid.UUID
+	within bool
+	err    error
+}
+
+func (r *recordingLinks) LinkTransaction(_ context.Context, withdrawalID, transactionID uuid.UUID) error {
+	if r.err != nil {
+		return r.err
+	}
+	if r.links == nil {
+		r.links = map[uuid.UUID]uuid.UUID{}
+	}
+	r.links[withdrawalID] = transactionID
+	r.within = *r.inside
+	return nil
+}
+
+func TestExecute_Withdrawal_TheRowCarriesItsKeyAndItsWithdrawalBeforeTheSend(t *testing.T) {
+	var atSend []models.Transaction
+	var txRepo *fakeTxRepo
+	var links *recordingLinks
+	var linkedAtSend map[uuid.UUID]uuid.UUID
+	svc, txRepo, baseAddr, walletID := unknownOutcomeService(t, func(context.Context, *types.SignedTx) (string, error) {
+		for _, row := range txRepo.created {
+			atSend = append(atSend, *row)
+		}
+		linkedAtSend = map[uuid.UUID]uuid.UUID{}
+		for k, v := range links.links {
+			linkedAtSend[k] = v
+		}
+		return "0xsignedhash", nil
+	})
+	links = &recordingLinks{inside: &txRepo.inside}
+	svc.withdrawalLinks = links
+	withdrawalID := uuid.New()
+	plan := directWithdrawalPlan(walletID, baseAddr)
+	plan.WithdrawalID, plan.IdempotencyKey = withdrawalID, withdrawalID.String()
+	txID := uuid.New()
+
+	if _, err := svc.ExecutePlan(context.Background(), plan, SigningCredentials{ShareA: []byte("fake-share-a")}, txID, "0xDEST", "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(atSend) != 1 || atSend[0].IdempotencyKey == nil || *atSend[0].IdempotencyKey != withdrawalID.String() {
+		t.Fatalf("rows when the bytes left %+v: a retry with the key must find this transfer, never sign another", atSend)
+	}
+	if linkedAtSend[withdrawalID] != txID || !links.within {
+		t.Fatalf("links when the bytes left %v (in the insert's transaction: %v): the withdrawal points at its transaction before the send", linkedAtSend, links.within)
+	}
+}
+
+func TestExecute_Withdrawal_AWithdrawalThatCannotBeLinkedStopsBeforeTheSend(t *testing.T) {
+	sent := 0
+	svc, txRepo, baseAddr, walletID := unknownOutcomeService(t, func(context.Context, *types.SignedTx) (string, error) {
+		sent++
+		return "0xsignedhash", nil
+	})
+	svc.withdrawalLinks = &recordingLinks{inside: &txRepo.inside, err: errors.New("update withdrawal: connection refused")}
+	plan := directWithdrawalPlan(walletID, baseAddr)
+	plan.WithdrawalID, plan.IdempotencyKey = uuid.New(), "key"
+
+	if _, err := svc.ExecutePlan(context.Background(), plan, SigningCredentials{ShareA: []byte("fake-share-a")}, uuid.New(), "0xDEST", "user-1"); err == nil {
+		t.Fatal("a withdrawal that cannot be linked fails")
+	}
+	if sent != 0 || len(txRepo.created) != 0 {
+		t.Fatalf("sent=%d rows=%d: the row and its link commit together, before anything is sent", sent, len(txRepo.created))
 	}
 }

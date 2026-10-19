@@ -146,6 +146,7 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (*SubmitResult, er
 		Asset:           resolved.WalletAsset,
 		Passphrase:      in.Passphrase,
 		IdempotencyKey:  created.IdempotencyKey,
+		WithdrawalID:    w.ID,
 		CallerAccountID: callerAccountID,
 	}
 	if in.APIToken != nil {

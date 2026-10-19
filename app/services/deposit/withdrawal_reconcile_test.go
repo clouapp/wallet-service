@@ -55,7 +55,20 @@ func (ormRows) FindByID(_ context.Context, id uuid.UUID) (*models.Withdrawal, er
 	return &withdrawal, nil
 }
 
+func (ormRows) LinkTransaction(_ context.Context, id, transactionID uuid.UUID) error {
+	_, err := facades.Orm().Query().Model(&models.Withdrawal{}).Where("id = ?", id).Update("transaction_id", transactionID)
+	return err
+}
+
 type ormTransactions struct{}
+
+func (ormTransactions) FindByIdempotencyKey(_ context.Context, key string) (*models.Transaction, error) {
+	var tx models.Transaction
+	if err := facades.Orm().Query().Where("idempotency_key = ?", key).FirstOrFail(&tx); err != nil {
+		return nil, err
+	}
+	return &tx, nil
+}
 
 func (ormTransactions) FindByID(_ context.Context, id uuid.UUID) (*models.Transaction, error) {
 	var tx models.Transaction
@@ -67,7 +80,7 @@ func (ormTransactions) FindByID(_ context.Context, id uuid.UUID) (*models.Transa
 
 func (f reconcileFixture) reconcile(t *testing.T, withdrawalID uuid.UUID, apply bool) WithdrawalReconcileReport {
 	t.Helper()
-	report, err := f.svc.ReconcileWithdrawal(context.Background(), WithdrawalReconciliation{WithdrawalID: withdrawalID, Apply: apply})
+	report, err := f.svc.ReconcileWithdrawal(context.Background(), WithdrawalReconciliation{ID: withdrawalID, Apply: apply})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,6 +166,65 @@ func TestReconcile_Withdrawal_SaysWhyItIsStillUnknown(t *testing.T) {
 	}
 }
 
+func TestReconcile_Withdrawal_LinksTheTransferSentUnderItsKeyThenSettlesIt(t *testing.T) {
+	f := newReconcileFixture(t)
+	tx, withdrawal := sentWithdrawal(t, f.walletID, notLandedSender(1), 7, notLandedHead-100, true)
+	// The process sent the transfer and stopped before Submit linked the withdrawal.
+	if _, err := facades.Orm().Query().Model(&models.Withdrawal{}).Where("id = ?", withdrawal.ID).
+		Update(map[string]any{"transaction_id": nil, "status": models.WithdrawalStatusBroadcasting}); err != nil {
+		t.Fatal(err)
+	}
+	f.node.Receipts[strings.ToLower(tx.TxHash)] = mocks.FakeEVMReceipt{
+		Block: notLandedHead - 30, Status: "0x1", Gas: 21_000, GasUsed: 21_000, EffectiveGasPrice: failedReceiptGasPrice,
+	}
+
+	dry := f.reconcile(t, withdrawal.ID, false)
+	if dry.TransactionID != tx.ID || dry.Verdict != ReconcileLanded || dry.Applied || !strings.Contains(dry.Reason, "not linked") {
+		t.Fatalf("dry run %+v: the transfer under the withdrawal's key is found and named", dry)
+	}
+	if got := reloadWithdrawal(t, withdrawal.ID); got.TransactionID != nil {
+		t.Fatal("a dry run linked the withdrawal")
+	}
+
+	applied := f.reconcile(t, withdrawal.ID, true)
+	if !applied.Applied {
+		t.Fatalf("apply %+v", applied)
+	}
+	got := reloadWithdrawal(t, withdrawal.ID)
+	if got.TransactionID == nil || *got.TransactionID != tx.ID {
+		t.Fatalf("withdrawal %+v: linked to its transfer", got)
+	}
+	if row := reloadTransaction(t, tx.ID); row.BlockNumber != int64(notLandedHead-30) {
+		t.Fatalf("block %d", row.BlockNumber)
+	}
+}
+
+func TestReconcile_Transaction_ByItsOwnIDForSweepsGasSeedsAndOrphans(t *testing.T) {
+	f := newReconcileFixture(t)
+	f.node.NoTxIndex = true
+	seed := fixtures.InsertTransaction(t, f.walletID, nil, models.ChainTETH, models.TxTypeGasSeed, "confirming", models.NativeETH, "1000", 0)
+	payload := fmt.Sprintf(`{"%s":%d,"%s":%d,"%s":"%s"}`, chain.SenderNoncePayloadKey, 11, chain.BroadcastHeadPayloadKey, notLandedHead-100,
+		chain.BroadcastOutcomePayloadKey, chain.BroadcastOutcomeUnknown)
+	if _, err := facades.Orm().Query().Model(&models.Transaction{}).Where("id = ?", seed.ID).
+		Update(map[string]any{"raw_payload": payload, "from_address": notLandedSender(3)}); err != nil {
+		t.Fatal(err)
+	}
+	spendNonce(f.node, notLandedHead-50, notLandedSender(3), "0x00000000000000000000000000000000000000000000000000000000000000e3", 11, 21_000)
+
+	report := f.reconcile(t, seed.ID, true)
+	if report.WithdrawalID != uuid.Nil || report.TransactionID != seed.ID || report.Verdict != ReconcileFailed ||
+		report.FailureCode != models.WithdrawalFailureNotLanded || !report.Applied {
+		t.Fatalf("report %+v", report)
+	}
+	if got := reloadTransaction(t, seed.ID); got.Status != string(types.TxStatusFailed) {
+		t.Fatalf("status %s", got.Status)
+	}
+	deposit := fixtures.InsertTransaction(t, f.walletID, nil, models.ChainTETH, models.TxTypeDeposit, "confirming", models.NativeETH, "1", 0)
+	if _, err := f.svc.ReconcileWithdrawal(context.Background(), WithdrawalReconciliation{ID: deposit.ID}); err == nil {
+		t.Fatal("a deposit is not an outbound transfer to reconcile")
+	}
+}
+
 func TestReconcile_Withdrawal_WithoutATransactionWasNeverSent(t *testing.T) {
 	f := newReconcileFixture(t)
 	withdrawal := models.Withdrawal{
@@ -162,10 +234,10 @@ func TestReconcile_Withdrawal_WithoutATransactionWasNeverSent(t *testing.T) {
 	if err := facades.Orm().Query().Create(&withdrawal); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.svc.ReconcileWithdrawal(context.Background(), WithdrawalReconciliation{WithdrawalID: withdrawal.ID}); err == nil {
+	if _, err := f.svc.ReconcileWithdrawal(context.Background(), WithdrawalReconciliation{ID: withdrawal.ID}); err == nil {
 		t.Fatal("a withdrawal without a transaction has nothing to reconcile")
 	}
-	if _, err := f.svc.ReconcileWithdrawal(context.Background(), WithdrawalReconciliation{WithdrawalID: uuid.New()}); err == nil {
+	if _, err := f.svc.ReconcileWithdrawal(context.Background(), WithdrawalReconciliation{ID: uuid.New()}); err == nil {
 		t.Fatal("an unknown withdrawal is an error")
 	}
 }

@@ -170,3 +170,38 @@ func (s *WithdrawalRepositoryTestSuite) TestWithin_Rolls_BackARetry() {
 	s.Equal("0xold", found.DestinationAddress)
 	s.Equal("first", found.Note)
 }
+
+// The executor records a withdrawal's transfer and links the withdrawal to it in
+// one transaction of the transaction repository: the link joins it and rolls back
+// with it.
+func (s *WithdrawalRepositoryTestSuite) TestLink_Transaction_JoinsTheTransactionRepositorysTransaction() {
+	ctx := context.Background()
+	walletID := s.insertWallet()
+	withdrawalID := uuid.New()
+	s.Require().NoError(s.repo.Create(ctx, &models.Withdrawal{
+		ID: withdrawalID, WalletID: walletID, Status: models.WithdrawalStatusBroadcasting,
+		Amount: "1", FeeEstimate: "0", DestinationAddress: "0xdest",
+	}))
+	transactions := repositories.NewTransactionRepository(nil)
+	tx := fixtures.InsertTransaction(s.T(), walletID, nil, "eth", models.TxTypeWithdrawal, "confirming", "eth", "1", 0)
+
+	rolledBack := transactions.Within(ctx, func(txCtx context.Context) error {
+		if err := s.repo.LinkTransaction(txCtx, withdrawalID, tx.ID); err != nil {
+			return err
+		}
+		return errors.New("fail the insert after the link")
+	})
+	s.Require().Error(rolledBack)
+	found, err := s.repo.FindByID(ctx, withdrawalID)
+	s.Require().NoError(err)
+	s.Nil(found.TransactionID, "the link rolls back with the insert")
+
+	s.Require().NoError(transactions.Within(ctx, func(txCtx context.Context) error {
+		return s.repo.LinkTransaction(txCtx, withdrawalID, tx.ID)
+	}))
+	found, err = s.repo.FindByID(ctx, withdrawalID)
+	s.Require().NoError(err)
+	s.Require().NotNil(found.TransactionID)
+	s.Equal(tx.ID, *found.TransactionID)
+	s.Equal(models.WithdrawalStatusBroadcasting, found.Status, "linking does not change the status")
+}

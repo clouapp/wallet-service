@@ -60,6 +60,12 @@ type Plan struct {
 	Shortfall error
 	// DestinationTag is the XRP destination tag the withdrawal carries; nil sends none.
 	DestinationTag *uint32
+	// WithdrawalID and IdempotencyKey name the withdrawal row this plan executes: the
+	// final transfer's row is recorded under the key and the withdrawal linked to it,
+	// both before the bytes leave, so a retry with the key finds the transfer instead
+	// of signing another. Zero values record neither.
+	WithdrawalID   uuid.UUID
+	IdempotencyKey string
 }
 
 // CompletedSweep is a sweep leg that successfully broadcast.

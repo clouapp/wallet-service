@@ -496,7 +496,7 @@ func (s *service) broadcastWithdrawal(
 	}
 	tracked := strings.TrimSpace(signed.TxHash) != ""
 	if tracked {
-		if err = s.txRepo.Create(ctx, tx); err != nil {
+		if err = s.recordBeforeSend(ctx, tx, plan.WithdrawalID); err != nil {
 			return nil, fmt.Errorf("persist withdrawal: %w", err)
 		}
 	}
@@ -556,6 +556,24 @@ func (s *service) broadcastHead(ctx context.Context, adapter types.Chain, chainI
 		return 0
 	}
 	return head
+}
+
+// recordBeforeSend creates the withdrawal's transaction row (under its idempotency
+// key) and links the withdrawal to it, in one database transaction: either both are
+// there before the bytes leave or nothing is, and nothing is sent.
+func (s *service) recordBeforeSend(ctx context.Context, tx *models.Transaction, withdrawalID uuid.UUID) error {
+	return s.txRepo.Within(ctx, func(txCtx context.Context) error {
+		if err := s.txRepo.Create(txCtx, tx); err != nil {
+			return err
+		}
+		if s.withdrawalLinks == nil || withdrawalID == uuid.Nil {
+			return nil
+		}
+		if err := s.withdrawalLinks.LinkTransaction(txCtx, withdrawalID, tx.ID); err != nil {
+			return fmt.Errorf("link withdrawal %s: %w", withdrawalID, err)
+		}
+		return nil
+	})
 }
 
 // broadcastRefusedReason is the error_message of a withdrawal row recorded before
@@ -661,7 +679,17 @@ func withdrawalRow(adapter types.Chain, wallet *models.Wallet, plan *Plan, sourc
 		Source:         models.TxSourceWithdrawalFlow,
 		Origin:         models.TxOriginUserRequest,
 		RawPayload:     rawPayload,
+		IdempotencyKey: idempotencyKeyOf(plan),
 	}
+}
+
+// idempotencyKeyOf is the plan's idempotency key, nil without one.
+func idempotencyKeyOf(plan *Plan) *string {
+	key := strings.TrimSpace(plan.IdempotencyKey)
+	if key == "" {
+		return nil
+	}
+	return &key
 }
 
 // signWithdrawalTransfer builds and signs the transfer of plan.Amount from source to
