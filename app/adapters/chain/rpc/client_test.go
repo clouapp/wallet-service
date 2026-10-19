@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/macrowallets/waas/app/services/chain"
 )
 
 func TestRPCClient_Call_Success(t *testing.T) {
@@ -247,5 +249,41 @@ func TestRPC_Client_IncrementingIDs(t *testing.T) {
 		if ids[i] <= ids[i-1] {
 			t.Errorf("IDs should be incrementing: %v", ids)
 		}
+	}
+}
+
+func TestCall_AJSONRPCErrorCarriedByANon2xxStatusIsTheRPCError(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		status  int
+		body    string
+		code    int
+		unknown bool
+	}{
+		{"a rejection with HTTP 500 (bitcoind before v28)", http.StatusInternalServerError, `{"result":null,"error":{"code":-26,"message":"txn-mempool-conflict"},"id":1}`, -26, false},
+		{"invalid params with HTTP 400", http.StatusBadRequest, `{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"invalid argument 0"}}`, -32602, false},
+		{"a generic upstream error stays the HTTP failure", http.StatusBadGateway, `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"upstream request timeout"}}`, 0, true},
+		{"no JSON-RPC answer stays the HTTP failure", http.StatusInternalServerError, `<html>oops</html>`, 0, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			node := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			t.Cleanup(node.Close)
+
+			err := NewRPCClient(RPCClientDeps{URL: node.URL}).Call(context.Background(), "sendrawtransaction", nil, "00")
+			var rpcErr *RPCError
+			if tc.code != 0 {
+				if !errors.As(err, &rpcErr) || rpcErr.Code != tc.code {
+					t.Fatalf("err = %v, want JSON-RPC error %d", err, tc.code)
+				}
+			} else if errors.As(err, &rpcErr) {
+				t.Fatalf("err = %v, want the HTTP failure", err)
+			}
+			if got := errors.Is(chain.ClassifyBroadcast(err), chain.ErrUnknownOutcome); got != tc.unknown {
+				t.Fatalf("unknown outcome = %v, want %v (err %v)", got, tc.unknown, err)
+			}
+		})
 	}
 }

@@ -10,7 +10,6 @@ import (
 	"syscall"
 
 	"github.com/macrowallets/waas/app/services/chain"
-	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
 // outcome is what one answer of one endpoint means for failover.
@@ -65,8 +64,13 @@ var (
 		"rate limit", "rate-limit", "ratelimit", "too many requests", "request limit", "requests limit",
 		"daily limit", "quota", "capacity limit", "throttl",
 	}
+	// noStatePhrases are a node without the state of an old block (no archive): the
+	// call moves on, the node stays healthy for every other call.
+	noStatePhrases = []string{
+		"missing trie node", "historical state", "state is not available", "state not available", "pruned",
+	}
 	unavailablePhrases = []string{
-		"internal error", "header not found", "missing trie node", "unknown block", "upstream",
+		"internal error", "header not found", "unknown block", "upstream",
 		"backend", "temporarily unavailable", "service unavailable", "no healthy", "node is behind",
 		"node is unhealthy", "timeout", "timed out",
 	}
@@ -121,7 +125,7 @@ func classifyRPCErrorOf(rpcErr *rpcError, httpFailure bool) outcome {
 		switch {
 		case hasPhrase(message, rateLimitPhrases):
 			return outcomeRateLimited
-		case hasPhrase(message, unsupportedPhrases):
+		case hasPhrase(message, unsupportedPhrases), hasPhrase(message, noStatePhrases):
 			return outcomeUnsupported
 		case hasPhrase(message, unavailablePhrases):
 			return outcomeUnavailable
@@ -174,6 +178,14 @@ func shapeRefused(err error) bool {
 	return errors.As(err, &rpcErr) && rpcErr != nil && rpcErr.Code == jsonRPCInvalidParams
 }
 
+// MissingState reports a node's answer that it has no state for the block asked
+// about (a node without archive state: "missing trie node", "historical state ...
+// not available").
+func MissingState(err error) bool {
+	var rpcErr *rpcError
+	return errors.As(err, &rpcErr) && rpcErr != nil && hasPhrase(strings.ToLower(rpcErr.Message), noStatePhrases)
+}
+
 // skippedSlotAnswer reports a Solana getBlock answer that the slot was skipped (or
 // is missing from the node's ledger, which a node also reports as "skipped").
 func skippedSlotAnswer(err error) bool {
@@ -204,25 +216,10 @@ func notAccepted(kind outcome, err error) bool {
 	case outcomeRateLimited, outcomeUnsupported:
 		return true
 	case outcomeUnavailable:
-		return requestNotSent(err)
+		return chain.RequestNotSent(err)
 	default:
 		return false
 	}
-}
-
-// requestNotSent reports an error raised before the request left the process:
-// the request could not be built, or the connection failed (refused, DNS, no
-// route). The dial error must still be on the chain; a flattened one is treated
-// as possibly sent.
-func requestNotSent(err error) bool {
-	if err == nil {
-		return false
-	}
-	if httpclient.IsBuild(err) {
-		return true
-	}
-	var opErr *net.OpError
-	return errors.As(err, &opErr) && opErr != nil && opErr.Op == "dial"
 }
 
 // failureLabel is a short description of a failure for logs and health records.
@@ -241,7 +238,7 @@ func failureLabel(kind outcome, err error) string {
 		return "wrong network"
 	case errors.Is(err, syscall.ECONNREFUSED):
 		return "connection refused"
-	case requestNotSent(err):
+	case chain.RequestNotSent(err):
 		return "connection failed"
 	case timedOut(err):
 		return "timeout"

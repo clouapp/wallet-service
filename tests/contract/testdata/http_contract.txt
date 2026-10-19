@@ -4,7 +4,7 @@
 ### 01 health: GET /health
 status: 200
 content-type: application/json; charset=utf-8
-{"status":"ok","version":"0.1.0","deposit_scanner":{"status":"ok","pending":{},"pending_total":0}}
+{"status":"ok","version":"0.1.0","deposit_scanner":{"status":"ok","pending":{},"pending_total":0},"confirmation_tracker":{"status":"ok","stale":{},"stale_total":0,"stale_after_hours":6}}
 
 ### 02 register without a body: POST /v1/auth/register
 status: 400

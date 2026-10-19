@@ -132,14 +132,17 @@ func NewService(deps Deps) *Service {
 // quotas apply correctly on shared wallets. Controllers must populate this
 // from the request context.
 type WithdrawRequest struct {
-	WalletID        uuid.UUID `json:"wallet_id"`
-	ExternalUserID  string    `json:"external_user_id"`
-	ToAddress       string    `json:"to_address"`
-	DestinationTag  *uint32   `json:"destination_tag,omitempty"`
-	Amount          string    `json:"amount"`
-	Asset           string    `json:"asset"`
-	Passphrase      string    `json:"-"`
-	IdempotencyKey  string    `json:"idempotency_key"`
+	WalletID       uuid.UUID `json:"wallet_id"`
+	ExternalUserID string    `json:"external_user_id"`
+	ToAddress      string    `json:"to_address"`
+	DestinationTag *uint32   `json:"destination_tag,omitempty"`
+	Amount         string    `json:"amount"`
+	Asset          string    `json:"asset"`
+	Passphrase     string    `json:"-"`
+	IdempotencyKey string    `json:"idempotency_key"`
+	// WithdrawalID is the withdrawals row this request executes (Submit sets it): the
+	// executor links it to the transfer before the bytes leave.
+	WithdrawalID    uuid.UUID `json:"-"`
 	CallerAccountID uuid.UUID `json:"-"`
 	// AccessTokenID, SpendingLimit and QuoteAmount carry a per-token daily USD
 	// cap. A blank SpendingLimit keeps the withdrawal on today's path.
@@ -237,6 +240,9 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	if plan == nil {
 		return nil, nil, fmt.Errorf("plan withdrawal: nil plan")
 	}
+	// The final transfer is recorded under the key and its withdrawal linked to it
+	// before it is sent: a retry with the key finds it above and never signs another.
+	plan.WithdrawalID, plan.IdempotencyKey = req.WithdrawalID, req.IdempotencyKey
 
 	switch plan.Strategy {
 	case sweep.StrategyInsufficient:

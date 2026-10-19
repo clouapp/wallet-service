@@ -1,7 +1,11 @@
 // Package health shapes the answer of the process health check.
 package health
 
-import "github.com/macrowallets/waas/app/services/deposit"
+import (
+	"time"
+
+	"github.com/macrowallets/waas/app/services/deposit"
+)
 
 const (
 	statusOK = "ok"
@@ -11,14 +15,20 @@ const (
 	scannerHealthy      = "ok"
 	scannerPending      = "pending_blocks"
 	scannerUnobservable = "pending_store_unavailable"
+
+	trackerSettled      = "ok"
+	trackerStale        = "stale_transactions"
+	trackerUnobservable = "transactions_store_unavailable"
 )
 
 // Health is the public health payload. DepositScanner reports blocks whose
-// deposits failed to record and still wait for a retry.
+// deposits failed to record and still wait for a retry; ConfirmationTracker the
+// outbound transfers nothing settled in time.
 type Health struct {
-	Status         string         `json:"status" example:"ok"`
-	Version        string         `json:"version" example:"0.1.0"`
-	DepositScanner DepositScanner `json:"deposit_scanner"`
+	Status              string              `json:"status" example:"ok"`
+	Version             string              `json:"version" example:"0.1.0"`
+	DepositScanner      DepositScanner      `json:"deposit_scanner"`
+	ConfirmationTracker ConfirmationTracker `json:"confirmation_tracker"`
 }
 
 // DepositScanner reports pending deposit blocks per chain. Status is ok,
@@ -30,9 +40,21 @@ type DepositScanner struct {
 	Error        string         `json:"error,omitempty"`
 }
 
-// NewHealth projects the deposit scanner's pending blocks. The provider error
-// stays off the wire.
-func NewHealth(pending deposit.PendingHealth) Health {
+// ConfirmationTracker reports, per chain, the outbound transfers (withdrawals,
+// sweeps, gas seeds) still pending or confirming stale_after_hours after they were
+// recorded: withdrawals:reconcile settles them. Status is ok, stale_transactions,
+// or transactions_store_unavailable.
+type ConfirmationTracker struct {
+	Status          string         `json:"status" example:"ok"`
+	Stale           map[string]int `json:"stale"`
+	StaleTotal      int            `json:"stale_total" example:"0"`
+	StaleAfterHours int            `json:"stale_after_hours" example:"6"`
+	Error           string         `json:"error,omitempty"`
+}
+
+// NewHealth projects the deposit scanner's pending blocks and the outbound
+// transfers left unsettled. Store errors stay off the wire.
+func NewHealth(pending deposit.PendingHealth, stale deposit.StaleOutboundHealth) Health {
 	scanner := DepositScanner{Status: scannerHealthy, Pending: pending.Counts, PendingTotal: pending.Total}
 	if pending.Total > 0 {
 		scanner.Status = scannerPending
@@ -41,5 +63,15 @@ func NewHealth(pending deposit.PendingHealth) Health {
 		scanner.Status = scannerUnobservable
 		scanner.Error = "pending store unavailable"
 	}
-	return Health{Status: statusOK, Version: version, DepositScanner: scanner}
+	tracker := ConfirmationTracker{
+		Status: trackerSettled, Stale: stale.Counts, StaleTotal: stale.Total, StaleAfterHours: int(stale.After / time.Hour),
+	}
+	if stale.Total > 0 {
+		tracker.Status = trackerStale
+	}
+	if stale.Err != nil {
+		tracker.Status = trackerUnobservable
+		tracker.Error = "transactions store unavailable"
+	}
+	return Health{Status: statusOK, Version: version, DepositScanner: scanner, ConfirmationTracker: tracker}
 }

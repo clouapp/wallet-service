@@ -2,9 +2,12 @@ package sweep
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/big"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -240,7 +243,9 @@ type linkedLegRow struct {
 
 // broadcastGasSeed signs a base to child native transfer with the base key,
 // broadcasts it, records it as a gas_seed row and waits until it is in a block
-// where the chain requires it.
+// where the chain requires it. A seed whose broadcast outcome is unknown (with a
+// signed hash) is recorded and awaited the same way: it may land, and failing the
+// leg would make the next run seed the child again.
 func (s *service) broadcastGasSeed(
 	ctx context.Context,
 	adapter types.Chain,
@@ -256,11 +261,23 @@ func (s *service) broadcastGasSeed(
 	if err != nil {
 		return fmt.Errorf("sign transaction: %w", err)
 	}
+	head := s.broadcastHead(ctx, adapter, plan.Chain)
 	hash, err := adapter.BroadcastTransaction(ctx, signed)
-	if err != nil {
+	unknown := err != nil && strings.TrimSpace(signed.TxHash) != "" && errors.Is(err, chain.ErrUnknownOutcome)
+	if err != nil && !unknown {
 		return fmt.Errorf("broadcast: %w", err)
 	}
+	if unknown {
+		hash = signed.TxHash
+		slog.Warn("gas_seed broadcast outcome unknown; recorded and awaited by its signed hash",
+			"chain", plan.Chain, "tx_hash", hash, "child", leg.From.Address, "error", chain.ClientText(err))
+	}
 	tx := sweepLegTransaction(wallet, plan, leg, uuid.New(), opts, unsigned, hash, nil, true, adapter)
+	if unknown {
+		if tx.RawPayload, err = broadcastRawPayload(adapter, signed, head, true); err != nil {
+			return fmt.Errorf("record gas_seed payload: %w", err)
+		}
+	}
 	if err := s.txRepo.Create(ctx, tx); err != nil {
 		return fmt.Errorf("persist %s tx: %w", models.TxTypeGasSeed, err)
 	}
@@ -443,9 +460,16 @@ type withdrawalBroadcastStager interface {
 // direct_from_base, direct_from_child, and the closing leg of multi_sweep
 // (where source == wallet base deposit address).
 //
-// The chain broadcast stays outside the database transaction. The withdrawal
-// row and its withdrawal.broadcasting webhook commit together. A failed webhook
-// insert rolls the withdrawal row back. SQS runs only after that commit.
+// The row is recorded under the hash of the signed bytes before they leave (a row
+// that cannot be recorded stops the withdrawal before anything is sent). From the
+// send on, the withdrawal is never failed for a transfer that may land: an answer
+// that does not say whether the network took it (chain.ErrUnknownOutcome) keeps
+// the row, marked broadcast_outcome unknown, and a recording or webhook insert that
+// fails after the send is retried, then logged, with the row left for the tracker
+// to settle by its hash. A definite refusal marks the row failed. The
+// withdrawal.broadcasting webhook is staged in a database transaction after the
+// send; SQS runs only after it commits. A signed transaction without a hash (no
+// adapter in production) is recorded after the send, as before.
 func (s *service) broadcastWithdrawal(
 	ctx context.Context,
 	adapter types.Chain,
@@ -461,24 +485,188 @@ func (s *service) broadcastWithdrawal(
 	if err != nil {
 		return nil, err
 	}
-	rawPayload, err := broadcastRawPayload(adapter, signed)
+	head := s.broadcastHead(ctx, adapter, plan.Chain)
+	rawPayload, err := broadcastRawPayload(adapter, signed, head, false)
 	if err != nil {
 		return nil, fmt.Errorf("record last valid block: %w", err)
 	}
-	hash, err := adapter.BroadcastTransaction(ctx, signed)
-	if err != nil {
-		return nil, fmt.Errorf("broadcast: %w", err)
+	tx := withdrawalRow(adapter, wallet, plan, source, toAddress, externalUserID, txID, signed.TxHash, rawPayload)
+	if token != nil {
+		tx.TokenContract = token.Contract
+	}
+	tracked := strings.TrimSpace(signed.TxHash) != ""
+	if tracked {
+		if err = s.recordBeforeSend(ctx, tx, plan.WithdrawalID); err != nil {
+			return nil, fmt.Errorf("persist withdrawal: %w", err)
+		}
 	}
 
+	hash, err := adapter.BroadcastTransaction(ctx, signed)
+	unknown := err != nil && tracked && errors.Is(err, chain.ErrUnknownOutcome)
+	if err != nil && !unknown {
+		if tracked {
+			s.markNotSent(ctx, tx, err)
+		}
+		return nil, fmt.Errorf("broadcast: %w", err)
+	}
+	if unknown {
+		hash = signed.TxHash
+		slog.Warn("withdrawal broadcast outcome unknown; recorded and tracked by its signed hash",
+			"tx_id", txID, "tx_hash", hash, "chain", plan.Chain, "error", chain.ClientText(err))
+		if tx.RawPayload, err = broadcastRawPayload(adapter, signed, head, true); err != nil {
+			return nil, fmt.Errorf("record last valid block: %w", err)
+		}
+	}
+	if strings.TrimSpace(hash) == "" {
+		hash = signed.TxHash
+	}
+	if !tracked {
+		tx.TxHash = hash
+		return tx, s.persistWithRetry(ctx, tx, "persist withdrawal", func(txCtx context.Context) error {
+			return s.txRepo.Create(txCtx, tx)
+		})
+	}
+	update := unknown || !strings.EqualFold(hash, tx.TxHash)
+	tx.TxHash = hash
+	if err := s.persistWithRetry(ctx, tx, "record withdrawal broadcast", func(txCtx context.Context) error {
+		if !update {
+			return nil
+		}
+		return s.txRepo.RecordBroadcast(txCtx, tx.ID, tx.TxHash, tx.RawPayload)
+	}); err != nil {
+		// The bytes may be on their way: the row recorded before the send stays, and
+		// the tracker settles it by its hash.
+		slog.Error("withdrawal sent but its broadcast could not be recorded; the tracker settles it by its hash",
+			"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", plan.Chain, "error", err)
+	}
+	return tx, nil
+}
+
+// broadcastHead is the chain head read just before a send, for an adapter that can
+// prove which transaction spent a nonce (chain.NonceSpendReader, EVM): no earlier
+// block can hold the transfer. 0 for any other adapter, or when the head cannot be
+// read (logged: an unknown outcome of that transfer then cannot be proven).
+func (s *service) broadcastHead(ctx context.Context, adapter types.Chain, chainID string) uint64 {
+	if _, ok := adapter.(chain.NonceSpendReader); !ok {
+		return 0
+	}
+	head, err := adapter.GetLatestBlock(ctx)
+	if err != nil {
+		slog.Warn("chain head before a withdrawal send could not be read", "chain", chainID, "error", err)
+		return 0
+	}
+	return head
+}
+
+// recordBeforeSend creates the withdrawal's transaction row (under its idempotency
+// key) and links the withdrawal to it, in one database transaction: either both are
+// there before the bytes leave or nothing is, and nothing is sent.
+func (s *service) recordBeforeSend(ctx context.Context, tx *models.Transaction, withdrawalID uuid.UUID) error {
+	return s.txRepo.Within(ctx, func(txCtx context.Context) error {
+		if err := s.txRepo.Create(txCtx, tx); err != nil {
+			return err
+		}
+		if s.withdrawalLinks == nil || withdrawalID == uuid.Nil {
+			return nil
+		}
+		if err := s.withdrawalLinks.LinkTransaction(txCtx, withdrawalID, tx.ID); err != nil {
+			return fmt.Errorf("link withdrawal %s: %w", withdrawalID, err)
+		}
+		return nil
+	})
+}
+
+// broadcastRefusedReason is the error_message of a withdrawal row recorded before
+// its send and then refused by the network (nothing left).
+const broadcastRefusedReason = "broadcast_refused"
+
+// markNotSent marks a row recorded before a send that was refused. A row that
+// cannot be marked stays pending (the tracker finds nothing for its hash); it is
+// logged so an operator can settle it.
+func (s *service) markNotSent(ctx context.Context, tx *models.Transaction, cause error) {
+	if err := s.txRepo.MarkFailed(ctx, tx.ID, broadcastRefusedReason); err != nil {
+		slog.Error("withdrawal broadcast refused but its row could not be marked failed",
+			"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "broadcast_error", chain.ClientText(cause), "error", err)
+	}
+}
+
+// persistRetryDelays are the waits before each new try of the recording that
+// follows a send.
+var persistRetryDelays = []time.Duration{200 * time.Millisecond, 600 * time.Millisecond}
+
+// persistWithRetry runs write and stages the withdrawal.broadcasting webhook in one
+// database transaction, retried after persistRetryDelays, and sends the webhook
+// once it commits. A failed webhook insert rolls write back.
+func (s *service) persistWithRetry(ctx context.Context, tx *models.Transaction, what string, write func(context.Context) error) error {
+	var err error
+	for attempt := 0; ; attempt++ {
+		var send func(context.Context)
+		err = s.txRepo.Within(ctx, func(txCtx context.Context) error {
+			if writeErr := write(txCtx); writeErr != nil {
+				return fmt.Errorf("%s: %w", what, writeErr)
+			}
+			staged, stageErr := s.stageWithdrawalBroadcasting(txCtx, tx)
+			send = staged
+			return stageErr
+		})
+		if err == nil {
+			if send != nil {
+				send(ctx)
+			}
+			return nil
+		}
+		if attempt == len(persistRetryDelays) || ctx.Err() != nil {
+			return err
+		}
+		slog.Warn("withdrawal recording failed, retrying", "tx_id", tx.ID, "attempt", attempt+1, "error", err)
+		if sleepErr := s.sleepFor(ctx, persistRetryDelays[attempt]); sleepErr != nil {
+			return err
+		}
+	}
+}
+
+// stageWithdrawalBroadcasting inserts the withdrawal.broadcasting webhook row on the
+// caller's transaction; nil without a webhook writer.
+func (s *service) stageWithdrawalBroadcasting(txCtx context.Context, tx *models.Transaction) (func(context.Context), error) {
+	if s.webhookSvc == nil {
+		return nil, nil
+	}
+	stager, ok := s.webhookSvc.(withdrawalBroadcastStager)
+	if !ok {
+		return nil, fmt.Errorf("persist withdrawal webhook: event writer cannot join the transaction")
+	}
+	staged, err := stager.StageWithdrawalBroadcasting(txCtx, tx)
+	if err != nil {
+		return nil, fmt.Errorf("persist withdrawal webhook: %w", err)
+	}
+	return staged, nil
+}
+
+func (s *service) sleepFor(ctx context.Context, d time.Duration) error {
+	if s.sleep != nil {
+		return s.sleep(ctx, d)
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// withdrawalRow is the transactions row of a final withdrawal transfer.
+func withdrawalRow(adapter types.Chain, wallet *models.Wallet, plan *Plan, source models.Address, toAddress, externalUserID string, txID uuid.UUID, txHash, rawPayload string) *models.Transaction {
 	sourceID := source.ID
-	tx := &models.Transaction{
+	return &models.Transaction{
 		ID:             txID,
 		WalletID:       wallet.ID,
 		AddressID:      &sourceID,
 		ExternalUserID: externalUserID,
 		Chain:          plan.Chain,
 		TxType:         models.TxTypeWithdrawal,
-		TxHash:         hash,
+		TxHash:         txHash,
 		FromAddress:    source.Address,
 		ToAddress:      toAddress,
 		DestinationTag: copyTag(plan.DestinationTag),
@@ -491,36 +679,17 @@ func (s *service) broadcastWithdrawal(
 		Source:         models.TxSourceWithdrawalFlow,
 		Origin:         models.TxOriginUserRequest,
 		RawPayload:     rawPayload,
+		IdempotencyKey: idempotencyKeyOf(plan),
 	}
-	if token != nil {
-		tx.TokenContract = token.Contract
-	}
+}
 
-	var send func(context.Context)
-	if err := s.txRepo.Within(ctx, func(txCtx context.Context) error {
-		if err := s.txRepo.Create(txCtx, tx); err != nil {
-			return fmt.Errorf("persist withdrawal: %w", err)
-		}
-		if s.webhookSvc == nil {
-			return nil
-		}
-		stager, ok := s.webhookSvc.(withdrawalBroadcastStager)
-		if !ok {
-			return fmt.Errorf("persist withdrawal webhook: event writer cannot join the transaction")
-		}
-		staged, stageErr := stager.StageWithdrawalBroadcasting(txCtx, tx)
-		if stageErr != nil {
-			return fmt.Errorf("persist withdrawal webhook: %w", stageErr)
-		}
-		send = staged
+// idempotencyKeyOf is the plan's idempotency key, nil without one.
+func idempotencyKeyOf(plan *Plan) *string {
+	key := strings.TrimSpace(plan.IdempotencyKey)
+	if key == "" {
 		return nil
-	}); err != nil {
-		return nil, err
 	}
-	if send != nil {
-		send(ctx)
-	}
-	return tx, nil
+	return &key
 }
 
 // signWithdrawalTransfer builds and signs the transfer of plan.Amount from source to

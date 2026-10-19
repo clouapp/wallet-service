@@ -134,12 +134,14 @@ func (a *SolanaLive) buildSolanaTransfer(ctx context.Context, req types.Transfer
 	}
 	var result struct {
 		Value struct {
-			Blockhash string `json:"blockhash"`
+			Blockhash            string `json:"blockhash"`
+			LastValidBlockHeight uint64 `json:"lastValidBlockHeight"`
 		} `json:"value"`
 	}
 	if err := a.rpc.Call(ctx, "getLatestBlockhash", &result, map[string]string{"commitment": "finalized"}); err != nil {
 		return nil, err
 	}
+	a.blockhashes.remember(result.Value.Blockhash, result.Value.LastValidBlockHeight)
 	var raw []byte
 	meta := map[string]interface{}{}
 	if req.Token == nil {

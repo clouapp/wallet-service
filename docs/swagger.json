@@ -1986,7 +1986,7 @@
         },
         "/health": {
             "get": {
-                "description": "Returns service status and version, and how many deposit blocks per chain wait for a retry",
+                "description": "Returns service status and version, how many deposit blocks per chain wait for a retry, and how many outbound transfers per chain are still unsettled after WITHDRAWAL_STALE_AFTER_HOURS (settle them with artisan withdrawals:reconcile)",
                 "produces": [
                     "application/json"
                 ],
@@ -6462,7 +6462,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Initiates a new withdrawal. The withdrawal is created in 'pending' status and queued for approval/processing.\nThe access token itself is the authentication factor (reinforced by HMAC signing when the token has require_signature=true), so no TOTP is required. The withdrawal is attributed to the token's account. The wallet passphrase is verified before the withdrawal row is persisted.\nXRP: destination_tag (integer 0..4294967295) is optional, persisted and returned next to destination_address; a destination that requires a tag answers 422 destination_tag_required without one, and any other chain answers 422 destination_tag_not_supported when one is sent. A withdrawal whose XRP payment fails on chain ends failed with failure_reason onchain_\u003cresult in lowercase\u003e (e.g. onchain_tecno_dst_insuf_xrp) or expired, and withdrawal.failed is sent once. An EVM withdrawal mined with a failed receipt (status 0x0: out of gas or reverted, fee paid, nothing moved) ends failed with failure_reason onchain_out_of_gas or onchain_reverted, and withdrawal.failed is sent once.",
+                "description": "Initiates a new withdrawal. The withdrawal is created in 'pending' status and queued for approval/processing.\nThe access token itself is the authentication factor (reinforced by HMAC signing when the token has require_signature=true), so no TOTP is required. The withdrawal is attributed to the token's account. The wallet passphrase is verified before the withdrawal row is persisted.\nXRP: destination_tag (integer 0..4294967295) is optional, persisted and returned next to destination_address; a destination that requires a tag answers 422 destination_tag_required without one, and any other chain answers 422 destination_tag_not_supported when one is sent. A withdrawal whose XRP payment fails on chain ends failed with failure_reason onchain_\u003cresult in lowercase\u003e (e.g. onchain_tecno_dst_insuf_xrp) or expired, and withdrawal.failed is sent once. An EVM withdrawal mined with a failed receipt (status 0x0: out of gas or reverted, fee paid, nothing moved) ends failed with failure_reason onchain_out_of_gas or onchain_reverted, and withdrawal.failed is sent once. A withdrawal whose broadcast answer did not say whether the network took it (a timeout after the send, an HTTP 5xx, an unreadable answer) stays broadcast and is settled by its transaction hash (its withdrawal.broadcast event carries broadcast_outcome unknown); an EVM transfer that can never be included (no node knows it and another transaction spent its nonce) ends failed with failure_reason not_landed, and withdrawal.failed is sent once.",
                 "consumes": [
                     "application/json"
                 ],
@@ -8136,6 +8136,32 @@
                 }
             }
         },
+        "health.ConfirmationTracker": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "stale": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "stale_after_hours": {
+                    "type": "integer",
+                    "example": 6
+                },
+                "stale_total": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "status": {
+                    "type": "string",
+                    "example": "ok"
+                }
+            }
+        },
         "health.DepositScanner": {
             "type": "object",
             "properties": {
@@ -8161,6 +8187,9 @@
         "health.Health": {
             "type": "object",
             "properties": {
+                "confirmation_tracker": {
+                    "$ref": "#/definitions/health.ConfirmationTracker"
+                },
                 "deposit_scanner": {
                     "$ref": "#/definitions/health.DepositScanner"
                 },

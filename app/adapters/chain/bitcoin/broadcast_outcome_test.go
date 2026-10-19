@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -16,13 +17,41 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-func TestBroadcast_Unknown_OutcomeIsNotAKnownFailure(t *testing.T) {
+func TestBroadcast_ARefusedConnectionWasNeverSent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Error("closed server was dialed")
 	}))
 	endpoint := srv.URL
 	srv.Close()
 
+	t.Run("rpc", func(t *testing.T) {
+		live := NewBitcoinLive(BitcoinConfig{RPCURL: endpoint, NativeSymbol: "BTC"})
+		assertNeverSentBroadcast(t, live)
+	})
+	t.Run("rest", func(t *testing.T) {
+		live := NewBitcoinLive(BitcoinConfig{RPCURL: endpoint, NativeSymbol: "BTC"})
+		live.restAPI = true
+		live.http = httpclient.NewClient(time.Second)
+		assertNeverSentBroadcast(t, live)
+	})
+}
+
+// droppingServer reads each request and drops the connection without an answer:
+// the bytes reached it, the outcome is unknown.
+func droppingServer(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {
+			_ = conn.Close()
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+func TestBroadcast_Unknown_OutcomeIsNotAKnownFailure(t *testing.T) {
+	endpoint := droppingServer(t)
 	t.Run("rpc", func(t *testing.T) {
 		live := NewBitcoinLive(BitcoinConfig{RPCURL: endpoint, NativeSymbol: "BTC"})
 		assertUnknownBroadcast(t, live)
@@ -35,7 +64,7 @@ func TestBroadcast_Unknown_OutcomeIsNotAKnownFailure(t *testing.T) {
 	})
 }
 
-func TestBroadcast_Server_ErrorStaysAKnownFailure(t *testing.T) {
+func TestBroadcast_ARESTServerErrorIsAnUnknownOutcome(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
 	}))
@@ -45,8 +74,47 @@ func TestBroadcast_Server_ErrorStaysAKnownFailure(t *testing.T) {
 	live.restAPI = true
 	live.http = httpclient.Wrap(srv.Client())
 	_, err := live.BroadcastTransaction(context.Background(), &types.SignedTx{RawBytes: []byte{0x01}})
-	if !chain.KnownFailure(err) || errors.Is(err, chain.ErrUnknownOutcome) {
-		t.Fatalf("HTTP 502 broadcast: %v", err)
+	if !errors.Is(err, chain.ErrUnknownOutcome) || chain.KnownFailure(err) {
+		t.Fatalf("an Esplora 502 to POST /tx may have relayed the bytes (a gateway failing after the send): %v", err)
+	}
+}
+
+func TestBroadcast_ABitcoindRejectionCarriedByHTTP500IsARejection(t *testing.T) {
+	raw, txid := failoverTestRawTx(t)
+	answering := func(body string) string {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			// bitcoind before v28 and litecoind answer every JSON-RPC error with HTTP 500.
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, body)
+		}))
+		t.Cleanup(srv.Close)
+		return srv.URL
+	}
+
+	conflict := NewBitcoinLive(BitcoinConfig{RPCURL: answering(`{"result":null,"error":{"code":-26,"message":"txn-mempool-conflict"},"id":1}`), NativeSymbol: "BTC"})
+	_, err := conflict.BroadcastTransaction(context.Background(), &types.SignedTx{RawBytes: raw, TxHash: txid})
+	var rejected *btcBroadcastRejectedError
+	if !errors.As(err, &rejected) || errors.Is(err, chain.ErrUnknownOutcome) {
+		t.Fatalf("a -26 refusal carried by HTTP 500 is the node's rejection, not an unknown outcome: %v", err)
+	}
+
+	known := NewBitcoinLive(BitcoinConfig{RPCURL: answering(`{"result":null,"error":{"code":-27,"message":"Transaction already in block chain"},"id":1}`), NativeSymbol: "BTC"})
+	if got, err := known.BroadcastTransaction(context.Background(), &types.SignedTx{RawBytes: raw, TxHash: txid}); err != nil || got != txid {
+		t.Fatalf("already in the chain = %q, %v; want the signed txid %s", got, err, txid)
+	}
+
+	generic := NewBitcoinLive(BitcoinConfig{RPCURL: answering(`<html>500 Internal Server Error</html>`), NativeSymbol: "BTC"})
+	if _, err := generic.BroadcastTransaction(context.Background(), &types.SignedTx{RawBytes: raw, TxHash: txid}); !errors.Is(err, chain.ErrUnknownOutcome) {
+		t.Fatalf("an HTTP 500 without a JSON-RPC answer may have relayed the bytes: %v", err)
+	}
+}
+
+func assertNeverSentBroadcast(t *testing.T, live *BitcoinLive) {
+	t.Helper()
+	_, err := live.BroadcastTransaction(context.Background(), &types.SignedTx{RawBytes: []byte{0x01}})
+	if err == nil || errors.Is(err, chain.ErrUnknownOutcome) {
+		t.Fatalf("a broadcast whose connection was refused reached no node: %v", err)
 	}
 }
 

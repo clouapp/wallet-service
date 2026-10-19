@@ -451,6 +451,9 @@ Cada config só recebe eventos de wallets da própria conta (configs legadas sem
 ```
 
 - `amount` é decimal (string); `amount_base_units` é inteiro na menor unidade do ativo (string), com `decimals`.
+- `broadcast_outcome` (campo adicional, só presente quando aplicável): `"unknown"` quando a resposta do broadcast
+  não disse se a rede aceitou a transação (timeout depois do envio, HTTP 5xx, resposta ilegível). O saque fica
+  `broadcast` e é resolvido pelo hash; o cliente pode mostrá-lo como "em verificação". Ausente nos restantes casos.
 - `failure_code` ∈ `insufficient_funds`, `wallet_not_gas_ready`, `unsupported_chain`, `sweep_limit_exceeded`,
   `invalid_passphrase`, `passphrase_too_short`, `concurrent_withdrawal`, `too_many_attempts`, `internal_error`,
   e no XRP `destination_below_reserve` (destino inexistente recebendo menos que a reserva base),
@@ -459,7 +462,14 @@ Cada config só recebe eventos de wallets da própria conta (configs legadas sem
   `LastLedgerSequence` sem entrar num ledger validado) e `onchain_<resultado em minúsculas>` (pagamento validado com
   resultado `tec…`, ex. `onchain_tecno_dst_insuf_xrp`; a fee foi paga). Nas chains EVM, uma transação minerada com
   recibo de status `0x0` termina com `onchain_out_of_gas` (consumiu todo o limite de gas) ou `onchain_reverted`
-  (revertida); a fee foi paga e o valor não foi transferido.
+  (revertida); a fee foi paga e o valor não foi transferido. Um saque cuja resposta de broadcast não diz se a rede o
+  aceitou (timeout depois do envio, HTTP 5xx, resposta ilegível) fica `broadcast` e é resolvido pelo hash da
+  transação assinada. Numa chain EVM termina com `not_landed` só com prova positiva: o bloco em que o nonce do
+  remetente foi gasto contém outra transação com esse nonce (se contém a nossa, o saque é confirmado a partir desse
+  bloco). XRP termina com `expired` depois do último ledger válido; Solana, só para um broadcast de resultado
+  desconhecido, depois do último bloco válido e quando nenhum endpoint a conhece (dois endpoints, ou o mesmo duas
+  vezes com dez minutos de intervalo). O que nada prova fica `broadcast`; um operador resolve-o com
+  `withdrawals:reconcile`.
 - `destination_tag` (inteiro 0..4294967295, só XRP) vem ao lado de `destination_address` quando o saque tem tag;
   omitido nos demais.
 - Deduplicação: no máximo um evento por (config, tipo, saque) — índice único `webhook_events_subject_dedup_unique`.

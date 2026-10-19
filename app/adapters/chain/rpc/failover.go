@@ -423,6 +423,12 @@ func (c *RPCClient) call(ctx context.Context, set *endpointSet, method string, o
 	if lastErr == nil {
 		lastErr = fmt.Errorf("rpc call %s: no usable endpoint", method)
 	}
+	if broadcast {
+		// The loop returns as soon as an endpoint may have taken the bytes: every
+		// endpoint left was skipped (its identity could not be checked) or certainly
+		// did not take them, so no broadcast exchange reached a node.
+		return chain.NotSent(lastErr)
+	}
 	return lastErr
 }
 

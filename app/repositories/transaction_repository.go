@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -199,6 +200,29 @@ func (r *TransactionRepository) FindPendingByChain(ctx context.Context, chainID 
 	return pending, nil
 }
 
+// CountStaleOutbound counts, per chain, the withdrawals, sweeps and gas seeds still
+// pending or confirming that were recorded before olderThan.
+func (r *TransactionRepository) CountStaleOutbound(ctx context.Context, olderThan time.Time) (map[string]int, error) {
+	var rows []struct {
+		Chain string
+		Count int
+	}
+	if err := r.Query(ctx).Raw(
+		`SELECT chain, COUNT(*) AS count FROM transactions
+		 WHERE tx_type IN (?, ?, ?) AND status IN (?, ?) AND created_at < ?
+		 GROUP BY chain`,
+		models.TxTypeWithdrawal, models.TxTypeSweep, models.TxTypeGasSeed,
+		string(types.TxStatusPending), string(types.TxStatusConfirming), olderThan.UTC(),
+	).Scan(&rows); err != nil {
+		return nil, fmt.Errorf("count stale outbound transactions: %w", err)
+	}
+	counts := make(map[string]int, len(rows))
+	for _, row := range rows {
+		counts[row.Chain] = row.Count
+	}
+	return counts, nil
+}
+
 // FindConfirmedOutboundWithoutFee lists confirmed withdrawals, sweeps and gas seeds
 // of chainID whose paid fee was never recorded, oldest first.
 func (r *TransactionRepository) FindConfirmedOutboundWithoutFee(ctx context.Context, chainID string, limit int) ([]models.Transaction, error) {
@@ -314,6 +338,22 @@ func (r *TransactionRepository) MarkFailed(ctx context.Context, id uuid.UUID, re
 		"error_message":   reason,
 		"idempotency_key": nil,
 	}, "mark transaction failed")
+}
+
+// RecordBroadcast stores what a send answered on a row recorded before it: the hash
+// the node returned and the raw payload (an unknown outcome is kept there). r.Query
+// joins the caller's transaction.
+func (r *TransactionRepository) RecordBroadcast(ctx context.Context, id uuid.UUID, txHash, rawPayload string) error {
+	if strings.TrimSpace(txHash) == "" {
+		return fmt.Errorf("record transaction broadcast: tx hash is required")
+	}
+	return r.updateColumns(ctx, id, map[string]any{"tx_hash": txHash, "raw_payload": rawPayload}, "record transaction broadcast")
+}
+
+// SetRawPayload rewrites raw_payload: what the confirmation tracker keeps between
+// passes (a first sight of an expiry, the next try of a proof).
+func (r *TransactionRepository) SetRawPayload(ctx context.Context, id uuid.UUID, rawPayload string) error {
+	return r.updateColumns(ctx, id, map[string]any{"raw_payload": rawPayload}, "set transaction raw payload")
 }
 
 // RecordConfirmations stores the confirmation count, status, and confirmed_at together.

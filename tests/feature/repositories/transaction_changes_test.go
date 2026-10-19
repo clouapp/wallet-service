@@ -44,6 +44,9 @@ func (s *TransactionRepositoryTestSuite) TestUpdates_Move_UpdatedAt() {
 		"failed":             func(id uuid.UUID) error { return s.repo.MarkFailed(ctx, id, "expired") },
 		"block number":       func(id uuid.UUID) error { return s.repo.SetBlockNumber(ctx, id, 123) },
 		"fee":                func(id uuid.UUID) error { return s.repo.SetFee(ctx, id, "21000") },
+		"broadcast": func(id uuid.UUID) error {
+			return s.repo.RecordBroadcast(ctx, id, "0xnodehash", `{"broadcast_outcome":"unknown"}`)
+		},
 	}
 	stale := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
 	for name, write := range writes {
@@ -239,4 +242,19 @@ func (s *TransactionRepositoryTestSuite) TestList_ChangedForAccount_StaysInsideT
 func (s *TransactionRepositoryTestSuite) TestList_ChangedForAccount_RequiresALimit() {
 	_, _, err := s.repo.ListChangedForAccount(context.Background(), uuid.New(), "", "", "", "", time.Time{}, uuid.Nil, 0)
 	s.Error(err)
+}
+
+// A row recorded before its send keeps what the send answered: the node's hash and
+// the raw payload (an unknown outcome).
+func (s *TransactionRepositoryTestSuite) TestRecordBroadcast_StoresTheHashAndThePayload() {
+	ctx := context.Background()
+	tx := s.makeTx(s.insertWallet(), models.TxTypeWithdrawal, "confirming")
+	s.Require().NoError(s.repo.Create(ctx, tx))
+
+	s.Require().NoError(s.repo.RecordBroadcast(ctx, tx.ID, "0xnodehash", `{"broadcast_outcome": "unknown", "sender_nonce": 41}`))
+	found, err := s.repo.FindByID(ctx, tx.ID)
+	s.Require().NoError(err)
+	s.Equal("0xnodehash", found.TxHash)
+	s.JSONEq(`{"broadcast_outcome":"unknown","sender_nonce":41}`, found.RawPayload)
+	s.Error(s.repo.RecordBroadcast(ctx, tx.ID, " ", "{}"), "a broadcast is recorded under a hash")
 }

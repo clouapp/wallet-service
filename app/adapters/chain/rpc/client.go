@@ -237,7 +237,9 @@ func (c *RPCClient) exchange(ctx context.Context, rawURL, method string, params 
 			delay := c.retry.delay(attempt, header.Get("Retry-After"), time.Now())
 			slog.Warn("rpc rate limited, backing off", "chain", c.chainID, "method", method, "status", status, "attempt", attempt, "delay", delay.String())
 			if err := c.retry.sleep(ctx, delay); err != nil {
-				return nil, outcomeUnavailable, fmt.Errorf("rpc call %s: %w", method, err)
+				// The caller's deadline cut the wait: the last answer was a rate limit, so
+				// the call was not served (a broadcast was not taken).
+				return nil, outcomeRateLimited, fmt.Errorf("rpc call %s: %w (HTTP %d), backoff cut: %w", method, chain.ErrRateLimited, status, err)
 			}
 			continue
 		}
@@ -307,11 +309,20 @@ func (c *RPCClient) redactHeaderValues(body []byte) []byte {
 	return body
 }
 
-// decodeRPCResponse reads the result of one answer. A non-2xx status is the
-// provider's HTTP failure and a JSON-RPC error is returned as *RPCError, each with
-// the kind of failure it is.
+// decodeRPCResponse reads the result of one answer, with the kind of failure an
+// error is. A JSON-RPC error is returned as *RPCError whatever the HTTP status it
+// came with (bitcoind before v28 and litecoind answer every error with 500), so a
+// rejection is never mistaken for an outage. A generic upstream error (one the
+// classification calls unavailable) carried by a non-2xx status, and a non-2xx
+// answer without a JSON-RPC error, are the provider's HTTP failure.
 func decodeRPCResponse(method string, status int, respBody []byte) (json.RawMessage, outcome, error) {
 	if status < httpclient.StatusOK || status >= httpclient.StatusMultipleChoices {
+		var resp rpcResponse
+		if json.Unmarshal(respBody, &resp) == nil && resp.Error != nil {
+			if kind := classifyRPCErrorOf(resp.Error, true); kind != outcomeUnavailable {
+				return nil, kind, resp.Error
+			}
+		}
 		return nil, classifyHTTPFailure(status, respBody), chain.FromProviderHTTP(status, strings.TrimSpace(string(respBody)))
 	}
 

@@ -65,6 +65,13 @@ type Service struct {
 	pending              pending.Store
 	sleep                func(ctx context.Context, d time.Duration) error
 	now                  func() time.Time
+	// staleAfter is how long an outbound transfer may stay unsettled (stale_outbound.go).
+	staleAfter time.Duration
+	staleCache staleOutboundCache
+	// reconcileWithdrawals and reconcileTransactions are the rows withdrawals:reconcile
+	// reads (withdrawal_reconcile.go).
+	reconcileWithdrawals  WithdrawalFinder
+	reconcileTransactions TransactionFinder
 }
 
 // transactionStore is the deposit rows the scanner writes and the tracker updates.
@@ -80,6 +87,8 @@ type transactionStore interface {
 	SetFee(ctx context.Context, id uuid.UUID, fee string) error
 	RecordConfirmations(ctx context.Context, id uuid.UUID, confirmations int, status string, confirmedAt *time.Time) error
 	MarkFailed(ctx context.Context, id uuid.UUID, reason string) error
+	// SetRawPayload rewrites raw_payload (what the tracker keeps between passes).
+	SetRawPayload(ctx context.Context, id uuid.UUID, rawPayload string) error
 }
 
 // DepositEvents publishes deposit webhooks scoped to the wallet's account with the

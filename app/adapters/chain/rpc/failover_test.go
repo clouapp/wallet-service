@@ -562,6 +562,48 @@ func TestFailover_Broadcast_StopsAfterATimeout(t *testing.T) {
 	}
 }
 
+func TestFailover_Broadcast_ThatReachedNoNodeIsNeverAnUnknownOutcome(t *testing.T) {
+	var primaryDown atomic.Bool
+	primaryDown.Store(true)
+	primary := newFakeNode(t, func(string) (int, string) {
+		if primaryDown.Load() {
+			return http.StatusServiceUnavailable, "down"
+		}
+		return result(`"0x20"`)
+	})
+	unverified := newFakeNode(t, func(method string) (int, string) {
+		if method == "eth_chainId" {
+			return http.StatusBadGateway, "bad gateway"
+		}
+		return result(`"0xhash"`)
+	})
+	client := sepoliaIdentityClient(primary.URL(), unverified.URL())
+	cooling := client.endpoints.Load().members[0]
+	cooling.mu.Lock()
+	cooling.trips, cooling.openUntil = 1, client.now().Add(time.Minute)
+	cooling.mu.Unlock()
+
+	err := client.Call(context.Background(), "eth_sendRawTransaction", nil, "0xraw")
+	require.Error(t, err)
+	assert.Zero(t, unverified.count("eth_sendRawTransaction"), "the fallback was never handed the bytes")
+	assert.ErrorIs(t, err, chain.ErrNotSent)
+	classified := chain.ClassifyBroadcast(err)
+	assert.False(t, errors.Is(classified, chain.ErrUnknownOutcome), "the 502 of an identity check says nothing about the transaction: %v", classified)
+}
+
+func TestFailover_Broadcast_ARateLimitBackoffCutByTheDeadlineWasNeverSent(t *testing.T) {
+	limited := newFakeNode(t, answers(http.StatusTooManyRequests, `{"error":"slow down"}`))
+	client := NewRPCClient(RPCClientDeps{URL: limited.URL()})
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+
+	err := client.Call(ctx, "eth_sendRawTransaction", nil, "0xraw")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, chain.ErrRateLimited, "every answer was a rate limit: %v", err)
+	classified := chain.ClassifyBroadcast(err)
+	assert.False(t, errors.Is(classified, chain.ErrUnknownOutcome), "no endpoint took the bytes, the deadline only cut the wait: %v", classified)
+}
+
 func TestFailover_Broadcast_AlreadyKnownOnTheNextEndpointIsASuccess(t *testing.T) {
 	for _, message := range []string{"already known", "Transaction simulation failed: This transaction has already been processed"} {
 		fallback := newFakeNode(t, answers(rpcFailure(-32000, message)))
@@ -1188,6 +1230,24 @@ func TestFailover_SkippedSlot_ACoolingEndpointIsAskedOncePerCoolDown(t *testing.
 	clock.Advance(endpointCooldownBase + time.Second)
 	_ = client.Call(context.Background(), "getBlock", nil, 515)
 	assert.Greater(t, primary.count("getBlock"), 1, "after the cool-down it is asked again")
+}
+
+func TestFailover_MissingHistoricalState_MovesOnWithoutCountingAFailure(t *testing.T) {
+	pruned := newFakeNode(t, answers(rpcFailure(-32000, "missing trie node 7c2f… (path ) state 0x… is not available")))
+	archive := newFakeNode(t, answers(result(`"0x2a"`)))
+	client, _, _ := failoverClient(pruned.URL(), archive.URL())
+
+	for i := 0; i < endpointFailuresToOpen+1; i++ {
+		var count string
+		require.NoError(t, client.Call(context.Background(), "eth_getTransactionCount", &count, "0xabc", "0x10"))
+		assert.Equal(t, "0x2a", count)
+	}
+	assert.Zero(t, healthOf(client)[0].ConsecutiveFailures, "a node without an old block's state is healthy for every other call")
+	assert.True(t, healthOf(client)[0].CoolingDownUntil.IsZero())
+
+	err := NewRPCClient(RPCClientDeps{URL: pruned.URL()}).Call(context.Background(), "eth_getTransactionCount", nil, "0xabc", "0x10")
+	assert.True(t, MissingState(err), "the caller can tell a missing state from an outage: %v", err)
+	assert.False(t, MissingState(errors.New("connection refused")))
 }
 
 func TestFailover_SolanaHistoryAnswers_MoveOnWithoutCountingAFailure(t *testing.T) {

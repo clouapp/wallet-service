@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -128,6 +130,30 @@ func TestPending_Nonce_NeverGoesBelowTheLastBroadcastOfThisProcess(t *testing.T)
 	nonce, err = adapter.pendingNonce(context.Background(), sender)
 	require.NoError(t, err)
 	assert.Equal(t, uint64(9), nonce, "after the floor's lifetime the nodes decide again (a dropped transaction is not waited for forever)")
+}
+
+func TestPending_Nonce_AnUnknownBroadcastOutcomeKeepsItsNonceTaken(t *testing.T) {
+	signed, sender := signedSepoliaTransfer(t, 9)
+	var sends atomic.Int32
+	node := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), "eth_sendRawTransaction") {
+			sends.Add(1)
+			w.WriteHeader(http.StatusGatewayTimeout)
+			return
+		}
+		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":"0x9"}`)
+	}))
+	t.Cleanup(node.Close)
+	adapter := sepoliaWithFallbacks(node.URL)
+
+	_, err := adapter.BroadcastTransaction(context.Background(), signed)
+	require.ErrorIs(t, err, chain.ErrUnknownOutcome, "setup: a 504 to the send is an unknown outcome")
+	require.Equal(t, int32(1), sends.Load())
+
+	nonce, err := adapter.pendingNonce(context.Background(), sender)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(10), nonce, "the transfer may have landed: its nonce is not handed out again")
 }
 
 func TestBroadcast_ReturnsTheSignedHashWhenTheNodeAnswersAnother(t *testing.T) {

@@ -154,10 +154,26 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 				continue
 			}
 			if block == 0 {
-				if s.transactionExpired(ctx, adapter, tx) && s.failOnChain(ctx, adapter, tx, models.WithdrawalFailureExpired, 0) {
-					confirmedWallets.add(tx.WalletID)
+				spend, settled := s.settleByNonceSpend(ctx, adapter, tx)
+				switch {
+				case settled && !spend.Ours:
+					if s.failOnChain(ctx, adapter, tx, models.WithdrawalFailureNotLanded, 0) {
+						confirmedWallets.add(tx.WalletID)
+					}
+					continue
+				case settled && spend.Result != "":
+					if s.failOnChain(ctx, adapter, tx, onChainFailureCode(spend.Result), spend.Block) {
+						confirmedWallets.add(tx.WalletID)
+					}
+					continue
+				case settled:
+					block = spend.Block
+				default:
+					if s.transactionExpired(ctx, adapter, tx) && s.failOnChain(ctx, adapter, tx, models.WithdrawalFailureExpired, 0) {
+						confirmedWallets.add(tx.WalletID)
+					}
+					continue
 				}
-				continue
 			}
 			tx.BlockNumber = int64(block)
 			if err := s.txRepo.SetBlockNumber(ctx, tx.ID, block); err != nil {
@@ -247,28 +263,163 @@ func onChainFailureCode(result string) string {
 	return code
 }
 
-// transactionExpired asks an adapter that can prove expiry (XRP) whether the
-// transaction is past its last valid block, read from raw_payload. Every other
-// adapter, or a row without that block, is never expired.
-func (s *Service) transactionExpired(ctx context.Context, adapter types.Chain, tx models.Transaction) bool {
-	checker, ok := adapter.(chain.TransactionExpiryChecker)
+// settleByNonceSpend settles, by positive proof, a transfer whose broadcast outcome
+// was unknown and that the node does not know by its hash (EVM): the transaction
+// that spent its sender nonce (kept in raw_payload with the head at the send) is
+// ours, in a block (a node without a transaction index), or another one, and ours
+// can never land. Only rows recorded with broadcast_outcome unknown, sender_nonce
+// and broadcast_head are read; anything else, or a proof that could not be made (a
+// node without the state of those blocks needs an archive endpoint), settles nothing
+// and is logged: the row stays pending for withdrawals:reconcile. A row the
+// endpoints have no state to prove (chain.ErrHistoricalStateUnavailable) is not
+// tried again for nonceProofRetryAfter (kept in raw_payload).
+func (s *Service) settleByNonceSpend(ctx context.Context, adapter types.Chain, tx models.Transaction) (chain.NonceSpend, bool) {
+	reader, ok := adapter.(chain.NonceSpendReader)
 	if !ok {
-		return false
+		return chain.NonceSpend{}, false
 	}
+	proof, ok := unknownOutcomeProof(tx)
+	if !ok || s.now().Before(payloadUnixTime(tx, chain.NonceProofRetryAtPayloadKey)) {
+		return chain.NonceSpend{}, false
+	}
+	spend, err := reader.NonceSpend(ctx, tx.TxHash, tx.FromAddress, proof.nonce, proof.head)
+	if err != nil {
+		slog.Warn("cannot prove whether an unknown-outcome transfer landed; it stays pending (withdrawals:reconcile)",
+			"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "error", err)
+		if errors.Is(err, chain.ErrHistoricalStateUnavailable) {
+			s.recordPayloadValue(ctx, tx, chain.NonceProofRetryAtPayloadKey, s.now().Add(nonceProofRetryAfter).Unix())
+		}
+		return chain.NonceSpend{}, false
+	}
+	return spend, spend.Spent
+}
+
+// nonceProofRetryAfter is how long the tracker leaves a row the endpoints had no
+// state to prove before it tries again.
+const nonceProofRetryAfter = time.Hour
+
+// nonceProof is what raw_payload keeps for settleByNonceSpend.
+type nonceProof struct {
+	nonce, head uint64
+}
+
+// unknownOutcomeProof reads the sender nonce and broadcast head of a row whose
+// broadcast outcome was unknown.
+func unknownOutcomeProof(tx models.Transaction) (nonceProof, bool) {
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(tx.RawPayload), &payload); err != nil {
-		return false
+		return nonceProof{}, false
 	}
-	var lastValid uint64
-	if err := json.Unmarshal(payload[chain.LastValidBlockPayloadKey], &lastValid); err != nil || lastValid == 0 {
-		return false
+	var outcome string
+	if json.Unmarshal(payload[chain.BroadcastOutcomePayloadKey], &outcome) != nil || outcome != chain.BroadcastOutcomeUnknown {
+		return nonceProof{}, false
 	}
-	expired, err := checker.TransactionExpired(ctx, tx.TxHash, lastValid)
+	var proof nonceProof
+	if json.Unmarshal(payload[chain.SenderNoncePayloadKey], &proof.nonce) != nil ||
+		json.Unmarshal(payload[chain.BroadcastHeadPayloadKey], &proof.head) != nil || proof.head == 0 {
+		return nonceProof{}, false
+	}
+	return proof, true
+}
+
+// expiryWitnessGap is how long apart one endpoint alone must be seen not to know a
+// Solana transfer past its last valid block before it is expired.
+const expiryWitnessGap = 10 * time.Minute
+
+// transactionExpired is the tracker's expiry check (expiryOf, automatic, recording
+// a first sight). A check that failed is logged and never expired.
+func (s *Service) transactionExpired(ctx context.Context, adapter types.Chain, tx models.Transaction) bool {
+	expired, err := s.expiryOf(ctx, adapter, tx, true, true)
 	if err != nil {
 		slog.Warn("check transaction expiry", "tx_id", tx.ID, "tx_hash", tx.TxHash, "error", err)
 		return false
 	}
 	return expired
+}
+
+// expiryOf reports a transaction past its last valid block (kept in raw_payload)
+// that can never be included. XRP: the node searched every ledger up to it (one
+// node's complete search is the proof). Solana (chain.ExpiryEvidenceReader): no
+// endpoint knows it, and two endpoints answering for the finalized slot or later
+// say so, or one does twice expiryWitnessGap apart (its first sight is kept in
+// raw_payload when record is set). automatic, the tracker's check, reads Solana only
+// for a row whose broadcast outcome was unknown; withdrawals:reconcile reads any.
+func (s *Service) expiryOf(ctx context.Context, adapter types.Chain, tx models.Transaction, automatic, record bool) (bool, error) {
+	lastValid := lastValidBlockOf(tx)
+	if lastValid == 0 {
+		return false, nil
+	}
+	if checker, ok := adapter.(chain.TransactionExpiryChecker); ok {
+		return checker.TransactionExpired(ctx, tx.TxHash, lastValid)
+	}
+	reader, ok := adapter.(chain.ExpiryEvidenceReader)
+	if !ok || (automatic && !isUnknownOutcome(tx)) {
+		return false, nil
+	}
+	evidence, err := reader.ExpiryEvidence(ctx, tx.TxHash, lastValid)
+	switch {
+	case err != nil:
+		return false, err
+	case !evidence.Past || evidence.Known || evidence.Witnesses == 0:
+		return false, nil
+	case evidence.Witnesses >= 2:
+		return true, nil
+	}
+	seen := payloadUnixTime(tx, chain.ExpiryWitnessedAtPayloadKey)
+	if seen.IsZero() {
+		if record {
+			s.recordPayloadValue(ctx, tx, chain.ExpiryWitnessedAtPayloadKey, s.now().Unix())
+		}
+		return false, nil
+	}
+	return s.now().Sub(seen) >= expiryWitnessGap, nil
+}
+
+// isUnknownOutcome reports a row whose broadcast answer did not say whether the
+// network took it.
+func isUnknownOutcome(tx models.Transaction) bool {
+	var payload map[string]json.RawMessage
+	var outcome string
+	if json.Unmarshal([]byte(tx.RawPayload), &payload) == nil {
+		_ = json.Unmarshal(payload[chain.BroadcastOutcomePayloadKey], &outcome)
+	}
+	return outcome == chain.BroadcastOutcomeUnknown
+}
+
+// payloadUnixTime is a time raw_payload keeps under key in unix seconds, zero for
+// none.
+func payloadUnixTime(tx models.Transaction, key string) time.Time {
+	var payload map[string]json.RawMessage
+	var seconds int64
+	if json.Unmarshal([]byte(tx.RawPayload), &payload) != nil || json.Unmarshal(payload[key], &seconds) != nil || seconds <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(seconds, 0)
+}
+
+// recordPayloadValue keeps value under key in the row's raw_payload. A write that
+// fails is logged: the check runs again next pass.
+func (s *Service) recordPayloadValue(ctx context.Context, tx models.Transaction, key string, value any) {
+	payload := map[string]any{}
+	_ = json.Unmarshal([]byte(tx.RawPayload), &payload)
+	payload[key] = value
+	raw, err := json.Marshal(payload)
+	if err == nil {
+		err = s.txRepo.SetRawPayload(ctx, tx.ID, string(raw))
+	}
+	if err != nil {
+		slog.Error("record transaction payload", "tx_id", tx.ID, "key", key, "error", err)
+	}
+}
+
+// lastValidBlockOf is the last valid block raw_payload keeps, 0 for none.
+func lastValidBlockOf(tx models.Transaction) uint64 {
+	var payload map[string]json.RawMessage
+	var lastValid uint64
+	if json.Unmarshal([]byte(tx.RawPayload), &payload) == nil {
+		_ = json.Unmarshal(payload[chain.LastValidBlockPayloadKey], &lastValid)
+	}
+	return lastValid
 }
 
 // failOnChain records a transaction that failed on chain: the fee a validated
@@ -463,6 +614,7 @@ func (s *Service) runConfirmationCheck(ctx context.Context, onlyTxType string) {
 			slog.Error("find pending by chain", "chain", chainID, "error", err)
 			continue
 		}
+		s.warnStaleOutbound(chainID, pending)
 		pending = filterByTxType(pending, onlyTxType)
 		if len(pending) == 0 {
 			continue

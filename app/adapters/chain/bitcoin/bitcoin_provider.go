@@ -212,7 +212,9 @@ func (p directProvider) broadcast(ctx context.Context, raw []byte) (string, erro
 }
 
 // broadcastREST posts the hex to Esplora's POST /tx. A 4xx answer carries the node's
-// reject reason; 5xx, gateway errors and transport failures mean it was not decided.
+// reject reason; 5xx, gateway errors and transport failures mean it was not decided,
+// and a 5xx or a failure after the send is an unknown outcome (chain.ClassifyBroadcast):
+// a gateway may have relayed the bytes before it failed.
 func (p directProvider) broadcastREST(ctx context.Context, raw []byte) (string, error) {
 	status, body, err := p.live.esploraPost(ctx, "/tx", hex.EncodeToString(raw))
 	if err != nil {
@@ -225,7 +227,7 @@ func (p directProvider) broadcastREST(ctx context.Context, raw []byte) (string, 
 	if status >= http.StatusBadRequest && status < http.StatusInternalServerError && !isRateLimited(status, body) {
 		return "", &btcBroadcastRejectedError{provider: p.label(), reason: fmt.Sprintf("HTTP %d: %s", status, reason)}
 	}
-	return "", chain.FromProviderHTTP(status, reason)
+	return "", chain.ClassifyBroadcast(chain.FromProviderHTTP(status, reason))
 }
 
 func (p directProvider) broadcastRPC(ctx context.Context, raw []byte) (string, error) {

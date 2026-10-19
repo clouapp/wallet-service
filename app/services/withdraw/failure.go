@@ -29,6 +29,9 @@ const (
 	FailureDestinationTagUnsupported = "destination_tag_not_supported"
 	// FailureExpired is an XRP payment that can no longer be included in a ledger.
 	FailureExpired = models.WithdrawalFailureExpired
+	// FailureNotLanded is an EVM transfer whose broadcast outcome was unknown, that no
+	// node knows and whose nonce another transaction spent: it can never be included.
+	FailureNotLanded = models.WithdrawalFailureNotLanded
 	// FailureOnChainPrefix starts the code of a payment a validated ledger (XRP) or a
 	// block (EVM: out_of_gas, reverted) includes with a failure result: onchain_ +
 	// the lowercase result code.

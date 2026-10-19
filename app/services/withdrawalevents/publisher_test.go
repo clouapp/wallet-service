@@ -223,6 +223,31 @@ func TestPublish_Broadcast_PayloadCarriesBothAmountsAndScope(t *testing.T) {
 	}
 }
 
+func TestPublish_Broadcast_SaysWhenTheBroadcastOutcomeIsUnknown(t *testing.T) {
+	f := newFixture()
+	f.tx.RawPayload = `{"broadcast_outcome":"unknown","sender_nonce":41}`
+	if err := f.publisher.PublishBroadcast(context.Background(), f.withdrawal, f.tx); err != nil {
+		t.Fatalf("PublishBroadcast: %v", err)
+	}
+	event, payload := onlyPayload(t, f.enqueuer)
+	if payload.BroadcastOutcome == nil || *payload.BroadcastOutcome != "unknown" {
+		t.Fatalf("broadcast_outcome = %v, want unknown (the client shows pending verification)", payload.BroadcastOutcome)
+	}
+	if raw, err := json.Marshal(event.Data); err != nil || !strings.Contains(string(raw), `"broadcast_outcome":"unknown"`) {
+		t.Fatalf("wire %s, %v", raw, err)
+	}
+
+	accepted := newFixture()
+	if err := accepted.publisher.PublishBroadcast(context.Background(), accepted.withdrawal, accepted.tx); err != nil {
+		t.Fatal(err)
+	}
+	acceptedEvent, acceptedPayload := onlyPayload(t, accepted.enqueuer)
+	raw, err := json.Marshal(acceptedEvent.Data)
+	if err != nil || acceptedPayload.BroadcastOutcome != nil || strings.Contains(string(raw), "broadcast_outcome") {
+		t.Fatalf("an accepted broadcast carries no broadcast_outcome: %s, %v", raw, err)
+	}
+}
+
 func TestPublish_Broadcast_RequiresTransactionHash(t *testing.T) {
 	f := newFixture()
 	f.tx.TxHash = " "
