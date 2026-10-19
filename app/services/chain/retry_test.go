@@ -133,3 +133,24 @@ func TestClassify_Broadcast_AnAnswerThatCannotBeReadIsAnUnknownOutcome(t *testin
 		}
 	}
 }
+
+func TestClassify_Broadcast_LeavesARateLimitAndARequestThatNeverLeft(t *testing.T) {
+	_, buildErr := httpclient.NewClient(time.Second).Do(context.Background(), httpclient.Request{
+		Method: httpclient.MethodPost,
+		URL:    "http://[::1]:namedport",
+	})
+	if buildErr == nil || !httpclient.IsBuild(buildErr) {
+		t.Fatalf("setup: build err %v", buildErr)
+	}
+	for name, err := range map[string]error{
+		"rate limited":   FromProviderHTTP(http.StatusTooManyRequests, "slow down"),
+		"never sent":     buildErr,
+		"wrapped limit":  fmt.Errorf("eth_sendRawTransaction: %w", ErrRateLimited),
+		"never sent too": Unavailable(buildErr),
+	} {
+		got := ClassifyBroadcast(err)
+		if errors.Is(got, ErrUnknownOutcome) || got.Error() != err.Error() || !errors.Is(got, err) {
+			t.Fatalf("%s: a broadcast the network never saw became %v", name, got)
+		}
+	}
+}
