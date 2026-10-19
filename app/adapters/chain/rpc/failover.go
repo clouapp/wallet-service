@@ -100,6 +100,9 @@ type endpointSet struct {
 	primaryNetwork string
 	primaryAskedAt time.Time
 	mismatchLogged bool
+	// identityAsking is closed when the question to the primary in flight ends; nil
+	// when none is.
+	identityAsking chan struct{}
 }
 
 // newEndpointSet orders primary and fallbacks, dropping blanks and repeats. An
@@ -679,33 +682,63 @@ const (
 )
 
 // primaryIdentity is the network the primary of set answers, kept once it answered;
-// "" while it has not (asked again after primaryIdentityRetry).
+// "" while it has not. The question runs in the background under its own deadline
+// (primaryIdentityTimeout) and is asked again after primaryIdentityRetry while it gets
+// no answer. A caller waits for it at most half of its own time left, so a primary
+// that hangs never takes the time a fallback needs to answer.
 func (c *RPCClient) primaryIdentity(ctx context.Context, set *endpointSet) string {
-	now := c.now()
-	set.identityMu.Lock()
-	known, asked := set.primaryNetwork, set.primaryAskedAt
-	if known == "" && (asked.IsZero() || now.Sub(asked) >= primaryIdentityRetry) {
-		set.primaryAskedAt = now
-	} else {
-		set.identityMu.Unlock()
-		return known
-	}
-	set.identityMu.Unlock()
-	if len(set.members) == 0 {
-		return ""
-	}
-	askCtx, cancel := context.WithTimeout(ctx, primaryIdentityTimeout)
-	defer cancel()
-	network, err := c.identity(askCtx, endpointCaller{client: c, url: set.members[0].url})
-	if err != nil || strings.TrimSpace(network) == "" {
-		return ""
+	if done := c.askPrimaryIdentity(set); done != nil {
+		wait := primaryIdentityTimeout
+		if deadline, bounded := ctx.Deadline(); bounded {
+			wait = min(wait, time.Until(deadline)/2)
+		}
+		if wait > 0 {
+			timer := time.NewTimer(wait)
+			select {
+			case <-done:
+			case <-timer.C:
+			case <-ctx.Done():
+			}
+			timer.Stop()
+		}
 	}
 	set.identityMu.Lock()
 	defer set.identityMu.Unlock()
-	if set.primaryNetwork == "" {
-		set.primaryNetwork = strings.TrimSpace(network)
-	}
 	return set.primaryNetwork
+}
+
+// askPrimaryIdentity starts the question to the primary when it is due and returns
+// a channel closed when the question in flight ends; nil when the answer is known or
+// no question is due.
+func (c *RPCClient) askPrimaryIdentity(set *endpointSet) <-chan struct{} {
+	now := c.now()
+	set.identityMu.Lock()
+	defer set.identityMu.Unlock()
+	switch {
+	case set.primaryNetwork != "" || len(set.members) == 0:
+		return nil
+	case set.identityAsking != nil:
+		return set.identityAsking
+	case !set.primaryAskedAt.IsZero() && now.Sub(set.primaryAskedAt) < primaryIdentityRetry:
+		return nil
+	}
+	set.primaryAskedAt = now
+	done := make(chan struct{})
+	set.identityAsking = done
+	primary := set.members[0].url
+	go func() {
+		defer close(done)
+		askCtx, cancel := context.WithTimeout(context.Background(), primaryIdentityTimeout)
+		defer cancel()
+		network, err := c.identity(askCtx, endpointCaller{client: c, url: primary})
+		set.identityMu.Lock()
+		defer set.identityMu.Unlock()
+		set.identityAsking = nil
+		if network = strings.TrimSpace(network); err == nil && network != "" && set.primaryNetwork == "" {
+			set.primaryNetwork = network
+		}
+	}()
+	return done
 }
 
 func (c *RPCClient) succeeded(set *endpointSet, cand candidate) {

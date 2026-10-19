@@ -1018,6 +1018,33 @@ func TestFailover_Identity_WithAnUnreachablePrimaryAFallbackOnTheChainsNetworkSe
 	assert.Equal(t, "0x20", block)
 }
 
+func TestFailover_Identity_AHangingPrimaryDoesNotStarveTheSecondOpinion(t *testing.T) {
+	release := make(chan struct{})
+	primary := newFakeNode(t, func(method string) (int, string) {
+		if method == "eth_chainId" {
+			<-release
+		}
+		return result(`null`)
+	})
+	t.Cleanup(func() { close(release) })
+	fallback := newFakeNode(t, func(method string) (int, string) {
+		if method == "eth_chainId" {
+			return result(`"0xaa36a7"`)
+		}
+		return result(`{"status":"0x1"}`)
+	})
+	client := sepoliaIdentityClient(primary.URL(), fallback.URL())
+
+	started := time.Now()
+	var receipt *struct {
+		Status string `json:"status"`
+	}
+	require.NoError(t, client.Call(context.Background(), "eth_getTransactionReceipt", &receipt, "0xabc"))
+	require.NotNil(t, receipt, "the question to the primary about its network must leave the second opinion time to answer")
+	assert.Equal(t, "0x1", receipt.Status)
+	assert.Less(t, time.Since(started), secondOpinionTimeout, "the second opinion answered inside its own budget")
+}
+
 func TestFailover_Identity_IsAskedAgainWhenThePrimaryChanges(t *testing.T) {
 	sepoliaPrimary := chainIDNode(t, "0xaa36a7", http.StatusServiceUnavailable)
 	sepolia := chainIDNode(t, "0xaa36a7", http.StatusOK)
