@@ -22,6 +22,8 @@ import (
 type ChainServiceProvider struct{}
 
 func (p *ChainServiceProvider) Register(app foundation.Application) {
+	// Before any RPC client is built: fingerprints are keyed with APP_KEY.
+	chainpkg.SetRPCFingerprintKey([]byte(facades.Config().GetString("app.key")))
 	app.Singleton((*repositories.ChainRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewChainRepository(nil), nil
 	})

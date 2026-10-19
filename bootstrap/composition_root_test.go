@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/macrowallets/waas/app/container"
+	appfacades "github.com/macrowallets/waas/app/facades"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/chainregistry"
 )
@@ -44,4 +45,18 @@ func TestComposition_Root_ResolvesEveryTypedBindingToOneInstance(t *testing.T) {
 func TestComposition_Root_SharesTheChainRegistry(t *testing.T) {
 	registry := container.MustMake[*chainpkg.Registry]()
 	assert.Same(t, container.MustMake[*chainregistry.ChainRegistryService]().Registry(), registry)
+}
+
+// The chain provider keys the RPC endpoint fingerprints with APP_KEY before any
+// client is built, so every process names an endpoint the same way and an unkeyed
+// digest cannot be matched.
+func TestComposition_Root_KeysTheRPCEndpointFingerprints(t *testing.T) {
+	const url = "http://5.104.72.66:8545"
+	keyed := chainpkg.RPCEndpointFingerprint(url)
+	chainpkg.SetRPCFingerprintKey(nil)
+	unkeyed := chainpkg.RPCEndpointFingerprint(url)
+	chainpkg.SetRPCFingerprintKey([]byte(appfacades.Config().GetString("app.key")))
+
+	assert.NotEqual(t, unkeyed, keyed)
+	assert.Equal(t, keyed, chainpkg.RPCEndpointFingerprint(url))
 }

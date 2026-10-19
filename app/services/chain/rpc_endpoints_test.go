@@ -2,6 +2,8 @@ package chain
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -72,5 +74,24 @@ func TestSolana_Genesis_RefusesAnEmptyAnswer(t *testing.T) {
 	empty := &answeringCaller{results: map[string]string{"getGenesisHash": `""`}}
 	if _, err := SolanaGenesis(context.Background(), empty); err == nil {
 		t.Fatal("an empty genesis is an unusable answer")
+	}
+}
+
+func TestRPC_EndpointFingerprint_IsKeyedWithTheAppKey(t *testing.T) {
+	const url = "http://5.104.72.66:8545"
+	t.Cleanup(func() { SetRPCFingerprintKey(nil) })
+
+	SetRPCFingerprintKey([]byte("0123456789abcdef0123456789abcdef"))
+	keyed := RPCEndpointFingerprint(url)
+	sum := sha256.Sum256([]byte(url))
+	if keyed == hex.EncodeToString(sum[:])[:rpcFingerprintLength] {
+		t.Fatal("an unsalted digest of a keyless URL can be guessed by hashing candidate hosts")
+	}
+	if keyed != RPCEndpointFingerprint(url) || len(keyed) != rpcFingerprintLength {
+		t.Fatalf("fingerprint = %q", keyed)
+	}
+	SetRPCFingerprintKey([]byte("another-key-another-key-another!"))
+	if RPCEndpointFingerprint(url) == keyed {
+		t.Fatal("another key must give another fingerprint")
 	}
 }

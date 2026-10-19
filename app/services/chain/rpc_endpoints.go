@@ -2,6 +2,7 @@ package chain
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -61,11 +63,30 @@ type RPCHealthSink interface {
 	RecordRPCHealth(chainID string, endpoints []RPCEndpointHealth)
 }
 
-// RPCEndpointFingerprint is a short digest of rawURL: equal URLs have equal
-// fingerprints, and the URL (with its key) cannot be read back from it.
+var fingerprintKey atomic.Pointer[[]byte]
+
+// SetRPCFingerprintKey keys RPCEndpointFingerprint (APP_KEY, set at boot by the chain
+// provider, the same in every process so their health records match). Nil unkeys it.
+func SetRPCFingerprintKey(key []byte) {
+	if key == nil {
+		fingerprintKey.Store(nil)
+		return
+	}
+	copied := append([]byte(nil), key...)
+	fingerprintKey.Store(&copied)
+}
+
+// RPCEndpointFingerprint is a short HMAC-SHA256 of rawURL under the fingerprint key:
+// equal URLs have equal fingerprints, and neither the URL (with its key) nor, for a
+// keyless URL, its host can be found again by hashing candidates.
 func RPCEndpointFingerprint(rawURL string) string {
-	sum := sha256.Sum256([]byte(strings.TrimSpace(rawURL)))
-	return hex.EncodeToString(sum[:])[:rpcFingerprintLength]
+	var key []byte
+	if stored := fingerprintKey.Load(); stored != nil {
+		key = *stored
+	}
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(strings.TrimSpace(rawURL)))
+	return hex.EncodeToString(mac.Sum(nil))[:rpcFingerprintLength]
 }
 
 // RPCEndpointHost is the host[:port] of rawURL, without user info, path or query,
