@@ -18,6 +18,12 @@ import (
 // chain's: another EVM chain id or another Solana genesis.
 var ErrWrongNetwork = errors.New("rpc endpoint serves another network")
 
+// ErrSkippedSlotUnconfirmed is a Solana slot a fallback answered skipped that no
+// other endpoint could confirm or deny (they were down): an outage, not a failing
+// slot. The deposit scan keeps the slot pending without counting it against the
+// cycle's limit of failing blocks.
+var ErrSkippedSlotUnconfirmed = errors.New("skipped slot not confirmed by another endpoint")
+
 const (
 	evmChainIDMethod     = "eth_chainId"
 	solanaGenesisMethod  = "getGenesisHash"

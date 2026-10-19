@@ -1097,7 +1097,7 @@ func TestFailover_SkippedSlot_FromAFallbackMustBeConfirmed(t *testing.T) {
 		require.ErrorAs(t, err, &rpcErr, "two endpoints agree: the slot was skipped")
 		assert.Equal(t, -32007, rpcErr.Code)
 	})
-	t.Run("no other endpoint to ask", func(t *testing.T) {
+	t.Run("no other endpoint can answer", func(t *testing.T) {
 		gap := newFakeNode(t, answers(rpcFailure(-32007, skippedSlot)))
 		client, _, _ := failoverClient(closedPortURL(t), gap.URL())
 
@@ -1106,7 +1106,41 @@ func TestFailover_SkippedSlot_FromAFallbackMustBeConfirmed(t *testing.T) {
 		require.Error(t, err)
 		assert.False(t, errors.As(err, &rpcErr), "an unconfirmed skip is not a skip: the scan retries the slot")
 		assert.ErrorIs(t, err, chain.ErrProviderUnavailable)
+		assert.ErrorIs(t, err, chain.ErrSkippedSlotUnconfirmed, "the scan tells it from an outage")
 	})
+}
+
+func TestFailover_SkippedSlot_IsConfirmedByACoolingPrimary(t *testing.T) {
+	var primaryDown, primaryHasBlock atomic.Bool
+	primaryDown.Store(true)
+	primary := newFakeNode(t, func(string) (int, string) {
+		switch {
+		case primaryDown.Load():
+			return http.StatusServiceUnavailable, "down"
+		case primaryHasBlock.Load():
+			return result(`{"blockhash":"x"}`)
+		}
+		return rpcFailure(-32007, skippedSlot)
+	})
+	fallback := newFakeNode(t, answers(rpcFailure(-32007, skippedSlot)))
+	client, _, _ := failoverClient(primary.URL(), fallback.URL())
+	for i := 0; i < endpointFailuresToOpen; i++ {
+		_ = client.Call(context.Background(), "getSlot", nil)
+	}
+	require.False(t, healthOf(client)[0].CoolingDownUntil.IsZero(), "setup: the primary is cooling down")
+	primaryDown.Store(false)
+
+	err := client.Call(context.Background(), "getBlock", nil, 512)
+	var rpcErr *RPCError
+	require.ErrorAs(t, err, &rpcErr, "the only fallback's skip is confirmed by the primary, even while it cools down")
+	assert.Equal(t, -32007, rpcErr.Code)
+
+	primaryHasBlock.Store(true)
+	var block struct {
+		Blockhash string `json:"blockhash"`
+	}
+	require.NoError(t, client.Call(context.Background(), "getBlock", &block, 512))
+	assert.Equal(t, "x", block.Blockhash, "the primary's block is the answer")
 }
 
 func TestFailover_SolanaHistoryAnswers_MoveOnWithoutCountingAFailure(t *testing.T) {

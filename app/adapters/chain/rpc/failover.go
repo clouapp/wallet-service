@@ -175,6 +175,23 @@ func (s *endpointSet) ordered(now time.Time) []candidate {
 	return ready
 }
 
+// others is every endpoint a second opinion about first's answer may come from:
+// the usable ones (never a fallback on another network), cooling down or not, the
+// primary first.
+func (s *endpointSet) others(first candidate) []candidate {
+	out := make([]candidate, 0, len(s.members))
+	for i, member := range s.members {
+		if i == first.index || member == first.ep {
+			continue
+		}
+		if _, wrong := member.identity(); wrong && i > 0 {
+			continue
+		}
+		out = append(out, candidate{ep: member, index: i, position: s.positions[i]})
+	}
+	return out
+}
+
 // find is target as a candidate of this set; one no longer in it keeps a place
 // after the last member.
 func (s *endpointSet) find(target *endpoint) candidate {
@@ -357,7 +374,7 @@ func (c *RPCClient) call(ctx context.Context, set *endpointSet, method string, o
 		if kind == outcomeAnswer {
 			c.succeeded(set, cand)
 			if method == solanaGetBlock && cand.index > 0 && !pinned && skippedSlotAnswer(err) {
-				return c.confirmSkipped(ctx, set, cand, candidates[i+1:], params, out, err, primaryLost, pin)
+				return c.confirmSkipped(ctx, set, cand, params, out, err, primaryLost, pin)
 			}
 			c.served(set, cand, primaryLost)
 			pin.hold(cand.ep)
@@ -410,7 +427,11 @@ func (c *RPCClient) secondOpinion(ctx context.Context, set *endpointSet, rest []
 	if len(rest) == 0 {
 		return opinion{}
 	}
-	next := rest[(c.secondOpinions.Add(1)-1)%uint64(len(rest))]
+	return c.ask(ctx, set, rest[(c.secondOpinions.Add(1)-1)%uint64(len(rest))], method, params)
+}
+
+// ask puts one question to next, within secondOpinionTimeout and without backoff.
+func (c *RPCClient) ask(ctx context.Context, set *endpointSet, next candidate, method string, params []interface{}) opinion {
 	askCtx, cancel := context.WithTimeout(ctx, secondOpinionTimeout)
 	defer cancel()
 	if next.index > 0 {
@@ -442,24 +463,31 @@ func (c *RPCClient) chaseNull(ctx context.Context, set *endpointSet, first candi
 	return unmarshalResult(null, out)
 }
 
-// confirmSkipped asks one more endpoint about a slot a fallback answered skipped: a
-// fallback may only miss the slot (a snapshot gap, a short history). Its block is
-// the result; its own "skipped" confirms the answer; anything else leaves the slot
-// unconfirmed, an error the scan retries, never a skipped slot.
-func (c *RPCClient) confirmSkipped(ctx context.Context, set *endpointSet, first candidate, rest []candidate, params []interface{}, out interface{}, skipped error, primaryLost bool, pin *endpointPin) error {
-	second := c.secondOpinion(ctx, set, rest, solanaGetBlock, params)
-	switch {
-	case second.asked && second.err == nil && !isJSONNull(second.result):
-		c.served(set, second.from, primaryLost)
-		pin.hold(second.from.ep)
-		return unmarshalResult(second.result, out)
-	case second.asked && skippedSlotAnswer(second.err):
-		c.served(set, first, primaryLost)
-		pin.hold(first.ep)
-		return scrub(first.ep.url, skipped)
-	default:
-		return chain.Unavailable(fmt.Errorf("rpc call %s: endpoint %d of %s answered the slot skipped and no other endpoint confirmed it", solanaGetBlock, first.position, c.chainID))
+// confirmSkipped asks the other endpoints, the primary first and cooling down or
+// not, about a slot a fallback answered skipped: a fallback may only miss the slot
+// (a snapshot gap, a short history). The first block is the result; the first
+// "skipped" confirms the answer. When none can say, the slot is unconfirmed
+// (chain.ErrSkippedSlotUnconfirmed), an error the scan keeps pending, never a
+// skipped slot.
+func (c *RPCClient) confirmSkipped(ctx context.Context, set *endpointSet, first candidate, params []interface{}, out interface{}, skipped error, primaryLost bool, pin *endpointPin) error {
+	for _, other := range set.others(first) {
+		second := c.ask(ctx, set, other, solanaGetBlock, params)
+		switch {
+		case second.err == nil && !isJSONNull(second.result):
+			c.served(set, second.from, primaryLost)
+			pin.hold(second.from.ep)
+			return unmarshalResult(second.result, out)
+		case skippedSlotAnswer(second.err):
+			c.served(set, first, primaryLost)
+			pin.hold(first.ep)
+			return scrub(first.ep.url, skipped)
+		}
+		if ctx.Err() != nil {
+			break
+		}
 	}
+	return chain.Unavailable(fmt.Errorf("rpc call %s: endpoint %d of %s answered the slot skipped and no other endpoint could confirm it: %w",
+		solanaGetBlock, first.position, c.chainID, chain.ErrSkippedSlotUnconfirmed))
 }
 
 // CallEach asks method of every endpoint ready now (Call's order; a fallback once
