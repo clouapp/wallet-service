@@ -562,6 +562,35 @@ func TestFailover_Broadcast_StopsAfterATimeout(t *testing.T) {
 	}
 }
 
+func TestFailover_Broadcast_ThatReachedNoNodeIsNeverAnUnknownOutcome(t *testing.T) {
+	var primaryDown atomic.Bool
+	primaryDown.Store(true)
+	primary := newFakeNode(t, func(string) (int, string) {
+		if primaryDown.Load() {
+			return http.StatusServiceUnavailable, "down"
+		}
+		return result(`"0x20"`)
+	})
+	unverified := newFakeNode(t, func(method string) (int, string) {
+		if method == "eth_chainId" {
+			return http.StatusBadGateway, "bad gateway"
+		}
+		return result(`"0xhash"`)
+	})
+	client := sepoliaIdentityClient(primary.URL(), unverified.URL())
+	cooling := client.endpoints.Load().members[0]
+	cooling.mu.Lock()
+	cooling.trips, cooling.openUntil = 1, client.now().Add(time.Minute)
+	cooling.mu.Unlock()
+
+	err := client.Call(context.Background(), "eth_sendRawTransaction", nil, "0xraw")
+	require.Error(t, err)
+	assert.Zero(t, unverified.count("eth_sendRawTransaction"), "the fallback was never handed the bytes")
+	assert.ErrorIs(t, err, chain.ErrNotSent)
+	classified := chain.ClassifyBroadcast(err)
+	assert.False(t, errors.Is(classified, chain.ErrUnknownOutcome), "the 502 of an identity check says nothing about the transaction: %v", classified)
+}
+
 func TestFailover_Broadcast_AlreadyKnownOnTheNextEndpointIsASuccess(t *testing.T) {
 	for _, message := range []string{"already known", "Transaction simulation failed: This transaction has already been processed"} {
 		fallback := newFakeNode(t, answers(rpcFailure(-32000, message)))

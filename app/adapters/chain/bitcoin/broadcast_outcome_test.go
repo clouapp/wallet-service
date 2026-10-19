@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -16,13 +17,41 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-func TestBroadcast_Unknown_OutcomeIsNotAKnownFailure(t *testing.T) {
+func TestBroadcast_ARefusedConnectionWasNeverSent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Error("closed server was dialed")
 	}))
 	endpoint := srv.URL
 	srv.Close()
 
+	t.Run("rpc", func(t *testing.T) {
+		live := NewBitcoinLive(BitcoinConfig{RPCURL: endpoint, NativeSymbol: "BTC"})
+		assertNeverSentBroadcast(t, live)
+	})
+	t.Run("rest", func(t *testing.T) {
+		live := NewBitcoinLive(BitcoinConfig{RPCURL: endpoint, NativeSymbol: "BTC"})
+		live.restAPI = true
+		live.http = httpclient.NewClient(time.Second)
+		assertNeverSentBroadcast(t, live)
+	})
+}
+
+// droppingServer reads each request and drops the connection without an answer:
+// the bytes reached it, the outcome is unknown.
+func droppingServer(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {
+			_ = conn.Close()
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+func TestBroadcast_Unknown_OutcomeIsNotAKnownFailure(t *testing.T) {
+	endpoint := droppingServer(t)
 	t.Run("rpc", func(t *testing.T) {
 		live := NewBitcoinLive(BitcoinConfig{RPCURL: endpoint, NativeSymbol: "BTC"})
 		assertUnknownBroadcast(t, live)
@@ -47,6 +76,14 @@ func TestBroadcast_Server_ErrorStaysAKnownFailure(t *testing.T) {
 	_, err := live.BroadcastTransaction(context.Background(), &types.SignedTx{RawBytes: []byte{0x01}})
 	if !chain.KnownFailure(err) || errors.Is(err, chain.ErrUnknownOutcome) {
 		t.Fatalf("HTTP 502 broadcast: %v", err)
+	}
+}
+
+func assertNeverSentBroadcast(t *testing.T, live *BitcoinLive) {
+	t.Helper()
+	_, err := live.BroadcastTransaction(context.Background(), &types.SignedTx{RawBytes: []byte{0x01}})
+	if err == nil || errors.Is(err, chain.ErrUnknownOutcome) {
+		t.Fatalf("a broadcast whose connection was refused reached no node: %v", err)
 	}
 }
 

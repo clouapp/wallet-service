@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -61,31 +62,67 @@ func TestClassify_Broadcast_LeavesADefiniteRejection(t *testing.T) {
 	}
 }
 
-func TestClassify_Broadcast_MarksAnUnansweredSend(t *testing.T) {
+func TestClassify_Broadcast_ARefusedConnectionWasNeverSent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Error("closed server was dialed")
 	}))
 	endpoint := srv.URL
 	srv.Close()
 
+	for name, url := range map[string]string{"refused": endpoint, "no such host": "http://wallet-rpc.invalid"} {
+		_, err := httpclient.NewClient(time.Second).Do(context.Background(), httpclient.Request{
+			Method: httpclient.MethodPost, URL: url, Body: []byte{0x01}, HasBody: true,
+		})
+		if err == nil {
+			t.Fatalf("%s: setup: no error", name)
+		}
+		if !RequestNotSent(err) {
+			t.Fatalf("%s: a connection that was never made is a request never sent: %v", name, err)
+		}
+		classified := ClassifyBroadcast(Unavailable(err))
+		if errors.Is(classified, ErrUnknownOutcome) || !errors.Is(classified, ErrProviderUnavailable) {
+			t.Fatalf("%s: a broadcast that reached no node is not an unknown outcome: %v", name, classified)
+		}
+	}
+}
+
+func TestClassify_Broadcast_AConnectionDroppedAfterTheSendIsAnUnknownOutcome(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err == nil {
+			_ = conn.Close()
+		}
+	}))
+	t.Cleanup(srv.Close)
+
 	_, err := httpclient.NewClient(time.Second).Do(context.Background(), httpclient.Request{
-		Method:  httpclient.MethodPost,
-		URL:     endpoint,
-		Body:    []byte{0x01},
-		HasBody: true,
+		Method: httpclient.MethodPost, URL: srv.URL, Body: []byte{0x01}, HasBody: true,
 	})
-	if err == nil || !httpclient.IsRoundtrip(err) {
-		t.Fatalf("roundtrip err %v", err)
+	if err == nil || RequestNotSent(err) {
+		t.Fatalf("setup: the request was sent: %v", err)
 	}
 	classified := ClassifyBroadcast(Unavailable(err))
-	if !errors.Is(classified, ErrUnknownOutcome) || !errors.Is(classified, ErrProviderUnavailable) {
-		t.Fatalf("classified %v", classified)
-	}
-	if KnownFailure(classified) {
-		t.Fatal("unknown broadcast result must not be retried")
+	if !errors.Is(classified, ErrUnknownOutcome) || KnownFailure(classified) {
+		t.Fatalf("a node that read the bytes may have relayed them: %v", classified)
 	}
 	if classified.Error() != ErrProviderUnavailable.Error() {
 		t.Fatalf("error text %q", classified.Error())
+	}
+}
+
+func TestClassify_Broadcast_ACallMarkedNotSentStaysAFailureWhateverItCarries(t *testing.T) {
+	identityCheck := FromProviderHTTP(http.StatusBadGateway, "the fallback's eth_chainId failed")
+	err := NotSent(identityCheck)
+	if !RequestNotSent(err) || !errors.Is(err, ErrNotSent) || !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("NotSent keeps its cause on the chain: %v", err)
+	}
+	if got := ClassifyBroadcast(err); errors.Is(got, ErrUnknownOutcome) || !errors.Is(got, ErrNotSent) || got.Error() != err.Error() {
+		t.Fatalf("no broadcast exchange happened, so the 502 says nothing about the transaction: %v", got)
+	}
+	var twice *notSent
+	if !errors.As(NotSent(err), &twice) || errors.As(twice.cause, new(*notSent)) || !errors.Is(NotSent(nil), ErrNotSent) {
+		t.Fatal("NotSent is idempotent and names the sentinel without a cause")
 	}
 }
 

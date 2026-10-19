@@ -10,7 +10,6 @@ import (
 	"syscall"
 
 	"github.com/macrowallets/waas/app/services/chain"
-	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
 // outcome is what one answer of one endpoint means for failover.
@@ -204,25 +203,10 @@ func notAccepted(kind outcome, err error) bool {
 	case outcomeRateLimited, outcomeUnsupported:
 		return true
 	case outcomeUnavailable:
-		return requestNotSent(err)
+		return chain.RequestNotSent(err)
 	default:
 		return false
 	}
-}
-
-// requestNotSent reports an error raised before the request left the process:
-// the request could not be built, or the connection failed (refused, DNS, no
-// route). The dial error must still be on the chain; a flattened one is treated
-// as possibly sent.
-func requestNotSent(err error) bool {
-	if err == nil {
-		return false
-	}
-	if httpclient.IsBuild(err) {
-		return true
-	}
-	var opErr *net.OpError
-	return errors.As(err, &opErr) && opErr != nil && opErr.Op == "dial"
 }
 
 // failureLabel is a short description of a failure for logs and health records.
@@ -241,7 +225,7 @@ func failureLabel(kind outcome, err error) string {
 		return "wrong network"
 	case errors.Is(err, syscall.ECONNREFUSED):
 		return "connection refused"
-	case requestNotSent(err):
+	case chain.RequestNotSent(err):
 		return "connection failed"
 	case timedOut(err):
 		return "timeout"
