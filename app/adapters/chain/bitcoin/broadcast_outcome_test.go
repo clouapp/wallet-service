@@ -79,6 +79,37 @@ func TestBroadcast_Server_ErrorStaysAKnownFailure(t *testing.T) {
 	}
 }
 
+func TestBroadcast_ABitcoindRejectionCarriedByHTTP500IsARejection(t *testing.T) {
+	raw, txid := failoverTestRawTx(t)
+	answering := func(body string) string {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			// bitcoind before v28 and litecoind answer every JSON-RPC error with HTTP 500.
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, body)
+		}))
+		t.Cleanup(srv.Close)
+		return srv.URL
+	}
+
+	conflict := NewBitcoinLive(BitcoinConfig{RPCURL: answering(`{"result":null,"error":{"code":-26,"message":"txn-mempool-conflict"},"id":1}`), NativeSymbol: "BTC"})
+	_, err := conflict.BroadcastTransaction(context.Background(), &types.SignedTx{RawBytes: raw, TxHash: txid})
+	var rejected *btcBroadcastRejectedError
+	if !errors.As(err, &rejected) || errors.Is(err, chain.ErrUnknownOutcome) {
+		t.Fatalf("a -26 refusal carried by HTTP 500 is the node's rejection, not an unknown outcome: %v", err)
+	}
+
+	known := NewBitcoinLive(BitcoinConfig{RPCURL: answering(`{"result":null,"error":{"code":-27,"message":"Transaction already in block chain"},"id":1}`), NativeSymbol: "BTC"})
+	if got, err := known.BroadcastTransaction(context.Background(), &types.SignedTx{RawBytes: raw, TxHash: txid}); err != nil || got != txid {
+		t.Fatalf("already in the chain = %q, %v; want the signed txid %s", got, err, txid)
+	}
+
+	generic := NewBitcoinLive(BitcoinConfig{RPCURL: answering(`<html>500 Internal Server Error</html>`), NativeSymbol: "BTC"})
+	if _, err := generic.BroadcastTransaction(context.Background(), &types.SignedTx{RawBytes: raw, TxHash: txid}); !errors.Is(err, chain.ErrUnknownOutcome) {
+		t.Fatalf("an HTTP 500 without a JSON-RPC answer may have relayed the bytes: %v", err)
+	}
+}
+
 func assertNeverSentBroadcast(t *testing.T, live *BitcoinLive) {
 	t.Helper()
 	_, err := live.BroadcastTransaction(context.Background(), &types.SignedTx{RawBytes: []byte{0x01}})

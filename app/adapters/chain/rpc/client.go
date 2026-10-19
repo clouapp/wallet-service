@@ -307,11 +307,20 @@ func (c *RPCClient) redactHeaderValues(body []byte) []byte {
 	return body
 }
 
-// decodeRPCResponse reads the result of one answer. A non-2xx status is the
-// provider's HTTP failure and a JSON-RPC error is returned as *RPCError, each with
-// the kind of failure it is.
+// decodeRPCResponse reads the result of one answer, with the kind of failure an
+// error is. A JSON-RPC error is returned as *RPCError whatever the HTTP status it
+// came with (bitcoind before v28 and litecoind answer every error with 500), so a
+// rejection is never mistaken for an outage. A generic upstream error (one the
+// classification calls unavailable) carried by a non-2xx status, and a non-2xx
+// answer without a JSON-RPC error, are the provider's HTTP failure.
 func decodeRPCResponse(method string, status int, respBody []byte) (json.RawMessage, outcome, error) {
 	if status < httpclient.StatusOK || status >= httpclient.StatusMultipleChoices {
+		var resp rpcResponse
+		if json.Unmarshal(respBody, &resp) == nil && resp.Error != nil {
+			if kind := classifyRPCErrorOf(resp.Error, true); kind != outcomeUnavailable {
+				return nil, kind, resp.Error
+			}
+		}
 		return nil, classifyHTTPFailure(status, respBody), chain.FromProviderHTTP(status, strings.TrimSpace(string(respBody)))
 	}
 
