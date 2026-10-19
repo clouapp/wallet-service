@@ -3,6 +3,7 @@ package chains
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -45,11 +46,22 @@ func (s *PlatformChainRPCTestSuite) TestA_Platform_AdminReplacesTheEndpointTheDi
 	token := "k" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	var wantHost string
 	var hit atomic.Bool
+	seeded := s.loadChain(models.ChainETH)
+	s.Require().NotNil(seeded.NetworkID)
+	chainIDHex := fmt.Sprintf("0x%x", *seeded.NetworkID)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Method string `json:"method"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		w.Header().Set("Content-Type", "application/json")
+		if req.Method == "eth_chainId" {
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"` + chainIDHex + `"}`))
+			return
+		}
 		if wantHost != "" && r.Host == wantHost && strings.Contains(r.URL.Path, token) {
 			hit.Store(true)
 		}
-		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x10"}`))
 	}))
 	defer server.Close()
@@ -167,6 +179,25 @@ func (s *PlatformChainRPCTestSuite) TestA_Non_AdminIsForbiddenWhateverTheChainAn
 	if s.loadChain(models.ChainETH).RpcURL != before {
 		s.Fail("an empty url changed the stored endpoint")
 	}
+	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'chains.updated'`))
+}
+
+func (s *PlatformChainRPCTestSuite) TestA_Platform_AdminCannotPointAChainAtAnotherNetwork() {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x89"}`))
+	}))
+	defer server.Close()
+	admin := s.seedUser(false)
+	s.grantPlatformAdmin(admin.ID)
+	session := s.signIn(admin.Email)
+	before := s.loadChain(models.ChainETH).RpcURL
+
+	resp := s.patchRaw(session.AccessToken, "/v1/platform/chains/"+models.ChainETH+"/rpc", `{"rpcUrl":"`+server.URL+`/v2/other-network"}`)
+	resp.AssertUnprocessableEntity()
+	body := s.quietBody(resp, "other-network")
+	s.Contains(body, "serves another network")
+	s.Equal(before, s.loadChain(models.ChainETH).RpcURL)
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE action = 'chains.updated'`))
 }
 

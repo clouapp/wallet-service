@@ -3,10 +3,13 @@ package chains
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/chainregistry"
 )
 
 const setRPCFixture = "https://rpc.example/endpoint"
@@ -112,7 +115,8 @@ func TestReplace_RPC_ReportsALoadFailure(t *testing.T) {
 func TestReplace_RPC_WritesTheSealedEndpoint(t *testing.T) {
 	store := &setRPCStore{chain: &models.Chain{ID: "eth"}}
 	rpc := NewReplaceRPC(ReplaceRPCDeps{
-		Store: store,
+		Store:  store,
+		Verify: &stubVerifier{network: models.NetworkEthereumSepolia},
 		Seal: func(plaintext string) (string, error) {
 			if plaintext != setRPCFixture {
 				t.Fatal("sealer received a different value than the argument")
@@ -135,7 +139,8 @@ func TestReplace_RPC_WritesTheSealedEndpoint(t *testing.T) {
 func TestReplace_RPC_SealsAnEnvironmentReference(t *testing.T) {
 	store := &setRPCStore{chain: &models.Chain{ID: "sol"}}
 	rpc := NewReplaceRPC(ReplaceRPCDeps{
-		Store: store,
+		Store:  store,
+		Verify: &stubVerifier{network: models.NetworkSolanaDevnet},
 		Seal: func(plaintext string) (string, error) {
 			if plaintext != "env:SOLANA_RPC_URL" {
 				t.Fatal("environment reference was rewritten before sealing")
@@ -154,7 +159,7 @@ func TestReplace_RPC_SealsAnEnvironmentReference(t *testing.T) {
 
 func TestReplace_RPC_ReportsAnEncryptionFailure(t *testing.T) {
 	store := &setRPCStore{chain: &models.Chain{ID: "eth"}}
-	rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store, Seal: func(string) (string, error) {
+	rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store, Verify: &stubVerifier{}, Seal: func(string) (string, error) {
 		return "", errors.New("cipher unavailable")
 	}})
 	_, err := rpc.Replace(context.Background(), "eth", setRPCFixture)
@@ -168,7 +173,7 @@ func TestReplace_RPC_ReportsAnEncryptionFailure(t *testing.T) {
 
 func TestReplace_RPC_ReportsNoRowsUpdated(t *testing.T) {
 	store := &setRPCStore{chain: &models.Chain{ID: "eth"}, updateErr: models.ErrRepositoryNotFound}
-	rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store, Seal: func(string) (string, error) { return "enc:v1:sealed", nil }})
+	rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store, Verify: &stubVerifier{}, Seal: func(string) (string, error) { return "enc:v1:sealed", nil }})
 	_, err := rpc.Replace(context.Background(), "eth", setRPCFixture)
 	if err == nil || err.Error() != "no rows updated for chain eth" {
 		t.Fatalf("error = %v", err)
@@ -178,7 +183,7 @@ func TestReplace_RPC_ReportsNoRowsUpdated(t *testing.T) {
 func TestReplace_RPC_ReportsAnUpdateFailure(t *testing.T) {
 	inner := errors.New("disk full")
 	store := &setRPCStore{chain: &models.Chain{ID: "eth"}, updateErr: fmtWrap("update chain rpc", inner)}
-	rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store, Seal: func(string) (string, error) { return "enc:v1:sealed", nil }})
+	rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store, Verify: &stubVerifier{}, Seal: func(string) (string, error) { return "enc:v1:sealed", nil }})
 	_, err := rpc.Replace(context.Background(), "eth", setRPCFixture)
 	if err == nil || err.Error() != "failed to update chain eth: disk full" || !errors.Is(err, inner) {
 		t.Fatalf("error = %v", err)
@@ -205,4 +210,71 @@ func (e wrappedError) Unwrap() error { return e.cause }
 
 func fmtWrap(message string, cause error) error {
 	return wrappedError{message: message, cause: cause}
+}
+
+// stubVerifier answers every endpoint with the same network check.
+type stubVerifier struct {
+	network string
+	moved   bool
+	err     error
+	asked   int
+}
+
+func (v *stubVerifier) Verify(context.Context, models.Chain, string) (string, bool, error) {
+	v.asked++
+	return v.network, v.moved, v.err
+}
+
+func TestReplace_RPC_RefusesAnEndpointOnAnotherNetworkOrThatDoesNotAnswer(t *testing.T) {
+	cases := map[string]error{
+		"another network": fmt.Errorf("%w: eth_chainId is 1, the chain signs for 11155111", chain.ErrWrongNetwork),
+		"no answer":       fmt.Errorf("%w: eth_chainId: provider unavailable", chainregistry.ErrEndpointUnverified),
+	}
+	for name, failure := range cases {
+		t.Run(name, func(t *testing.T) {
+			store := &setRPCStore{chain: &models.Chain{ID: "eth", AdapterType: models.AdapterTypeEVM}}
+			sealed := false
+			rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store, Verify: &stubVerifier{err: failure}, Seal: func(string) (string, error) {
+				sealed = true
+				return "enc:v1:sealed", nil
+			}})
+			_, err := rpc.Replace(context.Background(), "eth", "http://5.104.72.66:8545")
+			if err == nil || !strings.HasPrefix(err.Error(), "refused, nothing written") || strings.Contains(err.Error(), "5.104.72.66") {
+				t.Fatalf("error = %v", err)
+			}
+			if store.updates != 0 || sealed {
+				t.Fatal("a refused endpoint was sealed or written")
+			}
+		})
+	}
+}
+
+func TestReplace_RPC_SaysWhichNetworkTheEndpointServes(t *testing.T) {
+	cases := map[string]struct {
+		verifier *stubVerifier
+		want     string
+	}{
+		"own network": {&stubVerifier{network: models.NetworkEthereumSepolia}, "chain eth rpc_url updated (serves ethereum-sepolia; restart"},
+		"profile move": {&stubVerifier{network: models.NetworkEthereumSepolia, moved: true},
+			"serves ethereum-sepolia, the network the chain profile names for eth: run chains:align-network --apply to move the chain"},
+		"unchecked": {&stubVerifier{err: chainregistry.ErrEndpointIdentityUnsupported}, "network not checked"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			store := &setRPCStore{chain: &models.Chain{ID: "eth"}}
+			rpc := NewReplaceRPC(ReplaceRPCDeps{Store: store, Verify: tc.verifier, Seal: func(string) (string, error) { return "enc:v1:sealed", nil }})
+			line, err := rpc.Replace(context.Background(), "eth", setRPCFixture)
+			if err != nil || !strings.Contains(line, tc.want) || store.updates != 1 {
+				t.Fatalf("line=%q err=%v updates=%d", line, err, store.updates)
+			}
+		})
+	}
+}
+
+func TestReplace_RPC_RequiresTheVerifierBeforeWriting(t *testing.T) {
+	store := &setRPCStore{chain: &models.Chain{ID: "eth"}}
+	_, err := NewReplaceRPC(ReplaceRPCDeps{Store: store, Seal: func(string) (string, error) { return "enc:v1:sealed", nil }}).Replace(context.Background(), "eth", setRPCFixture)
+	if err == nil || store.updates != 0 {
+		t.Fatalf("err=%v updates=%d", err, store.updates)
+	}
 }

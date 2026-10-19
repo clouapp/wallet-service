@@ -2,9 +2,7 @@ package chainregistry
 
 import (
 	"context"
-	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/macrowallets/waas/app/models"
@@ -13,7 +11,6 @@ import (
 
 const (
 	evmChainIDMethod = "eth_chainId"
-	hexPrefix        = "0x"
 
 	// NetworkBitcoinSignet is a Bitcoin network no chain record targets; probing
 	// it still has to fail the check rather than read as "unknown".
@@ -76,17 +73,9 @@ func ProbeRPCNetwork(ctx context.Context, record models.Chain, rpcURL string) (s
 }
 
 func probeEVM(ctx context.Context, rpcURL string) (string, error) {
-	client := chain.NewJSONRPCCaller(chain.JSONRPCDeps{URL: rpcURL})
-	if client == nil {
-		return "", fmt.Errorf("%s: json-rpc client is not linked", evmChainIDMethod)
-	}
-	var chainIDHex string
-	if err := client.Call(ctx, evmChainIDMethod, &chainIDHex); err != nil {
-		return "", fmt.Errorf("%s: %w", evmChainIDMethod, err)
-	}
-	networkID, err := strconv.ParseInt(strings.TrimPrefix(strings.ToLower(chainIDHex), hexPrefix), 16, 64)
+	networkID, err := chain.EVMChainID(ctx, chain.NewJSONRPCCaller(chain.JSONRPCDeps{URL: rpcURL}))
 	if err != nil {
-		return "", fmt.Errorf("%s returned %q: %w", evmChainIDMethod, chainIDHex, err)
+		return "", err
 	}
 	return models.EVMNetworkName(networkID), nil
 }

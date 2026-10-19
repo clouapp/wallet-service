@@ -3,6 +3,7 @@ package providers
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/goravel/framework/contracts/foundation"
 
@@ -107,6 +108,7 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 			Activity: activityLog,
 			Sealer:   chainRPCSealer{},
 			Dialer:   registry,
+			Verify:   chainregistry.NewPrimaryVerifier(openChainEndpoint, configuredChainNetworkProfile),
 		}), nil
 	})
 	app.Singleton((*repositories.TokenRepository)(nil), func(foundation.Application) (any, error) {
@@ -148,6 +150,12 @@ func loadChainRegistry(app foundation.Application) (*chainpkg.Registry, error) {
 	registry := registryService.Registry()
 	slog.Info("chain registry loaded", "chains", registry.ChainIDs())
 	return registry, nil
+}
+
+// configuredChainNetworkProfile is CHAIN_NETWORK_PROFILE: the network a primary
+// record may be pointed at before chains:align-network moves it there.
+func configuredChainNetworkProfile() string {
+	return strings.TrimSpace(facades.Config().GetString("vault.chains.network_profile"))
 }
 
 // chainRPCSealer seals chains.rpc_url with the process cipher. It writes the
