@@ -1217,3 +1217,34 @@ func TestFailover_BlockReceipts_NullAsksOneMoreEndpoint(t *testing.T) {
 	require.NoError(t, client.Call(context.Background(), "eth_getBlockReceipts", &receipts, "0x1"))
 	assert.Len(t, receipts, 1)
 }
+
+func TestFailover_CredentialsAndHeadersGoToThePrimaryOnly(t *testing.T) {
+	type seen struct {
+		auth, key string
+	}
+	record := func(into *[]seen, status int) *httptest.Server {
+		var mu sync.Mutex
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			*into = append(*into, seen{auth: r.Header.Get("Authorization"), key: r.Header.Get("x-api-key")})
+			mu.Unlock()
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x1"}`))
+		}))
+		t.Cleanup(server.Close)
+		return server
+	}
+	var atPrimary, atFallback []seen
+	primary := record(&atPrimary, http.StatusBadGateway)
+	fallback := record(&atFallback, http.StatusOK)
+	client := NewRPCClient(RPCClientDeps{URL: primary.URL, User: "node", Password: "secret", Fallbacks: fallbackList(fallback.URL)}).
+		WithHeader("x-api-key", "primary-key")
+
+	require.NoError(t, client.Call(context.Background(), "getblockcount", nil))
+	require.Len(t, atPrimary, 1)
+	require.Len(t, atFallback, 1)
+	assert.NotEmpty(t, atPrimary[0].auth)
+	assert.Equal(t, "primary-key", atPrimary[0].key)
+	assert.Empty(t, atFallback[0].auth, "the primary's basic auth never reaches another provider")
+	assert.Empty(t, atFallback[0].key, "the primary's API key never reaches another provider")
+}

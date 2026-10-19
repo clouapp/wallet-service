@@ -77,7 +77,9 @@ func (e *rpcError) Error() string {
 type IdentityReader func(ctx context.Context, caller chain.JSONRPCCaller) (string, error)
 
 // RPCClientDeps is the endpoint and optional basic-auth pair NewRPCClient stores.
-// Empty User and Password send no basic auth. No URL is logged.
+// Empty User and Password send no basic auth. No URL is logged. The basic auth and
+// the WithHeader headers belong to the primary (URL) and are sent to it only: a
+// fallback is another provider, which carries its own key in its URL if it needs one.
 //
 // Fallbacks are tried in order after URL when it cannot serve a call. ChainID names
 // the chain in logs and health records. With Identity set, a fallback serves only
@@ -122,7 +124,8 @@ func (c *RPCClient) WithMaxResponseBytes(limit int) *RPCClient {
 	return c
 }
 
-// WithHeader sends name: value on every request. An empty value is ignored.
+// WithHeader sends name: value on every request to the primary endpoint (never to a
+// fallback). An empty value is ignored.
 // Header is the value WithHeader stored for name. Tests use it to confirm a key
 // is attached to the client and not to a provider that must not see it.
 func (c *RPCClient) Header(name string) string {
@@ -254,8 +257,12 @@ func (c *RPCClient) post(ctx context.Context, rawURL, method string, params []in
 	}
 
 	header := map[string]string{"Content-Type": "application/json", "User-Agent": rpcUserAgent}
-	for name, value := range c.headers {
-		header[name] = value
+	username, password := "", ""
+	if rawURL == c.Endpoint() {
+		for name, value := range c.headers {
+			header[name] = value
+		}
+		username, password = c.username, c.password
 	}
 	limit := c.maxResponseBytes
 	if limit <= 0 {
@@ -267,8 +274,8 @@ func (c *RPCClient) post(ctx context.Context, rawURL, method string, params []in
 		Header:   header,
 		Body:     body,
 		HasBody:  true,
-		Username: c.username,
-		Password: c.password,
+		Username: username,
+		Password: password,
 		MaxBytes: int64(limit) + 1,
 	})
 	if err != nil {
