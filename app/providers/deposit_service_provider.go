@@ -115,6 +115,10 @@ func newDepositService(app foundation.Application) (*deposit.Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	withdrawalRows, err := resolve[*repositories.WithdrawalRepository](app)
+	if err != nil {
+		return nil, err
+	}
 	depositEvents, err := resolve[*depositevents.Publisher](app)
 	if err != nil {
 		return nil, err
@@ -152,6 +156,7 @@ func newDepositService(app foundation.Application) (*deposit.Service, error) {
 	service.SetWithdrawalConfirmations(withdrawalEvents)
 	service.SetDepositEvents(depositEvents)
 	service.SetStaleOutboundAfter(time.Duration(facades.Config().GetInt("vault.withdrawals.stale_after_hours")) * time.Hour)
+	service.SetWithdrawalReconciliation(withdrawalRows, transactions)
 	// Each ScanLatestBlocks call reads deposit_scan and runs
 	// deposit.ScanOptionsFromSettings. A stored value overrides DEPOSIT_SCAN_*.
 	// A missing row, an invalid value, or a failed read keeps the environment

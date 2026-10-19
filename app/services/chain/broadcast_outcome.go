@@ -49,3 +49,10 @@ type NonceSpend struct {
 type NonceSpendReader interface {
 	NonceSpend(ctx context.Context, txHash, from string, nonce, fromBlock uint64) (NonceSpend, error)
 }
+
+// TransactionSearcher is an adapter that can look a transaction up on every endpoint
+// (EVM): GetTransactionBlock asked of each, the first mined receipt deciding. The
+// operator's reconciliation uses it; the tracker keeps the failover order.
+type TransactionSearcher interface {
+	SearchTransactionBlock(ctx context.Context, txHash string) (uint64, error)
+}

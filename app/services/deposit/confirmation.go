@@ -313,28 +313,40 @@ func unknownOutcomeProof(tx models.Transaction) (nonceProof, bool) {
 	return proof, true
 }
 
-// transactionExpired asks an adapter that can prove expiry (XRP) whether the
-// transaction is past its last valid block, read from raw_payload. Every other
-// adapter, or a row without that block, is never expired.
+// transactionExpired asks an adapter that can prove expiry (XRP, Solana) whether
+// the transaction is past its last valid block, read from raw_payload. Every other
+// adapter, a row without that block, or a check that failed (logged) is never
+// expired.
 func (s *Service) transactionExpired(ctx context.Context, adapter types.Chain, tx models.Transaction) bool {
-	checker, ok := adapter.(chain.TransactionExpiryChecker)
-	if !ok {
-		return false
-	}
-	var payload map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(tx.RawPayload), &payload); err != nil {
-		return false
-	}
-	var lastValid uint64
-	if err := json.Unmarshal(payload[chain.LastValidBlockPayloadKey], &lastValid); err != nil || lastValid == 0 {
-		return false
-	}
-	expired, err := checker.TransactionExpired(ctx, tx.TxHash, lastValid)
+	expired, err := s.expiryOf(ctx, adapter, tx)
 	if err != nil {
 		slog.Warn("check transaction expiry", "tx_id", tx.ID, "tx_hash", tx.TxHash, "error", err)
 		return false
 	}
 	return expired
+}
+
+// expiryOf is transactionExpired with the error of a check that failed.
+func (s *Service) expiryOf(ctx context.Context, adapter types.Chain, tx models.Transaction) (bool, error) {
+	checker, ok := adapter.(chain.TransactionExpiryChecker)
+	if !ok {
+		return false, nil
+	}
+	lastValid := lastValidBlockOf(tx)
+	if lastValid == 0 {
+		return false, nil
+	}
+	return checker.TransactionExpired(ctx, tx.TxHash, lastValid)
+}
+
+// lastValidBlockOf is the last valid block raw_payload keeps, 0 for none.
+func lastValidBlockOf(tx models.Transaction) uint64 {
+	var payload map[string]json.RawMessage
+	var lastValid uint64
+	if json.Unmarshal([]byte(tx.RawPayload), &payload) == nil {
+		_ = json.Unmarshal(payload[chain.LastValidBlockPayloadKey], &lastValid)
+	}
+	return lastValid
 }
 
 // failOnChain records a transaction that failed on chain: the fee a validated

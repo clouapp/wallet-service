@@ -23,8 +23,9 @@ import (
 )
 
 var (
-	_ chain.SenderNonceReader = (*EVMLive)(nil)
-	_ chain.NonceSpendReader  = (*EVMLive)(nil)
+	_ chain.SenderNonceReader   = (*EVMLive)(nil)
+	_ chain.NonceSpendReader    = (*EVMLive)(nil)
+	_ chain.TransactionSearcher = (*EVMLive)(nil)
 )
 
 func signedTransferWithNonce(t *testing.T, nonce uint64) *types.SignedTx {
@@ -204,4 +205,31 @@ func TestEVM_NonceSpend_AReadItCannotMakeProvesNothing(t *testing.T) {
 
 	_, err = spendAdapter(t, before).NonceSpend(context.Background(), "", spendSender, 41, 100)
 	require.Error(t, err)
+}
+
+func TestEVM_SearchTransactionBlock_AsksEveryEndpointForTheReceipt(t *testing.T) {
+	const minedReceipt = `"result":{"transactionHash":"` + ourHash + `","blockNumber":"0x10","status":"0x1","gasUsed":"0x5208"}`
+	primary := newCountingNode(t, map[string]string{"eth_getTransactionReceipt": `"result":null`})
+	lagging := newCountingNode(t, map[string]string{"eth_chainId": sepoliaChainIDResult, "eth_getTransactionReceipt": `"result":null`})
+	indexed := newCountingNode(t, map[string]string{"eth_chainId": sepoliaChainIDResult, "eth_getTransactionReceipt": minedReceipt})
+	adapter := sepoliaWithFallbacks(primary.server.URL, lagging.server.URL, indexed.server.URL)
+
+	block, err := adapter.SearchTransactionBlock(context.Background(), ourHash)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(16), block, "the one endpoint with the transaction index answers")
+
+	none := sepoliaWithFallbacks(primary.server.URL, lagging.server.URL)
+	block, err = none.SearchTransactionBlock(context.Background(), ourHash)
+	require.NoError(t, err)
+	assert.Zero(t, block)
+
+	const failedReceipt = `"result":{"transactionHash":"` + ourHash + `","blockNumber":"0x10","status":"0x0","gasUsed":"0x5208"}`
+	reverted := newCountingNode(t, map[string]string{
+		"eth_chainId": sepoliaChainIDResult, "eth_getTransactionReceipt": failedReceipt,
+		"eth_getTransactionByHash": `"result":{"hash":"` + ourHash + `","gas":"0x5208"}`,
+	})
+	_, err = sepoliaWithFallbacks(primary.server.URL, lagging.server.URL, reverted.server.URL).SearchTransactionBlock(context.Background(), ourHash)
+	var failed *chain.TransactionFailedError
+	require.ErrorAs(t, err, &failed)
+	assert.Equal(t, uint64(16), failed.Block)
 }

@@ -68,6 +68,10 @@ type Service struct {
 	// staleAfter is how long an outbound transfer may stay unsettled (stale_outbound.go).
 	staleAfter time.Duration
 	staleCache staleOutboundCache
+	// reconcileWithdrawals and reconcileTransactions are the rows withdrawals:reconcile
+	// reads (withdrawal_reconcile.go).
+	reconcileWithdrawals  WithdrawalFinder
+	reconcileTransactions TransactionFinder
 }
 
 // transactionStore is the deposit rows the scanner writes and the tracker updates.

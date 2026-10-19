@@ -729,14 +729,43 @@ const (
 // the confirmation tracker marks it (and its withdrawal) failed instead of
 // confirming it. A receipt with any other status is an error and is retried.
 func (a *EVMLive) GetTransactionBlock(ctx context.Context, txHash string) (uint64, error) {
-	var receipt *struct {
-		BlockNumber string `json:"blockNumber"`
-		Status      string `json:"status"`
-		GasUsed     string `json:"gasUsed"`
-	}
+	var receipt *transactionReceipt
 	if err := a.rpc.Call(ctx, "eth_getTransactionReceipt", &receipt, txHash); err != nil {
 		return 0, err
 	}
+	return a.receiptBlock(ctx, txHash, receipt)
+}
+
+// transactionReceipt is the part of an eth_getTransactionReceipt answer the block
+// lookup reads.
+type transactionReceipt struct {
+	BlockNumber string `json:"blockNumber"`
+	Status      string `json:"status"`
+	GasUsed     string `json:"gasUsed"`
+}
+
+// SearchTransactionBlock is GetTransactionBlock asked of every ready endpoint: when
+// the failover order finds no receipt, each other endpoint is asked at once and the
+// first mined receipt decides (an endpoint with the transaction index), for
+// withdrawals:reconcile.
+func (a *EVMLive) SearchTransactionBlock(ctx context.Context, txHash string) (uint64, error) {
+	block, err := a.GetTransactionBlock(ctx, txHash)
+	if err != nil || block > 0 {
+		return block, err
+	}
+	for _, raw := range a.rpc.CallOthers(ctx, otherLogsBudget, "eth_getTransactionReceipt", txHash) {
+		var receipt *transactionReceipt
+		if json.Unmarshal(raw, &receipt) != nil || receipt == nil || receipt.BlockNumber == "" {
+			continue
+		}
+		return a.receiptBlock(ctx, txHash, receipt)
+	}
+	return 0, nil
+}
+
+// receiptBlock is the block of a receipt, 0 for none (not mined), or a
+// *chain.TransactionFailedError for a mined failure (see GetTransactionBlock).
+func (a *EVMLive) receiptBlock(ctx context.Context, txHash string, receipt *transactionReceipt) (uint64, error) {
 	if receipt == nil || receipt.BlockNumber == "" {
 		return 0, nil
 	}
