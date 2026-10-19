@@ -343,11 +343,50 @@ func TestScan_Block_WithoutEIP234ReadsTheLogsByNumberAndChecksTheirBlock(t *test
 	})
 	t.Run("no logs where the bloom says there may be some", func(t *testing.T) {
 		adapter := sepoliaWithFallbacks(noEIP234Node(t, bloomWithTransfer(), `"result":[]`).URL)
-		_, err := adapter.ScanBlock(context.Background(), 0xaa)
-		assert.Error(t, err, "a backend without the block answers no logs; the block is retried")
+		for i := 1; i < emptyBloomAnswersToAccept; i++ {
+			_, err := adapter.ScanBlock(context.Background(), 0xaa)
+			require.Error(t, err, "answer %d: a backend without the block answers no logs; the block is retried", i)
+		}
+		transfers, err := adapter.ScanBlock(context.Background(), 0xaa)
+		require.NoError(t, err, "the same answer again and again is a bloom false positive: the block is not left pending forever")
+		assert.Empty(t, transfers)
 	})
 	t.Run("no logs and a bloom without Transfer", func(t *testing.T) {
 		adapter := sepoliaWithFallbacks(noEIP234Node(t, emptyBloom, `"result":[]`).URL)
+		transfers, err := adapter.ScanBlock(context.Background(), 0xaa)
+		require.NoError(t, err)
+		assert.Empty(t, transfers)
+	})
+}
+
+func TestScan_Block_NoLogsByHashWhereTheBloomMayHoldSomeIsCheckedElsewhere(t *testing.T) {
+	block := `"result":{"hash":"` + scannedBlockHash + `","timestamp":"0x1","logsBloom":"` + bloomWithTransfer() + `","transactions":[]}`
+	emptyByHash := func() *httptest.Server {
+		server, _ := logsByHashNode(t, func(map[string]any) string { return `"result":[]` })
+		server.Config.Handler = blockWithBloom(server.Config.Handler, block)
+		return server
+	}
+	t.Run("another endpoint has the logs", func(t *testing.T) {
+		other := newCountingNode(t, map[string]string{"eth_chainId": sepoliaChainIDResult, "eth_getLogs": transferLogsResult})
+		adapter := sepoliaWithFallbacks(emptyByHash().URL, other.server.URL)
+		transfers, err := adapter.ScanBlock(context.Background(), 0xaa)
+		require.NoError(t, err)
+		require.Len(t, transfers, 1, "a backend without the block answered no logs; another endpoint has them by the same hash")
+		assert.Equal(t, models.SymbolUSDC, transfers[0].Asset)
+	})
+	t.Run("another endpoint agrees there are none", func(t *testing.T) {
+		other := newCountingNode(t, map[string]string{"eth_chainId": sepoliaChainIDResult, "eth_getLogs": `"result":[]`})
+		adapter := sepoliaWithFallbacks(emptyByHash().URL, other.server.URL)
+		transfers, err := adapter.ScanBlock(context.Background(), 0xaa)
+		require.NoError(t, err, "two endpoints agree: the bloom matched by chance")
+		assert.Empty(t, transfers)
+	})
+	t.Run("alone, the same answer is believed the third time", func(t *testing.T) {
+		adapter := sepoliaWithFallbacks(emptyByHash().URL)
+		for i := 1; i < emptyBloomAnswersToAccept; i++ {
+			_, err := adapter.ScanBlock(context.Background(), 0xaa)
+			require.Error(t, err, "answer %d: a backend without the block may answer no logs", i)
+		}
 		transfers, err := adapter.ScanBlock(context.Background(), 0xaa)
 		require.NoError(t, err)
 		assert.Empty(t, transfers)

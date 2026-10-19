@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -79,6 +80,9 @@ type EVMLive struct {
 	// nonces is the next nonce of each sender this process broadcast for, shared by
 	// the copies WithFeePolicy makes.
 	nonces *nonceFloor
+	// emptyLogs counts, per block hash, the empty Transfer log answers its bloom
+	// contradicts, shared by the copies like nonces.
+	emptyLogs *emptyLogAnswers
 }
 
 var (
@@ -91,7 +95,7 @@ var (
 // WithFeePolicy is this adapter bidding gas prices scaled by policy; it shares
 // the RPC client.
 func (a *EVMLive) WithFeePolicy(policy chain.FeePolicy) types.Chain {
-	return &EVMLive{cfg: a.cfg, rpc: a.rpc, fee: policy, nonces: a.nonces}
+	return &EVMLive{cfg: a.cfg, rpc: a.rpc, fee: policy, nonces: a.nonces, emptyLogs: a.emptyLogs}
 }
 
 // FeePolicy is the wallet fee policy this adapter prices with.
@@ -103,7 +107,7 @@ func (a *EVMLive) FeePolicy() chain.FeePolicy { return a.fee }
 const evmRPCMaxResponseBytes = 64 << 20
 
 func NewEVMLive(cfg EVMConfig) *EVMLive {
-	return &EVMLive{cfg: cfg, rpc: newEVMRPCClient(cfg), nonces: newNonceFloor()}
+	return &EVMLive{cfg: cfg, rpc: newEVMRPCClient(cfg), nonces: newNonceFloor(), emptyLogs: newEmptyLogAnswers()}
 }
 
 // newEVMRPCClient dials cfg's endpoints. A fallback serves only once its
@@ -879,34 +883,70 @@ func (a *EVMLive) scanERC20(ctx context.Context, blockNum uint64, blockHash, log
 // for the block, no address filter: the logs are matched against the known token
 // contracts by the caller. The filter names the block by its hash (EIP-234), not its
 // number: a node, or a backend of a load-balanced provider, that does not hold that
-// exact block answers an error (the block is retried) instead of an empty list that
-// would skip its deposits. A node that refuses the hash filter (-32602, no EIP-234)
-// is read by number, the same node (the scope is pinned): every log must then be of
-// the block read (the caller checks), and "no logs" is believed only when the block's
-// logsBloom says it holds no Transfer.
+// exact block should answer an error (the block is retried) instead of an empty list
+// that would skip its deposits. A node that refuses the hash filter (-32602, no
+// EIP-234) is read by number, the same node (the scope is pinned): every log must
+// then be of the block read (the caller checks). Either way, "no logs" for a block
+// whose logsBloom may hold a Transfer is checked (confirmNoTransferLogs).
 func (a *EVMLive) transferLogs(ctx context.Context, blockNum uint64, blockHash, logsBloom string) ([]transferLog, error) {
 	if blockHash == "" {
 		return nil, fmt.Errorf("block %d has no hash to read its logs by", blockNum)
 	}
+	byHash := map[string]interface{}{"blockHash": blockHash, "topics": []string{erc20TransferTopic}}
 	var logs []transferLog
-	err := a.rpc.Call(ctx, "eth_getLogs", &logs, map[string]interface{}{
-		"blockHash": blockHash, "topics": []string{erc20TransferTopic},
-	})
+	err := a.rpc.Call(ctx, "eth_getLogs", &logs, byHash)
 	var rpcErr *rpc.RPCError
-	if err == nil || !errors.As(err, &rpcErr) || rpcErr.Code != jsonRPCInvalidParams {
-		return logs, err
+	if err != nil && errors.As(err, &rpcErr) && rpcErr.Code == jsonRPCInvalidParams {
+		hexBlock := fmt.Sprintf("0x%x", blockNum)
+		logs = nil
+		err = a.rpc.Call(ctx, "eth_getLogs", &logs, map[string]interface{}{
+			"fromBlock": hexBlock, "toBlock": hexBlock, "topics": []string{erc20TransferTopic},
+		})
 	}
-	hexBlock := fmt.Sprintf("0x%x", blockNum)
-	logs = nil
-	if err := a.rpc.Call(ctx, "eth_getLogs", &logs, map[string]interface{}{
-		"fromBlock": hexBlock, "toBlock": hexBlock, "topics": []string{erc20TransferTopic},
-	}); err != nil {
+	if err != nil {
 		return nil, err
 	}
-	if len(logs) == 0 && bloomMayHoldTransfer(logsBloom) {
-		return nil, fmt.Errorf("evm %s: no Transfer log for block %d by number, whose bloom says it may hold some (a node without the block?)", a.cfg.ChainIDStr, blockNum)
+	if len(logs) > 0 || !bloomMayHoldTransfer(logsBloom) {
+		return logs, nil
 	}
-	return logs, nil
+	return a.confirmNoTransferLogs(ctx, blockNum, blockHash, byHash)
+}
+
+const (
+	// emptyBloomAnswersToAccept is how many times a block's logs may come back empty
+	// while its bloom may hold a Transfer, with no other endpoint able to say, before
+	// the block is believed to hold none: a bloom false positive must not leave the
+	// block pending forever.
+	emptyBloomAnswersToAccept = 3
+	// otherLogsBudget bounds the question to the other endpoints.
+	otherLogsBudget = 5 * time.Second
+)
+
+// confirmNoTransferLogs decides about a block answered without Transfer logs whose
+// bloom may hold some. The other endpoints are asked by its hash: logs from one of
+// them are the answer (the caller checks they are of the block); an empty answer
+// from one agrees, and the block holds none. With nobody else to ask, the same empty
+// answer is believed the emptyBloomAnswersToAccept-th time; before that it is an
+// error and the block is retried.
+func (a *EVMLive) confirmNoTransferLogs(ctx context.Context, blockNum uint64, blockHash string, byHash map[string]interface{}) ([]transferLog, error) {
+	agreed := false
+	for _, raw := range a.rpc.CallOthers(ctx, otherLogsBudget, "eth_getLogs", byHash) {
+		var other []transferLog
+		if json.Unmarshal(raw, &other) != nil {
+			continue
+		}
+		if len(other) > 0 {
+			return other, nil
+		}
+		agreed = true
+	}
+	if !agreed && a.emptyLogs.count(blockHash) < emptyBloomAnswersToAccept {
+		return nil, fmt.Errorf("evm %s: no Transfer log for block %d, whose bloom says it may hold some (a node without the block?)", a.cfg.ChainIDStr, blockNum)
+	}
+	a.emptyLogs.forget(blockHash)
+	slog.Warn("evm block bloom may hold a Transfer but no endpoint returns one; scanned as holding none",
+		"chain", a.cfg.ChainIDStr, "block", blockNum, "block_hash", blockHash, "another_endpoint_agreed", agreed)
+	return nil, nil
 }
 
 // bloomMayHoldTransfer reports whether a block's logsBloom may hold a Transfer log;

@@ -399,6 +399,8 @@ func (n *FakeEVMNode) blockByNumber(params []json.RawMessage) interface{} {
 		"hash":         FakeEVMBlockHash(number),
 		"timestamp":    "0x1",
 		"transactions": transactions,
+		// eth_getLogs answers no logs, so the block's bloom is empty.
+		"logsBloom": "0x" + strings.Repeat("00", 256),
 	}
 }
 
