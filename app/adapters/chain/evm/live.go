@@ -811,27 +811,35 @@ func (a *EVMLive) scanERC20(ctx context.Context, blockNum uint64, blockHash stri
 	// Caller must have registered tokens in the registry — we access via package-level
 	// In production, inject registry into adapter. For POC, accept this coupling.
 	transferTopic := "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
-	hexBlock := fmt.Sprintf("0x%x", blockNum)
 
 	var logs []struct {
 		Address         string   `json:"address"`
+		BlockHash       string   `json:"blockHash"`
 		Topics          []string `json:"topics"`
 		Data            string   `json:"data"`
 		TransactionHash string   `json:"transactionHash"`
 		LogIndex        string   `json:"logIndex"`
 	}
 
-	// Single getLogs call for the entire block, no address filter
-	// We'll match against known token contracts in Go
+	// One getLogs call for the block, no address filter: the logs are matched
+	// against the known token contracts here. The filter names the block by the
+	// hash ScanBlock read (EIP-234), not by its number: a node, or a backend of a
+	// load-balanced provider, that does not hold that exact block answers an error
+	// (the block is retried) instead of an empty list that would skip its deposits.
+	if blockHash == "" {
+		return nil, fmt.Errorf("block %d has no hash to read its logs by", blockNum)
+	}
 	if err := a.rpc.Call(ctx, "eth_getLogs", &logs, map[string]interface{}{
-		"fromBlock": hexBlock, "toBlock": hexBlock,
-		"topics": []string{transferTopic},
+		"blockHash": blockHash, "topics": []string{transferTopic},
 	}); err != nil {
 		return nil, err
 	}
 
 	var result []types.DetectedTransfer
 	for _, log := range logs {
+		if log.BlockHash != "" && !strings.EqualFold(log.BlockHash, blockHash) {
+			return nil, fmt.Errorf("log of tx %s is in block %q, the scan read %q (reorganized)", log.TransactionHash, log.BlockHash, blockHash)
+		}
 		if len(log.Topics) < 3 {
 			continue
 		}
