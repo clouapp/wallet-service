@@ -284,6 +284,14 @@ go run . artisan chains:rpc-endpoints eth --defaults --apply                    
   a typo), refuses the change. `chains:set-rpc` checks a new primary the same way.
 - Position 1 (the primary) is always used: to stop using it, move another endpoint there with `--order`
   (or `--set`), then disable or remove the old one. A disabled endpoint cannot become the primary.
+  A chain keeps at most 5 endpoints. If someone else changed the list while your change was planned,
+  it is refused: run it again.
+- Moving a chain to another network: `chains:set-rpc` to an endpoint of the new network (allowed when
+  `CHAIN_NETWORK_PROFILE` names it) **disables the chain's fallbacks** and says which; then
+  `chains:align-network --apply` (it disables any fallback left that does not serve the new network),
+  `chains:rpc-endpoints <chain> --defaults --apply` or `--enable=N --apply` for the new network's
+  fallbacks, and restart. A running process never uses a fallback whose network differs from its
+  primary's.
 - An `env:NAME` entry must name a variable set in the shell that runs the command (it is resolved to
   check the network) and in the environment of every process.
 - An EVM chain without `network_id` cannot be checked: set it first (`chains:align-network --apply`
@@ -292,8 +300,9 @@ go run . artisan chains:rpc-endpoints eth --defaults --apply                    
 - **Emergency only:** when the endpoint you must switch to does not answer from the host that runs the
   command, add `--skip-network-check` to `chains:set-rpc` or `chains:rpc-endpoints`. The change is
   written without asking any endpoint; the output says so as a warning and the logs record the chain
-  and host. Check the endpoint with `chains:rpc-endpoints <chain> --probe` as soon as you can. The
-  platform API cannot skip the check.
+  and host. On `chains:set-rpc` it also disables the chain's fallbacks (re-enable each with
+  `--enable=N --apply`, which checks it). Check the endpoint with `chains:rpc-endpoints <chain> --probe`
+  as soon as you can. The platform API cannot skip the check.
 - **Restart the API, the workers and the Lambdas after a change**: the chain adapters read the list at
   boot. A change through the platform API is used by the API process at once.
 - Defaults (`app/services/rpcendpoints/defaults.go`): Sepolia only, in this order:
@@ -312,7 +321,7 @@ go run . artisan chains:rpc-endpoints eth --defaults --apply                    
 | transport error, timeout, unreadable body, HTTP 5xx/408 | invalid params |
 | HTTP 429/403, JSON-RPC 429/-32005 | a contract revert (code 3, "execution reverted…", whatever its reason says) |
 | JSON-RPC -32603, -32014, -32016; on -32000/-32603 or a non-2xx status: "rate limit", "header not found", "missing trie node", "unknown block", ... | nonce too low, insufficient funds, underpriced |
-| method not found / not supported (-32601, -32004; not counted as a failure) | a skipped Solana slot, a transaction version not supported, any other JSON-RPC error |
+| method not found / not supported (-32601, -32004; not counted, and that endpoint is not asked the method again); Solana -32001, -32011 | a skipped Solana slot (confirmed by a second endpoint when a fallback says it), a transaction version not supported, any other JSON-RPC error |
 
 - A `null` receipt, transaction or block (`eth_getTransactionReceipt`, `eth_getTransactionByHash`,
   `eth_getBlockByNumber`, `eth_getBlockByHash`, Solana `getTransaction`, `getBlock`) asks one more
@@ -326,7 +335,12 @@ go run . artisan chains:rpc-endpoints eth --defaults --apply                    
   timeout or a 5xx it stops and the withdrawal reconciles as before. "already known" from a later
   endpoint is a success.
 - An EVM block and its logs are read from the same endpoint, and the logs by the block's hash, so a
-  backend without that block fails the block (retried) instead of answering no logs.
+  backend without that block fails the block (retried) instead of answering no logs. A node without
+  EIP-234 is read by number, with every log and the block's bloom checked.
+- The pending nonce is the highest the ready endpoints answer, and never below the next nonce of a
+  transaction the same process broadcast in the last 10 minutes.
+- An endpoint's basic auth and extra headers are sent to the primary only: put a fallback's key in
+  its own URL (or an `env:NAME`).
 
 ## Rate Limits & Best Practices
 
