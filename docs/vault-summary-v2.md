@@ -464,8 +464,10 @@ Cada config só recebe eventos de wallets da própria conta (configs legadas sem
   recibo de status `0x0` termina com `onchain_out_of_gas` (consumiu todo o limite de gas) ou `onchain_reverted`
   (revertida); a fee foi paga e o valor não foi transferido. Um saque cuja resposta de broadcast não diz se a rede o
   aceitou (timeout depois do envio, HTTP 5xx, resposta ilegível) fica `broadcast` e é resolvido pelo hash da
-  transação assinada; numa chain EVM, se nenhum nó a conhece e outra transação já gastou o seu nonce, termina com
-  `not_landed` (nunca poderá entrar num bloco).
+  transação assinada. Numa chain EVM termina com `not_landed` só com prova positiva: o bloco em que o nonce do
+  remetente foi gasto contém outra transação com esse nonce (se contém a nossa, o saque é confirmado a partir desse
+  bloco). XRP e Solana terminam com `expired` depois do último bloco válido, se nenhum endpoint a conhece. O que
+  nada prova fica `broadcast`; um operador resolve-o com `withdrawals:reconcile`.
 - `destination_tag` (inteiro 0..4294967295, só XRP) vem ao lado de `destination_address` quando o saque tem tag;
   omitido nos demais.
 - Deduplicação: no máximo um evento por (config, tipo, saque) — índice único `webhook_events_subject_dedup_unique`.
