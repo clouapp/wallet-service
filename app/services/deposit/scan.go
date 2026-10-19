@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit/pending"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -238,7 +239,9 @@ type fetchedBlock struct {
 // cannot be recorded is retried right away; if it keeps failing it is saved as pending
 // and the scan moves on. The scan stops before a failing block that cannot be saved as
 // pending, or when too many blocks failed this cycle, so the checkpoint never passes a
-// block it could lose.
+// block it could lose. A slot left unconfirmed by a failover (one endpoint said
+// skipped, the others were down: chain.ErrSkippedSlotUnconfirmed) goes pending
+// without counting against that limit.
 func (s *Service) scanRange(ctx context.Context, chainID string, adapter types.Chain, from, to uint64, concurrency int) (uint64, error) {
 	if from == 0 {
 		return 0, fmt.Errorf("scan range must start after block 0")
@@ -262,13 +265,16 @@ func (s *Service) scanRange(ctx context.Context, chainID string, adapter types.C
 				if err := ctx.Err(); err != nil {
 					return scanned, fmt.Errorf("scan block %d interrupted: %w", block.number, err)
 				}
-				if newPending >= s.failure.MaxNewPendingPerCycle {
+				unconfirmedSkip := errors.Is(outcome.err, chain.ErrSkippedSlotUnconfirmed)
+				if !unconfirmedSkip && newPending >= s.failure.MaxNewPendingPerCycle {
 					return scanned, fmt.Errorf("%d blocks already went pending this cycle, stopping before block %d: %w", newPending, block.number, outcome.err)
 				}
 				if err := s.recordPending(ctx, chainID, block.number, outcome); err != nil {
 					return scanned, fmt.Errorf("block %d could not be recorded nor saved as pending, the checkpoint stays before it: %w", block.number, errors.Join(outcome.err, err))
 				}
-				newPending++
+				if !unconfirmedSkip {
+					newPending++
+				}
 			}
 			scanned = block.number
 		}
@@ -309,13 +315,14 @@ type blockResult struct {
 
 // processBlock records a fetched block, retrying right away with short backoff when the
 // fetch or a deposit write fails. Recording is idempotent, so a retry only adds the
-// deposits the failed try missed.
+// deposits the failed try missed. An unconfirmed skipped slot is not retried right
+// away: the endpoints that could confirm it are down, and the pending retry asks again.
 func (s *Service) processBlock(ctx context.Context, chainID string, adapter types.Chain, block fetchedBlock, fetch blockFetcher) blockResult {
 	delays := s.failure.immediateDelays()
 	for attempt := 0; ; attempt++ {
 		outcome := s.tryBlock(ctx, chainID, adapter, block)
 		outcome.tries = attempt + 1
-		if outcome.err == nil || attempt == len(delays) || ctx.Err() != nil {
+		if outcome.err == nil || attempt == len(delays) || ctx.Err() != nil || errors.Is(outcome.err, chain.ErrSkippedSlotUnconfirmed) {
 			return outcome
 		}
 		slog.Warn("deposit block failed, retrying",

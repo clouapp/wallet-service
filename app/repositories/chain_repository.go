@@ -51,6 +51,19 @@ func (r *ChainRepository) FindByID(ctx context.Context, id string) (*models.Chai
 	return &chain, nil
 }
 
+// LockByID reads the chain with FOR UPDATE, inside the transaction on ctx, or
+// ErrRepositoryNotFound.
+func (r *ChainRepository) LockByID(ctx context.Context, id string) (*models.Chain, error) {
+	if id == "" {
+		return nil, models.ErrRepositoryNotFound
+	}
+	var chain models.Chain
+	if err := r.Query(ctx).LockForUpdate().Where("id", id).FirstOrFail(&chain); err != nil {
+		return nil, db.LookupError(err, "lock chain")
+	}
+	return &chain, nil
+}
+
 // FindByTestnet returns active chains for the requested network kind, ordered by display_order.
 func (r *ChainRepository) FindByTestnet(ctx context.Context, isTestnet bool) ([]models.Chain, error) {
 	var chains []models.Chain

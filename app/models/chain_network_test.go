@@ -154,3 +154,15 @@ func TestChain_Network_IsUnknownWithoutEnoughMetadata(t *testing.T) {
 		}
 	}
 }
+
+func TestSolana_GenesisHash_NamesEachClusterBothWays(t *testing.T) {
+	for _, network := range []string{NetworkSolanaMainnet, NetworkSolanaDevnet, NetworkSolanaTestnet} {
+		genesis := SolanaGenesisHash(network)
+		if genesis == "" || SolanaNetworkOfGenesis(genesis) != network {
+			t.Fatalf("%s: genesis %q names %q", network, genesis, SolanaNetworkOfGenesis(genesis))
+		}
+	}
+	if SolanaGenesisHash(NetworkEthereumSepolia) != "" || SolanaNetworkOfGenesis("unknown") != "" {
+		t.Fatal("a network that is not a Solana cluster has no genesis")
+	}
+}

@@ -9,8 +9,9 @@ import (
 	"github.com/macrowallets/waas/app/services/chains"
 )
 
-// ChainsSetRPC replaces the sealed rpc_url of one chain. The endpoint is
-// encrypted before it is stored and is never printed.
+// ChainsSetRPC replaces the sealed rpc_url of one chain after asking it which
+// network it serves. The endpoint is encrypted before it is stored and is never
+// printed.
 type ChainsSetRPC struct {
 	rpc *chains.ReplaceRPC
 }
@@ -33,13 +34,21 @@ func (c *ChainsSetRPC) Extend() command.Extend {
 			&command.ArgumentString{Name: "chain_id", Usage: "chain identifier (e.g. eth, teth, polygon, sol)", Required: true},
 			&command.ArgumentString{Name: "url", Usage: "new RPC URL, or env:NAME to read it from an environment variable (encrypted at rest)", Required: true},
 		},
+		Flags: []command.Flag{
+			&command.BoolFlag{Name: "skip-network-check", Usage: "emergency only: write the endpoint without asking which network it serves (logged)"},
+		},
 	}
 }
 
 func (c *ChainsSetRPC) Handle(ctx console.Context) error {
-	line, err := c.rpc.Replace(context.Background(), ctx.ArgumentString("chain_id"), ctx.ArgumentString("url"))
+	skip := ctx.OptionBool("skip-network-check")
+	line, err := c.rpc.Replace(context.Background(), ctx.ArgumentString("chain_id"), ctx.ArgumentString("url"), skip)
 	if err != nil {
 		return fail(ctx, err)
+	}
+	if skip {
+		ctx.Warning(line)
+		return nil
 	}
 	ctx.Info(line)
 	return nil

@@ -19,6 +19,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit/pending"
 	"github.com/macrowallets/waas/app/services/depositevents"
 	"github.com/macrowallets/waas/pkg/pgerr"
@@ -539,6 +540,45 @@ func TestScan_LatestBlocks_StopsWhenTooManyBlocksFailInOneCycle(t *testing.T) {
 	}
 	if entries := pendingEntries(t, backends.store); len(entries) != 1 || entries[0].Block != failingBlock {
 		t.Fatalf("only the first failing block may go pending, got %+v", entries)
+	}
+}
+
+func TestScan_LatestBlocks_UnconfirmedSkippedSlotsGoPendingWithoutStoppingTheCycle(t *testing.T) {
+	backends := newPendingBackends(t)
+	f := newFailureFixture(t, backends.store)
+	policy := DefaultFailurePolicy()
+	policy.MaxNewPendingPerCycle = 1
+	if err := f.svc.SetFailurePolicy(policy); err != nil {
+		t.Fatal(err)
+	}
+	f.txRepo.heal(t)
+	// A fallback answered these slots skipped while the primary was down: no other
+	// endpoint could confirm it. That is the failover, not three failing blocks.
+	unconfirmed := []uint64{1001, 1002, 1004}
+	for _, slot := range unconfirmed {
+		f.adapter.failAt[slot] = chain.Unavailable(fmt.Errorf("rpc call getBlock: endpoint 2 answered slot %d skipped: %w", slot, chain.ErrSkippedSlotUnconfirmed))
+	}
+
+	if err := f.svc.ScanLatestBlocks(context.Background(), scanTestChain); err != nil {
+		t.Fatalf("unconfirmed skipped slots must not stop the cycle: %v", err)
+	}
+	if got := f.checkpoint(t); got != scanHead {
+		t.Fatalf("expected the checkpoint at the head, got %d", got)
+	}
+	if depositCount(t, failingTx) != 1 || depositCount(t, healthyTx) != 1 {
+		t.Fatal("the blocks around the unconfirmed slots are recorded")
+	}
+	if got := f.sleeps.recorded(); len(got) != 0 {
+		t.Fatalf("an unconfirmed skip is not retried right away (the other endpoints are down), waited %v", got)
+	}
+	entries := pendingEntries(t, backends.store)
+	if len(entries) != len(unconfirmed) {
+		t.Fatalf("expected each unconfirmed slot pending, got %+v", entries)
+	}
+	for _, entry := range entries {
+		if entry.Attempts != 1 || !entry.NextRetryAt.Equal(f.clock.Now().Add(DefaultPendingRetryDelay)) {
+			t.Fatalf("unexpected pending entry %+v", entry)
+		}
 	}
 }
 

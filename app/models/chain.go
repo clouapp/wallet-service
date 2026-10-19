@@ -153,6 +153,10 @@ type Chain struct {
 	// finalized_tag or solidified, RequiredConfirmations is the typical finality lag,
 	// for display only.
 	Finality string `gorm:"type:varchar(20);not null;default:confirmations"`
+	// RPCFallbacks are the chain's enabled fallback endpoints (chain_rpc_endpoints
+	// rows, URLs sealed), in position order, tried after RpcURL. The chain catalog
+	// fills them for the registry; they are not a column.
+	RPCFallbacks []ChainRPCEndpoint `gorm:"-"`
 }
 
 // ChainThresholdWrite is the subset of chain columns a platform patch may store:

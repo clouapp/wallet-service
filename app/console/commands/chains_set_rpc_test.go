@@ -2,6 +2,8 @@ package commands
 
 import (
 	"testing"
+
+	"github.com/goravel/framework/contracts/console/command"
 )
 
 func TestChains_Set_RPCSignature(t *testing.T) {
@@ -18,5 +20,12 @@ func TestChains_Set_RPCSignature(t *testing.T) {
 	}
 	if len(ext.Arguments) != 2 {
 		t.Fatalf("arguments = %d", len(ext.Arguments))
+	}
+	if len(ext.Flags) != 1 {
+		t.Fatalf("flags = %d", len(ext.Flags))
+	}
+	flag, ok := ext.Flags[0].(*command.BoolFlag)
+	if !ok || flag.Name != "skip-network-check" {
+		t.Fatalf("flag = %#v, want --skip-network-check", ext.Flags[0])
 	}
 }

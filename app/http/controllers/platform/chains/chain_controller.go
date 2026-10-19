@@ -19,17 +19,28 @@ import (
 type ChainController struct {
 	thresholds *chainsvc.Thresholds
 	rpc        *chainsvc.RPC
+	endpoints  *chainsvc.RPCEndpoints
+}
+
+// ChainControllerDeps is the services the platform chain handlers call. All are required.
+type ChainControllerDeps struct {
+	Thresholds *chainsvc.Thresholds
+	RPC        *chainsvc.RPC
+	Endpoints  *chainsvc.RPCEndpoints
 }
 
 // NewChainController wires the platform chain handlers.
-func NewChainController(thresholds *chainsvc.Thresholds, rpc *chainsvc.RPC) *ChainController {
-	if thresholds == nil {
+func NewChainController(deps ChainControllerDeps) *ChainController {
+	if deps.Thresholds == nil {
 		panic("platform chains controller: thresholds service is required")
 	}
-	if rpc == nil {
+	if deps.RPC == nil {
 		panic("platform chains controller: rpc service is required")
 	}
-	return &ChainController{thresholds: thresholds, rpc: rpc}
+	if deps.Endpoints == nil {
+		panic("platform chains controller: rpc endpoints service is required")
+	}
+	return &ChainController{thresholds: deps.Thresholds, rpc: deps.RPC, endpoints: deps.Endpoints}
 }
 
 // Update godoc

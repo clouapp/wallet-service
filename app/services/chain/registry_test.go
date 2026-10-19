@@ -142,3 +142,35 @@ func TestFind_TokenByContract_SolanaMintExact(t *testing.T) {
 		t.Fatalf("got %+v err %v", got, err)
 	}
 }
+
+// listChain is a chain adapter that takes a whole endpoint list.
+type listChain struct {
+	types.Chain
+	primary   string
+	fallbacks []RPCFallback
+}
+
+func (c *listChain) ReplaceEndpoints(primary string, fallbacks []RPCFallback) {
+	c.primary, c.fallbacks = primary, fallbacks
+}
+
+func TestRegistry_ReplaceEndpoints_RetargetsAChainThatTakesAList(t *testing.T) {
+	r := NewRegistry()
+	adapter := &listChain{Chain: mocks.NewMockChain(models.ChainETH)}
+	r.RegisterChain(adapter)
+	r.RegisterChain(mocks.NewMockChain(models.ChainBTC))
+
+	replaced, err := r.ReplaceEndpoints(models.ChainETH, " https://primary.example ", []RPCFallback{{URL: "https://fallback.example", Position: 2}})
+	if err != nil || !replaced || adapter.primary != "https://primary.example" || len(adapter.fallbacks) != 1 {
+		t.Fatalf("replaced=%v err=%v adapter=%+v", replaced, err, adapter)
+	}
+	if replaced, err := r.ReplaceEndpoints("missing", "https://primary.example", nil); err != nil || replaced {
+		t.Fatalf("a chain that is not loaded: replaced=%v err=%v", replaced, err)
+	}
+	if _, err := r.ReplaceEndpoints(models.ChainBTC, "https://primary.example", nil); err == nil {
+		t.Fatal("a chain that takes a single endpoint must be refused")
+	}
+	if _, err := r.ReplaceEndpoints(models.ChainETH, " ", nil); err == nil || adapter.primary != "https://primary.example" {
+		t.Fatal("an empty primary must not wipe the list")
+	}
+}

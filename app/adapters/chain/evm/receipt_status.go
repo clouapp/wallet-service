@@ -10,13 +10,6 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 )
 
-// JSON-RPC codes of a node that does not serve eth_getBlockReceipts at all: the
-// method is unknown to it, or it does not take a block number.
-const (
-	jsonRPCMethodNotFoundCode = -32601
-	jsonRPCInvalidParamsCode  = -32602
-)
-
 var _ chain.ReceiptStatusReader = (*EVMLive)(nil)
 
 // evmReceipt is the part of a transaction receipt that tells whether the
@@ -32,25 +25,22 @@ type evmReceipt struct {
 // (chain.ReceiptStatusReader). One transaction reads its own receipt
 // (eth_getTransactionReceipt, about 1 KB). Several transactions read the receipts
 // of the whole block once (eth_getBlockReceipts, which is larger than the block
-// itself but one call instead of one per transaction). A node that rejects
-// eth_getBlockReceipts with a JSON-RPC error is read one receipt at a time instead;
-// one that does not know the method (-32601, -32602) is remembered and never asked
-// again. The RPC client retries rate-limited calls; an outage, a rate limit that
-// outlasts the retries, a missing receipt, a receipt of another block
-// (reorganized) or an unknown status fails the whole read.
+// itself but one call instead of one per transaction). A rejection of
+// eth_getBlockReceipts with a JSON-RPC error is read one receipt at a time instead.
+// An endpoint that refuses a block number twice in a row (-32602) is not asked it
+// for 10 minutes while another endpoint can be (the RPC client remembers it for that
+// endpoint only); "method not found" is never remembered. The RPC client retries rate-limited calls;
+// an outage, a rate limit that outlasts the retries, a missing receipt, a receipt
+// of another block (reorganized) or an unknown status fails the whole read.
 func (a *EVMLive) TransactionsSucceeded(ctx context.Context, blockNum uint64, blockHash string, txHashes []string) (map[string]bool, error) {
 	hashes := distinctLowerHashes(txHashes)
 	if len(hashes) == 0 {
 		return map[string]bool{}, nil
 	}
-	if len(hashes) > 1 && !a.noBlockReceipts.Load() {
+	if len(hashes) > 1 {
 		statuses, err := a.blockReceiptStatuses(ctx, blockNum, blockHash, hashes)
-		rejected, unknownMethod := blockReceiptsRejection(err)
-		if !rejected {
+		if !blockReceiptsRejected(err) {
 			return statuses, err
-		}
-		if unknownMethod {
-			a.noBlockReceipts.Store(true)
 		}
 	}
 	return a.transactionReceiptStatuses(ctx, blockNum, blockHash, hashes)
@@ -125,16 +115,11 @@ func receiptSucceeded(receipt evmReceipt, blockNum uint64, blockHash string) (bo
 	}
 }
 
-// blockReceiptsRejection tells whether the node answered eth_getBlockReceipts with
-// a JSON-RPC error (rejected), and whether that error says it does not know the
-// method at all (unknownMethod). An outage, a rate limit or an unreadable answer is
-// not a rejection.
-func blockReceiptsRejection(err error) (rejected, unknownMethod bool) {
+// blockReceiptsRejected tells whether eth_getBlockReceipts was answered with a
+// JSON-RPC error. An outage, a rate limit or an unreadable answer is not a rejection.
+func blockReceiptsRejected(err error) bool {
 	var rpcErr *rpc.RPCError
-	if !errors.As(err, &rpcErr) {
-		return false, false
-	}
-	return true, rpcErr.Code == jsonRPCMethodNotFoundCode || rpcErr.Code == jsonRPCInvalidParamsCode
+	return errors.As(err, &rpcErr)
 }
 
 func distinctLowerHashes(txHashes []string) []string {

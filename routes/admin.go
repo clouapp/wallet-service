@@ -223,6 +223,15 @@ func RegisterAdminRoutes() {
 		router.Put("/features/{scope}/{id}", platformFeaturesCtrl.UpdateScope)
 		// S1.4.7: chains.view and chains.update. A platform_admins row is the gate.
 		router.Patch("/chains/{chainId}/rpc", platformChainsCtrl.UpdateRPC)
+		// The ordered endpoint list of a chain: rpc_url first, then the fallbacks.
+		// Same gate as the rpc_url route; no URL is ever returned.
+		router.Get("/chains/{chainId}/rpc-endpoints", platformChainsCtrl.ListRPCEndpoints)
+		router.Post("/chains/{chainId}/rpc-endpoints", platformChainsCtrl.AddRPCEndpoint)
+		router.Put("/chains/{chainId}/rpc-endpoints", platformChainsCtrl.ReplaceRPCEndpoints)
+		router.Post("/chains/{chainId}/rpc-endpoints/order", platformChainsCtrl.ReorderRPCEndpoints)
+		router.Post("/chains/{chainId}/rpc-endpoints/defaults", platformChainsCtrl.AddDefaultRPCEndpoints)
+		router.Patch("/chains/{chainId}/rpc-endpoints/{position}", platformChainsCtrl.UpdateRPCEndpoint)
+		router.Delete("/chains/{chainId}/rpc-endpoints/{position}", platformChainsCtrl.RemoveRPCEndpoint)
 		router.Patch("/chains/{chainId}", platformChainsCtrl.Update)
 		// Declared before {group} so the literal path mail/test is not a group name.
 		// S1.4.6: POST /v1/platform/settings/mail/test settings.update + mail.update (declared before {group}).
@@ -542,10 +551,11 @@ func newPlatformSettingsController() *platformsettings.SettingController {
 }
 
 func newPlatformChainsController() *platformchains.ChainController {
-	return platformchains.NewChainController(
-		container.MustMake[*chainsvc.Thresholds](),
-		container.MustMake[*chainsvc.RPC](),
-	)
+	return platformchains.NewChainController(platformchains.ChainControllerDeps{
+		Thresholds: container.MustMake[*chainsvc.Thresholds](),
+		RPC:        container.MustMake[*chainsvc.RPC](),
+		Endpoints:  container.MustMake[*chainsvc.RPCEndpoints](),
+	})
 }
 
 func newPlatformFeaturesController() *platformfeatures.FeatureController {

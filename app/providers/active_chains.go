@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math/big"
 	"strings"
+	"sync"
 
 	"github.com/goravel/framework/contracts/foundation"
 
@@ -15,6 +16,7 @@ import (
 	solanachain "github.com/macrowallets/waas/app/adapters/chain/solana"
 	tronchain "github.com/macrowallets/waas/app/adapters/chain/tron"
 	xrpchain "github.com/macrowallets/waas/app/adapters/chain/xrp"
+	"github.com/macrowallets/waas/app/adapters/redis/rpchealth"
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
@@ -50,18 +52,97 @@ func openChainEndpoint(stored string) (string, error) {
 	return endpoint, nil
 }
 
-// chainCatalog is the chain rows the registry service reads. Register only
-// stores this adapter; the query runs in ChainRegistryService.Refresh.
+// chainCatalog is the chain rows the registry service reads, each with its enabled
+// fallback endpoints (sealed). Register only stores this adapter; the queries run
+// in ChainRegistryService.Refresh.
 type chainCatalog struct {
-	repo *repositories.ChainRepository
+	repo      *repositories.ChainRepository
+	endpoints *repositories.ChainRPCEndpointRepository
 }
 
 func (c chainCatalog) FindActive(ctx context.Context) ([]models.Chain, error) {
 	if c.repo == nil {
 		return nil, errActiveChainsNotLoaded
 	}
-	return c.repo.FindActive(ctx)
+	rows, err := c.repo.FindActive(ctx)
+	if err != nil || c.endpoints == nil {
+		return rows, err
+	}
+	fallbacks, err := c.endpoints.ListEnabled(ctx)
+	if err != nil {
+		// The primary path never depends on the fallback list.
+		slog.Error("failed to load chain rpc fallbacks; every chain uses its primary endpoint only", "error", err)
+		return rows, nil
+	}
+	byChain := make(map[string][]models.ChainRPCEndpoint)
+	for _, fallback := range fallbacks {
+		byChain[fallback.ChainID] = append(byChain[fallback.ChainID], fallback)
+	}
+	for i := range rows {
+		rows[i].RPCFallbacks = byChain[rows[i].ID]
+	}
+	return rows, nil
 }
+
+// openChainFallbacks opens the sealed fallback URLs of ch, with their stored
+// positions, for the adapter types that fail over (EVM, Solana), on network (the
+// one the chain resolves to). One that does not open is skipped and logged with
+// the chain and position only; another adapter type keeps its own failover. A
+// chain with nothing to check a fallback against (an EVM chain without
+// network_id, a Solana cluster without a known genesis) gets none.
+func openChainFallbacks(ch models.Chain, network string) []chainpkg.RPCFallback {
+	if len(ch.RPCFallbacks) == 0 {
+		return nil
+	}
+	if !models.RPCFallbacksSupported(ch.AdapterType) {
+		slog.Warn("chain rpc fallbacks ignored: the adapter does not fail over through them", "chain", ch.ID, "adapter", ch.AdapterType)
+		return nil
+	}
+	checkable := ch.AdapterType == models.AdapterTypeEVM && ch.NetworkID != nil && *ch.NetworkID > 0
+	checkable = checkable || (ch.AdapterType == models.AdapterTypeSolana && models.SolanaGenesisHash(network) != "")
+	if !checkable {
+		slog.Warn("chain rpc fallbacks ignored: no network to check them against (set network_id)", "chain", ch.ID)
+		return nil
+	}
+	opened := make([]chainpkg.RPCFallback, 0, len(ch.RPCFallbacks))
+	for _, row := range ch.RPCFallbacks {
+		endpoint, err := openActiveChainEndpoint(row.URL)
+		if err != nil {
+			slog.Warn("failed to open chain rpc fallback, skipping it", "chain", ch.ID, "position", row.Position)
+			continue
+		}
+		opened = append(opened, chainpkg.RPCFallback{URL: endpoint, Position: row.Position})
+	}
+	return opened
+}
+
+// chainRPCHealthStore is the Redis store of RPC endpoint health: the RPC clients
+// record into it, the platform API and chains:rpc-endpoints read it. It is nil
+// without Redis.
+func chainRPCHealthStore() *rpchealth.Store {
+	rpcHealthOnce.Do(func() {
+		client, err := facades.Redis()
+		if err != nil {
+			return
+		}
+		rpcHealthStore = rpchealth.New(client, strings.TrimSpace(facades.Config().GetString("vault.lambda_mode")))
+	})
+	return rpcHealthStore
+}
+
+// chainRPCHealth is chainRPCHealthStore as the sink the RPC clients take; nil
+// without Redis, so nothing is recorded.
+func chainRPCHealth() chainpkg.RPCHealthSink {
+	if store := chainRPCHealthStore(); store != nil {
+		return store
+	}
+	return nil
+}
+
+var (
+	rpcHealthOnce  sync.Once
+	rpcHealthStore *rpchealth.Store
+)
 
 // refreshChainRegistry loads the sealed catalog and builds the chain registry.
 // A read failure is logged and leaves the process up. The URL is not logged.
@@ -95,7 +176,9 @@ func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByC
 			slog.Warn("failed to open chain rpc, skipping chain", "chain", ch.ID)
 			continue
 		}
-		networkByChain[ch.ID] = ch.ResolveNetwork(rpcURL).Name
+		network := ch.ResolveNetwork(rpcURL).Name
+		networkByChain[ch.ID] = network
+		fallbacks := openChainFallbacks(ch, network)
 		var adapter types.Chain
 		switch ch.AdapterType {
 		case models.AdapterTypeEVM:
@@ -110,6 +193,8 @@ func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByC
 				NativeDecimal:         uint8(ch.NativeDecimals),
 				NetworkID:             networkID,
 				RPCURL:                rpcURL,
+				RPCFallbacks:          fallbacks,
+				RPCHealth:             chainRPCHealth(),
 				Confirmations:         uint64(ch.RequiredConfirmations),
 				ERC20Tokens:           tokensByChain[ch.ID],
 				GasReadinessThreshold: resolveGasReadinessThreshold(&ch),
@@ -173,6 +258,9 @@ func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByC
 				NativeSymbol:  ch.NativeSymbol,
 				NativeDecimal: uint8(ch.NativeDecimals),
 				RPCURL:        rpcURL,
+				RPCFallbacks:  fallbacks,
+				GenesisHash:   models.SolanaGenesisHash(network),
+				RPCHealth:     chainRPCHealth(),
 				Confirmations: uint64(ch.RequiredConfirmations),
 				Tokens:        tokensByChain[ch.ID],
 			})

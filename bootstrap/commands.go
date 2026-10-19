@@ -28,6 +28,7 @@ import (
 	"github.com/macrowallets/waas/app/services/keyexport"
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/rpcendpoints"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/sharemigration"
 	"github.com/macrowallets/waas/app/services/sweep"
@@ -78,8 +79,10 @@ func Commands() []console.Command {
 		}),
 		commands.NewPriceCheckUpdate(prices),
 		commands.NewChainsSetRPC(chains.NewReplaceRPC(chains.ReplaceRPCDeps{
-			Store: container.MustMake[*repositories.ChainRepository](),
-			Seal:  func(plaintext string) (string, error) { return settings.Seal(appfacades.Crypt(), plaintext) },
+			Store:     container.MustMake[*repositories.ChainRepository](),
+			Seal:      func(plaintext string) (string, error) { return settings.Seal(appfacades.Crypt(), plaintext) },
+			Verify:    chainregistry.NewPrimaryVerifier(decryptChainRPC, configuredChainProfile),
+			Fallbacks: container.MustMake[*repositories.ChainRPCEndpointRepository](),
 		})),
 		commands.NewChainsAlignNetwork(chainregistry.NewAligner(chainregistry.AlignerDeps{
 			Store:       repositories.NewChainRegistryRepository(nil),
@@ -87,8 +90,10 @@ func Commands() []console.Command {
 			Probe:       chainregistry.ProbeRPCNetwork,
 			Cache:       deposits,
 			Checkpoints: deposits,
+			Fallbacks:   container.MustMake[*repositories.ChainRPCEndpointRepository](),
 			Profile:     configuredChainProfile,
 		})),
+		commands.NewChainsRPCEndpoints(container.MustMake[*rpcendpoints.Service]()),
 		commands.NewChainsAddMissing(chainregistry.NewMissingChains(seedMissingAddedChains)),
 		commands.NewChainsAlignTokens(chainregistry.NewNetworkTokens(alignNetworkTokens)),
 		commands.NewWithdrawPreflight(commands.WithdrawPreflightDeps{
