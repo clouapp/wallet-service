@@ -47,7 +47,7 @@ func (a *EVMLive) TransactionSuperseded(ctx context.Context, txHash, from string
 		return false, nil
 	}
 	var count string
-	if err := a.rpc.Call(ctx, "eth_getTransactionCount", &count, from, fmt.Sprintf("0x%x", head-depth)); err != nil {
+	if err = a.rpc.Call(ctx, "eth_getTransactionCount", &count, from, fmt.Sprintf("0x%x", head-depth)); err != nil {
 		return false, err
 	}
 	spent, err := parseHexQuantity(count, "nonce count")
@@ -58,7 +58,7 @@ func (a *EVMLive) TransactionSuperseded(ctx context.Context, txHash, from string
 		return false, nil
 	}
 	var known json.RawMessage
-	if err := a.rpc.Call(ctx, "eth_getTransactionByHash", &known, txHash); err != nil {
+	if err = a.rpc.Call(ctx, "eth_getTransactionByHash", &known, txHash); err != nil {
 		return false, err
 	}
 	return len(known) == 0 || string(known) == "null", nil
