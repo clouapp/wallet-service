@@ -3,7 +3,7 @@ package delivery
 import (
 	"context"
 	"fmt"
-	"time"
+	"strconv"
 
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/httpclient"
@@ -17,8 +17,10 @@ func NewClient() *Client {
 	return &Client{}
 }
 
-// Post sends the signed body. Headers, URL, and body are the values the service computed.
-// A missing context or a non-positive timeout fails before any network use.
+// Post sends the signed body. Headers, URL, and body are the values the service computed;
+// X-Vault-Timestamp is the time the service signed at, the t of X-Vault-Signature-V2.
+// A missing context, a non-positive timeout or a delivery without its timestamped
+// signature fails before any network use.
 func (c *Client) Post(ctx context.Context, call webhook.SignedDelivery) (httpclient.Response, error) {
 	if ctx == nil {
 		return httpclient.Response{}, fmt.Errorf("webhook delivery: context is required")
@@ -26,15 +28,19 @@ func (c *Client) Post(ctx context.Context, call webhook.SignedDelivery) (httpcli
 	if call.Timeout <= 0 {
 		return httpclient.Response{}, fmt.Errorf("webhook delivery: timeout is required")
 	}
+	if call.Timestamp <= 0 || call.SignatureV2 == "" {
+		return httpclient.Response{}, fmt.Errorf("webhook delivery: the timestamped signature is required")
+	}
 	return httpclient.NewClient(call.Timeout).Do(ctx, httpclient.Request{
 		Method: httpclient.MethodPost,
 		URL:    call.URL,
 		Header: map[string]string{
-			"Content-Type":        "application/json",
-			"X-Vault-Signature":   call.Signature,
-			"X-Vault-Event":       call.EventType,
-			"X-Vault-Delivery-Id": call.DeliveryID,
-			"X-Vault-Timestamp":   fmt.Sprintf("%d", time.Now().Unix()),
+			"Content-Type":         "application/json",
+			"X-Vault-Signature":    call.Signature,
+			"X-Vault-Signature-V2": call.SignatureV2,
+			"X-Vault-Event":        call.EventType,
+			"X-Vault-Delivery-Id":  call.DeliveryID,
+			"X-Vault-Timestamp":    strconv.FormatInt(call.Timestamp, 10),
 		},
 		Body:    call.Body,
 		HasBody: true,

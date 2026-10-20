@@ -15,37 +15,37 @@ import (
 
 func TestPost_Sends_TheSignedBodyUnchanged(t *testing.T) {
 	const (
-		signature = "already-signed"
-		eventType = "deposit.confirmed"
-		eventID   = "delivery-1"
-		body      = `{"id":"delivery-1","type":"deposit.confirmed"}`
+		signature   = "already-signed"
+		signatureV2 = "t=1760950000,v1=already-signed-v2"
+		signedAt    = int64(1760950000)
+		eventType   = "deposit.confirmed"
+		eventID     = "delivery-1"
+		body        = `{"id":"delivery-1","type":"deposit.confirmed"}`
 	)
 	var (
-		method    string
-		gotBody   string
-		headers   http.Header
-		timestamp string
+		method  string
+		gotBody string
+		headers http.Header
 	)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		method = r.Method
 		payload, _ := io.ReadAll(r.Body)
 		gotBody = string(payload)
 		headers = r.Header.Clone()
-		timestamp = r.Header.Get("X-Vault-Timestamp")
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	t.Cleanup(server.Close)
 
-	before := time.Now().Unix()
 	resp, err := NewClient().Post(context.Background(), webhook.SignedDelivery{
-		URL:        server.URL,
-		Body:       []byte(body),
-		Signature:  signature,
-		EventType:  eventType,
-		DeliveryID: eventID,
-		Timeout:    time.Second,
+		URL:         server.URL,
+		Body:        []byte(body),
+		Signature:   signature,
+		SignatureV2: signatureV2,
+		Timestamp:   signedAt,
+		EventType:   eventType,
+		DeliveryID:  eventID,
+		Timeout:     time.Second,
 	})
-	after := time.Now().Unix()
 	if err != nil {
 		t.Fatal("signed post failed")
 	}
@@ -57,13 +57,13 @@ func TestPost_Sends_TheSignedBodyUnchanged(t *testing.T) {
 	}
 	if headers.Get("Content-Type") != "application/json" ||
 		headers.Get("X-Vault-Signature") != signature ||
+		headers.Get("X-Vault-Signature-V2") != signatureV2 ||
 		headers.Get("X-Vault-Event") != eventType ||
 		headers.Get("X-Vault-Delivery-Id") != eventID {
 		t.Fatal("webhook headers changed")
 	}
-	unix, convErr := strconv.ParseInt(timestamp, 10, 64)
-	if convErr != nil || unix < before || unix > after {
-		t.Fatal("X-Vault-Timestamp was not the unix time of the post")
+	if headers.Get("X-Vault-Timestamp") != strconv.FormatInt(signedAt, 10) {
+		t.Fatal("X-Vault-Timestamp must be the time the service signed, the t of X-Vault-Signature-V2")
 	}
 }
 
@@ -80,12 +80,14 @@ func TestPost_Keeps_RawBytesAndLeavesTheSecretOffTheWire(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	if _, err := NewClient().Post(context.Background(), webhook.SignedDelivery{
-		URL:        server.URL,
-		Body:       raw,
-		Signature:  "sig-only",
-		EventType:  "webhook.test",
-		DeliveryID: "raw-1",
-		Timeout:    time.Second,
+		URL:         server.URL,
+		Body:        raw,
+		Signature:   "sig-only",
+		SignatureV2: "t=1760950000,v1=sig-only",
+		Timestamp:   1760950000,
+		EventType:   "webhook.test",
+		DeliveryID:  "raw-1",
+		Timeout:     time.Second,
 	}); err != nil {
 		t.Fatal("raw post failed")
 	}
@@ -105,16 +107,21 @@ func TestPost_Keeps_RawBytesAndLeavesTheSecretOffTheWire(t *testing.T) {
 }
 
 func TestPost_Omits_TheSignatureFromTransportErrors(t *testing.T) {
-	const signature = "sig-not-logged"
+	const (
+		signature   = "sig-not-logged"
+		signatureV2 = "t=1760950000,v1=sig-v2-not-logged"
+	)
 	_, err := NewClient().Post(context.Background(), webhook.SignedDelivery{
-		URL:        "http://127.0.0.1:1/nope",
-		Body:       []byte("{}"),
-		Signature:  signature,
-		EventType:  "webhook.test",
-		DeliveryID: "missing-1",
-		Timeout:    200 * time.Millisecond,
+		URL:         "http://127.0.0.1:1/nope",
+		Body:        []byte("{}"),
+		Signature:   signature,
+		SignatureV2: signatureV2,
+		Timestamp:   1760950000,
+		EventType:   "webhook.test",
+		DeliveryID:  "missing-1",
+		Timeout:     200 * time.Millisecond,
 	})
-	if err == nil || strings.Contains(err.Error(), signature) {
+	if err == nil || strings.Contains(err.Error(), signature) || strings.Contains(err.Error(), signatureV2) {
 		t.Fatal("transport error was accepted or included the signature")
 	}
 }
@@ -127,18 +134,50 @@ func TestPost_Requires_AContextAndATimeout(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	call := webhook.SignedDelivery{
-		URL:        server.URL,
-		Body:       []byte("{}"),
-		Signature:  "sig",
-		EventType:  "webhook.test",
-		DeliveryID: "delivery-1",
-		Timeout:    time.Second,
+		URL:         server.URL,
+		Body:        []byte("{}"),
+		Signature:   "sig",
+		SignatureV2: "t=1760950000,v1=sig",
+		Timestamp:   1760950000,
+		EventType:   "webhook.test",
+		DeliveryID:  "delivery-1",
+		Timeout:     time.Second,
 	}
 	if _, err := NewClient().Post(nil, call); err == nil || called {
 		t.Fatal("a nil context was posted")
 	}
-	call.Timeout = 0
-	if _, err := NewClient().Post(context.Background(), call); err == nil || called {
+	withoutTimeout := call
+	withoutTimeout.Timeout = 0
+	if _, err := NewClient().Post(context.Background(), withoutTimeout); err == nil || called {
 		t.Fatal("a delivery without a timeout was posted")
+	}
+}
+
+func TestPost_Requires_TheTimestampedSignature(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		called = true
+	}))
+	t.Cleanup(server.Close)
+
+	call := webhook.SignedDelivery{
+		URL:         server.URL,
+		Body:        []byte("{}"),
+		Signature:   "sig",
+		SignatureV2: "t=1760950000,v1=sig",
+		Timestamp:   1760950000,
+		EventType:   "webhook.test",
+		DeliveryID:  "delivery-1",
+		Timeout:     time.Second,
+	}
+	withoutTimestamp := call
+	withoutTimestamp.Timestamp = 0
+	if _, err := NewClient().Post(context.Background(), withoutTimestamp); err == nil || called {
+		t.Fatal("a delivery without the time it was signed at was posted")
+	}
+	withoutSignatureV2 := call
+	withoutSignatureV2.SignatureV2 = ""
+	if _, err := NewClient().Post(context.Background(), withoutSignatureV2); err == nil || called {
+		t.Fatal("a delivery without X-Vault-Signature-V2 was posted")
 	}
 }

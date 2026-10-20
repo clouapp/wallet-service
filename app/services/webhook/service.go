@@ -3,8 +3,6 @@ package webhook
 import (
 	"context"
 	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -489,21 +487,25 @@ func (s *Service) SendTest(ctx context.Context, cfg *models.WebhookConfig, walle
 	return nil
 }
 
+// postSignedWebhook signs payload now and posts it. The timestamp is taken here,
+// at send time, for every attempt: nothing stores or queues a signature.
 func postSignedWebhook(ctx context.Context, deliveryURL, secret, payload, eventType, eventID string, timeout time.Duration) (httpclient.Response, error) {
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(payload))
-	signature := hex.EncodeToString(mac.Sum(nil))
 	client := NewDeliveryClient()
 	if client == nil {
 		return httpclient.Response{}, fmt.Errorf("webhook delivery client is not configured")
 	}
+	body := []byte(payload)
+	timestamp := time.Now().Unix()
+	signature, signatureV2 := signDelivery(secret, body, timestamp)
 	return client.Post(ctx, SignedDelivery{
-		URL:        deliveryURL,
-		Body:       []byte(payload),
-		Signature:  signature,
-		EventType:  eventType,
-		DeliveryID: eventID,
-		Timeout:    timeout,
+		URL:         deliveryURL,
+		Body:        body,
+		Signature:   signature,
+		SignatureV2: signatureV2,
+		Timestamp:   timestamp,
+		EventType:   eventType,
+		DeliveryID:  eventID,
+		Timeout:     timeout,
 	})
 }
 
