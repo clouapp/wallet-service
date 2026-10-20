@@ -42,6 +42,7 @@ func (s *TransactionRepositoryTestSuite) TestUpdates_Move_UpdatedAt() {
 		},
 		"confirmation count": func(id uuid.UUID) error { return s.repo.SetConfirmations(ctx, id, 4) },
 		"failed":             func(id uuid.UUID) error { return s.repo.MarkFailed(ctx, id, "expired") },
+		"failed from":        func(id uuid.UUID) error { return s.repo.MarkFailedFrom(ctx, id, "reorged_out", "pending") },
 		"block number":       func(id uuid.UUID) error { return s.repo.SetBlockNumber(ctx, id, 123) },
 		"block and hash":     func(id uuid.UUID) error { return s.repo.SetBlock(ctx, id, 124, "0xmovedblock") },
 		"fee":                func(id uuid.UUID) error { return s.repo.SetFee(ctx, id, "21000") },
