@@ -60,7 +60,7 @@ func TestSolana_ScanBlock_DetectsNativeCreditsFromRecordedBlock(t *testing.T) {
 	want := []struct {
 		tx, from, to string
 		amount       int64
-		index        uint
+		index        int
 	}{
 		{"41iqE5xg9ttZAk1uZkirZsQz3GG1DJ3kcU33YUFJAyraS3MFG2BWMxweU7KUXqhDZuUmzW2bqs5L3PPE1RRQEK9r",
 			"AMbsiP9F8YY2y8n9uFdqtw7yNZZHvTWFEWSQGHKtmkoQ", "AJor34TKjdm2pAK6V7nkBmKNpnARHL7CkiwnBVTE9J6b", 150_000_000, 1},

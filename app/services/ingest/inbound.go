@@ -12,7 +12,7 @@ var (
 	// ErrUnknownProvider is a callback from a provider name that has no adapter.
 	ErrUnknownProvider = errors.New("unknown provider")
 	// ErrInvalidPayload is a verified callback whose body the provider adapter
-	// cannot parse. The parse error is not returned: it can quote the body.
+	// cannot parse. The parse error is logged, not returned to the caller.
 	ErrInvalidPayload = errors.New("invalid payload")
 )
 
@@ -50,7 +50,9 @@ func (i *Inbound) Receive(ctx context.Context, hook Webhook) error {
 	}
 	transfers, err := provider.ParsePayload(hook.Body)
 	if err != nil {
-		slog.Warn("ingest parse rejected", "provider", hook.Provider)
+		// A body that is not the provider's payload. The error names the decoding
+		// failure, not the body.
+		slog.Warn("ingest parse rejected", "provider", hook.Provider, "error", err)
 		return ErrInvalidPayload
 	}
 	return i.ingest.Ingest(ctx, InboundEvent{ChainID: hook.ChainID, Transfers: transfers})

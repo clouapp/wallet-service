@@ -333,14 +333,15 @@ func (a *BitcoinLive) fetchEsploraBlockTxs(ctx context.Context, blockHash string
 func (a *BitcoinLive) esploraTransfers(txs []esploraTx, blockNum uint64, blockHash string, blockTime time.Time) []types.DetectedTransfer {
 	var transfers []types.DetectedTransfer
 	for _, tx := range txs {
-		for _, vout := range tx.Vout {
+		// The output index is the transfer's position (vout): outputs are listed in order.
+		for index, vout := range tx.Vout {
 			if vout.Value <= 0 || vout.ScriptpubkeyAddress == "" {
 				continue
 			}
 			transfers = append(transfers, types.DetectedTransfer{
 				TxHash: tx.Txid, BlockNumber: blockNum, BlockHash: blockHash,
 				To: vout.ScriptpubkeyAddress, Amount: big.NewInt(vout.Value),
-				Asset: a.cfg.NativeSymbol, Timestamp: blockTime,
+				Asset: a.cfg.NativeSymbol, LogIndex: index, Timestamp: blockTime,
 			})
 		}
 	}

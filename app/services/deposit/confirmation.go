@@ -606,12 +606,6 @@ func (s *Service) failOnChain(ctx context.Context, adapter types.Chain, tx model
 	return true
 }
 
-// confirmationTx opens one transaction. Queries that use the callback context
-// join it, including the sweep.confirmed webhook row.
-type confirmationTx interface {
-	Within(ctx context.Context, fn func(context.Context) error) error
-}
-
 // persistSweepConfirmed writes the confirmation, the paid fee, and the
 // sweep.confirmed webhook row in one transaction. A failed webhook insert rolls
 // the confirmation back. The queue send runs only after that commit. With no
@@ -631,12 +625,8 @@ func (s *Service) persistSweepConfirmed(ctx context.Context, tx models.Transacti
 	if s.webhookSvc == nil {
 		return write(ctx)
 	}
-	joiner, ok := s.txRepo.(confirmationTx)
-	if !ok {
-		return fmt.Errorf("confirm sweep: transaction writer cannot open a transaction")
-	}
 	var send func(context.Context)
-	err := joiner.Within(ctx, func(txCtx context.Context) error {
+	err := s.txRepo.Within(ctx, func(txCtx context.Context) error {
 		if err := write(txCtx); err != nil {
 			return err
 		}

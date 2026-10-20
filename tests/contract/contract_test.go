@@ -21,6 +21,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories/chaincatalog"
 	"github.com/macrowallets/waas/bootstrap"
 	"github.com/macrowallets/waas/database/seeders"
+	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 	"github.com/macrowallets/waas/tests/feature/support/testenv"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
@@ -531,7 +532,7 @@ func insertContractDeposit(t *testing.T, vars map[string]string) {
 	confirmedAt := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	deposit := models.Transaction{
 		ID: uuid.New(), WalletID: mustUUID(t, vars["wallet"]), ExternalUserID: "contract-user", Chain: "eth",
-		TxType: models.TxTypeDeposit, TxHash: "0xcontractdeposit", LogIndex: 0, FromAddress: "0xcontractsender",
+		TxType: models.TxTypeDeposit, TxHash: "0xcontractdeposit", LogIndex: types.NativeValuePosition, FromAddress: "0xcontractsender",
 		ToAddress: fixtureDepositAddress, Amount: "1500000000000000000", Asset: "ETH", Confirmations: 12,
 		RequiredConfs: 12, Status: "confirmed", BlockNumber: 100, ConfirmedAt: &confirmedAt,
 		Direction: models.TxDirectionInbound, Source: models.TxSourceChain, RawPayload: "{}",

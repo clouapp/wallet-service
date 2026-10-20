@@ -10,6 +10,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/pkg/types"
@@ -43,6 +44,22 @@ func newDepositSvc(registry *chain.Registry, webhookSvc *webhook.Service) *Servi
 		Transactions: repositories.NewTransactionRepository(nil),
 		Checkpoints:  repositories.NewDepositScanCheckpointRepository(nil),
 		Cache:        memcache.New(),
+	})
+}
+
+// repositoryOf is the production transaction repository on the test database.
+func repositoryOf(t *testing.T) *repositories.TransactionRepository {
+	t.Helper()
+	return repositories.NewTransactionRepository(nil)
+}
+
+// newIngestSvc is the production provider push service on the test database.
+func newIngestSvc(registry *chain.Registry) *ingest.Service {
+	return ingest.NewService(ingest.Deps{
+		Registry:     registry,
+		Webhook:      newWebhookSvc(),
+		AddressRepo:  repositories.NewAddressRepository(nil),
+		Transactions: repositories.NewTransactionRepository(nil),
 	})
 }
 
@@ -110,7 +127,7 @@ func TestProcess_Transfer_MatchesAddress(t *testing.T) {
 		Amount: big.NewInt(1000000), Asset: "eth",
 	}
 
-	_, err := svc.processTransfer(context.Background(), "eth", mockChain, transfer)
+	_, err := svc.processTransfer(context.Background(), "eth", mockChain, transfer, nil)
 	if err != nil {
 		t.Fatalf("processTransfer: %v", err)
 	}
@@ -155,7 +172,7 @@ func TestProcess_Transfer_IgnoresUnknownAddress(t *testing.T) {
 		TxHash: "0xignored", To: "0xunknown_address", Amount: big.NewInt(100), Asset: "eth",
 	}
 
-	_, err := svc.processTransfer(context.Background(), "eth", mockChain, transfer)
+	_, err := svc.processTransfer(context.Background(), "eth", mockChain, transfer, nil)
 	if err != nil {
 		t.Fatalf("should not error for unknown address: %v", err)
 	}
@@ -187,11 +204,11 @@ func TestProcess_Transfer_Dedup(t *testing.T) {
 	}
 
 	// Process twice
-	created, err := svc.processTransfer(context.Background(), "eth", mockChain, transfer)
+	created, err := svc.processTransfer(context.Background(), "eth", mockChain, transfer, nil)
 	if err != nil || !created {
 		t.Fatalf("first pass must record the deposit, got created=%v err=%v", created, err)
 	}
-	created, err = svc.processTransfer(context.Background(), "eth", mockChain, transfer)
+	created, err = svc.processTransfer(context.Background(), "eth", mockChain, transfer, nil)
 	if err != nil || created {
 		t.Fatalf("second pass must not record it again, got created=%v err=%v", created, err)
 	}
@@ -220,7 +237,7 @@ func TestProcess_Transfer_TokenDeposit(t *testing.T) {
 	token := types.Token{Symbol: "usdt", Contract: "0xdAC17F", Decimals: 6, ChainID: "eth"}
 	transfer := mocks.MakeTokenTransfer("0xtokentx", "0xfrom", addr.Address, 500000, token)
 
-	_, err := svc.processTransfer(context.Background(), "eth", mockChain, transfer)
+	_, err := svc.processTransfer(context.Background(), "eth", mockChain, transfer, nil)
 	if err != nil {
 		t.Fatalf("processTransfer: %v", err)
 	}

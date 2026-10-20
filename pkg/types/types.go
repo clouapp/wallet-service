@@ -176,17 +176,31 @@ type Balance struct {
 // Deposit detection
 // ---------------------------------------------------------------------------
 
+// NativeValuePosition is the position of the native value a transaction itself
+// carries on an account chain: an EVM transaction's value, a TRON TransferContract,
+// an XRP Payment. Every other transfer the scanner reports has a position of zero or
+// more (see DetectedTransfer.LogIndex).
+const NativeValuePosition = -1
+
 type DetectedTransfer struct {
-	TxHash      string    `json:"tx_hash"`
-	BlockNumber uint64    `json:"block_number"`
-	BlockHash   string    `json:"block_hash"`
-	From        string    `json:"from"`
-	To          string    `json:"to"`
-	Amount      *big.Int  `json:"amount"`
-	Asset       string    `json:"asset"`
-	Token       *Token    `json:"token"`
-	LogIndex    uint      `json:"log_index"`
-	Timestamp   time.Time `json:"timestamp"`
+	TxHash      string   `json:"tx_hash"`
+	BlockNumber uint64   `json:"block_number"`
+	BlockHash   string   `json:"block_hash"`
+	From        string   `json:"from"`
+	To          string   `json:"to"`
+	Amount      *big.Int `json:"amount"`
+	Asset       string   `json:"asset"`
+	Token       *Token   `json:"token"`
+	// LogIndex is the transfer's position, which tells it from the other transfers
+	// of its transaction; the deposit scanner and the provider ingest compute it alike:
+	// NativeValuePosition for the native value of an EVM, TRON or XRP transaction; the
+	// log index in the block for an EVM token Transfer and the event's index in the
+	// block for a TRON one; the output index (vout) on Bitcoin and Litecoin; on Solana
+	// the credited account's index for SOL and 256 plus the lowest changed token account
+	// index of the owner and mint for a token (pkg/solanacredit). Below
+	// NativeValuePosition: an EVM internal transfer, which only the Alchemy push reports.
+	LogIndex  int       `json:"log_index"`
+	Timestamp time.Time `json:"timestamp"`
 	// DestinationTag is the XRP Ledger destination tag of the payment; nil means
 	// none, and it is always nil on the other chains.
 	DestinationTag *uint32 `json:"destination_tag,omitempty"`

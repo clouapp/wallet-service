@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
+	"log/slog"
 	"math/big"
 	"strconv"
 	"strings"
@@ -289,9 +291,14 @@ type alchemyActivity struct {
 		Address  string `json:"address"`
 		Decimals int    `json:"decimals"`
 	} `json:"rawContract"`
-	Log struct {
+	// TypeTraceAddress names an internal transfer within its transaction
+	// (call_0_1): its type and trace address.
+	TypeTraceAddress string `json:"typeTraceAddress"`
+	Log              struct {
 		LogIndex  string `json:"logIndex"`
 		BlockHash string `json:"blockHash"`
+		// Removed is a log of a block reorganized away.
+		Removed bool `json:"removed"`
 	} `json:"log"`
 }
 
@@ -303,15 +310,54 @@ func (a *AlchemyProvider) ParsePayload(body []byte) ([]providers.InboundTransfer
 
 	transfers := make([]providers.InboundTransfer, 0, len(event.Event.Activity))
 	for _, act := range event.Event.Activity {
+		if !transferCategories[act.Category] || act.Log.Removed {
+			continue
+		}
 		t, err := activityToTransfer(act)
 		if err != nil {
-			return nil, fmt.Errorf("alchemy: parse activity (tx=%s): %w", act.Hash, err)
+			// Left to the deposit scanner; the other activities of the push are kept.
+			slog.Warn("alchemy: activity skipped", "tx", act.Hash, "category", act.Category, "error", err)
+			continue
 		}
 		transfers = append(transfers, t)
 	}
 	return transfers, nil
 }
 
+// Activity categories that move the native asset or an ERC-20 token. NFT transfers
+// (erc721, erc1155, specialnft) are not deposits; a token activity of an NFT contract
+// is left out by the token registry.
+const (
+	categoryExternal = "external"
+	categoryInternal = "internal"
+	categoryToken    = "token"
+	categoryERC20    = "erc20"
+)
+
+var transferCategories = map[string]bool{categoryExternal: true, categoryInternal: true, categoryToken: true, categoryERC20: true}
+
+func isTokenCategory(category string) bool {
+	return category == categoryToken || category == categoryERC20
+}
+
+// internalPosition is the position of an internal transfer (native value a contract
+// call sends): below the native value position, from its typeTraceAddress, which tells
+// it from the transaction's other internal transfers. The deposit scanner reports no
+// internal transfer, so no other source has to agree on it.
+func internalPosition(typeTraceAddress string) int {
+	return types.NativeValuePosition - 1 - int(fnv32a(typeTraceAddress)%(1<<30))
+}
+
+func fnv32a(text string) uint32 {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(text))
+	return h.Sum32()
+}
+
+// activityToTransfer reads one activity at the position the deposit scanner gives the
+// same transfer: an ERC-20 Transfer at its log index; the native value of the
+// transaction, which has no log, at types.NativeValuePosition. An internal transfer
+// has a position of its own (internalPosition) and needs its typeTraceAddress.
 func activityToTransfer(act alchemyActivity) (providers.InboundTransfer, error) {
 	blockNum, err := parseHexUint64(act.BlockNum)
 	if err != nil {
@@ -336,11 +382,23 @@ func activityToTransfer(act alchemyActivity) (providers.InboundTransfer, error) 
 		}
 	}
 
-	logIndex := -1
-	if act.Log.LogIndex != "" {
+	logIndex := types.NativeValuePosition
+	if act.Category == categoryInternal {
+		if strings.TrimSpace(act.TypeTraceAddress) == "" {
+			return providers.InboundTransfer{}, fmt.Errorf("internal transfer without its typeTraceAddress")
+		}
+		logIndex = internalPosition(act.TypeTraceAddress)
+	}
+	if isTokenCategory(act.Category) {
+		if act.Log.LogIndex == "" || act.RawContract.Address == "" {
+			return providers.InboundTransfer{}, fmt.Errorf("token transfer without its logIndex or contract")
+		}
 		parsed, err := parseHexInt(act.Log.LogIndex)
 		if err != nil {
 			return providers.InboundTransfer{}, fmt.Errorf("parse logIndex %q: %w", act.Log.LogIndex, err)
+		}
+		if parsed < 0 {
+			return providers.InboundTransfer{}, fmt.Errorf("negative logIndex %q", act.Log.LogIndex)
 		}
 		logIndex = parsed
 	}
@@ -358,7 +416,7 @@ func activityToTransfer(act alchemyActivity) (providers.InboundTransfer, error) 
 		LogIndex:      logIndex,
 	}
 
-	if act.Category == "token" && act.RawContract.Address != "" {
+	if isTokenCategory(act.Category) {
 		t.Token = &types.Token{
 			Contract: act.RawContract.Address,
 			Decimals: uint8(act.RawContract.Decimals),
