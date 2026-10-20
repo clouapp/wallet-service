@@ -6,14 +6,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/macrowallets/waas/app/adapters/chain/rpc"
 	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
 const (
@@ -37,6 +38,17 @@ type tronStatusError struct {
 
 func (e *tronStatusError) Error() string {
 	return fmt.Sprintf("tron POST %s: HTTP %d: %s", e.path, e.status, e.body)
+}
+
+// tronNodeError is java-tron's answer about a request it read and refused (HTTP 200
+// with an "Error" member).
+type tronNodeError struct {
+	path    string
+	message string
+}
+
+func (e *tronNodeError) Error() string {
+	return fmt.Sprintf("tron POST %s: node error: %s", e.path, e.message)
 }
 
 // tronCallResult is the result object java-tron returns from contract calls and
@@ -68,88 +80,137 @@ func decodeTronMessage(message string) string {
 	return string(decoded)
 }
 
-// post sends request as JSON to {rpc_url}{path} and decodes the answer into out.
-// Rate-limited answers (HTTP 429/403) are retried with backoff. java-tron reports
-// request errors as HTTP 200 with an "Error" member, which is returned as an error.
-// Errors never carry the base URL or the API key.
+// post sends request as JSON to {endpoint}{path} on the chain's endpoints in order
+// (rpc.Endpoints: the primary, then each fallback of the chain's network) and
+// decodes the answer into out. java-tron reports request errors as HTTP 200 with an
+// "Error" member, which is returned as an error. Errors never carry a URL or the
+// API key.
 func (a *TronLive) post(ctx context.Context, path string, request, out any) error {
-	if !strings.HasPrefix(path, "/") {
-		return fmt.Errorf("tron path %q must start with /", path)
+	raw, err := a.postRaw(ctx, path, request, false)
+	if err != nil {
+		return err
 	}
-	if a.cfg.RPCURL == "" {
-		return fmt.Errorf("tron %s: RPC URL is not configured", a.cfg.ChainIDStr)
+	return decodeTronResult(path, raw, out)
+}
+
+// postRaw is post without decoding: the answer of the endpoint that served the call.
+// A broadcast moves to the next endpoint only while the previous one certainly did
+// not take the bytes.
+func (a *TronLive) postRaw(ctx context.Context, path string, request any, broadcast bool) ([]byte, error) {
+	if !strings.HasPrefix(path, "/") {
+		return nil, fmt.Errorf("tron path %q must start with /", path)
+	}
+	if a.endpoints.Endpoint() == "" {
+		return nil, fmt.Errorf("tron %s: RPC URL is not configured", a.cfg.ChainIDStr)
 	}
 	body, err := json.Marshal(request)
 	if err != nil {
-		return fmt.Errorf("encode tron %s request: %w", path, err)
+		return nil, fmt.Errorf("encode tron %s request: %w", path, err)
 	}
-	requestURL := strings.TrimRight(a.cfg.RPCURL, "/") + path
+	var answer []byte
+	err = a.endpoints.Do(ctx, broadcast, func(ctx context.Context, at rpc.Attempt) (rpc.Outcome, error) {
+		raw, kind, exchangeErr := a.exchange(ctx, at, path, body)
+		if exchangeErr == nil && broadcast {
+			kind, exchangeErr = judgeTronBroadcast(raw)
+		}
+		if exchangeErr == nil {
+			answer = raw
+		}
+		return kind, exchangeErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return answer, nil
+}
+
+// exchange posts body to {at.URL}{path} and says what the answer means for
+// failover. Rate-limited answers (HTTP 429/403) move on, except on the last
+// endpoint, which retries them with backoff. A path the endpoint does not serve
+// (HTTP 404/405) is unsupported there; any other non-2xx answer and a 2xx body that
+// is not JSON are an endpoint that could not answer.
+func (a *TronLive) exchange(ctx context.Context, at rpc.Attempt, path string, body []byte) ([]byte, rpc.Outcome, error) {
+	requestURL := strings.TrimRight(at.URL, "/") + path
 	for attempt := 1; ; attempt++ {
-		status, header, respBody, err := a.fetch(ctx, requestURL, path, body)
+		resp, err := a.client.Do(ctx, a.request(requestURL, body, at.Primary))
 		if err != nil {
-			return err
+			return nil, rpc.OutcomeUnavailable, fmt.Errorf("tron POST %s: %w", path, err)
 		}
+		if len(resp.Body) > tronMaxResponseBytes {
+			return nil, rpc.OutcomeUnavailable, fmt.Errorf("tron POST %s: response larger than %d bytes", path, tronMaxResponseBytes)
+		}
+		status := resp.StatusCode
 		if status >= http.StatusOK && status < http.StatusMultipleChoices {
-			return decodeTronResponse(path, respBody, out)
+			raw, kind, err := readTronAnswer(path, resp.Body)
+			return raw, kind, err
 		}
-		if !isRateLimited(status, respBody) {
-			return &tronStatusError{path: path, status: status, body: truncateTronBody(respBody)}
+		if !isRateLimited(status, resp.Body) {
+			statusErr := &tronStatusError{path: path, status: status, body: truncateTronBody(resp.Body)}
+			if status == http.StatusNotFound || status == http.StatusMethodNotAllowed {
+				return nil, rpc.OutcomeUnsupported, statusErr
+			}
+			return nil, rpc.OutcomeUnavailable, statusErr
 		}
-		if attempt >= a.retry.maxAttempts {
-			return fmt.Errorf("tron POST %s: %w (HTTP %d) after %d attempts", path, chain.ErrRateLimited, status, attempt)
+		if !at.Last || attempt >= a.retry.maxAttempts {
+			return nil, rpc.OutcomeRateLimited, fmt.Errorf("tron POST %s: %w (HTTP %d) after %d attempts", path, chain.ErrRateLimited, status, attempt)
 		}
-		delay := a.retry.delay(attempt, header.Get("Retry-After"), time.Now())
+		delay := a.retry.delay(attempt, resp.Header.Get("Retry-After"), time.Now())
 		slog.Warn("tron node rate limited, backing off", "chain", a.cfg.ChainIDStr, "path", path, "status", status, "attempt", attempt, "delay", delay.String())
 		if err := a.retry.sleep(ctx, delay); err != nil {
-			return fmt.Errorf("tron POST %s: %w", path, err)
+			return nil, rpc.OutcomeRateLimited, fmt.Errorf("tron POST %s: %w (HTTP %d), backoff cut: %w", path, chain.ErrRateLimited, status, err)
 		}
 	}
 }
 
-func (a *TronLive) fetch(ctx context.Context, requestURL, path string, body []byte) (int, http.Header, []byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(body))
-	if err != nil {
-		return 0, nil, nil, fmt.Errorf("build tron POST %s: %w", path, withoutURL(err))
+// request is one POST of body; the API key goes to the primary only, a fallback
+// being another provider.
+func (a *TronLive) request(requestURL string, body []byte, primary bool) httpclient.Request {
+	header := map[string]string{
+		"Content-Type": "application/json",
+		"Accept":       "application/json",
+		"User-Agent":   tronUserAgent,
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", tronUserAgent)
-	if a.cfg.APIKey != "" {
-		req.Header.Set(tronAPIKeyHeader, a.cfg.APIKey)
+	if primary && a.cfg.APIKey != "" {
+		header[tronAPIKeyHeader] = a.cfg.APIKey
 	}
-	resp, err := a.http.Do(req)
-	if err != nil {
-		return 0, nil, nil, fmt.Errorf("tron POST %s: %w", path, withoutURL(err))
+	return httpclient.Request{
+		Method:   httpclient.MethodPost,
+		URL:      requestURL,
+		Header:   header,
+		Body:     body,
+		HasBody:  true,
+		MaxBytes: tronMaxResponseBytes + 1,
 	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, tronMaxResponseBytes+1))
-	if err != nil {
-		return 0, nil, nil, fmt.Errorf("read tron POST %s: %w", path, withoutURL(err))
-	}
-	if len(respBody) > tronMaxResponseBytes {
-		return 0, nil, nil, fmt.Errorf("tron POST %s: response larger than %d bytes", path, tronMaxResponseBytes)
-	}
-	return resp.StatusCode, resp.Header, respBody, nil
 }
 
-func decodeTronResponse(path string, body []byte, out any) error {
+// readTronAnswer checks a 2xx answer: a body that is not JSON is an endpoint that
+// could not answer, an "Error" member is the node's answer about the request.
+func readTronAnswer(path string, body []byte) ([]byte, rpc.Outcome, error) {
 	trimmed := bytes.TrimSpace(body)
 	if len(trimmed) == 0 {
-		return fmt.Errorf("tron POST %s: empty response", path)
+		return nil, rpc.OutcomeUnavailable, fmt.Errorf("tron POST %s: empty response", path)
+	}
+	if !json.Valid(trimmed) {
+		var probe any
+		return nil, rpc.OutcomeUnavailable, fmt.Errorf("parse tron POST %s: %w", path, json.Unmarshal(trimmed, &probe))
 	}
 	if trimmed[0] == '{' {
 		var nodeError struct {
 			Error string `json:"Error"`
 		}
 		if err := json.Unmarshal(trimmed, &nodeError); err == nil && nodeError.Error != "" {
-			return fmt.Errorf("tron POST %s: node error: %s", path, nodeError.Error)
+			return nil, rpc.OutcomeAnswer, &tronNodeError{path: path, message: nodeError.Error}
 		}
 	}
+	return trimmed, rpc.OutcomeAnswer, nil
+}
+
+// decodeTronResult decodes an answer readTronAnswer accepted into out.
+func decodeTronResult(path string, body []byte, out any) error {
 	if out == nil {
 		return nil
 	}
-	if err := json.Unmarshal(trimmed, out); err != nil {
+	if err := json.Unmarshal(body, out); err != nil {
 		return fmt.Errorf("parse tron POST %s: %w", path, err)
 	}
 	return nil

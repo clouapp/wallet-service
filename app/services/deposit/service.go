@@ -90,6 +90,9 @@ type Service struct {
 // sweep.confirmed webhook row.
 type transactionStore interface {
 	depositrecord.Store
+	// CountByChainAndTxHash counts the rows of one type a transaction hash has
+	// (another outbound transfer of ours, for the unknown-outcome proofs).
+	CountByChainAndTxHash(ctx context.Context, chainID, txHash, txType string) (int64, error)
 	CountInternalTransfers(ctx context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error)
 	FindPendingByChain(ctx context.Context, chainID string) ([]models.Transaction, error)
 	FindConfirmedOutboundWithoutFee(ctx context.Context, chainID string, limit int) ([]models.Transaction, error)

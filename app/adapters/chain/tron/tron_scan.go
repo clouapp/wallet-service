@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/macrowallets/waas/app/adapters/chain/rpc"
 	"github.com/macrowallets/waas/app/services/addressing"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -59,6 +60,9 @@ func (a *TronLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.Dete
 	if a.tokensErr != nil {
 		return nil, a.tokensErr
 	}
+	// The block and its transaction infos come from one endpoint: a node behind the
+	// block would answer its infos empty.
+	ctx = rpc.PinEndpoint(ctx)
 	var block tronBlockJSON
 	if err := a.post(ctx, "/wallet/getblockbynum", map[string]any{"num": blockNum}, &block); err != nil {
 		return nil, fmt.Errorf("fetch tron block %d: %w", blockNum, err)

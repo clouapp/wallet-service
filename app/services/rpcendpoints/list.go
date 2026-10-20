@@ -31,7 +31,7 @@ type Endpoint struct {
 }
 
 // View is the endpoint list of one chain, the primary first. FailsOver is false
-// for a chain whose adapter does not use the fallbacks (Bitcoin family, TRON, XRP).
+// for a chain whose adapter does not use the fallbacks (the Bitcoin family).
 // HealthObservedAt and HealthProcess say when and where the health was recorded;
 // HealthError says why it could not be read.
 type View struct {

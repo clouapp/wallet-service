@@ -15,7 +15,7 @@ import (
 const endpointVerifyTimeout = 15 * time.Second
 
 // ErrEndpointIdentityUnsupported is a chain whose endpoints cannot be asked which
-// network they serve (Bitcoin family, TRON, XRP): nothing is verified.
+// network they serve (the Bitcoin family): nothing is verified.
 var ErrEndpointIdentityUnsupported = errors.New("this chain's rpc endpoints cannot be asked which network they serve")
 
 // ErrEndpointUnverified is an endpoint that did not answer which network it serves
@@ -62,9 +62,10 @@ func ProfileEndpointTarget(profile string, record models.Chain) (EndpointTarget,
 // VerifyEndpoint asks rawURL which network it serves and returns that network's
 // name when it is target: an EVM endpoint answers eth_chainId, which must be the
 // target chain id; a Solana endpoint answers getGenesisHash, which must be the
-// target cluster's. Another network is chain.ErrWrongNetwork, an endpoint that does
-// not answer is ErrEndpointUnverified, and any other adapter is
-// ErrEndpointIdentityUnsupported. No URL is in an error.
+// target cluster's; a TRON endpoint answers its block 0 id and an XRP Ledger server
+// its network_id, through the prober their adapter registers. Another network is
+// chain.ErrWrongNetwork, an endpoint that does not answer is ErrEndpointUnverified,
+// and any other adapter is ErrEndpointIdentityUnsupported. No URL is in an error.
 func VerifyEndpoint(ctx context.Context, adapterType string, target EndpointTarget, rawURL string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, endpointVerifyTimeout)
 	defer cancel()
@@ -100,9 +101,48 @@ func VerifyEndpoint(ctx context.Context, adapterType string, target EndpointTarg
 			return served, fmt.Errorf("%w: it serves %s, the chain is on %s", chain.ErrWrongNetwork, served, target.Network)
 		}
 		return served, nil
+	case models.AdapterTypeTron, models.AdapterTypeXRP:
+		return verifyProbedEndpoint(ctx, adapterType, target, rawURL)
 	default:
 		return "", ErrEndpointIdentityUnsupported
 	}
+}
+
+// probedIdentities is, per adapter that registers an endpoint prober, the identity
+// of a network and the network of an identity.
+var probedIdentities = map[string]struct {
+	of      func(network string) string
+	network func(identity string) string
+}{
+	models.AdapterTypeTron: {of: models.TronGenesisBlockID, network: models.TronNetworkOfGenesis},
+	models.AdapterTypeXRP:  {of: models.XRPLNetworkID, network: models.XRPLNetworkOfID},
+}
+
+// verifyProbedEndpoint asks rawURL, through the prober of adapterType, for the
+// identity of its network (the TRON block 0 id, the XRP Ledger network_id), which
+// must be target's.
+func verifyProbedEndpoint(ctx context.Context, adapterType string, target EndpointTarget, rawURL string) (string, error) {
+	known := probedIdentities[adapterType]
+	want := known.of(target.Network)
+	if want == "" {
+		return "", fmt.Errorf("%w: the chain's network %q has no known identity", ErrEndpointUnverified, target.Network)
+	}
+	prober := chain.EndpointProberOf(adapterType)
+	if prober == nil {
+		return "", fmt.Errorf("%w: the %s adapter is not linked into this process", ErrEndpointUnverified, adapterType)
+	}
+	identity, err := prober.Network(ctx, rawURL)
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrEndpointUnverified, err)
+	}
+	served := known.network(identity)
+	if identity != want {
+		if served == "" {
+			served = "network " + identity
+		}
+		return served, fmt.Errorf("%w: it serves %s, the chain is on %s", chain.ErrWrongNetwork, served, target.Network)
+	}
+	return served, nil
 }
 
 // EndpointProbe is what an endpoint answered when asked now: the network it serves
@@ -115,7 +155,8 @@ type EndpointProbe struct {
 }
 
 // ProbeEndpoint verifies rawURL against target (VerifyEndpoint) and reads its head:
-// eth_blockNumber on EVM, getSlot (finalized) on Solana. Err is the first failure.
+// eth_blockNumber on EVM, getSlot (finalized) on Solana, the head block on TRON and
+// the validated ledger on XRP. Err is the first failure.
 func ProbeEndpoint(ctx context.Context, adapterType string, target EndpointTarget, rawURL string) EndpointProbe {
 	started := time.Now()
 	network, err := VerifyEndpoint(ctx, adapterType, target, rawURL)
@@ -130,6 +171,13 @@ func ProbeEndpoint(ctx context.Context, adapterType string, target EndpointTarge
 func endpointHead(ctx context.Context, adapterType, rawURL string) (uint64, error) {
 	ctx, cancel := context.WithTimeout(ctx, endpointVerifyTimeout)
 	defer cancel()
+	if _, probed := probedIdentities[adapterType]; probed {
+		prober := chain.EndpointProberOf(adapterType)
+		if prober == nil {
+			return 0, fmt.Errorf("the %s adapter is not linked into this process", adapterType)
+		}
+		return prober.Head(ctx, rawURL)
+	}
 	caller := chain.NewJSONRPCCaller(chain.JSONRPCDeps{URL: rawURL})
 	if caller == nil {
 		return 0, fmt.Errorf("json-rpc client is not linked")

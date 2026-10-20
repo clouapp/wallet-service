@@ -162,6 +162,21 @@ func (s *TransactionRepositoryTestSuite) TestFind_ByWallet_FilterByStatus() {
 	s.Len(pending, 1)
 }
 
+func (s *TransactionRepositoryTestSuite) TestCount_By_ChainAndTxHash() {
+	walletID := s.insertWallet()
+	tx := s.makeTx(walletID, "withdrawal", "confirmed")
+	tx.TxHash = "0xuniquehash"
+	s.Require().NoError(s.repo.Create(context.Background(), tx))
+
+	count, err := s.repo.CountByChainAndTxHash(context.Background(), "eth", "0xuniquehash", "withdrawal")
+	s.Require().NoError(err)
+	s.Equal(int64(1), count)
+
+	count, err = s.repo.CountByChainAndTxHash(context.Background(), "eth", "0xuniquehash", "sweep")
+	s.Require().NoError(err)
+	s.Equal(int64(0), count)
+}
+
 // deposit is a deposit row of txHash at position (log_index).
 func (s *TransactionRepositoryTestSuite) deposit(walletID uuid.UUID, txHash string, position int) *models.Transaction {
 	tx := s.makeTx(walletID, models.TxTypeDeposit, "pending")
