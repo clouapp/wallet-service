@@ -235,8 +235,9 @@ func (l xrpScannedLedger) deposits(asset string) ([]types.DetectedTransfer, erro
 			To:          entry.fields.Destination,
 			Amount:      drops,
 			Asset:       asset,
-			LogIndex:    uint(entry.index),
-			Timestamp:   l.closeTime,
+			// A transaction is one Payment: what it delivers is its native value.
+			LogIndex:  types.NativeValuePosition,
+			Timestamp: l.closeTime,
 		}
 		if tag := entry.fields.DestinationTag; tag != nil {
 			value := *tag

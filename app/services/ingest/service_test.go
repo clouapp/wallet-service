@@ -66,7 +66,7 @@ func TestInbound_Transfer_DetectedTransferMapping(t *testing.T) {
 		Amount:      in.Amount,
 		Asset:       in.Asset,
 		Token:       in.Token,
-		LogIndex:    uint(in.LogIndex),
+		LogIndex:    in.LogIndex,
 		Timestamp:   in.Timestamp,
 	}
 
@@ -78,7 +78,7 @@ func TestInbound_Transfer_DetectedTransferMapping(t *testing.T) {
 	assert.Equal(t, 0, in.Amount.Cmp(dt.Amount))
 	assert.Equal(t, in.Asset, dt.Asset)
 	assert.Equal(t, in.Token, dt.Token)
-	assert.Equal(t, uint(in.LogIndex), dt.LogIndex)
+	assert.Equal(t, in.LogIndex, dt.LogIndex)
 	assert.True(t, in.Timestamp.Equal(dt.Timestamp))
 }
 

@@ -111,7 +111,7 @@ type wantTransfer struct {
 	amount       int64
 	asset        string
 	contract     string
-	index        uint
+	index        int
 }
 
 func assertTransfers(t *testing.T, got []types.DetectedTransfer, want []wantTransfer, slot uint64, blockhash string, blockTime int64) {

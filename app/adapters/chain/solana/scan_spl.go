@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
-	"sort"
 
 	"github.com/gagliardetto/solana-go"
 
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -28,20 +28,15 @@ type solanaTokenBalance struct {
 }
 
 // solanaTokenCredit is the net increase of one registered mint held by one owner in
-// one transaction. accountIndex is the owner's lowest token account of that mint after
-// the transaction; from is the owner whose holding of that mint fell most, "" when none
-// did (a mint).
+// one transaction (chain.SolanaTokenCredits): accountIndex is the owner's lowest token
+// account of that mint whose balance changed; from is the owner whose holding of that
+// mint fell most, "" when none did (a mint).
 type solanaTokenCredit struct {
 	owner        string
 	from         string
 	token        types.Token
 	amount       *big.Int
 	accountIndex int
-}
-
-type solanaHolding struct {
-	owner string
-	mint  string
 }
 
 // indexSolanaTokens keys this chain's registered SPL tokens by mint. A mint that is not
@@ -62,17 +57,17 @@ func indexSolanaTokens(chainID string, tokens []types.Token) (map[string]types.T
 }
 
 // solanaTokenCredits returns the owners whose total of a registered mint rose in one
-// successful transaction, ordered by accountIndex. Balances are netted per owner and
-// mint, so moving tokens between two accounts of one owner credits nothing. A
-// registered balance that cannot be read is an error.
+// successful transaction, ordered by accountIndex: each registered balance before the
+// transaction is a negative change of its token account and each balance after it a
+// positive one (chain.SolanaTokenCredits nets them per owner and mint). A registered
+// balance that cannot be read is an error.
 func solanaTokenCredits(meta *solanaTransactionMeta, keyCount int, tokens map[string]types.Token) ([]solanaTokenCredit, error) {
 	if len(tokens) == 0 {
 		return nil, nil
 	}
-	net := make(map[solanaHolding]*big.Int)
-	firstAccount := make(map[solanaHolding]int)
-	chainDecimals := make(map[solanaHolding]uint8)
-	add := func(balances []solanaTokenBalance, after bool) error {
+	var changes []chain.SolanaTokenChange
+	chainDecimals := make(map[string]uint8)
+	collect := func(balances []solanaTokenBalance, after bool) error {
 		for _, balance := range balances {
 			if _, registered := tokens[balance.Mint]; !registered {
 				continue
@@ -81,50 +76,31 @@ func solanaTokenCredits(meta *solanaTransactionMeta, keyCount int, tokens map[st
 			if err != nil {
 				return err
 			}
-			holding := solanaHolding{owner: balance.Owner, mint: balance.Mint}
-			total, seen := net[holding]
-			if !seen {
-				total = new(big.Int)
-				net[holding] = total
+			if after {
+				chainDecimals[balance.Mint] = balance.UITokenAmount.Decimals
+			} else {
+				amount.Neg(amount)
 			}
-			if !after {
-				total.Sub(total, amount)
-				continue
-			}
-			total.Add(total, amount)
-			chainDecimals[holding] = balance.UITokenAmount.Decimals
-			if index, recorded := firstAccount[holding]; !recorded || balance.AccountIndex < index {
-				firstAccount[holding] = balance.AccountIndex
-			}
+			changes = append(changes, chain.SolanaTokenChange{Index: balance.AccountIndex, Owner: balance.Owner, Mint: balance.Mint, Delta: amount})
 		}
 		return nil
 	}
-	if err := add(meta.PreTokenBalances, false); err != nil {
+	if err := collect(meta.PreTokenBalances, false); err != nil {
 		return nil, err
 	}
-	if err := add(meta.PostTokenBalances, true); err != nil {
+	if err := collect(meta.PostTokenBalances, true); err != nil {
 		return nil, err
 	}
 
 	var credits []solanaTokenCredit
-	for holding, total := range net {
-		if total.Sign() <= 0 {
-			continue
-		}
-		token := tokens[holding.mint]
-		if token.Decimals != 0 && chainDecimals[holding] != token.Decimals {
+	for _, c := range chain.SolanaTokenCredits(changes) {
+		token := tokens[c.Mint]
+		if decimals, read := chainDecimals[c.Mint]; read && token.Decimals != 0 && decimals != token.Decimals {
 			slog.Warn("solana token decimals differ from the registry row; the row is used",
-				"mint", holding.mint, "symbol", token.Symbol, "row_decimals", token.Decimals, "mint_decimals", chainDecimals[holding])
+				"mint", c.Mint, "symbol", token.Symbol, "row_decimals", token.Decimals, "mint_decimals", decimals)
 		}
-		credits = append(credits, solanaTokenCredit{
-			owner:        holding.owner,
-			from:         largestSolanaDebit(net, holding),
-			token:        token,
-			amount:       total,
-			accountIndex: firstAccount[holding],
-		})
+		credits = append(credits, solanaTokenCredit{owner: c.Owner, from: c.From, token: token, amount: c.Amount, accountIndex: c.Index})
 	}
-	sort.Slice(credits, func(i, j int) bool { return credits[i].accountIndex < credits[j].accountIndex })
 	return credits, nil
 }
 
@@ -142,20 +118,4 @@ func readSolanaTokenBalance(balance solanaTokenBalance, keyCount int) (*big.Int,
 		return nil, fmt.Errorf("token account %d of mint %s: amount %q is not a base-unit integer", balance.AccountIndex, balance.Mint, balance.UITokenAmount.Amount)
 	}
 	return amount, nil
-}
-
-// largestSolanaDebit is the other owner whose holding of credited's mint fell most in
-// the transaction (ties go to the lower owner), or "" when no holding of it fell.
-func largestSolanaDebit(net map[solanaHolding]*big.Int, credited solanaHolding) string {
-	var from string
-	var largest *big.Int
-	for holding, total := range net {
-		if holding.mint != credited.mint || holding.owner == credited.owner || total.Sign() >= 0 {
-			continue
-		}
-		if largest == nil || total.Cmp(largest) < 0 || (total.Cmp(largest) == 0 && holding.owner < from) {
-			from, largest = holding.owner, total
-		}
-	}
-	return from
 }
