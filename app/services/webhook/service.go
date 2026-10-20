@@ -14,6 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/queue"
+	"github.com/macrowallets/waas/pkg/egress"
 	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -54,6 +55,7 @@ type Service struct {
 	webhookConfigRepo configStore
 	webhookEventRepo  eventStore
 	deliverySettings  deliverySettingsSource
+	destinations      destinationGuard
 	now               func() time.Time
 }
 
@@ -65,14 +67,23 @@ type Deps struct {
 	Events  eventStore
 	// Now is the clock a delivery is signed with (X-Vault-Timestamp); nil is time.Now.
 	Now func() time.Time
+	// Destinations decides which webhook URLs may be registered (the composition root
+	// gives the guard the delivery client dials through); nil is the strict webhook
+	// policy (https to a public host) over the system resolver.
+	Destinations destinationGuard
 }
 
 // NewService wires the webhook service from Deps.
 func NewService(deps Deps) *Service {
+	destinations := deps.Destinations
+	if destinations == nil {
+		destinations = egress.NewGuard(egress.Policy{}, nil)
+	}
 	return &Service{
 		sqs:               deps.SQS,
 		webhookConfigRepo: deps.Configs,
 		webhookEventRepo:  deps.Events,
+		destinations:      destinations,
 		now:               deps.Now,
 	}
 }
@@ -384,7 +395,8 @@ func (s *Service) Deliver(ctx context.Context, msg types.WebhookMessage) error {
 // deposit that failed on chain (its transaction is failed, or deposit.failed is
 // stored for it) is never posted: the row is settled as failed, so no retry,
 // re-dispatch or redelivery sends it after deposit.failed, and the receiver never
-// credits a deposit that moved no value.
+// credits a deposit that moved no value. An event whose destination the delivery
+// client refuses (ErrURLNotAllowed) is settled as failed the same way, never posted.
 func (s *Service) deliver(ctx context.Context, msg types.WebhookMessage) (bool, error) {
 	if s == nil || s.webhookEventRepo == nil {
 		return false, errors.New("webhook event store is required")
@@ -416,6 +428,9 @@ func (s *Service) deliver(ctx context.Context, msg types.WebhookMessage) (bool, 
 	}
 	resp, err := s.postSignedWebhook(ctx, msg.DeliveryURL, secret, msg.Payload, string(msg.EventType), msg.EventID, s.resolveDeliverySettings(ctx).Timeout)
 	if err != nil {
+		if errors.Is(err, ErrURLNotAllowed) {
+			return false, s.refuseDelivery(ctx, msg, err)
+		}
 		if httpclient.IsBuild(err) {
 			return false, fmt.Errorf("build request: %w", err)
 		}
@@ -487,6 +502,10 @@ func (s *Service) SendTest(ctx context.Context, cfg *models.WebhookConfig, walle
 	}
 
 	resp, err := s.postSignedWebhook(ctx, cfg.URL, cfg.Secret, string(payload), webhookTestEvent, eventID, webhookTestTimeout)
+	if errors.Is(err, ErrURLNotAllowed) {
+		slog.Info("webhook test not sent: its destination is refused", "webhook_id", cfg.ID.String(), "host", egress.Host(cfg.URL), "reason", RefusalReason(err))
+		return err
+	}
 	if err != nil {
 		slog.Info("webhook test delivery failed", "webhook_id", cfg.ID.String(), "url", cfg.URL)
 		return fmt.Errorf("webhook test delivery failed: %w", err)
@@ -534,8 +553,12 @@ func (s *Service) postSignedWebhook(ctx context.Context, deliveryURL, secret, pa
 // ---------------------------------------------------------------------------
 
 // CreateConfig registers an account-level webhook. A nil accountID creates a
-// legacy unowned config.
+// legacy unowned config. A URL CheckURL refuses is ErrURLNotAllowed and nothing is
+// stored.
 func (s *Service) CreateConfig(ctx context.Context, url, secret string, events []string, accountID *uuid.UUID) (*models.WebhookConfig, error) {
+	if err := s.CheckURL(ctx, url); err != nil {
+		return nil, err
+	}
 	cfg := &models.WebhookConfig{
 		ID:        uuid.New(),
 		URL:       url,
@@ -569,6 +592,9 @@ var (
 	ErrWebhookEventsEmpty        = errors.New("events must not be empty")
 	ErrWebhookUnknownEvent       = errors.New("unknown webhook event")
 	ErrWebhookOwnershipNotProven = errors.New("secret must match to claim a webhook created before account ownership")
+	// ErrURLNotAllowed is a webhook URL whose destination the outbound guard refuses:
+	// not registered, never posted to. RefusalReason names the rule.
+	ErrURLNotAllowed = errors.New("webhook url is not allowed")
 )
 
 // ConfigUpdate changes an account-level config. Secret is only a proof of possession
@@ -580,7 +606,9 @@ type ConfigUpdate struct {
 }
 
 // UpdateAccountConfig updates a config owned by the account. A legacy unowned config is
-// claimed by the account when the caller presents its signing secret.
+// claimed by the account when the caller presents its signing secret. An update that
+// leaves a config active on a URL CheckURL refuses is ErrURLNotAllowed; turning it
+// off is always allowed.
 func (s *Service) UpdateAccountConfig(ctx context.Context, accountID, configID uuid.UUID, update ConfigUpdate) (*models.WebhookConfig, error) {
 	if accountID == uuid.Nil || configID == uuid.Nil {
 		return nil, ErrWebhookConfigNotFound
@@ -615,6 +643,11 @@ func (s *Service) UpdateAccountConfig(ctx context.Context, accountID, configID u
 	}
 	if update.IsActive != nil {
 		cfg.IsActive = *update.IsActive
+	}
+	if cfg.IsActive {
+		if err := s.CheckURL(ctx, cfg.URL); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.webhookConfigRepo.AssignAccount(ctx, cfg.ID, accountID, events, update.IsActive); err != nil {
 		return nil, fmt.Errorf("update webhook config: %w", err)

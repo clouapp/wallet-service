@@ -141,6 +141,15 @@ func registerVault() {
 			"max_new_pending_per_cycle": envInt("DEPOSIT_SCAN_MAX_NEW_PENDING_PER_CYCLE", 0),
 			"pending_dir":               envString("DEPOSIT_PENDING_DIR", ""),
 		},
+		// Outbound destinations a customer or a platform admin stores. A webhook URL is
+		// https to a public host; WEBHOOK_ALLOW_HTTP also accepts http:// (a dev or test
+		// receiver, still on a public host), off by default. An RPC URL may name a
+		// private network, loopback, http and credentials; RPC_ALLOW_LINK_LOCAL also
+		// accepts link-local and cloud metadata addresses, off by default.
+		"outbound": map[string]any{
+			"webhook_allow_http":   envBool("WEBHOOK_ALLOW_HTTP", false),
+			"rpc_allow_link_local": envBool("RPC_ALLOW_LINK_LOCAL", false),
+		},
 		"webhooks": map[string]any{
 			// ingest_base_url is the public https origin the push providers post to
 			// (ingest:subscribe appends /v1/webhooks/ingest/{provider}/{chain}).

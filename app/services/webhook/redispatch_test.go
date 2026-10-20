@@ -36,7 +36,7 @@ func newQueueFixture(t *testing.T) *queueFixture {
 		f.sent = append(f.sent, msg)
 		return nil
 	}).Maybe()
-	f.svc = NewService(Deps{SQS: sender, Configs: f.store, Events: memoryEvents{store: f.store}})
+	f.svc = NewService(Deps{SQS: sender, Configs: f.store, Events: memoryEvents{store: f.store}, Destinations: testDestinations()})
 	return f
 }
 

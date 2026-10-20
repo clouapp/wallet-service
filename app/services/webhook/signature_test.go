@@ -127,7 +127,7 @@ func TestDeliver_Signature_EachAttemptIsSignedWithItsOwnSendTime(t *testing.T) {
 		clockReads++
 		return time.Unix(at, 0)
 	}
-	svc := NewService(Deps{Configs: store, Events: memoryEvents{store: store}, Now: clock})
+	svc := NewService(Deps{Configs: store, Events: memoryEvents{store: store}, Now: clock, Destinations: testDestinations()})
 	receiver := &signatureReceiver{status: http.StatusServiceUnavailable}
 	server := httptest.NewServer(receiver)
 	defer server.Close()

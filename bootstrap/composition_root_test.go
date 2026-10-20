@@ -1,10 +1,13 @@
 package bootstrap_test
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -12,6 +15,9 @@ import (
 	appfacades "github.com/macrowallets/waas/app/facades"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/chainregistry"
+	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
 // The providers key every service by its type (a typed nil pointer); the
@@ -59,4 +65,26 @@ func TestComposition_Root_KeysTheRPCEndpointFingerprints(t *testing.T) {
 
 	assert.NotEqual(t, unkeyed, keyed)
 	assert.Equal(t, keyed, chainpkg.RPCEndpointFingerprint(url))
+}
+
+// Every webhook URL goes through one guard: the delivery client the providers
+// register refuses a cloud metadata address before it connects, and the webhook
+// service, which the dashboard wallet webhooks ask too, refuses it on registration.
+func TestComposition_Root_GuardsEveryWebhookDestination(t *testing.T) {
+	const metadata = "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+	client := webhook.NewDeliveryClient()
+	require.NotNil(t, client, "no webhook delivery client is registered")
+	_, err := client.Post(context.Background(), webhook.SignedDelivery{
+		URL: metadata, Body: []byte("{}"), Signature: "sig", SignatureV2: "t=1760950000,v1=sig", Timestamp: 1760950000,
+		EventType: "deposit.confirmed", DeliveryID: "composition-1", Timeout: time.Second,
+	})
+	assert.ErrorIs(t, err, webhook.ErrURLNotAllowed)
+	assert.True(t, httpclient.IsBuild(err), "a refused destination must read as never sent")
+
+	webhooks := container.MustMake[*webhook.Service]()
+	assert.ErrorIs(t, webhooks.CheckURL(context.Background(), metadata), webhook.ErrURLNotAllowed)
+	assert.ErrorIs(t, webhooks.CheckURL(context.Background(), "http://hooks.example.com/in"), webhook.ErrURLNotAllowed,
+		"http is refused unless WEBHOOK_ALLOW_HTTP is set")
+	_, err = container.MustMake[*walletrecords.Webhooks]().Register(context.Background(), uuid.New(), metadata, "s", "deposit.confirmed")
+	assert.ErrorIs(t, err, webhook.ErrURLNotAllowed)
 }

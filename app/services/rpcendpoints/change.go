@@ -13,6 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/chainregistry"
+	"github.com/macrowallets/waas/pkg/egress"
 )
 
 // Action is one kind of change to a chain's endpoint list.
@@ -105,7 +106,7 @@ func (s *Service) apply(ctx context.Context, chainID string, change Change, appl
 			record.ID, record.AdapterType, ownFailover(record.AdapterType))
 	}
 	goal := target(record, before)
-	after, err := change.on(before, s.defaults(goal.Network))
+	after, err := change.on(before, s.defaults(goal.Network), s.rpcPolicy)
 	if err != nil {
 		return plan, err
 	}
@@ -152,12 +153,13 @@ func ownFailover(adapterType string) string {
 	return ""
 }
 
-// on returns the entries after the change; before is not modified.
-func (c Change) on(before []entry, defaults []string) ([]entry, error) {
+// on returns the entries after the change; before is not modified. Every endpoint
+// the change names is parsed under destinations.
+func (c Change) on(before []entry, defaults []string, destinations egress.Policy) ([]entry, error) {
 	after := append([]entry(nil), before...)
 	switch c.Action {
 	case ActionAdd:
-		added, err := parseEntry("url", c.URL)
+		added, err := parseEntry("url", c.URL, destinations)
 		if err != nil {
 			return nil, err
 		}
@@ -199,7 +201,7 @@ func (c Change) on(before []entry, defaults []string) ([]entry, error) {
 		}
 		set := make([]entry, 0, len(c.URLs))
 		for _, raw := range c.URLs {
-			next, err := parseEntry("urls", raw)
+			next, err := parseEntry("urls", raw, destinations)
 			if err != nil {
 				return nil, err
 			}
@@ -220,7 +222,7 @@ func (c Change) on(before []entry, defaults []string) ([]entry, error) {
 			return nil, refuse("defaults", "no default fallbacks are known for this network")
 		}
 		for _, raw := range defaults {
-			next, err := parseEntry("defaults", raw)
+			next, err := parseEntry("defaults", raw, destinations)
 			if err != nil {
 				return nil, err
 			}
@@ -405,8 +407,11 @@ func (s *Service) reload(chainID string, entries []entry) bool {
 	return err == nil && reloaded
 }
 
-// parseEntry reads an http(s) URL or an env:NAME reference that resolves here.
-func parseEntry(field, raw string) (entry, error) {
+// parseEntry reads an http(s) URL or an env:NAME reference that resolves here. The
+// URL it dials (the reference's value for a reference) must be one destinations
+// allows: a link-local or cloud metadata endpoint is refused before it is asked
+// anything.
+func parseEntry(field, raw string, destinations egress.Policy) (entry, error) {
 	plain := strings.TrimSpace(raw)
 	switch {
 	case plain == "":
@@ -421,6 +426,9 @@ func parseEntry(field, raw string) (entry, error) {
 	dial, err := models.DialEndpoint(plain)
 	if err != nil {
 		return entry{}, refuse(field, "the endpoint does not resolve here (an env:NAME must name a variable set to an http or https URL)")
+	}
+	if err := destinations.CheckURL(dial); err != nil {
+		return entry{}, refuse(field, "%s", err.Error())
 	}
 	return entry{plain: plain, dial: dial, enabled: true, verify: true}, nil
 }

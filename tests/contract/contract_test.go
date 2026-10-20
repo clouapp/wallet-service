@@ -440,6 +440,14 @@ func refusalScenario(apiRate *apiRateLimit) []step {
 			bearer: "scopedToken"},
 		{name: "external transaction changes with a malformed timestamp", method: "GET", path: "/api/v1/transactions?updated_since=yesterday",
 			bearer: "scopedToken"},
+
+		// A 422 with a domain code: a webhook URL the outbound guard refuses (here the
+		// cloud metadata address), whatever the route it is registered through.
+		{name: "create a webhook account token", method: "POST", path: "/v1/accounts/{{account}}/tokens", bearer: "adminSession",
+			body:    `{"name":"contract webhook token","permissions":["webhooks.read","webhooks.write"]}`,
+			capture: map[string]string{"webhookToken": "token"}},
+		{name: "external create webhook to a cloud metadata address", method: "POST", path: "/api/v1/webhooks", bearer: "webhookToken",
+			body: `{"url":"http://169.254.169.254/latest/meta-data/","secret":"contract-webhook-secret","events":["deposit.confirmed"]}`},
 	}
 }
 

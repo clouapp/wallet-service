@@ -10,9 +10,7 @@ import (
 	heliusingest "github.com/macrowallets/waas/app/adapters/ingest/helius"
 	quicknodeingest "github.com/macrowallets/waas/app/adapters/ingest/quicknode"
 	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
-
-	// Link the webhook delivery HTTP client. The service still signs each post.
-	_ "github.com/macrowallets/waas/app/adapters/webhook/delivery"
+	"github.com/macrowallets/waas/app/adapters/webhook/delivery"
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
@@ -23,14 +21,38 @@ import (
 	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/webhooksync"
+	"github.com/macrowallets/waas/pkg/egress"
 )
 
+// appEnvTesting is the APP_ENV of the test suites, the one environment whose webhook
+// receivers may be on loopback (httptest servers).
+const appEnvTesting = "testing"
+
 // WebhookServiceProvider binds the webhook config, event, and subscription
-// repositories by type, the outbound webhook service with its SQS queue, and
-// the inbound provider catalog with the subscription sync that uses it.
+// repositories by type, the outbound webhook service with its SQS queue, the
+// destination guard every webhook URL goes through (registration, webhook.test and
+// each delivery's connections) with the delivery client over it, and the inbound
+// provider catalog with the subscription sync that uses it.
 type WebhookServiceProvider struct{}
 
 func (p *WebhookServiceProvider) Register(app foundation.Application) {
+	app.Singleton((*egress.Guard)(nil), func(foundation.Application) (any, error) {
+		return egress.NewGuard(webhookDestinationPolicy(), nil), nil
+	})
+	app.Singleton((*delivery.Client)(nil), func(app foundation.Application) (any, error) {
+		guard, err := resolve[*egress.Guard](app)
+		if err != nil {
+			return nil, err
+		}
+		return delivery.NewClient(guard), nil
+	})
+	webhook.SetDeliveryClient(func() webhook.DeliveryClient {
+		client, err := resolve[*delivery.Client](app)
+		if err != nil {
+			return nil
+		}
+		return client
+	})
 	app.Singleton((*repositories.WebhookConfigRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewWebhookConfigRepository(nil, facades.LateCrypt()), nil
 	})
@@ -45,7 +67,11 @@ func (p *WebhookServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		return walletrecords.NewWebhooks(store), nil
+		urls, err := resolve[*webhook.Service](app)
+		if err != nil {
+			return nil, err
+		}
+		return walletrecords.NewWebhooks(store, urls), nil
 	})
 	app.Singleton((*ingest.SigningSecrets)(nil), func(foundation.Application) (any, error) {
 		return ingest.NewSigningSecrets(facades.LateCrypt()), nil
@@ -97,13 +123,18 @@ func newWebhookService(app foundation.Application) (*webhook.Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	destinations, err := resolve[*egress.Guard](app)
+	if err != nil {
+		return nil, err
+	}
 	service := webhook.NewService(webhook.Deps{
 		SQS: queuesqs.New(
 			queuesqs.NewClient(*awsCfg, facades.Config().GetString("vault.aws.endpoint_url")),
 			facades.Config().GetString("vault.queues.webhook"),
 		),
-		Configs: configs,
-		Events:  events,
+		Configs:      configs,
+		Events:       events,
+		Destinations: destinations,
 	})
 	service.SetDeliverySettingsSource(func(ctx context.Context) (webhook.DeliverySettings, error) {
 		stored, readErr := accountSettings.EffectiveWebhookDelivery(ctx)
@@ -113,6 +144,15 @@ func newWebhookService(app foundation.Application) (*webhook.Service, error) {
 		return webhook.DeliverySettingsFromStored(stored.MaxAttempts, stored.TimeoutSeconds), nil
 	})
 	return service, nil
+}
+
+// webhookDestinationPolicy is the policy of a webhook receiver: https to a public
+// host, http too with WEBHOOK_ALLOW_HTTP, and loopback only in the test suites.
+func webhookDestinationPolicy() egress.Policy {
+	return egress.Policy{
+		AllowHTTP:     facades.Config().GetBool("vault.outbound.webhook_allow_http"),
+		AllowLoopback: facades.Config().GetString("app.env") == appEnvTesting,
+	}
 }
 
 // newWebhookSyncService keeps the provider subscriptions in step with the
