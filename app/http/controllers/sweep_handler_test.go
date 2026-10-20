@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/macrowallets/waas/app/models"
 	sweepsvc "github.com/macrowallets/waas/app/services/sweep"
 )
 
@@ -21,6 +22,9 @@ func (*sweepServiceStub) PlanForWithdrawalTo(context.Context, uuid.UUID, string,
 	return nil, nil
 }
 
+func (*sweepServiceStub) SettleUnanswered(context.Context, *models.Transaction) (sweepsvc.SendSettlement, error) {
+	return sweepsvc.SendSettlement{}, nil
+}
 func (*sweepServiceStub) ExecutePlan(context.Context, *sweepsvc.Plan, sweepsvc.SigningCredentials, uuid.UUID, string, string) (*sweepsvc.Result, error) {
 	return nil, nil
 }

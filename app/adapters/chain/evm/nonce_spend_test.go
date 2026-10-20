@@ -234,3 +234,11 @@ func TestEVM_SearchTransactionBlock_AsksEveryEndpointForTheReceipt(t *testing.T)
 	require.ErrorAs(t, err, &failed)
 	assert.Equal(t, uint64(16), failed.Block)
 }
+
+func TestEVM_MinedNonce_IsTheLatestCount(t *testing.T) {
+	var _ chain.MinedNonceReader = (*EVMLive)(nil)
+	node := newCountingNode(t, map[string]string{"eth_getTransactionCount": `"result":"0x2a"`})
+	got, err := sepoliaWithFallbacks(node.server.URL).MinedNonce(context.Background(), spendSender)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(42), got)
+}

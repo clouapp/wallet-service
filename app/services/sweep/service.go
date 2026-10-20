@@ -42,6 +42,7 @@ type Service interface {
 	PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int, toAddress string, callerAccountID uuid.UUID) (*Plan, error)
 	PlanForWithdrawalTo(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int, to Destination, callerAccountID uuid.UUID) (*Plan, error)
 	ExecutePlan(ctx context.Context, plan *Plan, creds SigningCredentials, withdrawalTxID uuid.UUID, toAddress string, externalUserID string) (*Result, error)
+	SettleUnanswered(ctx context.Context, tx *models.Transaction) (SendSettlement, error)
 	ConsolidateAll(ctx context.Context, walletID uuid.UUID, asset string, passphrase string, callerAccountID uuid.UUID) (*Result, error)
 	RefreshGasStatus(ctx context.Context, walletID uuid.UUID) (*GasStatus, error)
 	LoadLimits(ctx context.Context, accountID uuid.UUID) (*Limits, error)

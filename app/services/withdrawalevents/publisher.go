@@ -307,7 +307,7 @@ func (p *Publisher) transactionPayload(withdrawal *models.Withdrawal, tx *models
 	if contract := strings.TrimSpace(tx.TokenContract); contract != "" {
 		payload.TokenContract = &contract
 	}
-	if outcome := broadcastOutcomeOf(tx); outcome != "" {
+	if outcome := broadcastOutcomeOf(tx); outcome == chain.BroadcastOutcomeUnknown {
 		payload.BroadcastOutcome = &outcome
 	}
 

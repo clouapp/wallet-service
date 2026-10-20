@@ -2,6 +2,7 @@ package sweep
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,9 +50,9 @@ type lastValidBlocker interface {
 
 // broadcastRawPayload is the raw_payload of a broadcast transaction: "{}", the last
 // valid block of a transaction that expires (XRP), the sender nonce it spends and
-// the head read before the send (EVM, head > 0), and, when the broadcast answer did
-// not say whether the network took it, the unknown outcome.
-func broadcastRawPayload(adapter types.Chain, signed *types.SignedTx, head uint64, unknownOutcome bool) (string, error) {
+// the head read before the send (EVM, head > 0), and the broadcast outcome (pending
+// before the send, with the signed bytes; accepted, unknown or refused after it).
+func broadcastRawPayload(adapter types.Chain, signed *types.SignedTx, head uint64, outcome string) (string, error) {
 	payload := map[string]any{}
 	if blocker, ok := adapter.(lastValidBlocker); ok {
 		last, err := blocker.LastValidBlock(signed)
@@ -70,8 +71,11 @@ func broadcastRawPayload(adapter types.Chain, signed *types.SignedTx, head uint6
 	if head > 0 {
 		payload[chain.BroadcastHeadPayloadKey] = head
 	}
-	if unknownOutcome {
-		payload[chain.BroadcastOutcomePayloadKey] = chain.BroadcastOutcomeUnknown
+	if outcome != "" {
+		payload[chain.BroadcastOutcomePayloadKey] = outcome
+	}
+	if outcome == chain.BroadcastOutcomePending && signed != nil {
+		payload[chain.SignedTxPayloadKey] = hex.EncodeToString(signed.RawBytes)
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {

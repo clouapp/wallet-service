@@ -14,6 +14,18 @@ const (
 	// the row is tracked by the hash of its signed bytes like any sent transfer.
 	BroadcastOutcomePayloadKey = "broadcast_outcome"
 	BroadcastOutcomeUnknown    = "unknown"
+	// BroadcastOutcomePending is a row recorded before its send whose send was never
+	// answered (a crash between the two, a refusal whose mark failed): a retry with
+	// its key checks it (sweep.SettleUnanswered) instead of replaying it.
+	BroadcastOutcomePending = "pending"
+	// BroadcastOutcomeAccepted is a send a node took.
+	BroadcastOutcomeAccepted = "accepted"
+	// BroadcastOutcomeRefused is a send the network refused (the row is failed).
+	BroadcastOutcomeRefused = "refused"
+	// SignedTxPayloadKey is the signed bytes (hex) of a row whose send is pending: a
+	// retry re-sends these same bytes, never a new signature. They are dropped once
+	// the send is answered.
+	SignedTxPayloadKey = "signed_tx"
 	// SenderNoncePayloadKey is the nonce the signed transaction spends (EVM).
 	SenderNoncePayloadKey = "sender_nonce"
 	// BroadcastHeadPayloadKey is the chain head read just before the send (EVM): no
@@ -27,6 +39,12 @@ const (
 	// nonce proof of a row the endpoints had no state to prove.
 	NonceProofRetryAtPayloadKey = "nonce_proof_retry_at"
 )
+
+// MinedNonceReader is an adapter that reads how many transactions of a sender are
+// mined (EVM eth_getTransactionCount at latest).
+type MinedNonceReader interface {
+	MinedNonce(ctx context.Context, from string) (uint64, error)
+}
 
 // SenderNonceReader is an adapter whose signed transactions spend a sender nonce
 // (EVM).
