@@ -75,11 +75,15 @@ type alchemyCreateResp struct {
 }
 
 func (a *AlchemyProvider) CreateWebhook(ctx context.Context, cfg providers.ProviderConfig) (*providers.ProviderWebhook, error) {
+	addresses := cfg.Addresses
+	if addresses == nil {
+		addresses = []string{} // the API refuses addresses: null
+	}
 	payload := alchemyCreateReq{
 		Network:     cfg.Network,
 		WebhookType: "ADDRESS_ACTIVITY",
 		WebhookURL:  cfg.WebhookURL,
-		Addresses:   cfg.Addresses,
+		Addresses:   addresses,
 	}
 
 	body, err := json.Marshal(payload)

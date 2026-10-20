@@ -7,6 +7,11 @@ import (
 	"github.com/goravel/framework/database/orm"
 )
 
+// WebhookSubscriptionActive is the status of a subscription whose provider pushes.
+const WebhookSubscriptionActive = "active"
+
+// WebhookSubscription is one provider push webhook (Alchemy, Helius, QuickNode) that
+// calls the ingest route of its chain. SigningSecret is sealed (settings.Seal).
 type WebhookSubscription struct {
 	orm.Model
 	ID                  uuid.UUID  `gorm:"type:uuid;primary_key"`

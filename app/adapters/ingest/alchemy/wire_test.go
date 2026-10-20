@@ -62,6 +62,22 @@ func TestCreate_Webhook_SendsMethodPathAuthAndBody(t *testing.T) {
 	}, body)
 }
 
+func TestCreate_Webhook_SendsAnEmptyAddressListRatherThanNull(t *testing.T) {
+	var raw []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"data":{"id":"wh-1","signing_key":"sign-1"}}`))
+	}))
+	t.Cleanup(srv.Close)
+	provider := NewAlchemyProvider("test-key")
+	provider.client = pointAt(t, srv)
+
+	_, err := provider.CreateWebhook(context.Background(), providers.ProviderConfig{Network: "ETH_MAINNET", WebhookURL: "https://hooks.example/alchemy"})
+
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), `"addresses":[]`)
+}
+
 func TestCreate_Webhook_MapsHTTPErrorsWithoutTheKeyOrHost(t *testing.T) {
 	const apiKey = "test-key"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

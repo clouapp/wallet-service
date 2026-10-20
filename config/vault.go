@@ -151,6 +151,9 @@ func registerVault() {
 			"rpc_allow_link_local": envBool("RPC_ALLOW_LINK_LOCAL", false),
 		},
 		"webhooks": map[string]any{
+			// ingest_base_url is the public https origin the push providers post to
+			// (ingest:subscribe appends /v1/webhooks/ingest/{provider}/{chain}).
+			"ingest_base_url":    envString("WEBHOOK_INGEST_BASE_URL", ""),
 			"alchemy_auth_token": envString("ALCHEMY_AUTH_TOKEN", ""),
 			"helius_api_key":     envString("HELIUS_API_KEY", ""),
 			"quicknode_api_key":  envString("QUICKNODE_API_KEY", ""),
