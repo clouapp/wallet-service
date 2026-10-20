@@ -66,6 +66,7 @@ func TestParse_Payload_SampleBTCTransaction(t *testing.T) {
 		"blockNumber": 850000,
 		"blockHash": "0000000000000000000123456789abcdef",
 		"toAddress": "bc1qxyz789",
+		"vout": 2,
 		"amount": 0.5,
 		"timestamp": 1679000000
 	}]`)
@@ -82,7 +83,7 @@ func TestParse_Payload_SampleBTCTransaction(t *testing.T) {
 	assert.Equal(t, "", tx.From)
 	assert.Equal(t, "bc1qxyz789", tx.To)
 	assert.Equal(t, "BTC", tx.Asset)
-	assert.Equal(t, -1, tx.LogIndex)
+	assert.Equal(t, 2, tx.LogIndex, "an output is at its vout, as the scanner numbers it")
 	assert.Nil(t, tx.Token)
 	assert.True(t, time.Unix(1679000000, 0).Equal(tx.Timestamp))
 
@@ -93,8 +94,8 @@ func TestParse_Payload_SampleBTCTransaction(t *testing.T) {
 
 func TestParse_Payload_MultipleItems(t *testing.T) {
 	payload := []byte(`[
-		{"txid":"a","blockNumber":1,"blockHash":"h1","toAddress":"bc1qa","amount":0.00000001,"timestamp":100},
-		{"txid":"b","blockNumber":2,"blockHash":"h2","toAddress":"bc1qb","amount":1,"timestamp":200}
+		{"txid":"a","blockNumber":1,"blockHash":"h1","toAddress":"bc1qa","vout":0,"amount":0.00000001,"timestamp":100},
+		{"txid":"b","blockNumber":2,"blockHash":"h2","toAddress":"bc1qb","vout":1,"amount":1,"timestamp":200}
 	]`)
 	p := NewQuickNodeProvider("k")
 	out, err := p.ParsePayload(payload)
@@ -114,11 +115,39 @@ func TestParse_Payload_InvalidJSON(t *testing.T) {
 }
 
 func TestParse_Payload_EmptyTxid(t *testing.T) {
-	payload := []byte(`[{"txid":"","blockNumber":1,"blockHash":"h","toAddress":"bc1q","amount":1,"timestamp":1}]`)
+	payload := []byte(`[{"txid":"","blockNumber":1,"blockHash":"h","toAddress":"bc1q","vout":0,"amount":1,"timestamp":1}]`)
 	p := NewQuickNodeProvider("k")
 	_, err := p.ParsePayload(payload)
 	require.Error(t, err)
 	assert.Contains(t, strings.ToLower(err.Error()), "txid")
+}
+
+func TestParse_Payload_AnOutputWithoutItsVoutIsRefused(t *testing.T) {
+	payload := []byte(`[{"txid":"a","blockNumber":1,"blockHash":"h","toAddress":"bc1qa","amount":1,"timestamp":1}]`)
+
+	_, err := NewQuickNodeProvider("k").ParsePayload(payload)
+	require.Error(t, err, "without its vout the output has no position to be told from the other outputs")
+	assert.Contains(t, err.Error(), "vout")
+}
+
+func TestParse_Payload_TwoOutputsOfOneTransactionKeepTheirVouts(t *testing.T) {
+	payload := []byte(`[
+		{"txid":"a","blockNumber":1,"blockHash":"h","toAddress":"bc1qa","vout":0,"amount":0.1,"timestamp":1},
+		{"txid":"a","blockNumber":1,"blockHash":"h","toAddress":"bc1qa","vout":3,"amount":0.1,"timestamp":1}
+	]`)
+
+	out, err := NewQuickNodeProvider("k").ParsePayload(payload)
+	require.NoError(t, err)
+	require.Len(t, out, 2)
+	assert.Equal(t, []int{0, 3}, []int{out[0].LogIndex, out[1].LogIndex})
+}
+
+func TestBuild_FilterFunction_ReportsEachPaidOutputWithItsVout(t *testing.T) {
+	raw, err := base64.StdEncoding.DecodeString(buildFilterFunction([]string{"bc1qa"}))
+	require.NoError(t, err)
+
+	assert.Contains(t, string(raw), "vout: j", "the output index travels with the transfer")
+	assert.Contains(t, string(raw), "vout.value > 0", "an empty output is not a transfer, as for the scanner")
 }
 
 // ---------------------------------------------------------------------------

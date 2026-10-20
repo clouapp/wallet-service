@@ -264,11 +264,14 @@ func (q *QuickNodeProvider) VerifyInbound(headers providers.Header, body []byte,
 // ParsePayload — filtered array from QuickNode JS filter
 // ---------------------------------------------------------------------------
 
+// quicknodeTransferItem is one paid output the stream's filter function reports; Vout
+// is its index in the transaction, the position the deposit scanner gives it.
 type quicknodeTransferItem struct {
 	Txid        string          `json:"txid"`
 	BlockNumber uint64          `json:"blockNumber"`
 	BlockHash   string          `json:"blockHash"`
 	ToAddress   string          `json:"toAddress"`
+	Vout        *int            `json:"vout"`
 	Amount      decimal.Decimal `json:"amount"`
 	Timestamp   int64           `json:"timestamp"`
 }
@@ -297,6 +300,9 @@ func quicknodeItemToTransfer(item quicknodeTransferItem) (providers.InboundTrans
 	if strings.TrimSpace(item.ToAddress) == "" {
 		return providers.InboundTransfer{}, fmt.Errorf("empty toAddress")
 	}
+	if item.Vout == nil || *item.Vout < 0 {
+		return providers.InboundTransfer{}, fmt.Errorf("missing or negative vout")
+	}
 
 	if item.Amount.IsNegative() {
 		return providers.InboundTransfer{}, fmt.Errorf("negative amount")
@@ -319,7 +325,7 @@ func quicknodeItemToTransfer(item quicknodeTransferItem) (providers.InboundTrans
 		HumanAmount:   item.Amount.String(),
 		Asset:         "BTC",
 		Token:         nil,
-		LogIndex:      -1,
+		LogIndex:      *item.Vout,
 		Timestamp:     ts,
 	}, nil
 }
@@ -362,8 +368,8 @@ func buildFilterFunctionBase64(addresses []string) (string, error) {
     for (var j = 0; j < vouts.length; j++) {
       var vout = vouts[j];
       var addr = vout.scriptPubKey && (vout.scriptPubKey.address || (vout.scriptPubKey.addresses && vout.scriptPubKey.addresses[0]));
-      if (addr && addresses[addr]) {
-        results.push({txid: tx.txid, blockNumber: block.height, blockHash: block.hash, toAddress: addr, amount: vout.value, timestamp: block.time});
+      if (addr && addresses[addr] && vout.value > 0) {
+        results.push({txid: tx.txid, blockNumber: block.height, blockHash: block.hash, toAddress: addr, vout: j, amount: vout.value, timestamp: block.time});
       }
     }
   }
