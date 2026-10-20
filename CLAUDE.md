@@ -244,6 +244,44 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `TestRedeliver_Signature_AnOldEventIsSignedWithTheTimeOfTheResend`, `TestSendTest_*`
   (`app/services/webhook`), `TestPost_*` (`app/adapters/webhook/delivery`) and
   `TestNewClientWithoutRedirects_*` (`pkg/httpclient`). Receiver side: `docs/vault-summary-v2.md`.
+- **A webhook only reaches a public https host.** One guard, `pkg/egress` (the `*egress.Guard`
+  the webhook provider binds, behind `webhook.Service.CheckURL`), decides every webhook URL:
+  https to a public host. Every route that registers a webhook or keeps one active refuses
+  any other URL with 422 `webhook_url_not_allowed`, the rule as the message (`egress.Reason*`,
+  never the URL): `POST /v1/wallets/{walletId}/webhooks`, `POST /api/v1/webhooks`, and
+  `PATCH /api/v1/webhooks/{webhookId}` (also a legacy webhook claimed) while the webhook stays
+  active; turning one off is always allowed. Refused: `http://` (`WEBHOOK_ALLOW_HTTP` accepts
+  it for a dev or test receiver, off by default), a user name or password, a host that is or
+  resolves to a loopback, private (RFC 1918, fc00::/7), shared (100.64.0.0/10), link-local, cloud
+  metadata (169.254.169.254, 169.254.170.2, fd00:ec2::254, 100.100.100.200, 168.63.129.16,
+  `metadata.google.internal`, ...), unspecified, multicast, broadcast or reserved address (also
+  IPv4-mapped, NAT64 and 6to4), a single-label or internal name (`.internal`, `.local`, `.svc`,
+  ...) and an IPv4 address in a numeric form (`2130706433`, `0x7f000001`, `0177.0.0.1`, `127.1`).
+  Loopback is allowed only under `APP_ENV=testing` (the suites' httptest receivers). A name that
+  does not resolve when it is registered is not refused there. The delivery client
+  (`app/adapters/webhook/delivery`, registered by the webhook provider over the same guard)
+  checks the URL again and opens every connection through `egress.Guard.DialContext`, never
+  through a proxy: the name is resolved there and the connection goes to the checked address,
+  so a record rebound after registration (DNS rebinding) reaches nothing the guard refuses. A
+  refused delivery (a config stored before the guard, or a rebound name) is a build error
+  matching `webhook.ErrURLNotAllowed`: `Deliver` marks the event `failed` with
+  `refused: <rule>`, logs its host only and acknowledges it (never sent, never retried), and
+  `webhook.test` answers the 422. `webhook.test` answers only `{"delivered":true}` or the fixed
+  502 `webhook test delivery failed`, never what the receiver answered, and a delivery reads at
+  most 64 KiB of the answer. `artisan webhooks:audit-urls` (read-only) lists the active configs
+  the guard refuses by id, scope and host, never the URL, and exits 1 when there is one. — guarded
+  by `pkg/egress` (`TestPolicy_*`, `TestGuard_*`), `TestPost_RefusesAnInternalDestinationBeforeAnyConnection`,
+  `TestPost_ConnectsOnlyToTheAddressTheNameResolvesToWhenItIsAllowed` (`app/adapters/webhook/delivery`),
+  `TestDirectTransport_*` (`pkg/httpclient`), `TestCreate_Config_*`,
+  `TestUpdate_AccountConfig_RefusesToKeepARefusedDestinationActive`,
+  `TestDeliver_ARefusedDestinationIsSettledFailedAndNeverPosted`, `TestSendTest_*`,
+  `TestAudit_Destinations_*` (`app/services/webhook`), `TestWebhooks_Register_*`
+  (`app/services/walletrecords`), `TestCreate_Wallet_WebhookRefusesAnInternalDestination`,
+  `TestWallet_Webhook_TestAnswersOnlyWhetherItWasDelivered` (`tests/feature/api/dashboard/wallets`),
+  `TestCreate_Webhook_RefusesAnInternalDestination`, `TestUpdate_Webhook_RefusesToKeepAnInternalDestinationActive`
+  (`tests/feature/api/external/webhooks`), contract step 98 and
+  `TestComposition_Root_GuardsEveryWebhookDestination` (`bootstrap`). Receiver side:
+  `docs/vault-summary-v2.md`.
 - Webhook delivery is at least once. An event is a `webhook_events` row (one per config, type
   and subject: the partial unique index of migration 260) written before the queue send, and
   receivers deduplicate on `X-Vault-Delivery-Id` (the row id), which every resend keeps. Three
@@ -745,6 +783,8 @@ SOLANA_RPC_URL=https://api.devnet.solana.com
 BTC_RPC_URL=https://blockstream.info/testnet/api
 API_KEY_SECRET=dev-secret-key-not-for-production
 WITHDRAWAL_STALE_AFTER_HOURS=6   # outbound transfers unsettled this long are warned about and counted by /health
+WEBHOOK_ALLOW_HTTP=false         # true also accepts http:// webhook URLs (a dev or test receiver, still a public host)
+RPC_ALLOW_LINK_LOCAL=false       # true also accepts link-local and cloud metadata RPC endpoints
 DEPOSIT_SCAN_ALERT_LAG_BLOCKS=0  # tracker warns when a scan trails the head by more (0: the chain's catch-up window)
 DEPOSIT_SCAN_ALERT_STALE_MINUTES=10  # tracker warns when a scanned chain has no completed cycle for longer
 ```
@@ -782,6 +822,18 @@ family keeps its own list (next section): its list writes are refused.
   (`{"fields":["rpc_endpoints"]}`) in the write's transaction. No URL is ever printed, logged, stored
   in health or returned: an endpoint is its host and a 12-hex fingerprint of its URL (HMAC-SHA256
   under `APP_KEY`, `chain.SetRPCFingerprintKey`).
+- **Destinations.** The URL a write would dial (a literal URL, or the value an `env:NAME`
+  reference names in the process that writes) must pass `egress.RPCPolicy`, on every write path
+  (`chains:rpc-endpoints`, `chains:set-rpc` also with `--skip-network-check`, `PATCH .../rpc` and
+  `.../rpc-endpoints`): operators run their own nodes, so http, credentials, loopback, private
+  networks and internal names are allowed; a link-local or cloud metadata destination, an
+  unspecified, multicast or reserved address and a numeric-form host are refused (422 on the
+  platform API, the rule as the message) before the endpoint is asked anything.
+  `RPC_ALLOW_LINK_LOCAL=true` also accepts link-local and metadata destinations. The check is
+  on the URL when it is written, not on each connection: a name that resolves to a link-local
+  address is not caught. — guarded by `TestApply_RefusesALinkLocalOrMetadataEndpointBeforeAskingIt`
+  (`app/services/rpcendpoints`), `TestUpdate_RPC_RefusesALinkLocalOrMetadataEndpointBeforeAskingIt`
+  and `TestReplace_RPC_RefusesALinkLocalOrMetadataEndpointEvenWithoutANetworkCheck` (`app/services/chains`).
 - **Every write checks the network.** Each endpoint a change adds or enables, and a new primary, must
   answer `eth_chainId` equal to `network_id` (EVM), `getGenesisHash` equal to its cluster's
   (`models.SolanaGenesisHash`, Solana), block 0's id equal to its network's (`/wallet/getblockbynum`
@@ -1025,6 +1077,61 @@ guarded by `app/adapters/chain/solana/scan_spl_test.go` (devnet slots 512232469 
 `testdata/solana`, with the -32015 answer to a version-0 request), `scan_test.go`,
 `TestRegister_ActiveChains_SolanaScansTheRegisteredSPLTokens`,
 `TestSolana_Deposit_RecordsAnSPLCreditWithItsSymbolAndMint` and `pkg/solanacredit/credits_test.go`.
+
+### Provider push subscriptions (ingest)
+
+Alchemy (EVM), Helius (Solana) and QuickNode (Bitcoin) push deposits to
+`POST /v1/webhooks/ingest/{provider}/{chainID}` once a subscription exists: the provider's webhook and
+its `webhook_subscriptions` row. Two artisan commands manage them:
+
+```bash
+go run . artisan ingest:subscribe alchemy teth            # dry run: network, webhook URL, address count
+go run . artisan ingest:subscribe alchemy teth --apply    # create the webhook, store the row, sync addresses
+go run . artisan ingest:subscriptions                     # provider, chain, status, last sync, webhook host
+```
+
+- `ingest:subscribe` needs `WEBHOOK_INGEST_BASE_URL` (`vault.webhooks.ingest_base_url`: a public https
+  origin, a path prefix allowed; no credentials, query or fragment, a valid port, and never localhost or
+  a loopback, private, link-local (the cloud metadata address), unspecified, multicast or shared
+  (100.64.0.0/10) IP) and the provider's API key (`ALCHEMY_AUTH_TOKEN`, `HELIUS_API_KEY`,
+  `QUICKNODE_API_KEY` as `vault.webhooks.*`, or the `provider_<name>` platform setting). Each missing
+  one is named and the command exits 1, dry run or not.
+- The chain's network (`models.Chain.ResolveNetwork` with its RPC URL) must be one the provider pushes
+  (`providers.SubscriptionNetwork`): Alchemy Ethereum, Polygon, Base, Arbitrum and BSC, mainnet and
+  testnet (`ETH_SEPOLIA`, `MATIC_AMOY`, ...); Helius Solana mainnet and devnet; QuickNode Bitcoin mainnet
+  and testnet4 (`bitcoin-mainnet`, `bitcoin-testnet4`, in the Streams OpenAPI network enum).
+- Only an active subscription counts. One of the provider on the chain is left as it is (exit 0; with
+  `--apply` a paused one is activated); another provider's active subscription on the chain is refused
+  (the address sync serves one per chain). Migration 670 makes the database refuse a second active row
+  per (chain, provider) (`webhook_subscriptions_active_chain_provider_unique`): a run that loses that
+  race deletes its own webhook and reports the stored one.
+- `--apply` creates the webhook with the chain's watched addresses (`[]` when there are none), then
+  stores the row with the signing secret sealed (`ingest.SigningSecrets`, `settings.Seal`, `enc:v1:`):
+  Alchemy's `signing_key`, the Helius `authHeader` it generates, the QuickNode stream's `security_token`
+  (generated and sent, the answer's value preferred). A QuickNode stream is created `paused` with every
+  field `CreateStreamDto` requires (`region` `usa_east`, `dataset_batch_size` 1, `elastic_batch_enabled`
+  false, `headers` `{}`, a random name suffix) and activated (`POST /streams/{id}/activate`) once its
+  row is stored; a failed activation exits 1 and the next run activates it. A stream whose create answer
+  cannot be read is found by its name and deleted. A webhook whose row cannot be stored (no secret,
+  sealing or the insert failed) is deleted, with a context detached from the request; when the delete
+  fails too, the error names the provider webhook to delete by hand. The address sync
+  (`webhooksync.SyncChainAddresses`) runs once the row exists; when it fails the row stays (the
+  `webhook_reconciler` syncs it again) and the command exits 1.
+- The ingest signature check (`middleware.ProviderSignature`, wired with
+  `ingest.SigningSecrets.Open` in `bootstrap/app.go`; without an opener every callback is refused) and the
+  address sync open the secret with `settings.OpenStored` (sealed, or the bare envelope of an older row),
+  never as plaintext; the inbound lookup takes the active subscription of the provider and chain.
+  QuickNode deliveries are checked as Streams signs them: HMAC-SHA256 keyed with the security token over
+  `X-QN-Nonce` + `X-QN-Timestamp` + body, hex in `X-QN-Signature`, refused when the timestamp is more
+  than 5 minutes from now; streams are created uncompressed.
+- `ingest:subscriptions` prints no signing secret and the webhook URL by its host only.
+- No real provider call runs in the tests. — guarded by `app/services/ingestsubscription/service_test.go`,
+  `app/services/ingest/signing_secrets_test.go`, `app/http/middleware/provider_signature_secret_test.go`,
+  `TestWebhook_Provider_SealsAndOpensSigningSecretsWithTheApplicationKey`,
+  `app/console/commands/ingest_subscribe_test.go`, `app/services/ingest/providers/networks_test.go`,
+  `app/adapters/ingest/quicknode` (`TestCreate_Webhook_*`, `TestActivate_Webhook_*`,
+  `TestQuick_NodeVerifyInbound_*`), `tests/migrations/unique_active_subscription_test.go` and
+  `TestFind_All_ListsEverySubscriptionByChainAndProvider` (`tests/feature/repositories`).
 
 ### Deposit scan pacing
 

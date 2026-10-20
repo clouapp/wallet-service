@@ -46,12 +46,13 @@ type RPCView struct {
 // permission catalog, so a platform_admins row is the gate. The pair is not
 // a second gate.
 type RPC struct {
-	store    RPCStore
-	admins   PlatformAdmins
-	activity activitylog.Writer
-	sealer   RPCSealer
-	dialer   EndpointDialer
-	verify   PrimaryVerifier
+	store          RPCStore
+	admins         PlatformAdmins
+	activity       activitylog.Writer
+	sealer         RPCSealer
+	dialer         EndpointDialer
+	verify         PrimaryVerifier
+	allowLinkLocal bool
 }
 
 // RPCDeps is everything the platform chain-RPC editor needs. Store, Admins,
@@ -63,6 +64,9 @@ type RPCDeps struct {
 	Sealer   RPCSealer
 	Dialer   EndpointDialer
 	Verify   PrimaryVerifier
+	// AllowLinkLocal also accepts a link-local or cloud metadata endpoint
+	// (RPC_ALLOW_LINK_LOCAL); a private node is always accepted.
+	AllowLinkLocal bool
 }
 
 // NewRPC builds the platform chain-RPC editor.
@@ -86,21 +90,23 @@ func NewRPC(deps RPCDeps) *RPC {
 		panic("chain rpc: endpoint verifier is required")
 	}
 	return &RPC{
-		store:    deps.Store,
-		admins:   deps.Admins,
-		activity: deps.Activity,
-		sealer:   deps.Sealer,
-		dialer:   deps.Dialer,
-		verify:   deps.Verify,
+		store:          deps.Store,
+		admins:         deps.Admins,
+		activity:       deps.Activity,
+		sealer:         deps.Sealer,
+		dialer:         deps.Dialer,
+		verify:         deps.Verify,
+		allowLinkLocal: deps.AllowLinkLocal,
 	}
 }
 
 // Update seals one endpoint onto the chain row. An unknown chain is
 // ErrNotFound before the platform-admin check. A caller who is not a
 // platform admin is ErrPlatformForbidden. An empty URL is a ValidationError
-// and does not wipe the stored endpoint, and so is an endpoint that serves
-// another network than the chain's (or than the one the profile moves it to)
-// or that does not say which network it serves. The answer is rpcUrlSet and
+// and does not wipe the stored endpoint, and so is a link-local or cloud
+// metadata endpoint (refused before it is asked anything), and an endpoint that
+// serves another network than the chain's (or than the one the profile moves it
+// to) or that does not say which network it serves. The answer is rpcUrlSet and
 // does not include the URL.
 func (s *RPC) Update(ctx context.Context, actorID uuid.UUID, chainID string, body map[string]json.RawMessage) (RPCView, error) {
 	if ctx == nil {
@@ -142,6 +148,11 @@ func (s *RPC) Update(ctx context.Context, actorID uuid.UUID, chainID string, bod
 	plaintext, invalid := validateRPCDocument(body)
 	if invalid != nil && !invalid.empty() {
 		return RPCView{}, invalid
+	}
+	if refusal := rpcDestination(s.allowLinkLocal, plaintext); refusal != nil {
+		refused := &ValidationError{}
+		refused.add(fieldRPCURL, refusal.Error())
+		return RPCView{}, refused
 	}
 	network, moved, err := s.verify.Verify(ctx, *chain, plaintext)
 	if _, refused := primaryCheckNote(chain.ID, network, moved, err); refused != nil {

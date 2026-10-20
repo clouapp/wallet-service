@@ -216,14 +216,15 @@ func TestWebhooks_Find_OwnershipForwards(t *testing.T) {
 
 	want := &models.WebhookOwnership{ID: uuid.New()}
 	store := &fakeWebhooks{row: want}
-	got, err := walletrecords.NewWebhooks(store).FindOwnership(context.Background(), want.ID)
+	got, err := walletrecords.NewWebhooks(store, nil).FindOwnership(context.Background(), want.ID)
 	require.NoError(t, err)
 	assert.Equal(t, want, got)
 
 	store.err = models.ErrRepositoryNotFound
-	_, err = walletrecords.NewWebhooks(store).FindOwnership(context.Background(), want.ID)
+	_, err = walletrecords.NewWebhooks(store, nil).FindOwnership(context.Background(), want.ID)
 	assert.ErrorIs(t, err, models.ErrRepositoryNotFound)
 
-	_, err = walletrecords.NewWebhooks(store).FindOwnership(nil, want.ID)
+	var noContext context.Context // a nil context is the case under test
+	_, err = walletrecords.NewWebhooks(store, nil).FindOwnership(noContext, want.ID)
 	assert.EqualError(t, err, "find webhook ownership: context is required")
 }

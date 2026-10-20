@@ -11,7 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 	contractshttp "github.com/goravel/framework/contracts/http"
 
-	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/models"
 	ingestsvc "github.com/macrowallets/waas/app/services/ingest"
@@ -32,8 +31,8 @@ type inboundWebhookKey struct{}
 
 // InboundSignatureDeps is the subscription lookup and the provider whose
 // VerifyInbound implements the existing signature scheme. Subscriptions is
-// required; a nil Lookup uses the built-in providers and a nil Decrypt opens
-// the secret with the application key.
+// required; a nil Lookup uses the built-in providers. Decrypt opens the stored
+// secret (ingest.SigningSecrets.Open); without it every callback is refused.
 type InboundSignatureDeps struct {
 	Subscriptions *ingestsvc.Subscriptions
 	Lookup        func() map[string]providers.WebhookProvider
@@ -180,9 +179,11 @@ func inboundSubscription(ctx contractshttp.Context, deps InboundSignatureDeps, p
 	return sub, 0, ""
 }
 
-func decryptInboundSecret(deps InboundSignatureDeps, ciphertext string) (string, error) {
-	if deps.Decrypt != nil {
-		return deps.Decrypt(ciphertext)
+// decryptInboundSecret opens the stored signing secret with deps.Decrypt
+// (ingest.SigningSecrets.Open in production); without one nothing is verified.
+func decryptInboundSecret(deps InboundSignatureDeps, stored string) (string, error) {
+	if deps.Decrypt == nil {
+		return "", errors.New("provider signature: no signing secret opener configured")
 	}
-	return facades.Crypt().DecryptString(ciphertext)
+	return deps.Decrypt(stored)
 }

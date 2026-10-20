@@ -1419,7 +1419,7 @@ const docTemplate = `{
                         "SignatureAuth": []
                     }
                 ],
-                "description": "Registers an account-level webhook endpoint. Deliveries are POSTed as JSON and signed with ` + "`" + `secret` + "`" + ` when each attempt is sent: ` + "`" + `X-Vault-Signature-V2` + "`" + ` is ` + "`" + `t=\u003cunix seconds\u003e,v1=\u003chex HMAC-SHA256 of '\u003ct\u003e.\u003craw body\u003e'\u003e` + "`" + `, so a receiver refuses a ` + "`" + `t` + "`" + ` too far from its clock (5 minutes recommended) and with it a replayed delivery; ` + "`" + `X-Vault-Timestamp` + "`" + ` repeats ` + "`" + `t` + "`" + `; the legacy ` + "`" + `X-Vault-Signature` + "`" + ` (hex HMAC-SHA256 of the raw body alone) is still sent while receivers move to V2. ` + "`" + `X-Vault-Event` + "`" + ` carries the event type and ` + "`" + `X-Vault-Delivery-Id` + "`" + ` the event id. Only a 2xx answer counts as delivered: a redirect is not followed and is retried like a 4xx or a 5xx. Supported events include deposit.confirmed, withdrawal.broadcast, withdrawal.confirmed and withdrawal.failed. Withdrawal events are only delivered for wallets of the token's account.",
+                "description": "Registers an account-level webhook endpoint. Deliveries are POSTed as JSON and signed with ` + "`" + `secret` + "`" + ` when each attempt is sent: ` + "`" + `X-Vault-Signature-V2` + "`" + ` is ` + "`" + `t=\u003cunix seconds\u003e,v1=\u003chex HMAC-SHA256 of '\u003ct\u003e.\u003craw body\u003e'\u003e` + "`" + `, so a receiver refuses a ` + "`" + `t` + "`" + ` too far from its clock (5 minutes recommended) and with it a replayed delivery; ` + "`" + `X-Vault-Timestamp` + "`" + ` repeats ` + "`" + `t` + "`" + `; the legacy ` + "`" + `X-Vault-Signature` + "`" + ` (hex HMAC-SHA256 of the raw body alone) is still sent while receivers move to V2. ` + "`" + `X-Vault-Event` + "`" + ` carries the event type and ` + "`" + `X-Vault-Delivery-Id` + "`" + ` the event id. Only a 2xx answer counts as delivered: a redirect is not followed and is retried like a 4xx or a 5xx. Supported events include deposit.confirmed, withdrawal.broadcast, withdrawal.confirmed and withdrawal.failed. Withdrawal events are only delivered for wallets of the token's account. The URL must be https to a public host: a URL that is not https, carries credentials, or names (or resolves to) a loopback, private, link-local, cloud metadata or reserved address, or a single-label or internal host, is refused with 422 webhook_url_not_allowed and the rule it broke; every delivery connects only to an address that passes the same check.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1454,6 +1454,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/responses.ErrorBody"
                         }
                     },
+                    "422": {
+                        "description": "validation_failed, or webhook_url_not_allowed: the URL is not https to a public host",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
                     "429": {
                         "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
                         "schema": {
@@ -1479,7 +1485,7 @@ const docTemplate = `{
                         "SignatureAuth": []
                     }
                 ],
-                "description": "Replaces the subscribed events and/or toggles is_active on one of the account's webhooks. A legacy webhook created before account ownership was recorded is claimed by the calling account when ` + "`" + `secret` + "`" + ` matches its signing secret. The secret itself is never changed or returned.",
+                "description": "Replaces the subscribed events and/or toggles is_active on one of the account's webhooks. A legacy webhook created before account ownership was recorded is claimed by the calling account when ` + "`" + `secret` + "`" + ` matches its signing secret. The secret itself is never changed or returned. An update that leaves a webhook active on a URL the outbound guard refuses is 422 webhook_url_not_allowed; turning it off (` + "`" + `is_active: false` + "`" + `) is always allowed.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1535,6 +1541,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "webhook not found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "webhook_url_not_allowed: the webhook's URL is not https to a public host",
                         "schema": {
                             "$ref": "#/definitions/responses.ErrorBody"
                         }
@@ -6080,7 +6092,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Registers a webhook scoped to a specific wallet. Requires wallet or account owner/admin.",
+                "description": "Registers a webhook scoped to a specific wallet. Requires wallet or account owner/admin. The URL must be https to a public host: a URL that is not https, carries credentials, or names (or resolves to) a loopback, private, link-local, cloud metadata or reserved address, or a single-label or internal host, is refused with 422 webhook_url_not_allowed and the rule it broke.",
                 "consumes": [
                     "application/json"
                 ],
@@ -6124,6 +6136,12 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "webhook_url_not_allowed: the URL is not https to a public host",
                         "schema": {
                             "$ref": "#/definitions/responses.ErrorBody"
                         }
@@ -6188,7 +6206,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Posts one webhook.test body to the webhook URL, signed the same way as a normal delivery. A refused URL is an error, not a success.",
+                "description": "Posts one webhook.test body to the webhook URL, signed the same way as a normal delivery. A refused URL is an error, not a success. The answer is only whether the receiver answered 2xx: its body and headers are never returned. A webhook whose URL the outbound guard refuses (stored before the guard) is not posted: 422 webhook_url_not_allowed.",
                 "produces": [
                     "application/json"
                 ],
@@ -6227,6 +6245,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "webhook_url_not_allowed: the URL is not https to a public host",
                         "schema": {
                             "$ref": "#/definitions/responses.ErrorBody"
                         }

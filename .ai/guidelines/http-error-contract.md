@@ -106,8 +106,10 @@ Domain codes that exist today and must survive the migration (inventory them
 from `controllers/errors.go`, `controllers/withdrawal_errors.go`, `withdraw/failure.go` and the handlers before
 changing anything): `sweep_limit_exceeded`, `wallet_not_gas_ready`,
 `insufficient_funds`, `unsupported_chain`, `gas_estimate_failed`,
-`FEE_ESTIMATE_FAILED` (rename to snake_case only if decided), and the persisted
-public withdrawal failure codes (`too_many_attempts`, …).
+`FEE_ESTIMATE_FAILED` (rename to snake_case only if decided), the persisted
+public withdrawal failure codes (`too_many_attempts`, …), and
+`webhook_url_not_allowed` (422: a webhook URL the outbound guard refuses; the
+message is the rule, an `egress.Reason*` sentence, never the URL).
 
 ## What each status means
 
@@ -222,3 +224,5 @@ two bugfixes that landed in the commits before it.
 | `GET /api/v1/transactions` | 2026-10-11, `updated_since` or `cursor` in the query (changes feed, contract steps 94 to 96) | the parameters were ignored: an offset page, newest first | `(updated_at, id)` ascending from `updated_since` (inclusive) or after the cursor, the same filters, `limit` capped at 200, the envelope at offset 0 plus `next_cursor` (null on the last page); 400 `invalid_request` with `updated_since must be an RFC 3339 timestamp`, `cursor is invalid`, `limit must be a positive integer` or `offset cannot be combined with updated_since or cursor`. Without either parameter nothing changes |
 | `GET /api/v1/transactions`, `GET /api/v1/transactions/{id}`, `GET /api/v1/users/{external_id}/transactions` | 2026-10-11, every item (deposit webhook fields) | no `transaction_id`, `amount_base_units`, `decimals`, `required_confirmations` | those four fields, appended after `chain_direction`, under the names and formats of the `deposit.*` webhook data; `amount_base_units` and `decimals` are omitted when the amount is not an integer of base units or the asset decimals are unknown; `amount` stays in base units |
 | `GET /v1/chains`, `GET /v1/chains/{chainId}`, `GET /api/v1/chains` | 2026-10-11, native finality (migration 640) | no `finality`; `required_confirmations` 128 on `polygon`/`tpolygon`, 30 on `bsc`/`tbsc`, 20 on `tron`/`ttron` | `finality` after `required_confirmations` on every chain: `confirmations`, or `finalized_tag` (`polygon`, `tpolygon`, `bsc`, `tbsc`) / `solidified` (`tron`, `ttron`), under which `required_confirmations` is the typical finality lag (3, 2, 19) and the status is decided by the policy. `PATCH /v1/platform/chains/{chainId}` stores `required_confirmations` (at least 1) and `finality` and answers both; it is outside the snapshot |
+| `POST /v1/wallets/{id}/webhooks`, `POST /api/v1/webhooks`, `PATCH /api/v1/webhooks/{id}`, `POST /v1/wallets/{id}/webhooks/{id}/test` | 2026-10-21, outbound URL guard (contract steps 97 and 98) | a URL that is not https, carries credentials, or is or resolves to a loopback, private, shared, link-local, cloud metadata or reserved address, a single-label or internal name or a numeric-form IPv4: stored (201) and posted to (`webhook.test` 200 or 502); a PATCH kept it active | 422 `webhook_url_not_allowed`, message the rule; nothing stored or posted. A PATCH that leaves such a webhook active is refused; `is_active: false` is always accepted. Under `APP_ENV=testing` loopback is allowed |
+| `PATCH /v1/platform/chains/{chainId}/rpc`, `POST`/`PUT /v1/platform/chains/{chainId}/rpc-endpoints` | 2026-10-21, outbound URL guard | a link-local or cloud metadata endpoint was asked for its network, then refused or written | 422 with the rule (`rpcUrl`, `url` or `urls`), nothing asked; `RPC_ALLOW_LINK_LOCAL=true` restores the old behavior. Outside the snapshot |

@@ -381,3 +381,5 @@ added: 93 external withdraw preview of an XRP issued currency: POST /api/v1/wall
 added: 94 external transaction changes: GET /api/v1/transactions?updated_since=2026-01-01T00:00:00Z
 added: 95 external transaction changes with a malformed cursor: GET /api/v1/transactions?cursor=not-a-cursor
 added: 96 external transaction changes with a malformed timestamp: GET /api/v1/transactions?updated_since=yesterday
+added: 97 create a webhook account token: POST /v1/accounts/{{account}}/tokens
+added: 98 external create webhook to a cloud metadata address: POST /api/v1/webhooks

@@ -246,6 +246,37 @@ go tool cover -html=coverage.out
 
 ---
 
+## URL do receptor de webhook
+
+O receptor de um webhook é sempre uma URL `https://` de um host público. Ao registrar
+(`POST /api/v1/webhooks`, `POST /v1/wallets/{walletId}/webhooks`) e ao manter um webhook ativo
+(`PATCH /api/v1/webhooks/{webhookId}`, inclusive ao reivindicar um webhook legado), a URL é recusada com
+**422** `webhook_url_not_allowed`, com a regra violada na mensagem, quando:
+
+- não é `https` (um ambiente de dev ou de teste pode aceitar `http` com `WEBHOOK_ALLOW_HTTP=true`, ainda só
+  para hosts públicos);
+- leva usuário ou senha (`https://usuario:senha@...`);
+- o host é, ou resolve para, um endereço de loopback (`127.0.0.0/8`, `::1`), privado (RFC 1918,
+  `fc00::/7`), compartilhado (`100.64.0.0/10`), link-local (`169.254.0.0/16`, `fe80::/10`), de metadados de
+  nuvem (`169.254.169.254`, `169.254.170.2`, `fd00:ec2::254`, `100.100.100.200`, `168.63.129.16`,
+  `metadata.google.internal`, ...), não especificado, multicast, broadcast ou reservado, também na forma
+  IPv4 mapeada em IPv6 (`::ffff:169.254.169.254`), NAT64 ou 6to4;
+- o host é um nome de um só rótulo (`openbao`, `wallet-service`), um nome interno (`.internal`, `.local`,
+  `.svc`, `.home.arpa`, ...) ou um IPv4 fora da forma canônica (`2130706433`, `0x7f000001`, `0177.0.0.1`,
+  `127.1`).
+
+Em cada entrega o nome é resolvido de novo e a conexão vai só para um endereço que passa na mesma regra,
+sem proxy: um nome que passe a apontar para dentro depois do registro (DNS rebinding) não recebe nada. Uma
+entrega recusada nunca é enviada: o evento fica `failed`, com `last_error` `refused: <regra>`, e não é
+tentado de novo. O `webhook.test` responde só `{"delivered":true}` ou o 502 fixo `webhook test delivery
+failed`: o corpo e os headers da resposta do receptor nunca voltam para quem chamou (e só os primeiros
+64 KiB da resposta são lidos). Para receber num ambiente local, exponha o receptor numa URL https pública
+(um túnel), não em `localhost`.
+
+Operação: `go run . artisan webhooks:audit-urls` lista as configs ativas que a regra recusa (id, escopo e
+host, nunca a URL) e sai com 1 quando há alguma. A URL de um webhook não se altera: desative-o
+(`is_active: false`, sempre aceito) e registre outro com uma URL pública.
+
 ## Assinatura das entregas de webhook
 
 Toda entrega de webhook (eventos `deposit.*`, `withdrawal.*`, `sweep.*`, `wallet.gas_status.changed` e o

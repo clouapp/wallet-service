@@ -483,3 +483,14 @@ content-type: application/json; charset=utf-8
 status: 400
 content-type: application/json; charset=utf-8
 {"error":{"code":"invalid_request","message":"updated_since must be an RFC 3339 timestamp"}}
+
+### 97 create a webhook account token: POST /v1/accounts/{{account}}/tokens
+status: 201
+content-type: application/json; charset=utf-8
+{"metadata":{"created_at":"<time>","updated_at":"<time>","id":"<uuid:71>","account_id":"<uuid:4>","created_by":"<uuid:60>","name":"contract webhook token","permissions":["webhooks.read","webhooks.write"],"spending_limit":"{}"},"token":"<jwt>"}
+
+### 98 external create webhook to a cloud metadata address: POST /api/v1/webhooks
+status: 422
+content-type: application/json
+{"error":{"code":"webhook_url_not_allowed","message":"the url host must not be or resolve to a link-local or cloud metadata address"}}
+

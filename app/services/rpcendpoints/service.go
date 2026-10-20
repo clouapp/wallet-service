@@ -13,6 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/chainregistry"
+	"github.com/macrowallets/waas/pkg/egress"
 )
 
 // ChainStore reads a chain, locks its row inside a transaction, and writes its
@@ -69,6 +70,9 @@ type Deps struct {
 	Dialer    Dialer
 	Defaults  func(network string) []string
 	Now       func() time.Time
+	// AllowLinkLocal also accepts link-local and cloud metadata endpoints
+	// (RPC_ALLOW_LINK_LOCAL); every other destination of egress.RPCPolicy is allowed.
+	AllowLinkLocal bool
 }
 
 // Service lists and changes the RPC endpoints of a chain.
@@ -82,6 +86,7 @@ type Service struct {
 	dialer    Dialer
 	defaults  func(network string) []string
 	now       func() time.Time
+	rpcPolicy egress.Policy
 }
 
 // NewService builds the endpoint service. It panics without Chains, Endpoints or Sealer.
@@ -99,6 +104,7 @@ func NewService(deps Deps) *Service {
 		dialer:    deps.Dialer,
 		defaults:  deps.Defaults,
 		now:       deps.Now,
+		rpcPolicy: egress.RPCPolicy(deps.AllowLinkLocal),
 	}
 	if svc.verify == nil {
 		svc.verify = chainregistry.VerifyEndpoint

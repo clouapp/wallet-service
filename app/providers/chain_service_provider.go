@@ -105,12 +105,13 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 			return nil, err
 		}
 		return chainsvc.NewRPC(chainsvc.RPCDeps{
-			Store:    chains,
-			Admins:   admins,
-			Activity: activityLog,
-			Sealer:   chainRPCSealer{},
-			Dialer:   registry,
-			Verify:   platformPrimaryVerifier(),
+			Store:          chains,
+			Admins:         admins,
+			Activity:       activityLog,
+			Sealer:         chainRPCSealer{},
+			Dialer:         registry,
+			Verify:         platformPrimaryVerifier(),
+			AllowLinkLocal: RPCAllowsLinkLocal(),
 		}), nil
 	})
 	app.Singleton((*rpcendpoints.Service)(nil), func(app foundation.Application) (any, error) {
@@ -126,7 +127,7 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		deps := rpcendpoints.Deps{Chains: chains, Endpoints: endpoints, Sealer: chainRPCSealer{}, Dialer: registry}
+		deps := rpcendpoints.Deps{Chains: chains, Endpoints: endpoints, Sealer: chainRPCSealer{}, Dialer: registry, AllowLinkLocal: RPCAllowsLinkLocal()}
 		if store := chainRPCHealthStore(); store != nil {
 			deps.Health = store
 		}
@@ -222,4 +223,11 @@ func (chainRPCSealer) Open(stored string) (string, error) {
 // (chains:set-rpc then chains:align-network do, from artisan).
 func platformPrimaryVerifier() *chainregistry.PrimaryVerifier {
 	return chainregistry.NewPrimaryVerifier(openChainEndpoint, nil)
+}
+
+// RPCAllowsLinkLocal is RPC_ALLOW_LINK_LOCAL: whether an RPC endpoint a platform admin
+// or an operator writes may be a link-local or cloud metadata destination (off by
+// default; a private node is always allowed, egress.RPCPolicy).
+func RPCAllowsLinkLocal() bool {
+	return facades.Config().GetBool("vault.outbound.rpc_allow_link_local")
 }

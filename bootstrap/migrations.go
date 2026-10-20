@@ -76,5 +76,6 @@ func Migrations() []schema.Migration {
 		&migrations.M00000000000640AddFinalityPolicy{},
 		&migrations.M00000000000650CreateChainRPCEndpointsTable{},
 		&migrations.M00000000000660AddRedeliveryIndexes{},
+		&migrations.M00000000000670UniqueActiveWebhookSubscription{},
 	}
 }

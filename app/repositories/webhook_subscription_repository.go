@@ -13,7 +13,7 @@ import (
 )
 
 // WebhookSubscriptionRepository persists provider webhook subscriptions.
-// signing_secret stays in the column as this branch stores it.
+// signing_secret is written sealed by the caller and returned as stored.
 type WebhookSubscriptionRepository struct {
 	db.Base
 }
@@ -29,16 +29,19 @@ func (r *WebhookSubscriptionRepository) FindByChainID(ctx context.Context, chain
 		return nil, models.ErrRepositoryNotFound
 	}
 	var sub models.WebhookSubscription
-	if err := r.Query(ctx).Where("chain_id = ? AND status = ?", chainID, "active").FirstOrFail(&sub); err != nil {
+	if err := r.Query(ctx).Where("chain_id = ? AND status = ?", chainID, models.WebhookSubscriptionActive).FirstOrFail(&sub); err != nil {
 		return nil, db.LookupError(err, "find webhook subscription")
 	}
 	return &sub, nil
 }
 
-// FindByProviderAndChain returns the subscription for a provider and chain, or ErrRepositoryNotFound.
+// FindByProviderAndChain returns the subscription for a provider and chain, the active
+// one when there are several (only one can be active), or ErrRepositoryNotFound.
 func (r *WebhookSubscriptionRepository) FindByProviderAndChain(ctx context.Context, provider, chainID string) (*models.WebhookSubscription, error) {
 	var sub models.WebhookSubscription
-	if err := r.Query(ctx).Where("provider = ? AND chain_id = ?", provider, chainID).FirstOrFail(&sub); err != nil {
+	if err := r.Query(ctx).Where("provider = ? AND chain_id = ?", provider, chainID).
+		OrderByRaw("CASE WHEN status = '" + models.WebhookSubscriptionActive + "' THEN 0 ELSE 1 END, created_at DESC").
+		FirstOrFail(&sub); err != nil {
 		return nil, db.LookupError(err, "find webhook subscription")
 	}
 	return &sub, nil
@@ -47,7 +50,16 @@ func (r *WebhookSubscriptionRepository) FindByProviderAndChain(ctx context.Conte
 // FindAllActive returns every active subscription.
 func (r *WebhookSubscriptionRepository) FindAllActive(ctx context.Context) ([]models.WebhookSubscription, error) {
 	var subs []models.WebhookSubscription
-	if err := r.Query(ctx).Where("status = ?", "active").Find(&subs); err != nil {
+	if err := r.Query(ctx).Where("status = ?", models.WebhookSubscriptionActive).Find(&subs); err != nil {
+		return nil, fmt.Errorf("list webhook subscriptions: %w", err)
+	}
+	return subs, nil
+}
+
+// FindAll returns every subscription, by chain and provider.
+func (r *WebhookSubscriptionRepository) FindAll(ctx context.Context) ([]models.WebhookSubscription, error) {
+	var subs []models.WebhookSubscription
+	if err := r.Query(ctx).Order("chain_id").Order("provider").Find(&subs); err != nil {
 		return nil, fmt.Errorf("list webhook subscriptions: %w", err)
 	}
 	return subs, nil
