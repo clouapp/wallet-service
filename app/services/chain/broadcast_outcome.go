@@ -26,7 +26,41 @@ const (
 	// NonceProofRetryAtPayloadKey is when (unix seconds) the tracker next tries the
 	// nonce proof of a row the endpoints had no state to prove.
 	NonceProofRetryAtPayloadKey = "nonce_proof_retry_at"
+	// SpentInputsPayloadKey is the outpoints ("txid:vout") the signed transaction
+	// spends (Bitcoin family).
+	SpentInputsPayloadKey = "spent_inputs"
+	// SpendProofRetryAtPayloadKey is when (unix seconds) the tracker next tries the
+	// inputs proof of a Bitcoin-family row that nothing proved yet.
+	SpendProofRetryAtPayloadKey = "spend_proof_retry_at"
 )
+
+// SpentInputsReader is an adapter whose signed transactions spend outpoints
+// (Bitcoin family): "txid:vout", in input order.
+type SpentInputsReader interface {
+	SpentInputs(signed *types.SignedTx) ([]string, error)
+}
+
+// InputsSpend is what a provider says about the inputs of a transfer the network
+// does not know by its hash (Bitcoin family).
+type InputsSpend struct {
+	// Conflicted is true when every input is spent by another transaction confirmed
+	// at the chain's confirmation depth: ours can never land.
+	Conflicted bool
+	// Ours is true when an input is spent by the transfer itself: it is in a block,
+	// or still in the mempool (Block 0).
+	Ours bool
+	// Block is our block when Ours, else the highest block of the spends that
+	// conflict with it.
+	Block uint64
+}
+
+// InputsSpendReader is an adapter that can read which transaction spent each
+// input of a transfer (Bitcoin family, from an Esplora provider): positive proof
+// that it landed, or that another transaction spent every input it spends and it
+// can never land. A provider that cannot say proves nothing.
+type InputsSpendReader interface {
+	InputsSpend(ctx context.Context, txHash string, inputs []string) (InputsSpend, error)
+}
 
 // SenderNonceReader is an adapter whose signed transactions spend a sender nonce
 // (EVM).
