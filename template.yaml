@@ -61,6 +61,22 @@ Parameters:
     Default: ""
     Description: Public base URL for provider webhook ingest endpoints (e.g. API Gateway URL)
 
+  DepositScanAlertLagBlocks:
+    Type: String
+    Default: "0"
+    AllowedPattern: "^[0-9]+$"
+    Description: >
+      The confirmation tracker warns about a scanned chain whose checkpoint trails the
+      head by more blocks than this (0: the chain's catch-up window).
+
+  DepositScanAlertStaleMinutes:
+    Type: String
+    Default: "10"
+    AllowedPattern: "^[0-9]+$"
+    Description: >
+      The confirmation tracker warns about a scanned chain without a completed scan
+      cycle for longer than this many minutes.
+
   AlarmTopicArn:
     Type: String
     Default: ""
@@ -241,6 +257,11 @@ Resources:
           DATABASE_URL: !Ref DatabaseURL
           REDIS_HOST: !Ref RedisHost
           ETHERSCAN_API_KEY: !Ref EtherscanAPIKey
+          # Each pass warns about the deposit scans that lag or stalled (CLAUDE.md,
+          # "Deposit detection observability"); per-chain thresholds are
+          # DEPOSIT_SCAN_ALERT_*_<CHAIN>.
+          DEPOSIT_SCAN_ALERT_LAG_BLOCKS: !Ref DepositScanAlertLagBlocks
+          DEPOSIT_SCAN_ALERT_STALE_MINUTES: !Ref DepositScanAlertStaleMinutes
       # The tracker enqueues deposit, withdrawal and sweep events and re-dispatches
       # the outbox rows whose queue message was lost.
       Policies:
@@ -351,8 +372,11 @@ Resources:
       EvaluationPeriods: 1
       Threshold: 0
       ComparisonOperator: GreaterThanThreshold
-      # An empty DLQ that nothing touches stops reporting the metric: that is no alarm.
-      TreatMissingData: notBreaching
+      # SQS reports a queue's metrics only while it is active: up to six hours after it
+      # last held messages or was accessed. A DLQ whose messages nobody touches goes
+      # quiet then; "ignore" keeps the alarm raised until a datapoint says 0, where
+      # notBreaching would turn it back to OK with the messages still there.
+      TreatMissingData: ignore
       AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref AWS::NoValue]
       OKActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref AWS::NoValue]
 

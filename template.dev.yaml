@@ -76,8 +76,11 @@ Resources:
       EvaluationPeriods: 1
       Threshold: 0
       ComparisonOperator: GreaterThanThreshold
-      # An empty DLQ that nothing touches stops reporting the metric: that is no alarm.
-      TreatMissingData: notBreaching
+      # SQS reports a queue's metrics only while it is active: up to six hours after it
+      # last held messages or was accessed. A DLQ whose messages nobody touches goes
+      # quiet then; "ignore" keeps the alarm raised until a datapoint says 0, where
+      # notBreaching would turn it back to OK with the messages still there.
+      TreatMissingData: ignore
       AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref AWS::NoValue]
       OKActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref AWS::NoValue]
 

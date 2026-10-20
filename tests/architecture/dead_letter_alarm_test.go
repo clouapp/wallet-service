@@ -36,7 +36,9 @@ func TestWebhook_DeadLetterQueue_RaisesAnAlarmInEveryTemplate(t *testing.T) {
 				"MetricName: ApproximateNumberOfMessagesVisible",
 				"ComparisonOperator: GreaterThanThreshold",
 				"Threshold: 0",
-				"TreatMissingData: notBreaching",
+				// A DLQ that holds messages nobody touches goes inactive after six hours and
+				// stops reporting: the alarm must stay raised, not fall back to OK.
+				"TreatMissingData: ignore",
 				"AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref AWS::NoValue]",
 			} {
 				if !strings.Contains(alarm, want) {
@@ -114,4 +116,22 @@ func alarmsOnQueue(resources map[string]string, queue string) []string {
 		}
 	}
 	return alarms
+}
+
+// TestConfirmation_Tracker_ReadsTheScanAlertThresholds requires the confirmation
+// tracker function, which raises the deposit scan alerts, to get their thresholds.
+func TestConfirmation_Tracker_ReadsTheScanAlertThresholds(t *testing.T) {
+	raw, err := fs.ReadFile(os.DirFS(sharedModule(t).Root), "template.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracker := templateResources(string(raw))["ConfirmationTrackerFunction"]
+	for _, want := range []string{
+		"DEPOSIT_SCAN_ALERT_LAG_BLOCKS: !Ref DepositScanAlertLagBlocks",
+		"DEPOSIT_SCAN_ALERT_STALE_MINUTES: !Ref DepositScanAlertStaleMinutes",
+	} {
+		if !strings.Contains(tracker, want) {
+			t.Errorf("ConfirmationTrackerFunction lacks %q", want)
+		}
+	}
 }
