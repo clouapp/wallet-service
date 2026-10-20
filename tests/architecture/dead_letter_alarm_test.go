@@ -1,8 +1,8 @@
 package architecture
 
 import (
+	"io/fs"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -14,10 +14,10 @@ import (
 // to, raised as soon as one message is visible there: a delivery that exhausted its
 // receives is otherwise only seen by someone who runs make dlq-check.
 func TestWebhook_DeadLetterQueue_RaisesAnAlarmInEveryTemplate(t *testing.T) {
-	module := sharedModule(t)
+	root := os.DirFS(sharedModule(t).Root)
 	for _, name := range []string{"template.yaml", "template.dev.yaml"} {
 		t.Run(name, func(t *testing.T) {
-			raw, err := os.ReadFile(filepath.Join(module.Root, name))
+			raw, err := fs.ReadFile(root, name)
 			if err != nil {
 				t.Fatalf("read %s: %v", name, err)
 			}
