@@ -1,12 +1,14 @@
 package bootstrap
 
 import (
+	"errors"
 	"os"
 
 	"github.com/goravel/framework/contracts/console"
 )
 
-// exitingCommand ends the process with status 1 when its command fails.
+// exitingCommand ends the process with status 1 when its command fails, or with the
+// status the failure names (ExitCode, 2 or more).
 //
 // Goravel runs an artisan command inside Create() and, when Handle returns an
 // error, panics with the error text (console.Application.Run, exitIfArtisan):
@@ -23,9 +25,19 @@ func exitOnFailure(cmd console.Command, exit func(code int)) console.Command {
 	return exitingCommand{Command: cmd, exit: exit}
 }
 
+// exitCoder is a failure that names its exit status (commands.exitStatus).
+type exitCoder interface {
+	ExitCode() int
+}
+
 func (c exitingCommand) Handle(ctx console.Context) error {
 	if err := c.Command.Handle(ctx); err != nil {
-		c.exit(1)
+		code := 1
+		var coded exitCoder
+		if errors.As(err, &coded) && coded.ExitCode() > 1 {
+			code = coded.ExitCode()
+		}
+		c.exit(code)
 	}
 	return nil
 }

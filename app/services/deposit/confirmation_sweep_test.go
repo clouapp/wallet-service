@@ -170,10 +170,10 @@ func (f *sweepConfirmEventRepo) MarkFailed(context.Context, string, string) erro
 func (f *sweepConfirmEventRepo) ClaimStaleForRedispatch(context.Context, time.Duration, int) ([]models.WebhookEvent, error) {
 	return nil, nil
 }
-func (f *sweepConfirmEventRepo) FindForRedelivery(context.Context, uuid.UUID, time.Time, time.Time, []string, int) ([]uuid.UUID, error) {
+func (f *sweepConfirmEventRepo) FindForRedelivery(context.Context, uuid.UUID, uuid.UUID, time.Time, time.Time, []string, int) ([]uuid.UUID, error) {
 	return nil, nil
 }
-func (f *sweepConfirmEventRepo) RequeueForRedelivery(context.Context, uuid.UUID, []uuid.UUID, time.Time, time.Time) ([]models.WebhookEvent, error) {
+func (f *sweepConfirmEventRepo) RequeueForRedelivery(context.Context, uuid.UUID, uuid.UUID, []uuid.UUID, time.Time, time.Time) ([]models.WebhookEvent, error) {
 	return nil, nil
 }
 

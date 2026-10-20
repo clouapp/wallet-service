@@ -32,13 +32,28 @@ type Health struct {
 	ConfirmationTracker ConfirmationTracker `json:"confirmation_tracker"`
 }
 
-// DepositScanner reports pending deposit blocks per chain. Status is ok,
-// pending_blocks, or pending_store_unavailable.
+// DepositScanner reports pending deposit blocks per chain and, in Chains, how far
+// each chain's deposit detection got, from what the scanner and the inbound ingest
+// recorded (no chain is called). Status is ok, pending_blocks, or
+// pending_store_unavailable; it does not depend on Chains.
 type DepositScanner struct {
-	Status       string         `json:"status" example:"ok"`
-	Pending      map[string]int `json:"pending"`
-	PendingTotal int            `json:"pending_total" example:"0"`
-	Error        string         `json:"error,omitempty"`
+	Status       string                  `json:"status" example:"ok"`
+	Pending      map[string]int          `json:"pending"`
+	PendingTotal int                     `json:"pending_total" example:"0"`
+	Chains       map[string]ScannedChain `json:"chains"`
+	Error        string                  `json:"error,omitempty"`
+	ChainsError  string                  `json:"chains_error,omitempty"`
+}
+
+// ScannedChain is one chain a scanner or a provider push touched in the last week.
+// LagBlocks is head − checkpoint at the end of the last completed scan cycle and
+// LastScannedAt when it ended (both absent for a chain only pushed to); LastPushAt
+// is when an inbound provider webhook for the chain was last received (absent when
+// none was). Times are UTC, to the second.
+type ScannedChain struct {
+	LagBlocks     *uint64    `json:"lag_blocks,omitempty" example:"3"`
+	LastScannedAt *time.Time `json:"last_scanned_at,omitempty" example:"2026-10-20T09:30:00Z"`
+	LastPushAt    *time.Time `json:"last_push_at,omitempty" example:"2026-10-20T09:29:12Z"`
 }
 
 // ConfirmationTracker reports, per chain, the outbound transfers (withdrawals,
@@ -58,10 +73,13 @@ type ConfirmationTracker struct {
 	Error                string         `json:"error,omitempty"`
 }
 
-// NewHealth projects the deposit scanner's pending blocks and the outbound
-// transfers left unsettled. Store errors stay off the wire.
-func NewHealth(pending deposit.PendingHealth, stale deposit.StaleOutboundHealth) Health {
-	scanner := DepositScanner{Status: scannerHealthy, Pending: pending.Counts, PendingTotal: pending.Total}
+// NewHealth projects the deposit scanner's pending blocks and scan activity, and
+// the outbound transfers left unsettled. Store errors stay off the wire.
+func NewHealth(pending deposit.PendingHealth, stale deposit.StaleOutboundHealth, activity deposit.ScanActivityHealth) Health {
+	scanner := DepositScanner{Status: scannerHealthy, Pending: pending.Counts, PendingTotal: pending.Total, Chains: scannedChains(activity.Chains)}
+	if activity.Err != nil {
+		scanner.ChainsError = "scan activity unavailable"
+	}
 	if pending.Total > 0 {
 		scanner.Status = scannerPending
 	}
@@ -84,4 +102,27 @@ func NewHealth(pending deposit.PendingHealth, stale deposit.StaleOutboundHealth)
 		tracker.Error = "transactions store unavailable"
 	}
 	return Health{Status: statusOK, Version: version, DepositScanner: scanner, ConfirmationTracker: tracker}
+}
+
+// scannedChains projects the scan activity per chain; it is never nil.
+func scannedChains(activity map[string]deposit.ChainActivity) map[string]ScannedChain {
+	chains := make(map[string]ScannedChain, len(activity))
+	for chainID, chain := range activity {
+		var scanned ScannedChain
+		if chain.Scan != nil {
+			lag := chain.Scan.LagBlocks()
+			scanned.LagBlocks = &lag
+			scanned.LastScannedAt = wireTime(chain.Scan.At)
+		}
+		if !chain.PushedAt.IsZero() {
+			scanned.LastPushAt = wireTime(chain.PushedAt)
+		}
+		chains[chainID] = scanned
+	}
+	return chains
+}
+
+func wireTime(at time.Time) *time.Time {
+	utc := at.UTC().Truncate(time.Second)
+	return &utc
 }

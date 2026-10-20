@@ -32,8 +32,16 @@ func newRedeliveryFixture(t *testing.T) redeliveryFixture {
 	return redeliveryFixture{queueFixture: queue, accountID: accountID, cfg: cfg}
 }
 
-// storedEvent inserts an event of cfg created ago before now with status.
+// storedEvent inserts an event of cfg about a wallet of the fixture's account,
+// created ago before now with status.
 func (f redeliveryFixture) storedEvent(t *testing.T, cfg *models.WebhookConfig, eventType types.EventType, status string, ago time.Duration) models.WebhookEvent {
+	t.Helper()
+	return f.storedEventOf(t, &f.accountID, cfg, eventType, status, ago)
+}
+
+// storedEventOf inserts an event of cfg about a wallet of owner; a nil owner is an
+// event whose wallet cannot be told (no transaction and no wallet in the payload).
+func (f redeliveryFixture) storedEventOf(t *testing.T, owner *uuid.UUID, cfg *models.WebhookConfig, eventType types.EventType, status string, ago time.Duration) models.WebhookEvent {
 	t.Helper()
 	configID := cfg.ID
 	subjectID := uuid.NewString()
@@ -56,7 +64,91 @@ func (f redeliveryFixture) storedEvent(t *testing.T, cfg *models.WebhookConfig, 
 		t.Fatal(err)
 	}
 	f.store.backdate(event.ID.String(), ago)
+	if owner != nil {
+		f.store.ownEvent(event.ID, *owner)
+	}
 	return *event
+}
+
+// claimedLegacyConfig is a legacy webhook created before ownership was recorded,
+// which received the events of every account, then claimed by the fixture's account.
+func (f redeliveryFixture) claimedLegacyConfig(t *testing.T) *models.WebhookConfig {
+	t.Helper()
+	ctx := context.Background()
+	events := []string{string(types.EventDepositConfirmed), string(types.EventWalletGasStatusChanged)}
+	legacy, err := f.svc.CreateConfig(ctx, "https://legacy.test/hook", "legacy-secret", events, nil)
+	if err != nil {
+		t.Fatalf("CreateConfig: %v", err)
+	}
+	active := true
+	claimed, err := f.svc.UpdateAccountConfig(ctx, f.accountID, legacy.ID, ConfigUpdate{IsActive: &active, Secret: "legacy-secret"})
+	if err != nil {
+		t.Fatalf("claim the legacy webhook: %v", err)
+	}
+	return claimed
+}
+
+func TestRedeliver_ClaimedLegacyWebhook_ByIDLeavesTheEventsOfAnotherAccountsWallets(t *testing.T) {
+	f := newRedeliveryFixture(t)
+	legacy := f.claimedLegacyConfig(t)
+	otherAccount := uuid.New()
+	own := f.storedEvent(t, legacy, types.EventDepositConfirmed, models.WebhookDeliveryDelivered, time.Hour)
+	foreign := f.storedEventOf(t, &otherAccount, legacy, types.EventDepositConfirmed, models.WebhookDeliveryDelivered, time.Hour)
+	foreignGas := f.storedEventOf(t, &otherAccount, legacy, types.EventWalletGasStatusChanged, models.WebhookDeliveryFailed, time.Hour)
+	unknownWallet := f.storedEventOf(t, nil, legacy, types.EventDepositConfirmed, models.WebhookDeliveryDelivered, time.Hour)
+
+	requeued, err := f.svc.Redeliver(context.Background(), f.accountID, legacy.ID, RedeliverySelection{EventIDs: []uuid.UUID{own.ID, foreign.ID, foreignGas.ID, unknownWallet.ID}})
+	if err != nil {
+		t.Fatalf("Redeliver: %v", err)
+	}
+	if requeued != 1 || len(f.sent) != 1 || f.sent[0].EventID != own.ID.String() {
+		t.Fatalf("requeued = %d, queued %v; only the event of the account's own wallet may be sent again", requeued, f.sent)
+	}
+	if f.stored(own.ID).DeliveryStatus != models.WebhookDeliveryPending {
+		t.Fatal("the event of the account's own wallet must be pending again")
+	}
+	for _, untouched := range []models.WebhookEvent{foreign, foreignGas, unknownWallet} {
+		if row := f.stored(untouched.ID); row.DeliveryStatus != untouched.DeliveryStatus || row.Attempts != untouched.Attempts {
+			t.Fatalf("event %s of another account's wallet (or of no known wallet) was requeued: %s", untouched.ID, row.DeliveryStatus)
+		}
+	}
+}
+
+func TestRedeliver_ClaimedLegacyWebhook_SinceSelectsOnlyTheAccountsWallets(t *testing.T) {
+	f := newRedeliveryFixture(t)
+	legacy := f.claimedLegacyConfig(t)
+	otherAccount := uuid.New()
+	own := f.storedEvent(t, legacy, types.EventDepositConfirmed, models.WebhookDeliveryDelivered, time.Hour)
+	foreign := f.storedEventOf(t, &otherAccount, legacy, types.EventDepositConfirmed, models.WebhookDeliveryDelivered, time.Hour)
+	unknownWallet := f.storedEventOf(t, nil, legacy, types.EventDepositConfirmed, models.WebhookDeliveryDelivered, time.Hour)
+
+	requeued, err := f.svc.Redeliver(context.Background(), f.accountID, legacy.ID, RedeliverySelection{Since: time.Now().UTC().Add(-2 * time.Hour)})
+	if err != nil {
+		t.Fatalf("Redeliver: %v", err)
+	}
+	if requeued != 1 || len(f.sent) != 1 || f.sent[0].EventID != own.ID.String() {
+		t.Fatalf("requeued = %d, queued %v; only the event of the account's own wallet may be sent again", requeued, f.sent)
+	}
+	for _, untouched := range []models.WebhookEvent{foreign, unknownWallet} {
+		if f.stored(untouched.ID).DeliveryStatus != models.WebhookDeliveryDelivered {
+			t.Fatalf("event %s outside the account's wallets was requeued", untouched.ID)
+		}
+	}
+}
+
+func TestRedeliver_Since_CountsOnlyTheAccountsEventsAgainstTheLimit(t *testing.T) {
+	f := newRedeliveryFixture(t)
+	legacy := f.claimedLegacyConfig(t)
+	otherAccount := uuid.New()
+	for range MaxRedeliveryEvents {
+		f.storedEventOf(t, &otherAccount, legacy, types.EventDepositConfirmed, models.WebhookDeliveryDelivered, time.Hour)
+	}
+	own := f.storedEvent(t, legacy, types.EventDepositConfirmed, models.WebhookDeliveryDelivered, time.Hour)
+
+	requeued, err := f.svc.Redeliver(context.Background(), f.accountID, legacy.ID, RedeliverySelection{Since: time.Now().UTC().Add(-2 * time.Hour)})
+	if err != nil || requeued != 1 || f.stored(own.ID).DeliveryStatus != models.WebhookDeliveryPending {
+		t.Fatalf("requeued = %d, %v; another account's events must not count against the limit", requeued, err)
+	}
 }
 
 func (f redeliveryFixture) stored(id uuid.UUID) models.WebhookEvent {

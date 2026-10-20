@@ -190,33 +190,126 @@ func (s *WebhookEventRepositoryTestSuite) outboxRowOf(configID uuid.UUID, eventT
 	return row
 }
 
+// accountWallet inserts an account and one wallet of it.
+func (s *WebhookEventRepositoryTestSuite) accountWallet() (uuid.UUID, models.Wallet) {
+	account := fixtures.InsertAccount(s.T(), "redelivery-"+uuid.NewString()[:8])
+	return account.ID, fixtures.InsertWalletWithAccount(s.T(), "eth", &account.ID)
+}
+
+// payloadNames sets the event's payload to name walletID in data.wallet_id, the way
+// an event without a transaction (wallet.gas_status.changed, a withdrawal event sent
+// before its transaction existed) carries its wallet.
+func (s *WebhookEventRepositoryTestSuite) payloadNames(eventID uuid.UUID, walletID string) {
+	_, err := facades.Orm().Query().Exec(`UPDATE webhook_events SET payload = ? WHERE id = ?`,
+		`{"type":"wallet.gas_status.changed","data":{"wallet_id":"`+walletID+`","chain":"eth"}}`, eventID)
+	s.Require().NoError(err)
+}
+
+// transactionOf points the event at a new transaction of wallet.
+func (s *WebhookEventRepositoryTestSuite) transactionOf(eventID uuid.UUID, wallet models.Wallet) {
+	tx := fixtures.InsertTransaction(s.T(), wallet.ID, wallet.DepositAddressID, "eth", models.TxTypeDeposit, "confirmed", "ETH", "1", 1)
+	_, err := facades.Orm().Query().Exec(`UPDATE webhook_events SET transaction_id = ? WHERE id = ?`, tx.ID, eventID)
+	s.Require().NoError(err)
+}
+
 func (s *WebhookEventRepositoryTestSuite) TestWebhookEventRepository_FindForRedelivery_SelectsTheConfigsEventsOfTheWindowAndTypes() {
 	ctx := context.Background()
+	accountID, wallet := s.accountWallet()
 	cfg := fixtures.InsertWebhookConfig(s.T(), "https://owner.test/hook", "secret", []string{"deposit.confirmed"})
 	other := fixtures.InsertWebhookConfig(s.T(), "https://other.test/hook", "secret", []string{"deposit.confirmed"})
 	older := s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryDelivered, 90*time.Minute, 90*time.Minute)
 	newer := s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryFailed, time.Hour, time.Hour)
-	s.outboxRowOf(cfg.ID, "withdrawal.confirmed", models.WebhookDeliveryDelivered, time.Hour, time.Hour)
-	s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryDelivered, 3*time.Hour, 3*time.Hour)
-	s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryDelivered, time.Minute, time.Minute)
-	s.outboxRowOf(other.ID, "deposit.confirmed", models.WebhookDeliveryDelivered, time.Hour, time.Hour)
+	otherType := s.outboxRowOf(cfg.ID, "withdrawal.confirmed", models.WebhookDeliveryDelivered, time.Hour, time.Hour)
+	beforeWindow := s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryDelivered, 3*time.Hour, 3*time.Hour)
+	afterWindow := s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryDelivered, time.Minute, time.Minute)
+	ofOther := s.outboxRowOf(other.ID, "deposit.confirmed", models.WebhookDeliveryDelivered, time.Hour, time.Hour)
+	for _, row := range []models.WebhookEvent{older, newer, otherType, beforeWindow, afterWindow, ofOther} {
+		s.transactionOf(row.ID, wallet)
+	}
 
 	now := time.Now().UTC()
-	ids, err := s.repo.FindForRedelivery(ctx, cfg.ID, now.Add(-2*time.Hour), now.Add(-30*time.Minute), []string{"deposit.confirmed"}, 10)
+	ids, err := s.repo.FindForRedelivery(ctx, cfg.ID, accountID, now.Add(-2*time.Hour), now.Add(-30*time.Minute), []string{"deposit.confirmed"}, 10)
 	s.Require().NoError(err)
 	s.Equal([]uuid.UUID{older.ID, newer.ID}, ids, "the config's deposit.confirmed of the window, oldest first")
 
-	all, err := s.repo.FindForRedelivery(ctx, cfg.ID, now.Add(-2*time.Hour), now, nil, 10)
+	all, err := s.repo.FindForRedelivery(ctx, cfg.ID, accountID, now.Add(-2*time.Hour), now, nil, 10)
 	s.Require().NoError(err)
 	s.Len(all, 4, "no type filter selects every type of the window")
 
-	limited, err := s.repo.FindForRedelivery(ctx, cfg.ID, now.Add(-2*time.Hour), now, nil, 1)
+	limited, err := s.repo.FindForRedelivery(ctx, cfg.ID, accountID, now.Add(-2*time.Hour), now, nil, 1)
 	s.Require().NoError(err)
 	s.Equal([]uuid.UUID{older.ID}, limited)
+
+	_, err = s.repo.FindForRedelivery(ctx, cfg.ID, uuid.Nil, now.Add(-2*time.Hour), now, nil, 10)
+	s.Error(err, "a redelivery is always for one account")
+}
+
+// walletScopedRows stores, on one config, an event of each way an event names its
+// wallet, for the account and for another one. It returns the two the account owns.
+func (s *WebhookEventRepositoryTestSuite) walletScopedRows(configID uuid.UUID) (accountID uuid.UUID, owned []uuid.UUID, others []uuid.UUID) {
+	accountID, wallet := s.accountWallet()
+	_, otherWallet := s.accountWallet()
+	unownedWallet := fixtures.InsertWallet(s.T(), "eth")
+	row := func() uuid.UUID {
+		return s.outboxRowOf(configID, "deposit.confirmed", models.WebhookDeliveryDelivered, time.Hour, time.Hour).ID
+	}
+
+	ownByTransaction := row()
+	s.transactionOf(ownByTransaction, wallet)
+	ownByPayload := row()
+	s.payloadNames(ownByPayload, wallet.ID.String())
+
+	otherByTransaction := row()
+	s.transactionOf(otherByTransaction, otherWallet)
+	otherByPayload := row()
+	s.payloadNames(otherByPayload, otherWallet.ID.String())
+	transactionWinsOverPayload := row()
+	s.transactionOf(transactionWinsOverPayload, otherWallet)
+	s.payloadNames(transactionWinsOverPayload, wallet.ID.String())
+	walletWithoutAccount := row()
+	s.payloadNames(walletWithoutAccount, unownedWallet.ID.String())
+	noWallet := row()
+	notAWallet := row()
+	s.payloadNames(notAWallet, "not-a-wallet")
+
+	return accountID, []uuid.UUID{ownByTransaction, ownByPayload},
+		[]uuid.UUID{otherByTransaction, otherByPayload, transactionWinsOverPayload, walletWithoutAccount, noWallet, notAWallet}
+}
+
+func (s *WebhookEventRepositoryTestSuite) TestWebhookEventRepository_FindForRedelivery_SelectsOnlyTheEventsOfTheAccountsWallets() {
+	cfg := fixtures.InsertWebhookConfig(s.T(), "https://legacy.test/hook", "secret", []string{"deposit.confirmed"})
+	accountID, owned, _ := s.walletScopedRows(cfg.ID)
+
+	now := time.Now().UTC()
+	ids, err := s.repo.FindForRedelivery(context.Background(), cfg.ID, accountID, now.Add(-2*time.Hour), now, nil, 100)
+	s.Require().NoError(err)
+	s.ElementsMatch(owned, ids, "only the events of the account's own wallets, by their transaction or by their payload")
+}
+
+func (s *WebhookEventRepositoryTestSuite) TestWebhookEventRepository_RequeueForRedelivery_LeavesTheEventsOfAnotherAccountsWallets() {
+	cfg := fixtures.InsertWebhookConfig(s.T(), "https://legacy.test/hook", "secret", []string{"deposit.confirmed"})
+	accountID, owned, others := s.walletScopedRows(cfg.ID)
+
+	now := time.Now().UTC()
+	requeued, err := s.repo.RequeueForRedelivery(context.Background(), cfg.ID, accountID, append(append([]uuid.UUID{}, owned...), others...),
+		now.Add(-7*24*time.Hour), now.Add(-time.Minute))
+	s.Require().NoError(err)
+	ids := make([]uuid.UUID, 0, len(requeued))
+	for _, row := range requeued {
+		ids = append(ids, row.ID)
+	}
+	s.ElementsMatch(owned, ids)
+	for _, id := range others {
+		s.Equal(models.WebhookDeliveryDelivered, s.storedOutboxRow(id).DeliveryStatus, "event %s is not about a wallet of the account", id)
+	}
+
+	_, err = s.repo.RequeueForRedelivery(context.Background(), cfg.ID, uuid.Nil, owned, now.Add(-7*24*time.Hour), now.Add(-time.Minute))
+	s.Error(err, "a redelivery is always for one account")
 }
 
 func (s *WebhookEventRepositoryTestSuite) TestWebhookEventRepository_RequeueForRedelivery_ResetsOnlyTheConfigsSettledEvents() {
 	ctx := context.Background()
+	accountID, wallet := s.accountWallet()
 	cfg := fixtures.InsertWebhookConfig(s.T(), "https://owner.test/hook", "secret", []string{"deposit.confirmed"})
 	other := fixtures.InsertWebhookConfig(s.T(), "https://other.test/hook", "secret", []string{"deposit.confirmed"})
 	delivered := s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryDelivered, time.Hour, time.Hour)
@@ -226,11 +319,14 @@ func (s *WebhookEventRepositoryTestSuite) TestWebhookEventRepository_RequeueForR
 	tooOld := s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryDelivered, 9*24*time.Hour, 9*24*time.Hour)
 	ofOther := s.outboxRowOf(other.ID, "deposit.confirmed", models.WebhookDeliveryDelivered, time.Hour, time.Hour)
 	neverTouched := s.outboxRowOf(cfg.ID, "deposit.confirmed", models.WebhookDeliveryPending, time.Hour, time.Hour)
+	for _, row := range []models.WebhookEvent{delivered, failed, stuck, inFlight, tooOld, ofOther, neverTouched} {
+		s.payloadNames(row.ID, wallet.ID.String())
+	}
 	_, err := facades.Orm().Query().Exec(`UPDATE webhook_events SET updated_at = NULL WHERE id = ?`, neverTouched.ID)
 	s.Require().NoError(err)
 
 	now := time.Now().UTC()
-	requeued, err := s.repo.RequeueForRedelivery(ctx, cfg.ID,
+	requeued, err := s.repo.RequeueForRedelivery(ctx, cfg.ID, accountID,
 		[]uuid.UUID{delivered.ID, failed.ID, stuck.ID, inFlight.ID, tooOld.ID, ofOther.ID, neverTouched.ID, uuid.New()},
 		now.Add(-7*24*time.Hour), now.Add(-time.Minute))
 	s.Require().NoError(err)
@@ -245,7 +341,7 @@ func (s *WebhookEventRepositoryTestSuite) TestWebhookEventRepository_RequeueForR
 		s.Equal(models.WebhookDeliveryPending, row.DeliveryStatus)
 		s.Zero(row.Attempts)
 		s.Nil(row.DeliveredAt)
-		s.Equal(delivered.Payload, row.Payload)
+		s.Equal(s.storedOutboxRow(delivered.ID).Payload, row.Payload)
 	}
 	for _, id := range []uuid.UUID{delivered.ID, failed.ID, stuck.ID} {
 		stored := s.storedOutboxRow(id)
@@ -257,7 +353,7 @@ func (s *WebhookEventRepositoryTestSuite) TestWebhookEventRepository_RequeueForR
 	s.Equal(models.WebhookDeliveryDelivered, s.storedOutboxRow(tooOld.ID).DeliveryStatus, "an event past the window is left alone")
 	s.Equal(models.WebhookDeliveryDelivered, s.storedOutboxRow(ofOther.ID).DeliveryStatus, "another config's event is left alone")
 
-	none, err := s.repo.RequeueForRedelivery(ctx, cfg.ID, nil, now.Add(-7*24*time.Hour), now.Add(-time.Minute))
+	none, err := s.repo.RequeueForRedelivery(ctx, cfg.ID, accountID, nil, now.Add(-7*24*time.Hour), now.Add(-time.Minute))
 	s.Require().NoError(err)
 	s.Empty(none)
 }

@@ -447,9 +447,9 @@ func (f *ingestWebhookEventRepo) MarkFailed(_ context.Context, eventID, errMsg s
 func (f *ingestWebhookEventRepo) ClaimStaleForRedispatch(context.Context, time.Duration, int) ([]models.WebhookEvent, error) {
 	return nil, nil
 }
-func (f *ingestWebhookEventRepo) FindForRedelivery(context.Context, uuid.UUID, time.Time, time.Time, []string, int) ([]uuid.UUID, error) {
+func (f *ingestWebhookEventRepo) FindForRedelivery(context.Context, uuid.UUID, uuid.UUID, time.Time, time.Time, []string, int) ([]uuid.UUID, error) {
 	return nil, nil
 }
-func (f *ingestWebhookEventRepo) RequeueForRedelivery(context.Context, uuid.UUID, []uuid.UUID, time.Time, time.Time) ([]models.WebhookEvent, error) {
+func (f *ingestWebhookEventRepo) RequeueForRedelivery(context.Context, uuid.UUID, uuid.UUID, []uuid.UUID, time.Time, time.Time) ([]models.WebhookEvent, error) {
 	return nil, nil
 }

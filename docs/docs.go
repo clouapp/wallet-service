@@ -1419,7 +1419,7 @@ const docTemplate = `{
                         "SignatureAuth": []
                     }
                 ],
-                "description": "Registers an account-level webhook endpoint. Deliveries are POSTed as JSON and signed with HMAC-SHA256 of the raw body in ` + "`" + `X-Vault-Signature` + "`" + ` (hex, keyed by ` + "`" + `secret` + "`" + `); ` + "`" + `X-Vault-Event` + "`" + ` carries the event type and ` + "`" + `X-Vault-Delivery-Id` + "`" + ` the event id. Supported events include deposit.confirmed, withdrawal.broadcast, withdrawal.confirmed and withdrawal.failed. Withdrawal events are only delivered for wallets of the token's account.",
+                "description": "Registers an account-level webhook endpoint. Deliveries are POSTed as JSON and signed with ` + "`" + `secret` + "`" + ` when each attempt is sent: ` + "`" + `X-Vault-Signature-V2` + "`" + ` is ` + "`" + `t=\u003cunix seconds\u003e,v1=\u003chex HMAC-SHA256 of '\u003ct\u003e.\u003craw body\u003e'\u003e` + "`" + `, so a receiver refuses a ` + "`" + `t` + "`" + ` too far from its clock (5 minutes recommended) and with it a replayed delivery; ` + "`" + `X-Vault-Timestamp` + "`" + ` repeats ` + "`" + `t` + "`" + `; the legacy ` + "`" + `X-Vault-Signature` + "`" + ` (hex HMAC-SHA256 of the raw body alone) is still sent while receivers move to V2. ` + "`" + `X-Vault-Event` + "`" + ` carries the event type and ` + "`" + `X-Vault-Delivery-Id` + "`" + ` the event id. Only a 2xx answer counts as delivered: a redirect is not followed and is retried like a 4xx or a 5xx. Supported events include deposit.confirmed, withdrawal.broadcast, withdrawal.confirmed and withdrawal.failed. Withdrawal events are only delivered for wallets of the token's account.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1558,7 +1558,7 @@ const docTemplate = `{
                         "SignatureAuth": []
                     }
                 ],
-                "description": "Queues again events of one of the account's webhooks, whatever their delivery status: the events named in ` + "`" + `event_ids` + "`" + ` (at most 500), or every event created from ` + "`" + `since` + "`" + ` (RFC 3339, at most 7 days ago) up to ` + "`" + `until` + "`" + ` (default now), optionally only of ` + "`" + `types` + "`" + `. Only events created in the last 7 days are redelivered, at most 500 per request (a larger window is refused: narrow ` + "`" + `since` + "`" + `, ` + "`" + `until` + "`" + ` or ` + "`" + `types` + "`" + `), and an event already pending that was queued in the last minute is left alone. A requeued event is delivered again with the same ` + "`" + `X-Vault-Delivery-Id` + "`" + `, so receivers deduplicate on it. A legacy webhook is claimed with PATCH before it can be redelivered.",
+                "description": "Queues again events of one of the account's webhooks, whatever their delivery status: the events named in ` + "`" + `event_ids` + "`" + ` (at most 500), or every event created from ` + "`" + `since` + "`" + ` (RFC 3339, at most 7 days ago) up to ` + "`" + `until` + "`" + ` (default now), optionally only of ` + "`" + `types` + "`" + `. Only events created in the last 7 days are redelivered, at most 500 per request (a larger window is refused: narrow ` + "`" + `since` + "`" + `, ` + "`" + `until` + "`" + ` or ` + "`" + `types` + "`" + `), and an event already pending that was queued in the last minute is left alone. Only events about a wallet of the token's account are requeued: a legacy webhook received the events of every account before it was claimed, and those of other accounts are not sent again. A requeued event is delivered again with the same ` + "`" + `X-Vault-Delivery-Id` + "`" + `, so receivers deduplicate on it, and is signed again when it is sent, with a fresh ` + "`" + `X-Vault-Timestamp` + "`" + `. A legacy webhook is claimed with PATCH before it can be redelivered.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1993,7 +1993,7 @@ const docTemplate = `{
         },
         "/health": {
             "get": {
-                "description": "Returns service status and version, how many deposit blocks per chain wait for a retry, and how many outbound transfers per chain are still unsettled after WITHDRAWAL_STALE_AFTER_HOURS (settle them with artisan withdrawals:reconcile)",
+                "description": "Returns service status and version, how many deposit blocks per chain wait for a retry, how far each chain's deposit detection got (lag_blocks and last_scanned_at of the last completed scan cycle, last_push_at of the last inbound provider webhook; read from what the scanner and the ingest recorded, never from the chain), and how many outbound transfers per chain are still unsettled after WITHDRAWAL_STALE_AFTER_HOURS (settle them with artisan withdrawals:reconcile)",
                 "produces": [
                     "application/json"
                 ],
@@ -8182,6 +8182,15 @@ const docTemplate = `{
         "health.DepositScanner": {
             "type": "object",
             "properties": {
+                "chains": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/health.ScannedChain"
+                    }
+                },
+                "chains_error": {
+                    "type": "string"
+                },
                 "error": {
                     "type": "string"
                 },
@@ -8217,6 +8226,23 @@ const docTemplate = `{
                 "version": {
                     "type": "string",
                     "example": "0.1.0"
+                }
+            }
+        },
+        "health.ScannedChain": {
+            "type": "object",
+            "properties": {
+                "lag_blocks": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "last_push_at": {
+                    "type": "string",
+                    "example": "2026-10-20T09:29:12Z"
+                },
+                "last_scanned_at": {
+                    "type": "string",
+                    "example": "2026-10-20T09:30:00Z"
                 }
             }
         },

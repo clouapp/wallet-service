@@ -23,6 +23,10 @@ type memoryWebhook struct {
 	eventOrder  []string
 	created     map[string]time.Time
 	touched     map[string]time.Time
+	// owners is the account of each event's wallet, which the repository reads
+	// from the event's transaction or payload. An event missing here has no
+	// wallet the store can tell.
+	owners      map[string]uuid.UUID
 	findByIDErr error
 }
 
@@ -32,6 +36,7 @@ func newMemoryWebhook() *memoryWebhook {
 		events:  map[string]*models.WebhookEvent{},
 		created: map[string]time.Time{},
 		touched: map[string]time.Time{},
+		owners:  map[string]uuid.UUID{},
 	}
 }
 
@@ -360,9 +365,9 @@ func (e memoryEvents) ClaimStaleForRedispatch(_ context.Context, staleAfter time
 	return out, nil
 }
 
-// FindForRedelivery mirrors the repository: the config's events created in
-// [since, until), of eventTypes when any are given, oldest first.
-func (e memoryEvents) FindForRedelivery(_ context.Context, configID uuid.UUID, since, until time.Time, eventTypes []string, limit int) ([]uuid.UUID, error) {
+// FindForRedelivery mirrors the repository: the config's events about a wallet of
+// accountID created in [since, until), of eventTypes when any are given, oldest first.
+func (e memoryEvents) FindForRedelivery(_ context.Context, configID, accountID uuid.UUID, since, until time.Time, eventTypes []string, limit int) ([]uuid.UUID, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("limit must be positive")
 	}
@@ -376,7 +381,7 @@ func (e memoryEvents) FindForRedelivery(_ context.Context, configID uuid.UUID, s
 	for _, key := range e.store.eventOrder {
 		event := e.store.events[key]
 		created := e.store.created[key]
-		if event == nil || event.WebhookConfigID == nil || *event.WebhookConfigID != configID {
+		if event == nil || event.WebhookConfigID == nil || *event.WebhookConfigID != configID || !e.store.ownedBy(key, accountID) {
 			continue
 		}
 		if created.Before(since) || !created.Before(until) || (len(wanted) > 0 && !wanted[event.EventType]) {
@@ -391,9 +396,9 @@ func (e memoryEvents) FindForRedelivery(_ context.Context, configID uuid.UUID, s
 }
 
 // RequeueForRedelivery mirrors the repository: the listed events of the config
-// created since createdSince go back to pending with no attempts, except a pending
-// event touched after busySince.
-func (e memoryEvents) RequeueForRedelivery(_ context.Context, configID uuid.UUID, ids []uuid.UUID, createdSince, busySince time.Time) ([]models.WebhookEvent, error) {
+// about a wallet of accountID created since createdSince go back to pending with
+// no attempts, except a pending event touched after busySince.
+func (e memoryEvents) RequeueForRedelivery(_ context.Context, configID, accountID uuid.UUID, ids []uuid.UUID, createdSince, busySince time.Time) ([]models.WebhookEvent, error) {
 	e.store.mu.Lock()
 	defer e.store.mu.Unlock()
 	now := time.Now().UTC()
@@ -401,7 +406,7 @@ func (e memoryEvents) RequeueForRedelivery(_ context.Context, configID uuid.UUID
 	for _, id := range ids {
 		key := id.String()
 		event := e.store.events[key]
-		if event == nil || event.WebhookConfigID == nil || *event.WebhookConfigID != configID || e.store.created[key].Before(createdSince) {
+		if event == nil || event.WebhookConfigID == nil || *event.WebhookConfigID != configID || !e.store.ownedBy(key, accountID) || e.store.created[key].Before(createdSince) {
 			continue
 		}
 		touched := e.store.touched[key]
@@ -418,6 +423,19 @@ func (e memoryEvents) RequeueForRedelivery(_ context.Context, configID uuid.UUID
 		out = append(out, *event)
 	}
 	return out, nil
+}
+
+// ownEvent records that the event is about a wallet of accountID.
+func (m *memoryWebhook) ownEvent(id, accountID uuid.UUID) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.owners[id.String()] = accountID
+}
+
+// ownedBy reports whether the event is about a wallet of accountID. The caller holds the lock.
+func (m *memoryWebhook) ownedBy(key string, accountID uuid.UUID) bool {
+	owner, ok := m.owners[key]
+	return ok && owner == accountID
 }
 
 // backdate moves an event's insert and last touch back by ago.
