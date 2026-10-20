@@ -3,8 +3,9 @@ Description: >
   Macro Wallets dev stack (waas-dev): the AWS resources of an environment that runs
   on one host outside AWS (the Forge server) instead of Lambda. The webhook and
   withdrawal queues with their dead-letter queues (same names and settings as
-  template.yaml), the master KMS key, and an IAM user for that host, scoped to these
-  resources and to the vault/* wallet secrets.
+  template.yaml) and the alarm on the webhook dead-letter queue, the master KMS key,
+  and an IAM user for that host, scoped to these resources and to the vault/* wallet
+  secrets.
   Deployed with `make deploy ENV=dev`; see docs/AWS_DEV_STACK.md.
 
 Parameters:
@@ -22,8 +23,16 @@ Parameters:
       Secrets Manager (waas/<env>/server-access-key); `make server-credentials`
       installs it on the host. Not needed once the service runs as Lambda.
 
+  AlarmTopicArn:
+    Type: String
+    Default: ""
+    Description: >
+      SNS topic the CloudWatch alarms notify (in alarm and back to OK). Empty: the
+      alarms only change state.
+
 Conditions:
   HasServerUser: !Equals [!Ref CreateServerUser, "true"]
+  HasAlarmTopic: !Not [!Equals [!Ref AlarmTopicArn, ""]]
 
 Resources:
   # ---------------------------------------------------------------------------
@@ -47,6 +56,30 @@ Resources:
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt WebhookDeadLetterQueue.Arn
         maxReceiveCount: 10
+
+  # --- Alarm: a webhook delivery that exhausted its receives sits in the DLQ ---
+  # Raised by the first visible message, so a lost delivery is seen without anyone
+  # running make dlq-check; replay with make dlq-replay-webhooks once the receiver
+  # answers again. With no AlarmTopicArn it only changes state (console, API).
+  WebhookDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "vault-webhooks-dlq-not-empty-${Environment}"
+      AlarmDescription: !Sub "A webhook delivery exhausted its receives and sits in vault-webhooks-dlq-${Environment}: make dlq-check ENV=${Environment}, then make dlq-replay-webhooks ENV=${Environment}."
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt WebhookDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      # An empty DLQ that nothing touches stops reporting the metric: that is no alarm.
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref AWS::NoValue]
+      OKActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref AWS::NoValue]
 
   WithdrawalDeadLetterQueue:
     Type: AWS::SQS::Queue

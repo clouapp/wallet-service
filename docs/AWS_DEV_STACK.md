@@ -8,6 +8,7 @@ the stack `waas-dev`:
 |---|---|---|
 | Webhook queue | `vault-webhooks-dev` | visibility 60 s, retention 1 day, 10 receives, then the DLQ |
 | Webhook DLQ | `vault-webhooks-dlq-dev` | retention 14 days |
+| Webhook DLQ alarm | CloudWatch alarm `vault-webhooks-dlq-not-empty-dev` | in alarm while a message is visible in the webhook DLQ (`ApproximateNumberOfMessagesVisible` > 0, 5-minute maximum); notifies the SNS topic of the `AlarmTopicArn` parameter, none by default |
 | Withdrawal queue | `vault-withdrawals-dev` | visibility 120 s, retention 1 day, 3 receives, then the DLQ |
 | Withdrawal DLQ | `vault-withdrawals-dlq-dev` | retention 14 days |
 | Master key | `alias/waas-dev-master` | symmetric, yearly rotation, **kept** when the stack is deleted |
@@ -74,6 +75,7 @@ access keys. A dedicated deploy user needs, for this stack only (replace `ACCOUN
     { "Effect": "Allow", "Action": "cloudformation:*", "Resource": "arn:aws:cloudformation:us-east-1:ACCOUNT:stack/waas-dev/*" },
     { "Effect": "Allow", "Action": ["cloudformation:ValidateTemplate", "cloudformation:GetTemplateSummary", "sts:GetCallerIdentity"], "Resource": "*" },
     { "Effect": "Allow", "Action": "sqs:*", "Resource": "arn:aws:sqs:us-east-1:ACCOUNT:vault-*-dev" },
+    { "Effect": "Allow", "Action": ["cloudwatch:PutMetricAlarm", "cloudwatch:DeleteAlarms", "cloudwatch:DescribeAlarms", "cloudwatch:TagResource", "cloudwatch:UntagResource", "cloudwatch:ListTagsForResource"], "Resource": "arn:aws:cloudwatch:us-east-1:ACCOUNT:alarm:vault-*-dev" },
     { "Effect": "Allow", "Action": ["kms:CreateKey", "kms:ListAliases"], "Resource": "*" },
     { "Effect": "Allow", "Action": ["kms:DescribeKey", "kms:GetKeyPolicy", "kms:PutKeyPolicy", "kms:EnableKeyRotation", "kms:GetKeyRotationStatus", "kms:TagResource", "kms:UntagResource", "kms:ListResourceTags", "kms:ListKeyPolicies", "kms:UpdateKeyDescription", "kms:ScheduleKeyDeletion", "kms:CreateAlias", "kms:DeleteAlias", "kms:UpdateAlias"], "Resource": ["arn:aws:kms:us-east-1:ACCOUNT:key/*", "arn:aws:kms:us-east-1:ACCOUNT:alias/waas-dev-*"] },
     { "Effect": "Allow", "Action": ["iam:CreateUser", "iam:DeleteUser", "iam:GetUser", "iam:TagUser", "iam:UntagUser", "iam:AttachUserPolicy", "iam:DetachUserPolicy", "iam:ListAttachedUserPolicies", "iam:CreateAccessKey", "iam:DeleteAccessKey", "iam:ListAccessKeys", "iam:UpdateAccessKey", "iam:ListUserPolicies", "iam:ListGroupsForUser", "iam:ListUserTags", "iam:GetLoginProfile", "iam:ListMFADevices", "iam:ListSigningCertificates", "iam:ListSSHPublicKeys", "iam:ListServiceSpecificCredentials"], "Resource": "arn:aws:iam::ACCOUNT:user/waas-dev-server" },

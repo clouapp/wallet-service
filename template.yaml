@@ -61,6 +61,16 @@ Parameters:
     Default: ""
     Description: Public base URL for provider webhook ingest endpoints (e.g. API Gateway URL)
 
+  AlarmTopicArn:
+    Type: String
+    Default: ""
+    Description: >
+      SNS topic the CloudWatch alarms notify (in alarm and back to OK). Empty: the
+      alarms only change state.
+
+Conditions:
+  HasAlarmTopic: !Not [!Equals [!Ref AlarmTopicArn, ""]]
+
 # ---------------------------------------------------------------------------
 # Globals
 # ---------------------------------------------------------------------------
@@ -321,6 +331,30 @@ Resources:
     Properties:
       QueueName: !Sub "vault-webhooks-dlq-${Environment}"
       MessageRetentionPeriod: 1209600       # 14 days
+
+  # --- Alarm: a webhook delivery that exhausted its receives sits in the DLQ ---
+  # Raised by the first visible message, so a lost delivery is seen without anyone
+  # running make dlq-check; replay with make dlq-replay-webhooks once the receiver
+  # answers again. With no AlarmTopicArn it only changes state (console, API).
+  WebhookDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "vault-webhooks-dlq-not-empty-${Environment}"
+      AlarmDescription: !Sub "A webhook delivery exhausted its receives and sits in vault-webhooks-dlq-${Environment}: make dlq-check ENV=${Environment}, then make dlq-replay-webhooks ENV=${Environment}."
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt WebhookDLQ.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      # An empty DLQ that nothing touches stops reporting the metric: that is no alarm.
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref AWS::NoValue]
+      OKActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref AWS::NoValue]
 
   # --- Withdrawal Processing Queue ---
   WithdrawalQueue:
