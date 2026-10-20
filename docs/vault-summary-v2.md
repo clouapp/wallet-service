@@ -290,11 +290,13 @@ configs legadas sem dono recebem tudo. Deduplicação por (config, tipo, transa�
   de chegada, porém, não é garantida. O consumidor deve tratar `confirmations` como monotônico (ignorar um valor
   menor ou igual ao já registrado), não notificar o jogador a cada evento e creditar apenas em
   `deposit.confirmed`. `data.id` e `data.transaction_id` continuam sendo o id da transação em todos os eventos.
-- `deposit.failed`: a transação do depósito foi minerada, mas falhou na chain (EVM: recibo com `status` `0x0`, por
-  falta de gás ou por reversão). A taxa foi paga e o valor não saiu do remetente, portanto nada chegou ao endereço.
-  `data.status` vem `failed` e `data.failure_code` vem `onchain_out_of_gas` ou `onchain_reverted` (o campo existe
-  apenas neste evento). Chega uma vez por depósito e por config, e nunca é seguido de `deposit.confirmed` para o mesmo
-  depósito.
+- `deposit.failed`: nada chegou ao endereço. Ou a transação do depósito foi minerada, mas falhou na chain (EVM:
+  recibo com `status` `0x0`, por falta de gás ou por reversão; a taxa foi paga e o valor não saiu do remetente), ou o
+  bloco em que o depósito foi visto foi desfeito por uma reorganização da chain e a transação não está em nenhum
+  outro bloco. `data.status` vem `failed` e `data.failure_code` vem `onchain_out_of_gas`, `onchain_reverted` ou
+  `reorged_out` (o campo existe apenas neste evento). Chega uma vez por depósito e por config, e nunca é seguido de
+  `deposit.confirmed` para o mesmo depósito. O consumidor trata todos os códigos da mesma forma: um depósito ainda
+  não creditado passa a falho; um já creditado (o evento traz `confirmed_at` preenchido) tem o crédito estornado ou enviado para revisão.
   - Desde 2026-10-18, a varredura não registra transferências nativas EVM cujo recibo falhou: não há linha, nem
     `deposit.pending`, nem outro evento para elas. O rastreador de confirmações também relê o recibo de todo depósito
     nativo EVM antes de confirmá-lo (o que cobre depósitos registrados por versões anteriores e pela ingestão de
@@ -313,6 +315,14 @@ configs legadas sem dono recebem tudo. Deduplicação por (config, tipo, transa�
     depois dele; por isso o consumidor deve tratar `deposit.failed` como final para o `transaction_id`
     (guardar o id, mesmo sem ter registrado o depósito) e ignorar eventos desse depósito que cheguem depois.
   - Depósitos de tokens (ERC-20) não são afetados: vêm de eventos `Transfer`, que uma transação que falhou não emite.
+  - `reorged_out` (desde 2026-10-20): antes de confirmar um depósito, o rastreador compara o hash do bloco em que ele
+    foi registrado com o do bloco que a chain tem hoje naquela altura (EVM, Bitcoin, Litecoin, Solana e TRON; os
+    ledgers validados do XRP já são finais). Se a reorganização apenas mudou a transação de bloco, o depósito passa
+    para o bloco novo (`block_number` e `block_hash` mudam em `GET /api/v1/transactions`) e é confirmado a partir da
+    profundidade nova, sem `deposit.failed`. Se a transação não está em bloco nenhum, o depósito fica sem confirmar
+    até a chain avançar `required_confirmations` blocos; se ela não voltar a ser minerada nesse intervalo, chega
+    `deposit.failed` com `reorged_out`. Como isso acontece antes da confirmação, `confirmed_at` vem `null` e não há
+    crédito a desfazer. Um depósito já confirmado não é revisto: a profundidade de confirmação é a garantia.
 - `finality` diz qual regra decide o `status`: `confirmations` (confirmado quando `confirmations` atinge
   `required_confirmations`), `finalized_tag` (EVM: confirmado quando o bloco do depósito está no bloco `finalized`
   do nó ou abaixo dele, com pelo menos 1 confirmação) ou `solidified` (TRON: o mesmo com o bloco solidificado).
