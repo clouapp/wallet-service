@@ -3,6 +3,7 @@ package repositories_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/pkg/pgerr"
+	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -37,7 +40,7 @@ func (s *TransactionRepositoryTestSuite) insertWallet() uuid.UUID {
 func (s *TransactionRepositoryTestSuite) makeTx(walletID uuid.UUID, txType, status string) *models.Transaction {
 	return &models.Transaction{
 		ID: uuid.New(), WalletID: walletID, ExternalUserID: "user1",
-		Chain: "eth", TxType: txType, TxHash: "0x" + uuid.NewString()[:16],
+		Chain: "eth", TxType: txType, TxHash: "0x" + uuid.NewString()[:16], LogIndex: types.NativeValuePosition,
 		ToAddress: "0xto", Amount: "1000", Asset: "eth",
 		RequiredConfs: 12, Status: status,
 		Direction: testTxDirection(txType), Source: models.TxSourceChain, RawPayload: "{}",
@@ -161,17 +164,199 @@ func (s *TransactionRepositoryTestSuite) TestFind_ByWallet_FilterByStatus() {
 
 func (s *TransactionRepositoryTestSuite) TestCount_By_ChainAndTxHash() {
 	walletID := s.insertWallet()
-	tx := s.makeTx(walletID, "deposit", "confirmed")
+	tx := s.makeTx(walletID, "withdrawal", "confirmed")
 	tx.TxHash = "0xuniquehash"
 	s.Require().NoError(s.repo.Create(context.Background(), tx))
 
-	count, err := s.repo.CountByChainAndTxHash(context.Background(), "eth", "0xuniquehash", "deposit")
+	count, err := s.repo.CountByChainAndTxHash(context.Background(), "eth", "0xuniquehash", "withdrawal")
 	s.Require().NoError(err)
 	s.Equal(int64(1), count)
 
-	count, err = s.repo.CountByChainAndTxHash(context.Background(), "eth", "0xuniquehash", "withdrawal")
+	count, err = s.repo.CountByChainAndTxHash(context.Background(), "eth", "0xuniquehash", "sweep")
 	s.Require().NoError(err)
 	s.Equal(int64(0), count)
+}
+
+// deposit is a deposit row of txHash at position (log_index).
+func (s *TransactionRepositoryTestSuite) deposit(walletID uuid.UUID, txHash string, position int) *models.Transaction {
+	tx := s.makeTx(walletID, models.TxTypeDeposit, "pending")
+	tx.TxHash = txHash
+	tx.LogIndex = position
+	return tx
+}
+
+func (s *TransactionRepositoryTestSuite) storedPosition(id uuid.UUID) int {
+	s.T().Helper()
+	found, err := s.repo.FindByID(context.Background(), id)
+	s.Require().NoError(err)
+	return found.LogIndex
+}
+
+// The first log of a transaction and its first output are at position 0: the
+// column default (-1, the native value) must not replace it.
+func (s *TransactionRepositoryTestSuite) TestCreate_Deposit_StoresPositionZero() {
+	tx := s.deposit(s.insertWallet(), "0xfirstlog", 0)
+	s.Require().NoError(s.repo.Create(context.Background(), tx))
+
+	s.Equal(0, s.storedPosition(tx.ID))
+	s.Equal(0, tx.LogIndex)
+}
+
+func (s *TransactionRepositoryTestSuite) TestCreate_Deposit_RefusesASecondRowAtOnePosition() {
+	walletID := s.insertWallet()
+	s.Require().NoError(s.repo.Create(context.Background(), s.deposit(walletID, "0xbatch", 3)))
+	s.Require().NoError(s.repo.Create(context.Background(), s.deposit(walletID, "0xbatch", 4)), "another position of the same transaction is another deposit")
+
+	err := s.repo.Create(context.Background(), s.deposit(walletID, "0xbatch", 3))
+	s.True(pgerr.IsUniqueViolation(err), "got %v", err)
+}
+
+func (s *TransactionRepositoryTestSuite) TestFind_DepositsByChainAndTxHash_ReturnsEveryDepositOfTheTransaction() {
+	ctx := context.Background()
+	walletID := s.insertWallet()
+	first := s.deposit(walletID, "0xbatch", 7)
+	second := s.deposit(walletID, "0xbatch", 2)
+	s.Require().NoError(s.repo.Create(ctx, first))
+	s.Require().NoError(s.repo.Create(ctx, second))
+	s.Require().NoError(s.repo.Create(ctx, s.deposit(walletID, "0xother", 2)))
+	sweep := s.makeTx(walletID, models.TxTypeSweep, "pending")
+	sweep.TxHash = "0xbatch"
+	s.Require().NoError(s.repo.Create(ctx, sweep))
+	elsewhere := s.deposit(walletID, "0xbatch", 9)
+	elsewhere.Chain = "polygon"
+	s.Require().NoError(s.repo.Create(ctx, elsewhere))
+
+	found, err := s.repo.FindDepositsByChainAndTxHash(ctx, "eth", "0xbatch")
+	s.Require().NoError(err)
+	s.Require().Len(found, 2)
+	s.Equal(second.ID, found[0].ID, "ordered by position")
+	s.Equal(first.ID, found[1].ID)
+
+	none, err := s.repo.FindDepositsByChainAndTxHash(ctx, "eth", "0xunknown")
+	s.Require().NoError(err)
+	s.Empty(none)
+}
+
+// lockFree takes the deposits lock of the transaction in another database
+// transaction, giving up after 200 ms, and reports whether it got it.
+func (s *TransactionRepositoryTestSuite) lockFree(chainID, txHash string) bool {
+	s.T().Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	lockErr := errors.New("the lock was not tried")
+	_ = s.repo.Within(ctx, func(txCtx context.Context) error {
+		lockErr = s.repo.LockTransactionDeposits(txCtx, chainID, txHash)
+		return nil
+	})
+	return lockErr == nil
+}
+
+func (s *TransactionRepositoryTestSuite) TestLock_TransactionDeposits_IsHeldUntilTheTransactionEnds() {
+	ctx := context.Background()
+	held := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- s.repo.Within(ctx, func(txCtx context.Context) error {
+			if err := s.repo.LockTransactionDeposits(txCtx, "eth", "0xbadc0de1"); err != nil {
+				return err
+			}
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+
+	s.False(s.lockFree("eth", "0xbadc0de1"), "a second recorder of the transaction waits")
+	s.False(s.lockFree("eth", "0xBADC0DE1"), "a hex hash is one transaction in any case")
+	s.True(s.lockFree("eth", "0xbadc0de2"), "another transaction is not held")
+	s.True(s.lockFree("polygon", "0xbadc0de1"), "the same hash on another chain is not held")
+
+	close(release)
+	s.Require().NoError(<-done)
+	s.True(s.lockFree("eth", "0xbadc0de1"), "the lock ends with the transaction")
+}
+
+func (s *TransactionRepositoryTestSuite) TestClaim_DepositPosition_MovesOnlyARowRecordedBeforePositions() {
+	ctx := context.Background()
+	walletID := s.insertWallet()
+	old := s.deposit(walletID, "0xbatch", types.NativeValuePosition)
+	s.Require().NoError(s.repo.Create(ctx, old))
+
+	claimed, err := s.repo.ClaimDepositPosition(ctx, old.ID, 0)
+	s.Require().NoError(err)
+	s.True(claimed)
+	s.Equal(0, s.storedPosition(old.ID))
+
+	claimed, err = s.repo.ClaimDepositPosition(ctx, old.ID, 5)
+	s.Require().NoError(err)
+	s.False(claimed, "a row that has its position is never moved again")
+	s.Equal(0, s.storedPosition(old.ID))
+
+	withdrawal := s.makeTx(walletID, models.TxTypeWithdrawal, "pending")
+	s.Require().NoError(s.repo.Create(ctx, withdrawal))
+	claimed, err = s.repo.ClaimDepositPosition(ctx, withdrawal.ID, 1)
+	s.Require().NoError(err)
+	s.False(claimed, "only deposit rows are claimed")
+	s.Equal(types.NativeValuePosition, s.storedPosition(withdrawal.ID))
+}
+
+func (s *TransactionRepositoryTestSuite) TestFill_DepositBlockHash_WritesOnlyAMissingHash() {
+	ctx := context.Background()
+	walletID := s.insertWallet()
+	pushed := s.deposit(walletID, "0xpushed", types.NativeValuePosition)
+	pushed.BlockHash = ""
+	s.Require().NoError(s.repo.Create(ctx, pushed))
+	scanned := s.deposit(walletID, "0xscanned", types.NativeValuePosition)
+	scanned.BlockHash = "0xfirst"
+	s.Require().NoError(s.repo.Create(ctx, scanned))
+
+	s.Require().NoError(s.repo.FillDepositBlockHash(ctx, pushed.ID, "0xblock"))
+	s.Require().NoError(s.repo.FillDepositBlockHash(ctx, scanned.ID, "0xother"))
+
+	found, err := s.repo.FindByID(ctx, pushed.ID)
+	s.Require().NoError(err)
+	s.Equal("0xblock", found.BlockHash)
+	found, err = s.repo.FindByID(ctx, scanned.ID)
+	s.Require().NoError(err)
+	s.Equal("0xfirst", found.BlockHash, "a hash that is there is never replaced")
+}
+
+func (s *TransactionRepositoryTestSuite) TestFind_DepositsByChainAndTxHash_MatchesAHexHashInAnyCase() {
+	ctx := context.Background()
+	walletID := s.insertWallet()
+	upper := s.deposit(walletID, "0xABCDEF01", 3)
+	s.Require().NoError(s.repo.Create(ctx, upper))
+	xrp := s.deposit(walletID, "C0FFEE00C0FFEE00C0FFEE00C0FFEE00C0FFEE00C0FFEE00C0FFEE00C0FFEE00", 4)
+	s.Require().NoError(s.repo.Create(ctx, xrp))
+	base58 := s.deposit(walletID, "5VERv8NMvzbJ", 5)
+	s.Require().NoError(s.repo.Create(ctx, base58))
+
+	found, err := s.repo.FindDepositsByChainAndTxHash(ctx, "eth", "0xabcdef01")
+	s.Require().NoError(err)
+	s.Require().Len(found, 1)
+	s.Equal(upper.ID, found[0].ID)
+
+	found, err = s.repo.FindDepositsByChainAndTxHash(ctx, "eth", strings.ToLower(xrp.TxHash))
+	s.Require().NoError(err)
+	s.Len(found, 1)
+
+	found, err = s.repo.FindDepositsByChainAndTxHash(ctx, "eth", "5verv8nmvzbj")
+	s.Require().NoError(err)
+	s.Empty(found, "a base58 signature is case-sensitive")
+}
+
+func (s *TransactionRepositoryTestSuite) TestClaim_DepositPosition_RefusesATakenPosition() {
+	ctx := context.Background()
+	walletID := s.insertWallet()
+	old := s.deposit(walletID, "0xbatch", types.NativeValuePosition)
+	s.Require().NoError(s.repo.Create(ctx, old))
+	s.Require().NoError(s.repo.Create(ctx, s.deposit(walletID, "0xbatch", 3)))
+
+	_, err := s.repo.ClaimDepositPosition(ctx, old.ID, 3)
+	s.True(pgerr.IsUniqueViolation(err), "got %v", err)
+	s.Equal(types.NativeValuePosition, s.storedPosition(old.ID))
 }
 
 func (s *TransactionRepositoryTestSuite) TestCount_InternalTransfers_OnlySweepsAndGasSeedsOfTheWallet() {

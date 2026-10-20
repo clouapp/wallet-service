@@ -1,6 +1,7 @@
 // Package localworkers runs, inside the local HTTP server, the jobs that the
 // deposit_scanner, confirmation_tracker and webhook_worker Lambdas run in production,
-// plus the periodic wallet balance refresh that keeps the read model current.
+// plus the periodic wallet balance refresh that keeps the read model current and,
+// when it is enabled, the real-time XRP deposit stream.
 package localworkers
 
 import (
@@ -88,15 +89,23 @@ type PreParamsFiller interface {
 	Run(ctx context.Context)
 }
 
-// Workers are the jobs Start runs; Deliverer, Redispatcher, Scanner and Balances
-// are only needed when the configuration enables their loop. PreParams is optional.
+// DepositStream is a long-running deposit listener of one chain (the XRPL
+// WebSocket, app/services/xrpstream); Run returns when ctx is cancelled.
+type DepositStream interface {
+	Run(ctx context.Context)
+}
+
+// Workers are the jobs Start runs; Deliverer, Redispatcher, Scanner, Balances and
+// DepositStream are only needed when the configuration enables them. PreParams is
+// optional.
 type Workers struct {
-	Checker      WithdrawalConfirmationChecker
-	Deliverer    OutboxDeliverer
-	Redispatcher OutboxRedispatcher
-	Scanner      DepositScanner
-	Balances     BalanceRefresher
-	PreParams    PreParamsFiller
+	Checker       WithdrawalConfirmationChecker
+	Deliverer     OutboxDeliverer
+	Redispatcher  OutboxRedispatcher
+	Scanner       DepositScanner
+	Balances      BalanceRefresher
+	PreParams     PreParamsFiller
+	DepositStream DepositStream
 }
 
 type Config struct {
@@ -116,6 +125,10 @@ type Config struct {
 	DepositScanInterval time.Duration
 	// BalanceRefreshInterval paces the wallet balance refresh; 0 turns it off.
 	BalanceRefreshInterval time.Duration
+	// DepositStreamChain is the chain the deposit stream listens to; empty runs none.
+	// It must be one of DepositScanChains: the ledger scan stays the guarantee and
+	// confirms what the stream recorded when a scan holds the chain.
+	DepositStreamChain string
 }
 
 func (c Config) validate() error {
@@ -143,6 +156,9 @@ func (c Config) validate() error {
 			return fmt.Errorf("deposit scan chain %q listed twice", chainID)
 		}
 		seen[chainID] = true
+	}
+	if c.DepositStreamChain != "" && !seen[c.DepositStreamChain] {
+		return fmt.Errorf("deposit stream chain %q must also be a deposit scan chain: the ledger scan stays the guarantee", c.DepositStreamChain)
 	}
 	return nil
 }
@@ -199,11 +215,17 @@ func Start(ctx context.Context, cfg Config, workers Workers) (*Loops, error) {
 	if cfg.BalanceRefreshInterval > 0 && workers.Balances == nil {
 		return nil, errors.New("balance refresher is required")
 	}
+	if cfg.DepositStreamChain != "" && workers.DepositStream == nil {
+		return nil, errors.New("deposit stream is required")
+	}
 	scanChains := append([]string(nil), cfg.DepositScanChains...)
 	loops := &Loops{}
 
 	if workers.PreParams != nil {
 		loops.running.Go(func() { workers.PreParams.Run(ctx) })
+	}
+	if cfg.DepositStreamChain != "" {
+		loops.running.Go(func() { workers.DepositStream.Run(ctx) })
 	}
 
 	loops.every(ctx, cfg.ConfirmationInterval, func() {
@@ -275,6 +297,7 @@ func Start(ctx context.Context, cfg Config, workers Workers) (*Loops, error) {
 		"deposit_scan_chains", strings.Join(scanChains, ","),
 		"deposit_scan_interval", cfg.DepositScanInterval.String(),
 		"balance_refresh_interval", cfg.BalanceRefreshInterval.String(),
+		"deposit_stream_chain", cfg.DepositStreamChain,
 	)
 	return loops, nil
 }

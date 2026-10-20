@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/goravel/framework/facades"
 	"gorm.io/gorm"
 
 	"github.com/macrowallets/waas/app/models"
@@ -31,10 +30,9 @@ type activeAddresses interface {
 	PluckActiveAddresses(ctx context.Context, chainID string) ([]string, error)
 }
 
-// signingSecretOpener opens the subscription signing secret. The default
-// uses the process cipher. A test supplies its own so the suite does not
-// boot the cipher. The plaintext is not logged.
-type signingSecretOpener func(sealed string) (string, error)
+// signingSecretOpener opens the stored subscription signing secret (settings.OpenStored:
+// sealed, or the bare envelope of older rows). The plaintext is not logged.
+type signingSecretOpener func(stored string) (string, error)
 
 // subscriptionStore is the provider-subscription persistence this service uses.
 type subscriptionStore interface {
@@ -67,6 +65,9 @@ type Deps struct {
 	// ProviderKey re-reads the provider credential on every sync. Nil keeps
 	// the providers in Providers and does not consult settings.
 	ProviderKey ProviderKey
+	// OpenSecret opens the subscription's signing secret; a sync whose secret does
+	// not open is failed. Required.
+	OpenSecret signingSecretOpener
 }
 
 // NewService wires the webhook sync service from Deps.
@@ -76,6 +77,7 @@ func NewService(deps Deps) *Service {
 		addressRepo:      deps.Addresses,
 		providers:        deps.Providers,
 		providerKey:      deps.ProviderKey,
+		openSecret:       deps.OpenSecret,
 	}
 }
 
@@ -154,11 +156,11 @@ func (s *Service) SyncChainAddresses(ctx context.Context, chainID string) error 
 	return nil
 }
 
-func (s *Service) decryptSigningSecret(sealed string) (string, error) {
-	if s != nil && s.openSecret != nil {
-		return s.openSecret(sealed)
+func (s *Service) decryptSigningSecret(stored string) (string, error) {
+	if s == nil || s.openSecret == nil {
+		return "", errors.New("webhook sync: no signing secret opener configured")
 	}
-	return facades.Crypt().DecryptString(sealed)
+	return s.openSecret(stored)
 }
 
 func (s *Service) markFailed(ctx context.Context, id uuid.UUID) {

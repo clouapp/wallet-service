@@ -36,6 +36,7 @@ func Boot() contractsfoundation.Application {
 			h.Use(middleware.GlobalChain(requestTimeout(), middleware.InboundSignatureDeps{
 				Subscriptions: container.MustMake[*ingest.Subscriptions](),
 				Lookup:        container.MustMake[*ingest.Catalog]().Lookup,
+				Decrypt:       container.MustMake[*ingest.SigningSecrets]().Open,
 			}, corsOrigins())...).
 				Recover(middleware.RecoverPanic)
 		}).

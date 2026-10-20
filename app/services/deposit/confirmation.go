@@ -135,6 +135,13 @@ func (s *Service) updateConfirmations(ctx context.Context, chainID string, adapt
 func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, currentBlock uint64, pending []models.Transaction) error {
 	confirmedWallets := newWalletSet()
 	defer func() { s.refreshBalances(ctx, confirmedWallets.ids) }()
+	return s.confirmPending(ctx, adapter, currentBlock, pending, confirmedWallets)
+}
+
+// confirmPending is applyConfirmations without the balance refresh: the wallets
+// whose movement it confirmed or failed are added to confirmedWallets, for the
+// caller to refresh (after releasing a lock it holds).
+func (s *Service) confirmPending(ctx context.Context, adapter types.Chain, currentBlock uint64, pending []models.Transaction, confirmedWallets *walletSet) error {
 	finality := newFinalityHeights(adapter)
 	for _, tx := range pending {
 		if tx.BlockNumber == 0 {
@@ -606,12 +613,6 @@ func (s *Service) failOnChain(ctx context.Context, adapter types.Chain, tx model
 	return true
 }
 
-// confirmationTx opens one transaction. Queries that use the callback context
-// join it, including the sweep.confirmed webhook row.
-type confirmationTx interface {
-	Within(ctx context.Context, fn func(context.Context) error) error
-}
-
 // persistSweepConfirmed writes the confirmation, the paid fee, and the
 // sweep.confirmed webhook row in one transaction. A failed webhook insert rolls
 // the confirmation back. The queue send runs only after that commit. With no
@@ -631,12 +632,8 @@ func (s *Service) persistSweepConfirmed(ctx context.Context, tx models.Transacti
 	if s.webhookSvc == nil {
 		return write(ctx)
 	}
-	joiner, ok := s.txRepo.(confirmationTx)
-	if !ok {
-		return fmt.Errorf("confirm sweep: transaction writer cannot open a transaction")
-	}
 	var send func(context.Context)
-	err := joiner.Within(ctx, func(txCtx context.Context) error {
+	err := s.txRepo.Within(ctx, func(txCtx context.Context) error {
 		if err := write(txCtx); err != nil {
 			return err
 		}

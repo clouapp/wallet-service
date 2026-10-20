@@ -297,7 +297,7 @@ func TestProcess_Transfer_RecordsTheChainFinalityPolicy(t *testing.T) {
 	created, err := svc.processTransfer(context.Background(), models.ChainTPolygon, adapter, types.DetectedTransfer{
 		TxHash: "0xfinalitydeposit", BlockNumber: 100, BlockHash: "0xblock", From: "0xsender", To: addr.Address,
 		Amount: big.NewInt(1000), Asset: models.ChainTPolygon,
-	})
+	}, nil)
 	if err != nil || !created {
 		t.Fatalf("processTransfer created=%v err=%v", created, err)
 	}

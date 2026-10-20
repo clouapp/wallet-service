@@ -691,3 +691,64 @@ func TestStart_No_DepositEventBackfillWithoutScanChains(t *testing.T) {
 		t.Fatalf("deposits are confirmed by the deployed tracker, got backfills %v", got)
 	}
 }
+
+type recordingStream struct {
+	started chan struct{}
+	stopped atomic.Bool
+}
+
+func (s *recordingStream) Run(ctx context.Context) {
+	close(s.started)
+	<-ctx.Done()
+	s.stopped.Store(true)
+}
+
+func TestStart_Runs_TheDepositStreamUntilCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream := &recordingStream{started: make(chan struct{})}
+	cfg := Config{ConfirmationInterval: time.Hour, DepositScanChains: []string{"txrp"}, DepositScanInterval: time.Hour, DepositStreamChain: "txrp"}
+
+	loops, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: &recordingScanner{}, DepositStream: stream})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	select {
+	case <-stream.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the deposit stream never ran")
+	}
+
+	cancel()
+	loops.Wait()
+	if !stream.stopped.Load() {
+		t.Fatal("Wait must not return before the deposit stream stopped")
+	}
+}
+
+func TestStart_Rejects_ADepositStreamTheLedgerScanDoesNotCover(t *testing.T) {
+	stream := &recordingStream{started: make(chan struct{})}
+	base := Config{ConfirmationInterval: time.Hour, DepositScanInterval: time.Hour, DepositStreamChain: "txrp"}
+	cases := map[string]struct {
+		scanChains []string
+		stream     DepositStream
+	}{
+		"chain not scanned": {[]string{"xrp"}, stream},
+		"nothing scanned":   {nil, stream},
+		"missing stream":    {[]string{"txrp"}, nil},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := base
+			cfg.DepositScanChains = tc.scanChains
+			if _, err := Start(context.Background(), cfg, Workers{Checker: &countingChecker{}, Scanner: &recordingScanner{}, DepositStream: tc.stream}); err == nil {
+				t.Fatal("expected a configuration error")
+			}
+		})
+	}
+	select {
+	case <-stream.started:
+		t.Fatal("a refused configuration started the deposit stream")
+	default:
+	}
+}

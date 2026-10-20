@@ -119,10 +119,11 @@ func (a *TronLive) nativeTransfers(txs []tronBlockTransaction, blockNum uint64, 
 		if err != nil {
 			return nil, false, fmt.Errorf("tron block %d: %w", blockNum, err)
 		}
+		// A transaction holds one contract: the TRX it transfers is its native value.
 		transfers = append(transfers, types.DetectedTransfer{
 			TxHash: txID, BlockNumber: blockNum, BlockHash: blockHash,
 			From: from, To: to, Amount: big.NewInt(value.Amount),
-			Asset: a.cfg.NativeSymbol, Timestamp: blockTime,
+			Asset: a.cfg.NativeSymbol, LogIndex: types.NativeValuePosition, Timestamp: blockTime,
 		})
 	}
 	return transfers, hasContractCall, nil
@@ -151,7 +152,7 @@ func (a *TronLive) tokenTransfers(ctx context.Context, blockNum uint64, blockHas
 	}
 
 	var transfers []types.DetectedTransfer
-	logIndex := uint(0)
+	logIndex := 0
 	for _, info := range infos {
 		if info.BlockNumber != int64(blockNum) {
 			return nil, fmt.Errorf("tron transaction info %s is in block %d, want %d", info.ID, info.BlockNumber, blockNum)
@@ -179,7 +180,7 @@ func (a *TronLive) tokenTransfers(ctx context.Context, blockNum uint64, blockHas
 
 // tokenTransfer decodes log as a registered token's Transfer event; ok is false
 // for any other event or contract.
-func (a *TronLive) tokenTransfer(log tronEventLog, txHash string, logIndex uint) (types.DetectedTransfer, bool, error) {
+func (a *TronLive) tokenTransfer(log tronEventLog, txHash string, logIndex int) (types.DetectedTransfer, bool, error) {
 	contract, err := hex.DecodeString(strings.TrimPrefix(log.Address, "0x"))
 	if err != nil || len(contract) != addressing.TronAddressBodySize {
 		return types.DetectedTransfer{}, false, nil

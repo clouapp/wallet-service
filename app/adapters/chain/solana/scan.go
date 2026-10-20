@@ -11,6 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/adapters/chain/rpc"
 	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/pkg/solanacredit"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -129,17 +130,19 @@ func solanaBlockCredits(slot uint64, block *solanaBlockAccounts, nativeAsset str
 				Amount:      amount,
 				Asset:       asset,
 				Token:       token,
-				LogIndex:    uint(logIndex),
+				LogIndex:    logIndex,
 				Timestamp:   blockTime,
 			})
 		}
 		feePayer := keys[0].Pubkey
+		accounts := make([]string, len(keys))
+		lamports := make([]*big.Int, len(keys))
 		for i, key := range keys {
-			pre, post := meta.PreBalances[i], meta.PostBalances[i]
-			if post <= pre || key.Pubkey == feePayer {
-				continue
-			}
-			credit(feePayer, key.Pubkey, new(big.Int).SetUint64(post-pre), nativeAsset, nil, i)
+			accounts[i] = key.Pubkey
+			lamports[i] = new(big.Int).Sub(new(big.Int).SetUint64(meta.PostBalances[i]), new(big.Int).SetUint64(meta.PreBalances[i]))
+		}
+		for _, c := range solanacredit.Lamports(accounts, lamports) {
+			credit(feePayer, c.Account, c.Amount, nativeAsset, nil, c.Index)
 		}
 		tokenCredits, err := solanaTokenCredits(meta, len(keys), tokens)
 		if err != nil {
@@ -151,9 +154,7 @@ func solanaBlockCredits(slot uint64, block *solanaBlockAccounts, nativeAsset str
 				from = feePayer
 			}
 			token := c.token
-			// Token credits are numbered after the account keys, so they never share a
-			// log index with a lamport credit of the same transaction.
-			credit(from, c.owner, c.amount, token.Symbol, &token, len(keys)+c.accountIndex)
+			credit(from, c.owner, c.amount, token.Symbol, &token, solanacredit.TokenPosition(c.accountIndex))
 		}
 	}
 	return transfers, nil

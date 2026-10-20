@@ -455,7 +455,11 @@ configs legadas sem dono recebem tudo. Deduplicação por (config, tipo, transa�
   depósito XRP é um `Payment` com resultado `tesSUCCESS` num ledger validado, pelo valor de `delivered_amount` em drops
   (um pagamento parcial credita o que chegou, não o `Amount` pedido); pagamentos `tec…`, moedas emitidas (IOU),
   pagamentos de uma conta para si mesma e os demais tipos de transação não são depósitos. A varredura periódica só roda com
-  `xrp`/`txrp` em `LOCAL_DEPOSIT_SCAN_CHAINS`.
+  `xrp`/`txrp` em `LOCAL_DEPOSIT_SCAN_CHAINS`. Com `LOCAL_XRP_STREAM_ENABLED=true` (desligado por padrão), uma assinatura
+  WebSocket dos endereços observados faz ler, pelo RPC da chain, o ledger de cada pagamento recebido assim que ele é
+  validado (segundos), em vez de esperar o próximo ciclo da varredura; o depósito vem sempre do RPC, nunca do que o
+  stream diz, os eventos e os campos são os mesmos, e a varredura continua rodando como garantia (o mesmo pagamento
+  nunca gera dois depósitos).
 - Solana (`sol`/`tsol`): além do SOL nativo, a varredura credita os tokens SPL (Token e Token-2022) cujo mint está no
   registro de tokens da chain. O depósito vai para o dono da conta de token (o endereço da carteira), pelo aumento
   líquido do saldo desse dono no mint (`preTokenBalances`/`postTokenBalances`), com `asset` = símbolo do token e
@@ -491,6 +495,14 @@ transação reaparece depois de cada mudança: o crédito precisa ser idempotent
 uma mudança pode ficar visível depois que o leitor já passou daquele segundo. Por isso o reconciliador não
 deve guardar o cursor entre execuções: cada execução começa em `updated_since` = início da última execução
 completa menos alguns minutos e segue `next_cursor` até `null`.
+
+Uma transação on-chain pode gerar mais de um depósito (um pagamento em lote a dois endereços, duas
+transferências de token para o mesmo endereço, duas saídas Bitcoin): cada depósito tem o seu
+`transaction_id`, que é a chave de crédito, e os mesmos `tx_hash` com `log_index` diferentes. `log_index`
+distingue a transferência das outras da mesma transação: `-1` para o valor nativo de uma transação EVM, TRON
+ou XRP, o índice do log `Transfer` no bloco (EVM e TRON), o índice da saída (`vout`, Bitcoin e Litecoin) ou a
+posição da conta creditada (Solana). Um depósito registado antes desta regra mantém `-1` até a transação ser varrida de novo, quando passa
+a ter a sua posição sem mudar de `transaction_id`. Nunca deduplique por `tx_hash`.
 
 Cada item (também em `GET /api/v1/transactions/{id}` e `GET /api/v1/users/{external_id}/transactions`) traz,
 com os mesmos nomes e formatos do `data` dos webhooks `deposit.*`: `transaction_id`, `amount_base_units`,
