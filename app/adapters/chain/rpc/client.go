@@ -244,7 +244,7 @@ func (c *RPCClient) exchange(ctx context.Context, rawURL, method string, params 
 			continue
 		}
 		result, kind, err := decodeRPCResponse(method, status, respBody)
-		if kind == outcomeUnsupported && MissingState(err) && !historicalRead(params) {
+		if kind == outcomeUnsupported && MissingState(err) && !historicalRead(method, params) {
 			// A node without the state of the current block is broken, not short of
 			// history: it counts as failing like any other outage.
 			kind = outcomeUnavailable

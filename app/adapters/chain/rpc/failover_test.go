@@ -1275,6 +1275,41 @@ func TestFailover_MissingState_OnACurrentReadIsAnEndpointFailure(t *testing.T) {
 	}
 }
 
+func TestFailover_MissingState_FindsTheBlockOfEveryReadShape(t *testing.T) {
+	const address = "0x1111111111111111111111111111111111111111"
+	cases := []struct {
+		name   string
+		method string
+		params []any
+		past   bool
+	}{
+		{"a past block with full transactions", "eth_getBlockByNumber", []any{"0x10", true}, true},
+		{"the latest block with full transactions", "eth_getBlockByNumber", []any{"latest", true}, false},
+		{"logs from a past block", "eth_getLogs", []any{map[string]any{"fromBlock": "0x10", "toBlock": "0x20"}}, true},
+		{"logs of a block by hash", "eth_getLogs", []any{map[string]any{"blockHash": "0xabc"}}, true},
+		{"logs of the latest block", "eth_getLogs", []any{map[string]any{"fromBlock": "latest", "toBlock": "latest"}}, false},
+		{"logs without a range", "eth_getLogs", []any{map[string]any{"address": address}}, false},
+		{"a storage slot at the latest block", "eth_getStorageAt", []any{address, "0x0", "latest"}, false},
+		{"a storage slot at a past block", "eth_getStorageAt", []any{address, "0x0", "0x10"}, true},
+		{"the earliest block", "eth_getBalance", []any{address, "earliest"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			broken := newFakeNode(t, answers(rpcFailure(-32000, "missing trie node")))
+			healthy := newFakeNode(t, answers(result(`"0x2a"`)))
+			client, _, _ := failoverClient(broken.URL(), healthy.URL())
+
+			require.NoError(t, client.Call(context.Background(), tc.method, nil, tc.params...))
+			failures := healthOf(client)[0].ConsecutiveFailures
+			if tc.past {
+				assert.Zero(t, failures, "a past block's state is history")
+			} else {
+				assert.Equal(t, 1, failures, "a node missing current state is broken")
+			}
+		})
+	}
+}
+
 func TestFailover_SolanaHistoryAnswers_MoveOnWithoutCountingAFailure(t *testing.T) {
 	for _, failure := range []func(string) (int, string){
 		answers(rpcFailure(-32001, "Block 512 cleaned up, does not exist on node. First available block: 900")),

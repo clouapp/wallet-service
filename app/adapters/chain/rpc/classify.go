@@ -179,19 +179,40 @@ func shapeRefused(err error) bool {
 	return errors.As(err, &rpcErr) && rpcErr != nil && rpcErr.Code == jsonRPCInvalidParams
 }
 
-// historicalRead reports a call that names a past block: its last parameter is an
-// explicit block number ("0x10") or an EIP-1898 block object. "latest", "pending",
-// "safe", "finalized", "earliest" and no block at all are current reads.
-func historicalRead(params []interface{}) bool {
+// historicalRead reports a call that names a past block: the block of
+// eth_getBlockByNumber and the block-number reads is their first parameter, an
+// eth_getLogs filter names it by blockHash, fromBlock or toBlock, and every other
+// read names it last. A past block is an explicit number ("0x10"), "earliest" or
+// an EIP-1898 block object; "latest", "pending", "safe", "finalized" and no block
+// at all are current reads.
+func historicalRead(method string, params []interface{}) bool {
 	if len(params) == 0 {
 		return false
 	}
-	switch block := params[len(params)-1].(type) {
+	switch method {
+	case "eth_getBlockByNumber", "eth_getBlockReceipts", "eth_getBlockTransactionCountByNumber", "eth_getTransactionByBlockNumberAndIndex":
+		return pastBlock(params[0])
+	case "eth_getLogs":
+		filter, ok := params[0].(map[string]interface{})
+		if !ok {
+			return false
+		}
+		if _, byHash := filter["blockHash"]; byHash {
+			return true
+		}
+		return pastBlock(filter["fromBlock"]) || pastBlock(filter["toBlock"])
+	}
+	return pastBlock(params[len(params)-1])
+}
+
+// pastBlock reports a block parameter that names a past block.
+func pastBlock(block interface{}) bool {
+	switch b := block.(type) {
 	case string:
-		return strings.HasPrefix(block, "0x") && len(block) <= len("0x")+16
+		return b == "earliest" || (strings.HasPrefix(b, "0x") && len(b) <= len("0x")+16)
 	case map[string]interface{}:
-		_, byHash := block["blockHash"]
-		_, byNumber := block["blockNumber"]
+		_, byHash := b["blockHash"]
+		_, byNumber := b["blockNumber"]
 		return byHash || byNumber
 	}
 	return false
