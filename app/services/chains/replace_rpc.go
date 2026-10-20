@@ -58,7 +58,7 @@ func NewReplaceRPC(deps ReplaceRPCDeps) *ReplaceRPC {
 // Replace asks rawURL which network it serves, then seals it and stores it for
 // chainID. An endpoint on another network than the chain's (or than the one the
 // profile moves the chain to), or one that does not answer, is refused and nothing
-// is written; a chain whose endpoints cannot be asked (Bitcoin family, TRON, XRP)
+// is written; a chain whose endpoints cannot be asked (the Bitcoin family)
 // is written unchecked, as before. skipNetworkCheck (artisan --skip-network-check,
 // never the platform API) writes without asking, says so in the line and logs a
 // warning. When the new primary serves the profile's network instead of the

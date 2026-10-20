@@ -75,6 +75,9 @@ func TestError_Mappers_KeepTheirBytes(t *testing.T) {
 		{"a concurrent execution", func(ctx http.Context) http.Response {
 			return MapWithdrawalError(ctx, &withdraw.ExecuteError{Err: withdraw.ErrConcurrentWithdraw})
 		}, 409, envelopeJSON, `{"error":{"code":"conflict","message":"withdrawal already in progress for this wallet"}}` + "\n"},
+		{"a retry whose earlier send is not verified yet", func(ctx http.Context) http.Response {
+			return MapWithdrawalError(ctx, &withdraw.ExecuteError{Err: fmt.Errorf("re-send: %w", sweep.ErrSendUnverified)})
+		}, 409, envelopeJSON, `{"error":{"code":"conflict","message":"the withdrawal's send could not be verified yet"}}` + "\n"},
 		{"an execution that failed for an unknown reason", func(ctx http.Context) http.Response {
 			return MapWithdrawalError(ctx, &withdraw.ExecuteError{Err: cause})
 		}, 500, legacyJSON, `{"error":{"code":"internal_error","message":"internal_error"}}`},

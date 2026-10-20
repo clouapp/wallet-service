@@ -41,7 +41,9 @@ const (
 
 // Methods whose answer is a signed transaction handed to the network. They move to
 // the next endpoint only when the previous one certainly did not accept the bytes
-// (notAccepted); a refusal "already known" from a later endpoint is a success.
+// (notAccepted); a refusal "already known" from any endpoint is a success: that
+// node holds these exact bytes (an earlier attempt, or a retry of bytes still in
+// its pool).
 var broadcastMethods = map[string]bool{
 	"eth_sendRawTransaction": true,
 	"sendTransaction":        true,
@@ -400,7 +402,7 @@ func (c *RPCClient) call(ctx context.Context, set *endpointSet, method string, o
 			}
 			c.served(set, cand, primaryLost)
 			pin.hold(cand.ep)
-			if broadcast && i > 0 && alreadyKnown(err) {
+			if broadcast && alreadyKnown(err) {
 				return &alreadyKnownError{cause: scrub(cand.ep.url, err)}
 			}
 			return scrub(cand.ep.url, err)
@@ -601,7 +603,7 @@ func servingCandidates(candidates []candidate, shape string, now time.Time) []ca
 
 // candidates is the pinned endpoint alone when the context holds one, else the
 // set's order.
-func (c *RPCClient) candidates(set *endpointSet, pin *endpointPin) ([]candidate, bool) {
+func (c *failover) candidates(set *endpointSet, pin *endpointPin) ([]candidate, bool) {
 	if held := pin.held(); held != nil {
 		return []candidate{set.find(held)}, true
 	}
@@ -655,7 +657,7 @@ func attemptContext(ctx context.Context, remaining int, broadcast bool) (context
 // list and is logged at error level; one that cannot answer counts a failure and is
 // asked next time. When the primary itself serves another network than the record
 // says (moved, not yet aligned), no fallback is used and that is logged once.
-func (c *RPCClient) verifyIdentity(ctx context.Context, set *endpointSet, cand candidate, remaining int) error {
+func (c *failover) verifyIdentity(ctx context.Context, set *endpointSet, cand candidate, remaining int) error {
 	if c.identity == nil {
 		return nil
 	}
@@ -678,7 +680,7 @@ func (c *RPCClient) verifyIdentity(ctx context.Context, set *endpointSet, cand c
 	}
 	attemptCtx, cancel := attemptContext(ctx, remaining, false)
 	defer cancel()
-	network, err := c.identity(attemptCtx, endpointCaller{client: c, url: cand.ep.url})
+	network, err := c.identity(attemptCtx, cand.ep.url)
 	if err != nil {
 		err = scrub(cand.ep.url, err)
 		// The caller's own deadline is not the endpoint's failure.
@@ -714,7 +716,7 @@ const (
 // (primaryIdentityTimeout) and is asked again after primaryIdentityRetry while it gets
 // no answer. A caller waits for it at most half of its own time left, so a primary
 // that hangs never takes the time a fallback needs to answer.
-func (c *RPCClient) primaryIdentity(ctx context.Context, set *endpointSet) string {
+func (c *failover) primaryIdentity(ctx context.Context, set *endpointSet) string {
 	if done := c.askPrimaryIdentity(set); done != nil {
 		wait := primaryIdentityTimeout
 		if deadline, bounded := ctx.Deadline(); bounded {
@@ -738,7 +740,7 @@ func (c *RPCClient) primaryIdentity(ctx context.Context, set *endpointSet) strin
 // askPrimaryIdentity starts the question to the primary when it is due and returns
 // a channel closed when the question in flight ends; nil when the answer is known or
 // no question is due.
-func (c *RPCClient) askPrimaryIdentity(set *endpointSet) <-chan struct{} {
+func (c *failover) askPrimaryIdentity(set *endpointSet) <-chan struct{} {
 	now := c.now()
 	set.identityMu.Lock()
 	defer set.identityMu.Unlock()
@@ -758,7 +760,7 @@ func (c *RPCClient) askPrimaryIdentity(set *endpointSet) <-chan struct{} {
 		defer close(done)
 		askCtx, cancel := context.WithTimeout(context.Background(), primaryIdentityTimeout)
 		defer cancel()
-		network, err := c.identity(askCtx, endpointCaller{client: c, url: primary})
+		network, err := c.identity(askCtx, primary)
 		set.identityMu.Lock()
 		defer set.identityMu.Unlock()
 		set.identityAsking = nil
@@ -769,13 +771,13 @@ func (c *RPCClient) askPrimaryIdentity(set *endpointSet) <-chan struct{} {
 	return done
 }
 
-func (c *RPCClient) succeeded(set *endpointSet, cand candidate) {
+func (c *failover) succeeded(set *endpointSet, cand candidate) {
 	if cand.ep.succeed() {
 		c.report(set)
 	}
 }
 
-func (c *RPCClient) failed(set *endpointSet, cand candidate, kind outcome, err error) {
+func (c *failover) failed(set *endpointSet, cand candidate, kind outcome, err error) {
 	label := failureLabel(kind, err)
 	cooldown, changed := cand.ep.fail(c.now(), label)
 	if cooldown > 0 && len(set.members) > 1 {
@@ -789,7 +791,7 @@ func (c *RPCClient) failed(set *endpointSet, cand candidate, kind outcome, err e
 
 // served notes which endpoint answered and logs a switch away from the primary
 // (only when the primary failed or was skipped) and the way back to it.
-func (c *RPCClient) served(set *endpointSet, cand candidate, primaryLost bool) {
+func (c *failover) served(set *endpointSet, cand candidate, primaryLost bool) {
 	if len(set.members) < 2 {
 		return
 	}
@@ -805,7 +807,7 @@ func (c *RPCClient) served(set *endpointSet, cand candidate, primaryLost bool) {
 	}
 }
 
-func (c *RPCClient) report(set *endpointSet) {
+func (c *failover) report(set *endpointSet) {
 	if c.health == nil || c.chainID == "" {
 		return
 	}
@@ -834,10 +836,10 @@ func isJSONNull(result json.RawMessage) bool {
 	return bytes.Equal(bytes.TrimSpace(result), []byte("null"))
 }
 
-// ErrBroadcastAlreadyKnown is a broadcast that a later endpoint refused because the
-// network already holds these exact bytes, after an earlier endpoint certainly did
-// not accept them. The transaction was broadcast; its hash is the one computed
-// locally from the signed bytes.
+// ErrBroadcastAlreadyKnown is a broadcast that an endpoint refused because it
+// already holds these exact bytes (an earlier attempt, or a retry of bytes still in
+// its pool). The transaction was broadcast; its hash is the one computed locally
+// from the signed bytes.
 var ErrBroadcastAlreadyKnown = errors.New("transaction already known to the network")
 
 type alreadyKnownError struct {

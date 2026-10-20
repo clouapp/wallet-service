@@ -100,10 +100,8 @@ func TestOpen_ChainFallbacks_IgnoresThemForAnAdapterThatDoesNotFailOverThroughTh
 	t.Cleanup(func() { openActiveChainEndpoint = previous })
 	openActiveChainEndpoint = func(stored string) (string, error) { return "https://" + strings.TrimPrefix(stored, "sealed-"), nil }
 
-	for _, adapterType := range []string{models.AdapterTypeBitcoin, models.AdapterTypeTron, models.AdapterTypeXRP} {
-		if got := openChainFallbacks(models.Chain{ID: "x", AdapterType: adapterType, RPCFallbacks: []models.ChainRPCEndpoint{{URL: "sealed-a", Position: 2}}}, ""); got != nil {
-			t.Fatalf("%s: fallbacks = %v", adapterType, got)
-		}
+	if got := openChainFallbacks(models.Chain{ID: models.ChainBTC, AdapterType: models.AdapterTypeBitcoin, RPCFallbacks: []models.ChainRPCEndpoint{{URL: "sealed-a", Position: 2}}}, models.NetworkBitcoinTestnet); got != nil {
+		t.Fatalf("bitcoin: fallbacks = %v", got)
 	}
 	got := openChainFallbacks(models.Chain{ID: models.ChainSOL, AdapterType: models.AdapterTypeSolana, RPCFallbacks: []models.ChainRPCEndpoint{
 		{URL: "sealed-a", Position: 2}, {URL: "sealed-b", Position: 3},
@@ -159,4 +157,58 @@ func TestRegister_ActiveChains_InstallsNoFallbackWithoutANetworkToCheckThemAgain
 	assert.Nil(t, openChainFallbacks(models.Chain{ID: "x", AdapterType: models.AdapterTypeEVM, RPCFallbacks: rows[0].RPCFallbacks}, ""))
 	assert.Nil(t, openChainFallbacks(models.Chain{ID: models.ChainSOL, AdapterType: models.AdapterTypeSolana, RPCFallbacks: rows[0].RPCFallbacks}, ""),
 		"a Solana chain whose cluster is unknown has no genesis to check against")
+}
+
+func TestOpen_ChainFallbacks_GivesTRONAndXRPTheirFallbacksOnAKnownNetworkOnly(t *testing.T) {
+	previous := openActiveChainEndpoint
+	t.Cleanup(func() { openActiveChainEndpoint = previous })
+	openActiveChainEndpoint = func(stored string) (string, error) { return "https://" + strings.TrimPrefix(stored, "sealed-"), nil }
+	rows := []models.ChainRPCEndpoint{{URL: "sealed-a", Position: 2}}
+
+	for adapterType, network := range map[string]string{models.AdapterTypeTron: models.NetworkTronNile, models.AdapterTypeXRP: models.NetworkXRPLTestnet} {
+		got := openChainFallbacks(models.Chain{ID: "x", AdapterType: adapterType, RPCFallbacks: rows}, network)
+		assert.Equal(t, []chainpkg.RPCFallback{{URL: "https://a", Position: 2}}, got, adapterType)
+		assert.Nil(t, openChainFallbacks(models.Chain{ID: "x", AdapterType: adapterType, RPCFallbacks: rows}, "unknown"),
+			"%s: a network without a known identity gets no fallback", adapterType)
+	}
+}
+
+func TestRegister_ActiveChains_GivesATRONChainAFallbackOfItsNetwork(t *testing.T) {
+	var headCalls atomic.Int32
+	nile := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		switch {
+		case r.URL.Path == "/wallet/getblockbynum" && strings.Contains(string(body), `"num":0`):
+			_, _ = io.WriteString(w, `{"blockID":"`+models.TronGenesisBlockID(models.NetworkTronNile)+`"}`)
+		case r.URL.Path == "/wallet/getblock":
+			headCalls.Add(1)
+			_, _ = io.WriteString(w, `{"blockID":"00000000044380e58a4462a4d528c77ed871164034c42047cdbecfce85ca8ce0","block_header":{"raw_data":{"number":71532773,"timestamp":1791126834000}}}`)
+		default:
+			http.Error(w, "unexpected", http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(nile.Close)
+	previous := openActiveChainEndpoint
+	t.Cleanup(func() { openActiveChainEndpoint = previous })
+	opened := map[string]string{"sealed-primary": refusedURL(t), "sealed-nile": nile.URL}
+	openActiveChainEndpoint = func(stored string) (string, error) {
+		if url, ok := opened[stored]; ok {
+			return url, nil
+		}
+		return "", errors.New("open chain rpc")
+	}
+	rows := []models.Chain{{
+		ID: models.ChainTron, Name: "TRON Nile", AdapterType: models.AdapterTypeTron, NativeSymbol: models.NativeTRX,
+		NativeDecimals: 6, IsTestnet: true, RequiredConfirmations: 20, RpcURL: "sealed-primary",
+		RPCFallbacks: []models.ChainRPCEndpoint{{URL: "sealed-nile", Position: 2}},
+	}}
+
+	reg := chainpkg.NewRegistry()
+	registerActiveChains(reg, rows, nil)
+	trx, err := reg.Chain(models.ChainTron)
+	require.NoError(t, err)
+	head, err := trx.GetLatestBlock(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, uint64(71532773), head)
+	assert.Equal(t, int32(1), headCalls.Load())
 }

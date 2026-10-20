@@ -2698,7 +2698,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "The ordered endpoints of the chain: position 1 is the primary (rpc_url), the others are the fallbacks tried in order when the ones before cannot serve a call. Each endpoint is its host and a fingerprint of its URL; no URL is returned. health is what a running process last recorded for it (consecutive failures, the cool-down it is skipped until, the last error, whether it serves another network); null when none did. With probe=true each endpoint is asked now for its network and head. failsOver is false for a chain whose adapter does not use the fallbacks (Bitcoin family, TRON, XRP). An unknown chain is 404 for a platform admin.",
+                "description": "The ordered endpoints of the chain: position 1 is the primary (rpc_url), the others are the fallbacks tried in order when the ones before cannot serve a call. Each endpoint is its host and a fingerprint of its URL; no URL is returned. health is what a running process last recorded for it (consecutive failures, the cool-down it is skipped until, the last error, whether it serves another network); null when none did. With probe=true each endpoint is asked now for its network and head. failsOver is false for a chain whose adapter does not use the fallbacks (the Bitcoin family). An unknown chain is 404 for a platform admin.",
                 "produces": [
                     "application/json"
                 ],
@@ -2828,7 +2828,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Body {\"url\", \"position\"}: an http(s) URL or env:NAME, at the end of the list or at position (1 makes it the primary and moves the others down). The endpoint is first asked which network it serves (eth_chainId on EVM, getGenesisHash on Solana); one on another network, one that does not answer, a URL already in the list or a chain whose adapter does not use the list (Bitcoin family, TRON, XRP) is 422 and nothing is written. The URL is sealed and never returned. The process that answers uses the new list at once; the others load it on restart. An unknown chain is 404 for a platform admin.",
+                "description": "Body {\"url\", \"position\"}: an http(s) URL or env:NAME, at the end of the list or at position (1 makes it the primary and moves the others down). The endpoint is first asked which network it serves (eth_chainId on EVM, getGenesisHash on Solana, block 0 on TRON, server_info network_id on XRP); one on another network, one that does not answer, a URL already in the list or a chain whose adapter does not use the list (the Bitcoin family) is 422 and nothing is written. The URL is sealed and never returned. The process that answers uses the new list at once; the others load it on restart. An unknown chain is 404 for a platform admin.",
                 "consumes": [
                     "application/json"
                 ],

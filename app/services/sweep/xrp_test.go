@@ -334,7 +334,7 @@ func TestExecutePlan_XRPTaggedPaymentRecordsTheTagAndItsLastLedger(t *testing.T)
 	if row.DestinationTag == nil || *row.DestinationTag != tag {
 		t.Fatalf("row tag %v", row.DestinationTag)
 	}
-	if row.RawPayload != `{"last_ledger_sequence":120}` {
+	if row.RawPayload != `{"broadcast_outcome":"accepted","last_ledger_sequence":120}` {
 		t.Fatalf("raw payload %s", row.RawPayload)
 	}
 }

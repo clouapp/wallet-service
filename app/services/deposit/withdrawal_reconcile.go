@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -72,8 +73,9 @@ type WithdrawalReconcileReport struct {
 // outbound transaction named by its own id; see reconcileTarget, which also finds
 // the transfer of a withdrawal sent but never linked, and links it with Apply): it
 // reads the transaction by its hash on every endpoint (chain.TransactionSearcher),
-// then, for an EVM row with its sender nonce, the transaction that spent the nonce
-// (positive proof, whatever the broadcast answered), then an expiry the chain can
+// then, for an EVM row with its sender nonce, the transaction that spent the nonce,
+// or, for a Bitcoin-family row with its inputs, the transactions that spent them
+// (positive proofs, whatever the broadcast answered), then an expiry the chain can
 // prove (XRP, Solana). Landed records its block (the tracker then confirms it by its
 // confirmations); failed fails the transaction and its withdrawal and sends
 // withdrawal.failed once; unknown says why and changes nothing. Nothing is written
@@ -185,6 +187,12 @@ func (s *Service) judge(ctx context.Context, adapter types.Chain, tx models.Tran
 			}
 		}
 	}
+	if reader, ok := adapter.(chain.InputsSpendReader); ok {
+		if inputs, ok := spentInputsOf(tx); ok {
+			s.judgeInputsSpend(ctx, reader, tx, inputs, report)
+			return
+		}
+	}
 	expired, err := s.expiryOf(ctx, adapter, tx, false, record)
 	switch {
 	case err != nil:
@@ -197,6 +205,31 @@ func (s *Service) judge(ctx context.Context, adapter types.Chain, tx models.Tran
 	}
 }
 
+// judgeInputsSpend reads who spent the inputs of a Bitcoin-family transfer into
+// report: every one spent by other transactions paying someone else, at the
+// double-spend depth, fails it not_landed; spent by itself or by a copy paying the
+// same in a block (and none of our other rows), it landed.
+func (s *Service) judgeInputsSpend(ctx context.Context, reader chain.InputsSpendReader, tx models.Transaction, inputs []string, report *WithdrawalReconcileReport) {
+	spend, err := reader.InputsSpend(ctx, s.inputsQueryOf(ctx, tx, inputs))
+	switch {
+	case err != nil:
+		report.Verdict, report.Reason = ReconcileUnknown, "who spent its inputs cannot be read: "+chain.ClientText(err)
+	case spend.Conflicted:
+		report.Verdict, report.Block, report.FailureCode = ReconcileFailed, spend.Block, models.WithdrawalFailureNotLanded
+		report.Reason = fmt.Sprintf("other transactions paying someone else spent all %d of its inputs, the last in block %d", len(inputs), spend.Block)
+	case spend.Ours && spend.Block > 0 && spend.TxHash != "" && !strings.EqualFold(spend.TxHash, tx.TxHash):
+		report.Verdict, report.Block = ReconcileLanded, spend.Block
+		report.Reason = fmt.Sprintf("a copy paying the same (%s) spent its inputs in block %d", spend.TxHash, spend.Block)
+	case spend.Ours && spend.Block > 0:
+		report.Verdict, report.Block = ReconcileLanded, spend.Block
+		report.Reason = fmt.Sprintf("it spent its inputs in block %d", spend.Block)
+	case spend.Ours:
+		report.Verdict, report.Reason = ReconcileUnknown, "it spent its inputs in the mempool, not in a block yet"
+	default:
+		report.Verdict, report.Reason = ReconcileUnknown, "no endpoint has the transaction and its inputs are not all spent by another one at the confirmation depth"
+	}
+}
+
 // applyReconciliation records a landed or failed verdict.
 func (s *Service) applyReconciliation(ctx context.Context, adapter types.Chain, tx models.Transaction, report *WithdrawalReconcileReport) {
 	switch report.Verdict {
@@ -205,6 +238,7 @@ func (s *Service) applyReconciliation(ctx context.Context, adapter types.Chain, 
 			report.Reason += "; the block could not be recorded: " + err.Error()
 			return
 		}
+		s.forgetSignedBytes(ctx, tx)
 		report.Applied = true
 	case ReconcileFailed:
 		block := report.Block
