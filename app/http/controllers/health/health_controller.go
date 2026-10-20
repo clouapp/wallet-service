@@ -30,9 +30,6 @@ func NewHealthController(deposits *deposit.Service) *HealthController {
 //	@Success		200	{object}	resources.Health
 //	@Router			/health [get]
 func (c *HealthController) Show(ctx http.Context) http.Response {
-	return ctx.Response().Success().Json(resources.NewHealth(
-		c.deposits.PendingHealth(ctx.Context()),
-		c.deposits.StaleOutboundHealth(ctx.Context()),
-		c.deposits.ScanActivityHealth(ctx.Context()),
-	))
+	readings := c.deposits.Health(ctx.Context())
+	return ctx.Response().Success().Json(resources.NewHealth(readings.Pending, readings.Stale, readings.Activity))
 }

@@ -68,6 +68,8 @@ type Service struct {
 	// staleAfter is how long an outbound transfer may stay unsettled (stale_outbound.go).
 	staleAfter time.Duration
 	staleCache healthSnapshot[StaleOutboundHealth]
+	// pendingCache is the health check's reading of the pending blocks (pending_blocks.go).
+	pendingCache healthSnapshot[PendingHealth]
 	// activity records each completed scan cycle; activityCache is the health
 	// check's reading of it and scanAlerts the tracker's thresholds (scan_activity.go,
 	// scan_alerts.go).

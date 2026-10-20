@@ -68,3 +68,30 @@ func TestIngest_WithoutARecorderRecordsNothing(t *testing.T) {
 	svc := pushService(nil)
 	assert.NoError(t, svc.Ingest(t.Context(), InboundEvent{ChainID: "eth"}))
 }
+
+// hungPushes is a PushRecorder whose store never answers until released, like a
+// Redis that accepts the connection and goes silent.
+type hungPushes struct {
+	release chan struct{}
+	ctxErr  chan error
+}
+
+func (h *hungPushes) RecordPush(ctx context.Context, _ string, _ time.Time) error {
+	<-h.release
+	h.ctxErr <- ctx.Err()
+	return nil
+}
+
+func TestIngest_AStoreThatDoesNotAnswerHoldsTheWebhookAtMostThePushBudget(t *testing.T) {
+	pushes := &hungPushes{release: make(chan struct{}), ctxErr: make(chan error, 1)}
+	svc := pushService(pushes)
+
+	started := time.Now()
+	require.NoError(t, svc.Ingest(t.Context(), InboundEvent{ChainID: "eth"}))
+	if waited := time.Since(started); waited > pushWriteBudget+300*time.Millisecond {
+		t.Fatalf("the webhook waited %s for its push note, budget %s", waited, pushWriteBudget)
+	}
+
+	close(pushes.release)
+	assert.NoError(t, <-pushes.ctxErr, "the note keeps its own deadline after the webhook answered")
+}
