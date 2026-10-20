@@ -54,6 +54,7 @@ type Service struct {
 	webhookConfigRepo configStore
 	webhookEventRepo  eventStore
 	deliverySettings  deliverySettingsSource
+	now               func() time.Time
 }
 
 // Deps is everything the webhook service needs. A nil field means that
@@ -62,6 +63,8 @@ type Deps struct {
 	SQS     queue.Sender
 	Configs configStore
 	Events  eventStore
+	// Now is the clock a delivery is signed with (X-Vault-Timestamp); nil is time.Now.
+	Now func() time.Time
 }
 
 // NewService wires the webhook service from Deps.
@@ -70,7 +73,16 @@ func NewService(deps Deps) *Service {
 		sqs:               deps.SQS,
 		webhookConfigRepo: deps.Configs,
 		webhookEventRepo:  deps.Events,
+		now:               deps.Now,
 	}
+}
+
+// sendTime is the clock a delivery is signed with: Deps.Now, or time.Now.
+func (s *Service) sendTime() time.Time {
+	if s.now == nil {
+		return time.Now()
+	}
+	return s.now()
 }
 
 // EnqueueEvent creates webhook events for the matching configs and sends them to SQS.
@@ -402,7 +414,7 @@ func (s *Service) deliver(ctx context.Context, msg types.WebhookMessage) (bool, 
 	if err != nil {
 		return false, err
 	}
-	resp, err := postSignedWebhook(ctx, msg.DeliveryURL, secret, msg.Payload, string(msg.EventType), msg.EventID, s.resolveDeliverySettings(ctx).Timeout)
+	resp, err := s.postSignedWebhook(ctx, msg.DeliveryURL, secret, msg.Payload, string(msg.EventType), msg.EventID, s.resolveDeliverySettings(ctx).Timeout)
 	if err != nil {
 		if httpclient.IsBuild(err) {
 			return false, fmt.Errorf("build request: %w", err)
@@ -411,7 +423,7 @@ func (s *Service) deliver(ctx context.Context, msg types.WebhookMessage) (bool, 
 		return false, fmt.Errorf("http send: %w", err)
 	}
 
-	if resp.StatusCode >= httpclient.StatusBadRequest {
+	if !delivered2xx(resp.StatusCode) {
 		errMsg := fmt.Sprintf("HTTP %d", resp.StatusCode)
 		s.markAttempt(ctx, msg.EventID, errMsg)
 		return false, fmt.Errorf("delivery failed: %s", errMsg)
@@ -474,12 +486,12 @@ func (s *Service) SendTest(ctx context.Context, cfg *models.WebhookConfig, walle
 		return fmt.Errorf("marshal webhook test: %w", err)
 	}
 
-	resp, err := postSignedWebhook(ctx, cfg.URL, cfg.Secret, string(payload), webhookTestEvent, eventID, webhookTestTimeout)
+	resp, err := s.postSignedWebhook(ctx, cfg.URL, cfg.Secret, string(payload), webhookTestEvent, eventID, webhookTestTimeout)
 	if err != nil {
 		slog.Info("webhook test delivery failed", "webhook_id", cfg.ID.String(), "url", cfg.URL)
 		return fmt.Errorf("webhook test delivery failed: %w", err)
 	}
-	if resp.StatusCode >= httpclient.StatusBadRequest {
+	if !delivered2xx(resp.StatusCode) {
 		slog.Info("webhook test delivery rejected", "webhook_id", cfg.ID.String(), "url", cfg.URL, "status", resp.StatusCode)
 		return fmt.Errorf("webhook test delivery failed: HTTP %d", resp.StatusCode)
 	}
@@ -487,15 +499,23 @@ func (s *Service) SendTest(ctx context.Context, cfg *models.WebhookConfig, walle
 	return nil
 }
 
-// postSignedWebhook signs payload now and posts it. The timestamp is taken here,
-// at send time, for every attempt: nothing stores or queues a signature.
-func postSignedWebhook(ctx context.Context, deliveryURL, secret, payload, eventType, eventID string, timeout time.Duration) (httpclient.Response, error) {
+// delivered2xx reports whether a receiver's answer counts as a delivery. Only a 2xx
+// does: the delivery client does not follow redirects, so a 3xx is a failed attempt
+// like a 4xx or a 5xx, and the event is sent again.
+func delivered2xx(status int) bool {
+	return status >= httpclient.StatusOK && status < httpclient.StatusMultipleChoices
+}
+
+// postSignedWebhook signs payload now and posts it. The timestamp is read from the
+// service clock here, at send time, for every attempt: nothing stores or queues a
+// signature.
+func (s *Service) postSignedWebhook(ctx context.Context, deliveryURL, secret, payload, eventType, eventID string, timeout time.Duration) (httpclient.Response, error) {
 	client := NewDeliveryClient()
 	if client == nil {
 		return httpclient.Response{}, fmt.Errorf("webhook delivery client is not configured")
 	}
 	body := []byte(payload)
-	timestamp := time.Now().Unix()
+	timestamp := s.sendTime().Unix()
 	signature, signatureV2 := signDelivery(secret, body, timestamp)
 	return client.Post(ctx, SignedDelivery{
 		URL:         deliveryURL,

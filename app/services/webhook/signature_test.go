@@ -118,8 +118,16 @@ func TestDeliver_Signature_SignsTheTimestampAndTheBodyInSignatureV2(t *testing.T
 	assertSignedAt(t, got, signatureSecret, before, after)
 }
 
-func TestDeliver_Signature_EachAttemptIsSignedWhenItIsSent(t *testing.T) {
-	svc, store := newMemoryWebhookService()
+func TestDeliver_Signature_EachAttemptIsSignedWithItsOwnSendTime(t *testing.T) {
+	store := newMemoryWebhook()
+	sendTimes := []int64{1760950000, 1760950042}
+	var clockReads int
+	clock := func() time.Time {
+		at := sendTimes[min(clockReads, len(sendTimes)-1)]
+		clockReads++
+		return time.Unix(at, 0)
+	}
+	svc := NewService(Deps{Configs: store, Events: memoryEvents{store: store}, Now: clock})
 	receiver := &signatureReceiver{status: http.StatusServiceUnavailable}
 	server := httptest.NewServer(receiver)
 	defer server.Close()
@@ -129,30 +137,70 @@ func TestDeliver_Signature_EachAttemptIsSignedWhenItIsSent(t *testing.T) {
 	}
 	eventID := uuid.New()
 	payload := `{"type":"deposit.confirmed"}`
-	if err := store.addEvent(&models.WebhookEvent{ID: eventID, WebhookConfigID: &cfg.ID, EventType: string(types.EventDepositConfirmed), Payload: payload, DeliveryURL: server.URL, MaxAttempts: 10}); err != nil {
-		t.Fatal(err)
+	if addErr := store.addEvent(&models.WebhookEvent{ID: eventID, WebhookConfigID: &cfg.ID, EventType: string(types.EventDepositConfirmed), Payload: payload, DeliveryURL: server.URL, MaxAttempts: 10}); addErr != nil {
+		t.Fatal(addErr)
 	}
 	msg := types.WebhookMessage{
 		EventID: eventID.String(), EventType: types.EventDepositConfirmed, Payload: payload,
 		DeliveryURL: server.URL, ConfigID: cfg.ID.String(), Attempt: 1,
 	}
 
-	for attempt := 1; attempt <= 2; attempt++ {
-		msg.Attempt = attempt
-		before := time.Now().Unix()
-		deliverErr := svc.Deliver(context.Background(), msg)
-		after := time.Now().Unix()
-		if attempt == 1 && deliverErr == nil {
-			t.Fatal("a 503 must fail the attempt so the queue retries it")
-		}
-		if attempt == 2 && deliverErr != nil {
-			t.Fatalf("retry: %v", deliverErr)
-		}
-		assertSignedAt(t, receiver.last(t), signatureSecret, before, after)
-		receiver.status = http.StatusOK
+	if err := svc.Deliver(context.Background(), msg); err == nil {
+		t.Fatal("a 503 must fail the attempt so the queue retries it")
 	}
+	receiver.status = http.StatusOK
+	msg.Attempt = 2
+	if err := svc.Deliver(context.Background(), msg); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+
 	if len(receiver.requests) != 2 {
 		t.Fatalf("receiver got %d deliveries, want 2", len(receiver.requests))
+	}
+	first := assertSignedAt(t, receiver.requests[0], signatureSecret, sendTimes[0], sendTimes[0])
+	retry := assertSignedAt(t, receiver.requests[1], signatureSecret, sendTimes[1], sendTimes[1])
+	if first == retry || receiver.requests[0].v2 == receiver.requests[1].v2 {
+		t.Fatal("the retry reused the first attempt's timestamp and signature")
+	}
+}
+
+func TestDeliver_Redirect_IsAFailedAttemptNotADelivery(t *testing.T) {
+	svc, store := newMemoryWebhookService()
+	receiver := &signatureReceiver{status: http.StatusFound}
+	server := httptest.NewServer(receiver)
+	defer server.Close()
+	cfg, err := svc.CreateConfig(context.Background(), server.URL, signatureSecret, []string{string(types.EventDepositConfirmed)}, nil)
+	if err != nil {
+		t.Fatalf("CreateConfig: %v", err)
+	}
+	eventID := uuid.New()
+	payload := `{"type":"deposit.confirmed"}`
+	if addErr := store.addEvent(&models.WebhookEvent{ID: eventID, WebhookConfigID: &cfg.ID, EventType: string(types.EventDepositConfirmed), Payload: payload, DeliveryURL: server.URL, MaxAttempts: 10}); addErr != nil {
+		t.Fatal(addErr)
+	}
+
+	err = svc.Deliver(context.Background(), types.WebhookMessage{
+		EventID: eventID.String(), EventType: types.EventDepositConfirmed, Payload: payload,
+		DeliveryURL: server.URL, ConfigID: cfg.ID.String(), Attempt: 1,
+	})
+	if err == nil {
+		t.Fatal("a 3xx answer must fail the delivery so it is retried")
+	}
+	stored := store.listEvents()[0]
+	if stored.DeliveryStatus != models.WebhookDeliveryPending || stored.Attempts != 1 {
+		t.Fatalf("event = %s with %d attempts; want pending with the attempt counted", stored.DeliveryStatus, stored.Attempts)
+	}
+}
+
+func TestSendTest_Redirect_IsAFailure(t *testing.T) {
+	svc, _ := newMemoryWebhookService()
+	receiver := &signatureReceiver{status: http.StatusMovedPermanently}
+	server := httptest.NewServer(receiver)
+	defer server.Close()
+	cfg := &models.WebhookConfig{ID: uuid.New(), URL: server.URL, Secret: signatureSecret, IsActive: true}
+
+	if err := svc.SendTest(context.Background(), cfg, uuid.New()); err == nil {
+		t.Fatal("a 3xx answer to webhook.test must be reported as a failure")
 	}
 }
 

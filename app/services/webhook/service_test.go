@@ -37,7 +37,7 @@ func (testHTTPDelivery) Post(ctx context.Context, call SignedDelivery) (httpclie
 	if call.Timeout <= 0 {
 		return httpclient.Response{}, fmt.Errorf("webhook delivery: timeout is required")
 	}
-	return httpclient.NewClient(call.Timeout).Do(ctx, httpclient.Request{
+	return httpclient.NewClientWithoutRedirects(call.Timeout).Do(ctx, httpclient.Request{
 		Method: httpclient.MethodPost,
 		URL:    call.URL,
 		Header: map[string]string{

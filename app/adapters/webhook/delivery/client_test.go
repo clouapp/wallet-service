@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
 func TestPost_Sends_TheSignedBodyUnchanged(t *testing.T) {
@@ -143,13 +144,14 @@ func TestPost_Requires_AContextAndATimeout(t *testing.T) {
 		DeliveryID:  "delivery-1",
 		Timeout:     time.Second,
 	}
-	if _, err := NewClient().Post(nil, call); err == nil || called {
-		t.Fatal("a nil context was posted")
+	var noContext context.Context // a nil context is the case under test
+	if _, err := NewClient().Post(noContext, call); !httpclient.IsBuild(err) || called {
+		t.Fatal("a nil context was posted, or its refusal was not a not-sent (build) error")
 	}
 	withoutTimeout := call
 	withoutTimeout.Timeout = 0
-	if _, err := NewClient().Post(context.Background(), withoutTimeout); err == nil || called {
-		t.Fatal("a delivery without a timeout was posted")
+	if _, err := NewClient().Post(context.Background(), withoutTimeout); !httpclient.IsBuild(err) || called {
+		t.Fatal("a delivery without a timeout was posted, or its refusal was not a not-sent (build) error")
 	}
 }
 
@@ -170,14 +172,49 @@ func TestPost_Requires_TheTimestampedSignature(t *testing.T) {
 		DeliveryID:  "delivery-1",
 		Timeout:     time.Second,
 	}
+	// A refusal here is a build error: the delivery never left, so the service does
+	// not count it as an attempt.
 	withoutTimestamp := call
 	withoutTimestamp.Timestamp = 0
-	if _, err := NewClient().Post(context.Background(), withoutTimestamp); err == nil || called {
-		t.Fatal("a delivery without the time it was signed at was posted")
+	if _, err := NewClient().Post(context.Background(), withoutTimestamp); !httpclient.IsBuild(err) || called {
+		t.Fatal("a delivery without the time it was signed at was posted, or refused as a sent attempt")
 	}
 	withoutSignatureV2 := call
 	withoutSignatureV2.SignatureV2 = ""
-	if _, err := NewClient().Post(context.Background(), withoutSignatureV2); err == nil || called {
-		t.Fatal("a delivery without X-Vault-Signature-V2 was posted")
+	if _, err := NewClient().Post(context.Background(), withoutSignatureV2); !httpclient.IsBuild(err) || called {
+		t.Fatal("a delivery without X-Vault-Signature-V2 was posted, or refused as a sent attempt")
+	}
+}
+
+func TestPost_DoesNotFollowARedirectWithTheSignatures(t *testing.T) {
+	var forwarded http.Header
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwarded = r.Header.Clone()
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(target.Close)
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(redirect.Close)
+
+	resp, err := NewClient().Post(context.Background(), webhook.SignedDelivery{
+		URL:         redirect.URL,
+		Body:        []byte("{}"),
+		Signature:   "sig",
+		SignatureV2: "t=1760950000,v1=sig",
+		Timestamp:   1760950000,
+		EventType:   "deposit.confirmed",
+		DeliveryID:  "delivery-1",
+		Timeout:     time.Second,
+	})
+	if err != nil {
+		t.Fatalf("Post: %v", err)
+	}
+	if resp.StatusCode != http.StatusTemporaryRedirect {
+		t.Fatalf("status = %d, want the 307 itself", resp.StatusCode)
+	}
+	if forwarded != nil {
+		t.Fatal("the redirect was followed and the signed headers went to another URL")
 	}
 }
