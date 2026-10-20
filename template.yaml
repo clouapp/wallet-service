@@ -61,6 +61,32 @@ Parameters:
     Default: ""
     Description: Public base URL for provider webhook ingest endpoints (e.g. API Gateway URL)
 
+  DepositScanAlertLagBlocks:
+    Type: String
+    Default: "0"
+    AllowedPattern: "^[0-9]+$"
+    Description: >
+      The confirmation tracker warns about a scanned chain whose checkpoint trails the
+      head by more blocks than this (0: the chain's catch-up window).
+
+  DepositScanAlertStaleMinutes:
+    Type: String
+    Default: "10"
+    AllowedPattern: "^[0-9]+$"
+    Description: >
+      The confirmation tracker warns about a scanned chain without a completed scan
+      cycle for longer than this many minutes.
+
+  AlarmTopicArn:
+    Type: String
+    Default: ""
+    Description: >
+      SNS topic the CloudWatch alarms notify (in alarm and back to OK). Empty: the
+      alarms only change state.
+
+Conditions:
+  HasAlarmTopic: !Not [!Equals [!Ref AlarmTopicArn, ""]]
+
 # ---------------------------------------------------------------------------
 # Globals
 # ---------------------------------------------------------------------------
@@ -141,7 +167,11 @@ Resources:
             Path: /health
             Method: GET
 
-  # --- Deposit Scanner (runs every 10s via EventBridge) ---
+  # --- Deposit Scanner (on demand only, no schedule) ---
+  # Deposit scanning is not scheduled here. EventBridge rates start at 1 minute,
+  # while the scan loops pace each chain in seconds (LOCAL_DEPOSIT_SCAN_INTERVAL_SECONDS)
+  # in the long-running worker service of docs/PRODUCTION_RUNTIME.md, which scans
+  # every chain. The function stays for one-off invocations with {"chain": "<id>"}.
   DepositScannerFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -158,35 +188,6 @@ Resources:
       Policies:
         - SQSSendMessagePolicy:
             QueueName: !GetAtt WebhookQueue.QueueName
-      Events:
-        ScheduleEth:
-          Type: Schedule
-          Properties:
-            Name: !Sub "vault-scan-eth-${Environment}"
-            Schedule: rate(15 seconds)
-            Input: '{"chain": "eth"}'
-            Enabled: true
-        SchedulePolygon:
-          Type: Schedule
-          Properties:
-            Name: !Sub "vault-scan-polygon-${Environment}"
-            Schedule: rate(5 seconds)
-            Input: '{"chain": "polygon"}'
-            Enabled: true
-        ScheduleSolana:
-          Type: Schedule
-          Properties:
-            Name: !Sub "vault-scan-sol-${Environment}"
-            Schedule: rate(5 seconds)
-            Input: '{"chain": "sol"}'
-            Enabled: true
-        ScheduleBitcoin:
-          Type: Schedule
-          Properties:
-            Name: !Sub "vault-scan-btc-${Environment}"
-            Schedule: rate(1 minute)
-            Input: '{"chain": "btc"}'
-            Enabled: true
 
   # --- Webhook Delivery Worker ---
   WebhookWorkerFunction:
@@ -219,8 +220,6 @@ Resources:
     Properties:
       FunctionName: !Sub "vault-confirmation-tracker-${Environment}"
       Handler: bootstrap
-      Runtime: provided.al2023
-      Architectures: [arm64]
       CodeUri: .
       MemorySize: 256
       Timeout: 60
@@ -231,6 +230,11 @@ Resources:
           DATABASE_URL: !Ref DatabaseURL
           REDIS_HOST: !Ref RedisHost
           ETHERSCAN_API_KEY: !Ref EtherscanAPIKey
+          # Each pass warns about the deposit scans that lag or stalled (CLAUDE.md,
+          # "Deposit detection observability"); per-chain thresholds are
+          # DEPOSIT_SCAN_ALERT_*_<CHAIN>.
+          DEPOSIT_SCAN_ALERT_LAG_BLOCKS: !Ref DepositScanAlertLagBlocks
+          DEPOSIT_SCAN_ALERT_STALE_MINUTES: !Ref DepositScanAlertStaleMinutes
       # The tracker enqueues deposit, withdrawal and sweep events and re-dispatches
       # the outbox rows whose queue message was lost.
       Policies:
@@ -252,8 +256,6 @@ Resources:
     Properties:
       FunctionName: !Sub "vault-webhook-reconciler-${Environment}"
       Handler: bootstrap
-      Runtime: provided.al2023
-      Architectures: [arm64]
       CodeUri: .
       MemorySize: 256
       Timeout: 300
@@ -273,32 +275,6 @@ Resources:
             Name: !Sub "vault-webhook-reconciler-${Environment}"
             Schedule: rate(1 day)
             Enabled: true
-
-  # --- Withdrawal Processor ---
-  WithdrawalWorkerFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: go1.x
-    Properties:
-      FunctionName: !Sub "vault-withdrawal-worker-${Environment}"
-      Handler: bootstrap
-      CodeUri: .
-      Timeout: 60
-      MemorySize: 512
-      Environment:
-        Variables:
-          LAMBDA_MODE: withdrawal_worker
-      Policies:
-        - SQSSendMessagePolicy:
-            QueueName: !GetAtt WebhookQueue.QueueName
-      Events:
-        SQSEvent:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt WithdrawalQueue.Arn
-            BatchSize: 1
-            FunctionResponseTypes:
-              - ReportBatchItemFailures
 
   # =========================================================================
   # SQS Queues
@@ -322,7 +298,37 @@ Resources:
       QueueName: !Sub "vault-webhooks-dlq-${Environment}"
       MessageRetentionPeriod: 1209600       # 14 days
 
+  # --- Alarm: a webhook delivery that exhausted its receives sits in the DLQ ---
+  # Raised by the first visible message, so a lost delivery is seen without anyone
+  # running make dlq-check; replay with make dlq-replay-webhooks once the receiver
+  # answers again. With no AlarmTopicArn it only changes state (console, API).
+  WebhookDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "vault-webhooks-dlq-not-empty-${Environment}"
+      AlarmDescription: !Sub "A webhook delivery exhausted its receives and sits in vault-webhooks-dlq-${Environment}: make dlq-check ENV=${Environment}, then make dlq-replay-webhooks ENV=${Environment}."
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt WebhookDLQ.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      # SQS reports a queue's metrics only while it is active: up to six hours after it
+      # last held messages or was accessed. A DLQ whose messages nobody touches goes
+      # quiet then; "ignore" keeps the alarm raised until a datapoint says 0, where
+      # notBreaching would turn it back to OK with the messages still there.
+      TreatMissingData: ignore
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref AWS::NoValue]
+      OKActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref AWS::NoValue]
+
   # --- Withdrawal Processing Queue ---
+  # No producer and no consumer: withdrawals are signed and broadcast inside the
+  # request, and main.go has no withdrawal mode. Kept with the names and settings
+  # template.dev.yaml deploys; see docs/PRODUCTION_RUNTIME.md (decision D8).
   WithdrawalQueue:
     Type: AWS::SQS::Queue
     Properties:

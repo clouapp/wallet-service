@@ -67,7 +67,17 @@ type Service struct {
 	now                  func() time.Time
 	// staleAfter is how long an outbound transfer may stay unsettled (stale_outbound.go).
 	staleAfter time.Duration
-	staleCache staleOutboundCache
+	staleCache healthSnapshot[StaleOutboundHealth]
+	// pendingCache is the health check's reading of the pending blocks (pending_blocks.go).
+	pendingCache healthSnapshot[PendingHealth]
+	// activity records each completed scan cycle; activityCache is the health
+	// check's reading of it and scanAlerts the tracker's thresholds (scan_activity.go,
+	// scan_alerts.go).
+	activity        ScanActivityStore
+	activityCache   healthSnapshot[ScanActivityHealth]
+	scanAlerts      ScanAlertThresholds
+	chainScanAlerts func(chainID string) ScanAlertThresholds
+	alertState      ScanAlertState
 	// reconcileWithdrawals and reconcileTransactions are the rows withdrawals:reconcile
 	// reads (withdrawal_reconcile.go).
 	reconcileWithdrawals  WithdrawalFinder
@@ -204,7 +214,11 @@ func (s *Service) scanLatestBlocks(ctx context.Context, chainID string) error {
 			return fmt.Errorf("get latest block: %w", err)
 		}
 		slog.Info("first scan, starting from current", "chain", chainID, "block", lastBlock)
-		return s.saveCheckpoint(ctx, chainID, lastBlock)
+		if err = s.saveCheckpoint(ctx, chainID, lastBlock); err != nil {
+			return err
+		}
+		s.recordScan(ctx, chainID, lastBlock, lastBlock)
+		return nil
 	}
 
 	latestBlock, err := adapter.GetLatestBlock(ctx)
@@ -215,7 +229,11 @@ func (s *Service) scanLatestBlocks(ctx context.Context, chainID string) error {
 	if latestBlock <= lastBlock {
 		// Nothing new: a checkpoint slightly ahead (a lagging node) is waited out, one
 		// far past the head (another network, a hand edit) fails the cycle loudly.
-		return checkCheckpointNotAhead(chainID, lastBlock, latestBlock)
+		if err = checkCheckpointNotAhead(chainID, lastBlock, latestBlock); err != nil {
+			return err
+		}
+		s.recordScan(ctx, chainID, latestBlock, lastBlock)
+		return nil
 	}
 
 	lag := latestBlock - lastBlock
@@ -227,9 +245,12 @@ func (s *Service) scanLatestBlocks(ctx context.Context, chainID string) error {
 	slog.Info("scanning blocks", "chain", chainID, "from", lastBlock+1, "to", endBlock, "concurrency", opts.Concurrency)
 
 	scannedTo, scanErr := s.scanRange(ctx, chainID, adapter, lastBlock+1, endBlock, opts.Concurrency)
+	saved := lastBlock
 	if scannedTo > lastBlock {
 		if err := s.saveCheckpoint(ctx, chainID, scannedTo); err != nil {
 			slog.Error("save checkpoint failed", "chain", chainID, "error", err)
+		} else {
+			saved = scannedTo
 		}
 	}
 	if scanErr != nil {
@@ -241,6 +262,7 @@ func (s *Service) scanLatestBlocks(ctx context.Context, chainID string) error {
 		slog.Error("update confirmations failed", "chain", chainID, "error", err)
 	}
 
+	s.recordScan(ctx, chainID, latestBlock, saved)
 	slog.Info("scan complete", "chain", chainID, "processed", endBlock-lastBlock, "head", latestBlock)
 	return nil
 }

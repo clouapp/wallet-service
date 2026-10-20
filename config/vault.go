@@ -83,7 +83,8 @@ func registerVault() {
 			"confirmation_interval_seconds": envInt("LOCAL_CONFIRMATION_INTERVAL_SECONDS", 30),
 			"delivery_interval_seconds":     envInt("LOCAL_WEBHOOK_DELIVERY_INTERVAL_SECONDS", 5),
 			// Comma-separated chain ids scanned for deposits locally (e.g. "sol"); empty
-			// leaves deposit detection to the deposit_scanner Lambda.
+			// scans no chain in this process (template.yaml schedules no deposit_scanner
+			// run; see docs/PRODUCTION_RUNTIME.md).
 			"deposit_scan_chains":           envString("LOCAL_DEPOSIT_SCAN_CHAINS", ""),
 			"deposit_scan_interval_seconds": envInt("LOCAL_DEPOSIT_SCAN_INTERVAL_SECONDS", 5),
 			// Wallet balance read model refresh of every registered chain; 0 turns it off.
@@ -116,6 +117,15 @@ func registerVault() {
 			// DEPOSIT_SCAN_CONCURRENCY_SOL=1. A positive value wins over the global window
 			// (environment or deposit_scan setting) for that chain only; 0 keeps it.
 			"chains": depositScanChainsDocument(envInt),
+			// Every tracker pass (the confirmation_tracker Lambda, or the local
+			// confirmation loop) warns about a scanned chain whose last completed cycle
+			// left its checkpoint more than alert_lag_blocks behind the head (0: the
+			// chain's catch-up window, a lag the next cycle cannot close) or ended more
+			// than alert_stale_minutes ago (0: 10), and about each chain with pending
+			// blocks. DEPOSIT_SCAN_ALERT_LAG_BLOCKS_<CHAIN> and
+			// DEPOSIT_SCAN_ALERT_STALE_MINUTES_<CHAIN> set one chain's apart.
+			"alert_lag_blocks":    envInt("DEPOSIT_SCAN_ALERT_LAG_BLOCKS", 0),
+			"alert_stale_minutes": envInt("DEPOSIT_SCAN_ALERT_STALE_MINUTES", 10),
 			// A block whose deposits fail to record is retried right away (3 retries at
 			// 100/300/900 ms by default), then kept as pending in Redis and in an
 			// append-only file under pending_dir (default ~/.local/state/macro-wallets/
@@ -158,16 +168,19 @@ var depositScanChainIDs = []string{
 }
 
 // depositScanChainsDocument reads each chain's DEPOSIT_SCAN_BATCH_BLOCKS_<CHAIN>,
-// DEPOSIT_SCAN_CATCH_UP_BLOCKS_<CHAIN> and DEPOSIT_SCAN_CONCURRENCY_<CHAIN> through
-// lookup, keyed by chain id; an unset variable is 0.
+// DEPOSIT_SCAN_CATCH_UP_BLOCKS_<CHAIN>, DEPOSIT_SCAN_CONCURRENCY_<CHAIN> and its alert
+// thresholds DEPOSIT_SCAN_ALERT_LAG_BLOCKS_<CHAIN> and DEPOSIT_SCAN_ALERT_STALE_MINUTES_<CHAIN>
+// through lookup, keyed by chain id; an unset variable is 0.
 func depositScanChainsDocument(lookup func(key string, defaultValue int) int) map[string]any {
 	chains := make(map[string]any, len(depositScanChainIDs))
 	for _, chainID := range depositScanChainIDs {
 		suffix := "_" + strings.ToUpper(chainID)
 		chains[chainID] = map[string]any{
-			"batch_blocks":    lookup("DEPOSIT_SCAN_BATCH_BLOCKS"+suffix, 0),
-			"catch_up_blocks": lookup("DEPOSIT_SCAN_CATCH_UP_BLOCKS"+suffix, 0),
-			"concurrency":     lookup("DEPOSIT_SCAN_CONCURRENCY"+suffix, 0),
+			"batch_blocks":        lookup("DEPOSIT_SCAN_BATCH_BLOCKS"+suffix, 0),
+			"catch_up_blocks":     lookup("DEPOSIT_SCAN_CATCH_UP_BLOCKS"+suffix, 0),
+			"concurrency":         lookup("DEPOSIT_SCAN_CONCURRENCY"+suffix, 0),
+			"alert_lag_blocks":    lookup("DEPOSIT_SCAN_ALERT_LAG_BLOCKS"+suffix, 0),
+			"alert_stale_minutes": lookup("DEPOSIT_SCAN_ALERT_STALE_MINUTES"+suffix, 0),
 		}
 	}
 	return chains

@@ -181,19 +181,48 @@ func (r *WebhookEventRepository) ClaimStaleForRedispatch(ctx context.Context, st
 	return events, nil
 }
 
-// FindForRedelivery returns the ids of configID's events created in [since, until),
-// of eventTypes when any are given, oldest first, at most limit. created_at holds
-// UTC wall-clock time, so the bounds are converted to UTC in the query.
-func (r *WebhookEventRepository) FindForRedelivery(ctx context.Context, configID uuid.UUID, since, until time.Time, eventTypes []string, limit int) ([]uuid.UUID, error) {
+// eventOfAccountWallet keeps a webhook_events row whose wallet belongs to the
+// account bound to both of its placeholders. The wallet of an event is the wallet
+// of its transaction; an event without one (wallet.gas_status.changed, a withdrawal
+// event sent before its transaction existed) names it in data.wallet_id of its
+// payload, which every such event carries. A row whose wallet cannot be told, or
+// whose wallet has no account, is left out. A legacy webhook received the events of
+// every account before an account claimed it, so this is what keeps a redelivery
+// inside the caller's own wallets.
+//
+// Both sides are uncorrelated sets of the account (its transactions, its wallet
+// ids), which Postgres hashes once, instead of a lookup per event (measured locally
+// on 1.4M events, with migration 660's indexes: ~18 ms instead of ~1 s for the
+// window query). The CASE keeps the payload from
+// being parsed for a row that has a transaction (AND gives no evaluation order).
+const eventOfAccountWallet = `(
+		webhook_events.transaction_id IN (
+			SELECT t.id FROM transactions t JOIN wallets w ON w.id = t.wallet_id WHERE w.account_id = ?
+		)
+		OR (CASE WHEN webhook_events.transaction_id IS NULL
+		         THEN webhook_events.payload::jsonb #>> '{data,wallet_id}' END) IN (
+			SELECT w.id::text FROM wallets w WHERE w.account_id = ?
+		)
+	)`
+
+// FindForRedelivery returns the ids of configID's events about a wallet of
+// accountID (eventOfAccountWallet) created in [since, until), of eventTypes when
+// any are given, oldest first, at most limit. created_at holds UTC wall-clock time,
+// so the bounds are converted to UTC in the query.
+func (r *WebhookEventRepository) FindForRedelivery(ctx context.Context, configID, accountID uuid.UUID, since, until time.Time, eventTypes []string, limit int) ([]uuid.UUID, error) {
 	if configID == uuid.Nil {
 		return nil, fmt.Errorf("config id is required")
+	}
+	if accountID == uuid.Nil {
+		return nil, fmt.Errorf("account id is required")
 	}
 	if limit <= 0 {
 		return nil, fmt.Errorf("limit must be positive")
 	}
 	query := r.Query(ctx).Model(&models.WebhookEvent{}).
 		Where("webhook_config_id = ?", configID).
-		Where("created_at >= (?::timestamptz AT TIME ZONE 'UTC') AND created_at < (?::timestamptz AT TIME ZONE 'UTC')", since, until)
+		Where("created_at >= (?::timestamptz AT TIME ZONE 'UTC') AND created_at < (?::timestamptz AT TIME ZONE 'UTC')", since, until).
+		Where(eventOfAccountWallet, accountID, accountID)
 	if len(eventTypes) > 0 {
 		types := make([]any, len(eventTypes))
 		for i, eventType := range eventTypes {
@@ -212,14 +241,18 @@ func (r *WebhookEventRepository) FindForRedelivery(ctx context.Context, configID
 	return ids, nil
 }
 
-// RequeueForRedelivery sets the listed events of configID that were created at or
-// after createdSince back to pending, with no attempts and no delivery time, and
-// returns them. An event already pending that was touched after busySince (queued or
-// attempted moments ago) is left as it is, so a repeated request does not queue it
-// twice. An id of another config, or unknown, is skipped.
-func (r *WebhookEventRepository) RequeueForRedelivery(ctx context.Context, configID uuid.UUID, ids []uuid.UUID, createdSince, busySince time.Time) ([]models.WebhookEvent, error) {
+// RequeueForRedelivery sets the listed events of configID about a wallet of
+// accountID (eventOfAccountWallet) that were created at or after createdSince back
+// to pending, with no attempts and no delivery time, and returns them. An event
+// already pending that was touched after busySince (queued or attempted moments
+// ago) is left as it is, so a repeated request does not queue it twice. An id of
+// another config, of another account's wallet, or unknown, is skipped.
+func (r *WebhookEventRepository) RequeueForRedelivery(ctx context.Context, configID, accountID uuid.UUID, ids []uuid.UUID, createdSince, busySince time.Time) ([]models.WebhookEvent, error) {
 	if configID == uuid.Nil {
 		return nil, fmt.Errorf("config id is required")
+	}
+	if accountID == uuid.Nil {
+		return nil, fmt.Errorf("account id is required")
 	}
 	if len(ids) == 0 {
 		return nil, nil
@@ -236,8 +269,9 @@ func (r *WebhookEventRepository) RequeueForRedelivery(ctx context.Context, confi
 		  AND id IN ?
 		  AND created_at >= (?::timestamptz AT TIME ZONE 'UTC')
 		  AND NOT (delivery_status = ? AND updated_at IS NOT NULL AND updated_at > (?::timestamptz AT TIME ZONE 'UTC'))
+		  AND `+eventOfAccountWallet+`
 		RETURNING *`,
-		models.WebhookDeliveryPending, configID, values, createdSince, models.WebhookDeliveryPending, busySince,
+		models.WebhookDeliveryPending, configID, values, createdSince, models.WebhookDeliveryPending, busySince, accountID, accountID,
 	).Scan(&events); err != nil {
 		return nil, fmt.Errorf("requeue webhook events: %w", err)
 	}

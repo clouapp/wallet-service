@@ -49,6 +49,7 @@ type Service struct {
 	addressRepo addressReader
 	txRepo      transactionStore
 	deposits    DepositEvents
+	pushes      PushRecorder
 }
 
 // DepositEvents publishes deposit webhooks scoped to the wallet's account with the
@@ -90,9 +91,14 @@ type InboundEvent struct {
 	Transfers []providers.InboundTransfer
 }
 
-// Ingest records a verified webhook from the typed event.
+// Ingest records a verified webhook from the typed event, then notes when the
+// chain's provider last pushed (push.go).
 func (s *Service) Ingest(ctx context.Context, event InboundEvent) error {
-	return s.ProcessTransfers(ctx, event.ChainID, event.Transfers)
+	if err := s.ProcessTransfers(ctx, event.ChainID, event.Transfers); err != nil {
+		return err
+	}
+	s.recordPush(ctx, event.ChainID)
+	return nil
 }
 
 func (s *Service) ProcessTransfers(ctx context.Context, chainID string, transfers []providers.InboundTransfer) error {

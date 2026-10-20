@@ -102,3 +102,23 @@ func TestBackfill_Fees_AFailedReadIsReportedAndFailsTheCommand(t *testing.T) {
 		t.Fatal("--apply did not reach the service")
 	}
 }
+
+func TestBackfill_Fees_PrintsTheAccountRentRowsApart(t *testing.T) {
+	fees := &fakeFeeBackfill{report: deposit.FeeBackfillReport{
+		Written: 1,
+		Rows: []deposit.FeeBackfillRow{
+			{Chain: "tsol", TxType: "withdrawal", TxHash: "5sig", Rent: true, AccountRent: "2039280"},
+			{Chain: "tsol", TxType: "sweep", TxHash: "6sig", Rent: true, Err: errors.New("rate limited")},
+		},
+	}}
+	ctx := mocksconsole.NewContext(t)
+	ctx.EXPECT().OptionBool("apply").Return(true)
+	ctx.EXPECT().Option("chain").Return("tsol")
+	ctx.EXPECT().Info("tsol withdrawal 5sig: account rent 2039280").Return()
+	ctx.EXPECT().Warning("tsol sweep 6sig: account rent not read: rate limited").Return()
+	ctx.EXPECT().Info("wrote 1 of 2 fees and account rents").Return()
+
+	if err := NewTransactionsBackfillFees(fees, fakeChainIDs{"tsol"}).Handle(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
