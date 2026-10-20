@@ -5,6 +5,7 @@ import (
 	"crypto/sha512"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 
+	"github.com/macrowallets/waas/app/adapters/chain/rpc"
 	"github.com/macrowallets/waas/app/services/addressing"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
@@ -379,27 +381,13 @@ func (a *Live) BroadcastTransaction(ctx context.Context, signed *types.SignedTx)
 	if err != nil || len(payment.TxnSignature) == 0 || len(payment.SigningPubKey) == 0 {
 		return "", fmt.Errorf("xrp broadcast: signed payment is incomplete")
 	}
-	var result struct {
-		xrpRPCError
-		EngineResult string `json:"engine_result"`
-		TxJSON       struct {
-			Hash string `json:"hash"`
-		} `json:"tx_json"`
-	}
-	err = a.call(ctx, "submit", []any{map[string]string{
+	_, err = a.request(ctx, "submit", []any{map[string]string{
 		"tx_blob": hex.EncodeToString(signed.RawBytes),
-	}}, &result)
+	}}, xrpRPCMaxResponseBytes, func(result json.RawMessage) (rpc.Outcome, error) {
+		return judgeXRPSubmit(result, signed.TxHash)
+	})
 	if err != nil {
-		return "", err
-	}
-	if result.Status != "success" {
-		return "", fmt.Errorf("xrp submit: %s", xrpErrorCode(result.xrpRPCError))
-	}
-	if result.TxJSON.Hash != "" && !strings.EqualFold(result.TxJSON.Hash, signed.TxHash) {
-		return "", fmt.Errorf("xrp submit returned a different hash")
-	}
-	if !xrpSubmitAccepted(result.EngineResult) {
-		return "", fmt.Errorf("xrp submit: %s", result.EngineResult)
+		return "", classifyXRPSubmit(err)
 	}
 	return strings.ToUpper(signed.TxHash), nil
 }
@@ -493,7 +481,7 @@ func (a *Live) altnetFacts(ctx context.Context) (xrpLedgerFacts, error) {
 	if a == nil || !a.cfg.IsTestnet {
 		return xrpLedgerFacts{}, fmt.Errorf("xrp payments require the altnet testnet adapter")
 	}
-	if err := refuseMainnetEndpoint(a.endpoint()); err != nil {
+	if err := refuseMainnetEndpoint(a.endpoints.Endpoint()); err != nil {
 		return xrpLedgerFacts{}, err
 	}
 	facts, err := a.ledgerFacts(ctx)
@@ -528,17 +516,6 @@ func xrpReserveAllows(balance, amount, fee, reserve *big.Int) error {
 		return fmt.Errorf("xrp payment would leave %s drops, below the %s-drop reserve: %w", left, reserve, chain.ErrInsufficientFunds)
 	}
 	return nil
-}
-
-func xrpSubmitAccepted(engine string) bool {
-	switch {
-	case strings.HasPrefix(engine, "tes"):
-		return true
-	case engine == "terQUEUED":
-		return true
-	default:
-		return false
-	}
 }
 
 func (p xrpPayment) serialize(includePub, includeSignature bool) ([]byte, error) {
