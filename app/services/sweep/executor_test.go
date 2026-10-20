@@ -108,12 +108,6 @@ func (f *fakeTxRepo) FindByWallet(walletID uuid.UUID, txType, status string, lim
 func (f *fakeTxRepo) FindByChainAndTxHash(chainID, txHash string) (*models.Transaction, error) {
 	return nil, nil
 }
-func (f *fakeTxRepo) CountByChainAndTxHash(chainID, txHash, txType string) (int64, error) {
-	return 0, nil
-}
-func (f *fakeTxRepo) CountByChainTxHashAndLogIndex(chainID, txHash string, logIndex int, txType string) (int64, error) {
-	return 0, nil
-}
 func (f *fakeTxRepo) CountInternalTransfers(chainID, txHash string, walletID uuid.UUID) (int64, error) {
 	return 0, nil
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit/pending"
+	"github.com/macrowallets/waas/app/services/depositrecord"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -374,8 +375,9 @@ func (s *Service) recordTransfers(ctx context.Context, chainID string, adapter t
 		failedTx = append(failedTx, unverified...)
 		failures = append(failures, err)
 	}
+	siblings := transfersByTx(deposits)
 	for _, transfer := range deposits {
-		created, err := s.processTransfer(ctx, chainID, adapter, transfer)
+		created, err := s.processTransfer(ctx, chainID, adapter, transfer, siblings[transfer.TxHash])
 		if err != nil {
 			failedTx = append(failedTx, transfer.TxHash)
 			failures = append(failures, fmt.Errorf("tx %s: %w", transfer.TxHash, err))
@@ -388,9 +390,28 @@ func (s *Service) recordTransfers(ctx context.Context, chainID string, adapter t
 	return recorded, failedTx, errors.Join(failures...)
 }
 
+// transfersByTx groups the transfers by transaction, as depositrecord.Record compares
+// them with the other source's rows.
+func transfersByTx(transfers []types.DetectedTransfer) map[string][]depositrecord.Transfer {
+	byTx := make(map[string][]depositrecord.Transfer)
+	for _, transfer := range transfers {
+		byTx[transfer.TxHash] = append(byTx[transfer.TxHash], transferOf(transfer))
+	}
+	return byTx
+}
+
+// transferOf is what tells the transfer from the other transfers of its transaction.
+func transferOf(transfer types.DetectedTransfer) depositrecord.Transfer {
+	contract := ""
+	if transfer.Token != nil {
+		contract = transfer.Token.Contract
+	}
+	return depositrecord.Transfer{Position: transfer.LogIndex, To: transfer.To, Contract: contract, Amount: transfer.Amount.String()}
+}
+
 // ScanBlock records the deposits of one block without touching the checkpoint, to
 // repair a block the scanner missed or has not reached yet. Recording is idempotent
-// (one deposit per chain and transaction), and the regular scan cycle moves the
+// (one deposit per transfer, depositrecord.Record), and the regular scan cycle moves the
 // deposit through its confirmations and webhooks. A block that keeps failing is saved
 // as pending; one that succeeds leaves the pending list.
 func (s *Service) ScanBlock(ctx context.Context, chainID string, blockNum uint64) (int, error) {

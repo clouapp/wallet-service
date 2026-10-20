@@ -95,7 +95,7 @@ func TestSolana_Deposit_DetectedFromRecordedBlockThenConfirmed(t *testing.T) {
 }
 
 // The version-1 swap of devnet slot 512232469: 2200 base units of devnet USDC to
-// solSPLRecipient, numbered after the transaction's 25 account keys. Parsing stays in
+// solSPLRecipient, at position 256 + 3 (its token account). Parsing stays in
 // the adapter tests (TestSolana_ScanBlock_CreditsRegisteredSPLTokensToTheTokenAccountOwner).
 const (
 	solSPLSlot      = 512232469
@@ -112,7 +112,7 @@ func TestSolana_Deposit_RecordsAnSPLCreditWithItsSymbolAndMint(t *testing.T) {
 	adapter.ScanBlockFn = func(context.Context, uint64) ([]types.DetectedTransfer, error) {
 		return []types.DetectedTransfer{{
 			TxHash: solSPLSignature, BlockNumber: solSPLSlot, BlockHash: "3VMvKFUd8KCcYRcwjmBMftHNBaerDMoSZHmHhuiPtCin",
-			From: solSPLSender, To: solSPLRecipient, Amount: big.NewInt(2200), Asset: usdc.Symbol, Token: &usdc, LogIndex: 28,
+			From: solSPLSender, To: solSPLRecipient, Amount: big.NewInt(2200), Asset: usdc.Symbol, Token: &usdc, LogIndex: 259,
 		}}, nil
 	}
 	registry := chain.NewRegistry()

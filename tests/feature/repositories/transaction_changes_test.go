@@ -2,6 +2,7 @@ package repositories_test
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -48,6 +49,13 @@ func (s *TransactionRepositoryTestSuite) TestUpdates_Move_UpdatedAt() {
 		"fee":                func(id uuid.UUID) error { return s.repo.SetFee(ctx, id, "21000") },
 		"broadcast": func(id uuid.UUID) error {
 			return s.repo.RecordBroadcast(ctx, id, "0xnodehash", `{"broadcast_outcome":"unknown"}`)
+		},
+		"deposit position": func(id uuid.UUID) error {
+			claimed, err := s.repo.ClaimDepositPosition(ctx, id, 2)
+			if err == nil && !claimed {
+				return errors.New("the deposit was not moved to its position")
+			}
+			return err
 		},
 	}
 	stale := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)

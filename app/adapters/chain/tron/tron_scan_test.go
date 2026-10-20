@@ -73,7 +73,7 @@ func TestTronScanBlockTRXAndTRC20Deposits(t *testing.T) {
 	for i, amount := range wantTRX {
 		got := transfers[i]
 		if got.Asset != models.NativeTRX || got.Token != nil || got.Amount.Int64() != amount ||
-			got.From != sender || got.To != recipient ||
+			got.LogIndex != types.NativeValuePosition || got.From != sender || got.To != recipient ||
 			got.BlockNumber != tronBlockWithUSDT || !got.Timestamp.Equal(blockTime) ||
 			got.BlockHash != "00000000044380c7b08869904009d6ab7d940984fcf998e8bce36814d865db23" {
 			t.Fatalf("TRX transfer %d = %+v", i, got)

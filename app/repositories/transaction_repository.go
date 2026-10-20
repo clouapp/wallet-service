@@ -129,31 +129,50 @@ func (r *TransactionRepository) FindByChainAndTxHash(ctx context.Context, chainI
 	return &tx, nil
 }
 
-// CountByChainAndTxHash counts rows for a chain, hash, and type.
-func (r *TransactionRepository) CountByChainAndTxHash(ctx context.Context, chainID, txHash, txType string) (int64, error) {
-	count, err := r.Query(ctx).Model(&models.Transaction{}).
-		Where("chain", chainID).
-		Where("tx_hash", txHash).
-		Where("tx_type", txType).
-		Count()
-	if err != nil {
-		return 0, fmt.Errorf("count transactions by hash: %w", err)
+// LockTransactionDeposits takes the advisory lock of one chain transaction's
+// deposits, held until the database transaction of ctx ends (Within): the deposit
+// recorders of the scanner and the push decide on a transaction one at a time. Called
+// outside a transaction, the lock ends with the statement.
+func (r *TransactionRepository) LockTransactionDeposits(ctx context.Context, chainID, txHash string) error {
+	if _, err := r.Query(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "deposits/"+chainID+"/"+txHash); err != nil {
+		return fmt.Errorf("lock transaction deposits: %w", err)
 	}
-	return count, nil
+	return nil
 }
 
-// CountByChainTxHashAndLogIndex counts rows for a chain, hash, log index, and type.
-func (r *TransactionRepository) CountByChainTxHashAndLogIndex(ctx context.Context, chainID, txHash string, logIndex int, txType string) (int64, error) {
-	count, err := r.Query(ctx).Model(&models.Transaction{}).
+// FindDepositsByChainAndTxHash returns the deposit rows of one transaction, ordered by
+// position (log_index).
+func (r *TransactionRepository) FindDepositsByChainAndTxHash(ctx context.Context, chainID, txHash string) ([]models.Transaction, error) {
+	var deposits []models.Transaction
+	err := r.Query(ctx).
 		Where("chain", chainID).
 		Where("tx_hash", txHash).
-		Where("log_index", logIndex).
-		Where("tx_type", txType).
-		Count()
+		Where("tx_type", models.TxTypeDeposit).
+		Order("log_index").
+		Find(&deposits)
 	if err != nil {
-		return 0, fmt.Errorf("count transactions by log index: %w", err)
+		return nil, fmt.Errorf("list deposits of transaction: %w", err)
 	}
-	return count, nil
+	return deposits, nil
+}
+
+// ClaimDepositPosition moves a deposit recorded before positions existed (log_index
+// types.NativeValuePosition) to position and reports false when the row is not such
+// a deposit any more. A position another deposit of the transaction holds is a
+// unique violation.
+func (r *TransactionRepository) ClaimDepositPosition(ctx context.Context, id uuid.UUID, position int) (bool, error) {
+	if id == uuid.Nil {
+		return false, fmt.Errorf("transaction id is required")
+	}
+	result, err := r.Query(ctx).Model(&models.Transaction{}).
+		Where("id", id).
+		Where("tx_type", models.TxTypeDeposit).
+		Where("log_index", types.NativeValuePosition).
+		Update("log_index", position)
+	if err != nil {
+		return false, fmt.Errorf("claim deposit position: %w", err)
+	}
+	return result.RowsAffected == 1, nil
 }
 
 // internalTransferTxTypes move funds between addresses of one wallet: a sweep

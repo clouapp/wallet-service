@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"strconv"
 	"strings"
@@ -303,15 +304,35 @@ func (a *AlchemyProvider) ParsePayload(body []byte) ([]providers.InboundTransfer
 
 	transfers := make([]providers.InboundTransfer, 0, len(event.Event.Activity))
 	for _, act := range event.Event.Activity {
+		if !transferCategories[act.Category] {
+			continue
+		}
 		t, err := activityToTransfer(act)
 		if err != nil {
-			return nil, fmt.Errorf("alchemy: parse activity (tx=%s): %w", act.Hash, err)
+			// Left to the deposit scanner; the other activities of the push are kept.
+			slog.Warn("alchemy: activity skipped", "tx", act.Hash, "category", act.Category, "error", err)
+			continue
 		}
 		transfers = append(transfers, t)
 	}
 	return transfers, nil
 }
 
+// Activity categories that move the native asset or an ERC-20 token. NFT transfers
+// (erc721, erc1155, specialnft) are not deposits.
+const (
+	categoryExternal = "external"
+	categoryInternal = "internal"
+	categoryToken    = "token"
+)
+
+var transferCategories = map[string]bool{categoryExternal: true, categoryInternal: true, categoryToken: true}
+
+// activityToTransfer reads one activity at the position the deposit scanner gives the
+// same transfer: an ERC-20 Transfer at its log index; the native value of the
+// transaction, which has no log, at types.NativeValuePosition. An internal transfer
+// (native value a contract call sends) takes that position too: the scanner never
+// reports one, and two of them in one transaction record the first.
 func activityToTransfer(act alchemyActivity) (providers.InboundTransfer, error) {
 	blockNum, err := parseHexUint64(act.BlockNum)
 	if err != nil {
@@ -336,11 +357,17 @@ func activityToTransfer(act alchemyActivity) (providers.InboundTransfer, error) 
 		}
 	}
 
-	logIndex := -1
-	if act.Log.LogIndex != "" {
+	logIndex := types.NativeValuePosition
+	if act.Category == categoryToken {
+		if act.Log.LogIndex == "" || act.RawContract.Address == "" {
+			return providers.InboundTransfer{}, fmt.Errorf("token transfer without its logIndex or contract")
+		}
 		parsed, err := parseHexInt(act.Log.LogIndex)
 		if err != nil {
 			return providers.InboundTransfer{}, fmt.Errorf("parse logIndex %q: %w", act.Log.LogIndex, err)
+		}
+		if parsed < 0 {
+			return providers.InboundTransfer{}, fmt.Errorf("negative logIndex %q", act.Log.LogIndex)
 		}
 		logIndex = parsed
 	}
@@ -358,7 +385,7 @@ func activityToTransfer(act alchemyActivity) (providers.InboundTransfer, error) 
 		LogIndex:      logIndex,
 	}
 
-	if act.Category == "token" && act.RawContract.Address != "" {
+	if act.Category == categoryToken {
 		t.Token = &types.Token{
 			Contract: act.RawContract.Address,
 			Decimals: uint8(act.RawContract.Decimals),

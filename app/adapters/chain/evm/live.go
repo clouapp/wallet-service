@@ -839,19 +839,19 @@ func (a *EVMLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.Detec
 	blockTime := time.Unix(int64(hexToUint64(block.Timestamp)), 0)
 	var transfers []types.DetectedTransfer
 
-	// Native transfers
+	// Native transfers: the value of the transaction, which has no log.
 	for _, tx := range block.Transactions {
 		val := hexToBigInt(tx.Value)
 		if val.Sign() > 0 {
 			transfers = append(transfers, types.DetectedTransfer{
 				TxHash: tx.Hash, BlockNumber: blockNum, BlockHash: block.Hash,
 				From: tx.From, To: tx.To, Amount: val,
-				Asset: a.cfg.NativeSymbol, Timestamp: blockTime,
+				Asset: a.cfg.NativeSymbol, LogIndex: types.NativeValuePosition, Timestamp: blockTime,
 			})
 		}
 	}
 
-	// ERC-20 Transfer events. A block whose logs did not load fails, so the deposit
+	// ERC-20 Transfer events, each at its log index. A block whose logs did not load fails, so the deposit
 	// scanner retries it (and keeps it pending) instead of marking it scanned
 	// without its token deposits.
 	tokens, err := a.scanERC20(ctx, blockNum, block.Hash, block.LogsBloom, blockTime)
@@ -919,12 +919,16 @@ func (a *EVMLive) scanERC20(ctx context.Context, blockNum uint64, blockHash, log
 		contractLower := strings.ToLower(log.Address)
 		for _, t := range a.cfg.ERC20Tokens {
 			if t.ChainID == a.cfg.ChainIDStr && strings.ToLower(t.Contract) == contractLower {
+				position, err := logPosition(log.LogIndex)
+				if err != nil {
+					return nil, fmt.Errorf("transfer log of tx %s: %w", log.TransactionHash, err)
+				}
 				tokenCopy := t
 				result = append(result, types.DetectedTransfer{
 					TxHash: log.TransactionHash, BlockNumber: blockNum, BlockHash: blockHash,
 					From: from, To: to, Amount: amount,
 					Asset: t.Symbol, Token: &tokenCopy,
-					LogIndex: uint(hexToUint64(log.LogIndex)), Timestamp: blockTime,
+					LogIndex: position, Timestamp: blockTime,
 				})
 				break
 			}
@@ -1040,6 +1044,16 @@ func hexToBigInt(s string) *big.Int {
 	n := new(big.Int)
 	n.SetString(s, 16)
 	return n
+}
+
+// logPosition reads a log's logIndex, the position of its transfer. A missing or
+// unreadable one is an error: a guessed position could take another transfer's place.
+func logPosition(logIndex string) (int, error) {
+	value, err := strconv.ParseUint(strings.TrimPrefix(logIndex, "0x"), 16, 31)
+	if err != nil {
+		return 0, fmt.Errorf("logIndex %q: %w", logIndex, err)
+	}
+	return int(value), nil
 }
 
 func hexToUint64(s string) uint64 {

@@ -197,8 +197,8 @@ func TestLive_ScanBlock_ReportsANativePaymentWithItsDestinationTag(t *testing.T)
 	closeTime := time.Date(2026, time.October, 11, 9, 53, 11, 0, time.UTC)
 	if got.TxHash != taggedPaymentHash || got.From != "rDWd81gTyMMA1arNv9bH1qcBDN4EaozN1Y" ||
 		got.To != "rai1iQmERbDPvfuk31XVsYs6ZXeA8QRZnC" || got.Amount.String() != "1000000" ||
-		got.Asset != models.NativeXRP || got.Token != nil || got.LogIndex != 7 {
-		t.Fatalf("payment %+v", got)
+		got.Asset != models.NativeXRP || got.Token != nil || got.LogIndex != types.NativeValuePosition {
+		t.Fatalf("payment %+v (a Payment is the native value of its transaction)", got)
 	}
 	if got.BlockNumber != ledgerTaggedPayment || got.BlockHash != "28D45A55AB2C0C4EC4F4B6F305D75DE861FD4F675301EC1035622910CD14FB2D" ||
 		!got.Timestamp.Equal(closeTime) {
@@ -257,20 +257,19 @@ func TestLive_ScanBlock_SkipsFailedPaymentsAndOtherTransactionTypes(t *testing.T
 	// are not deposits.
 	want := []struct {
 		hash, to, drops string
-		index           uint
 	}{
-		{"15DFF33BCB07FEF157836ADEFC15D95E05A4B40D67AE6E827D4F547EFA9A4FA8", "rwpNHW66K4YcwAGyx7F1ehUW12Yujwy7Ni", "1468948", 8},
-		{"B01DD89B59CD557D61C826C5BC2E3DC85C245BFEB65E9D63656D376B2F31333F", "rHLxnbVNBYufyqumxnXZq5EEVgNqu9UqsA", "19843775", 9},
-		{"38ECAED4A20E54AAF7BA3F24D6BA89EC8BF38F4E3AD1DE8D5D5C581A5F067272", "rP1KKcBj3b2yM8rBjw3Rnz5VXeRXkYbHss", "16304463", 10},
-		{"12DA648C33819F7E7A7B0A98A8FE41BE529291BBB8F74F5D6BCC2D094FA80F33", "rAzUPtFENQorUVnMNVMqn7bBRQvdtBrR1", "3110000000", 18},
-		{"1C622DB8589ED15E64D5B431732887B992D857B78F3E0548BD5AFADEBC33D136", "rhniDcPKVdbuRxeWUWdSuf9a7cP4kFgTXB", "3405387", 21},
+		{"15DFF33BCB07FEF157836ADEFC15D95E05A4B40D67AE6E827D4F547EFA9A4FA8", "rwpNHW66K4YcwAGyx7F1ehUW12Yujwy7Ni", "1468948"},
+		{"B01DD89B59CD557D61C826C5BC2E3DC85C245BFEB65E9D63656D376B2F31333F", "rHLxnbVNBYufyqumxnXZq5EEVgNqu9UqsA", "19843775"},
+		{"38ECAED4A20E54AAF7BA3F24D6BA89EC8BF38F4E3AD1DE8D5D5C581A5F067272", "rP1KKcBj3b2yM8rBjw3Rnz5VXeRXkYbHss", "16304463"},
+		{"12DA648C33819F7E7A7B0A98A8FE41BE529291BBB8F74F5D6BCC2D094FA80F33", "rAzUPtFENQorUVnMNVMqn7bBRQvdtBrR1", "3110000000"},
+		{"1C622DB8589ED15E64D5B431732887B992D857B78F3E0548BD5AFADEBC33D136", "rhniDcPKVdbuRxeWUWdSuf9a7cP4kFgTXB", "3405387"},
 	}
 	if len(transfers) != len(want) {
 		t.Fatalf("got %v, want the five successful native Payments", scanHashes(transfers))
 	}
 	for i, w := range want {
 		got := transfers[i]
-		if got.TxHash != w.hash || got.To != w.to || got.Amount.String() != w.drops || got.LogIndex != w.index || got.DestinationTag != nil {
+		if got.TxHash != w.hash || got.To != w.to || got.Amount.String() != w.drops || got.LogIndex != types.NativeValuePosition || got.DestinationTag != nil {
 			t.Fatalf("transfer %d = %+v, want %+v", i, got, w)
 		}
 	}

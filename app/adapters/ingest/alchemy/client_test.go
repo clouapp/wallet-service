@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/macrowallets/waas/app/services/ingest/providers"
+	"github.com/macrowallets/waas/pkg/types"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -209,7 +210,8 @@ func TestParse_Payload_ERC20OmitsRawValueKeepsHumanAmount(t *testing.T) {
 					"rawValue": "",
 					"address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
 					"decimals": 18
-				}
+				},
+				"log": {"logIndex": "0x0", "blockHash": "0xblock"}
 			}]
 		}
 	}`)
@@ -224,6 +226,66 @@ func TestParse_Payload_ERC20OmitsRawValueKeepsHumanAmount(t *testing.T) {
 	if tx.Amount != nil && tx.Amount.Cmp(scaled) == 0 {
 		t.Fatal("parser must not scale the human token amount by 18")
 	}
+}
+
+// activityPayload is one ADDRESS_ACTIVITY webhook holding activities.
+func activityPayload(activities ...string) []byte {
+	body := `{"event":{"activity":[`
+	for i, activity := range activities {
+		if i > 0 {
+			body += ","
+		}
+		body += activity
+	}
+	return []byte(body + `]}}`)
+}
+
+const usdcActivityAtLogZero = `{"blockNum":"0x10","hash":"0xbatch","fromAddress":"0xfrom","toAddress":"0xto","value":1,"asset":"USDC","category":"token",` +
+	`"rawContract":{"rawValue":"0xf4240","address":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","decimals":6},"log":{"logIndex":"0x0","blockHash":"0xblock"}}`
+
+func TestParse_Payload_TheFirstLogOfABlockIsPositionZero(t *testing.T) {
+	transfers, err := NewAlchemyProvider("test-key").ParsePayload(activityPayload(usdcActivityAtLogZero))
+	require.NoError(t, err)
+	require.Len(t, transfers, 1)
+	assert.Equal(t, 0, transfers[0].LogIndex)
+}
+
+func TestParse_Payload_SkipsATokenTransferWithoutItsLogIndexAndKeepsTheOthers(t *testing.T) {
+	withoutLog := `{"blockNum":"0x10","hash":"0xbatch","fromAddress":"0xfrom","toAddress":"0xto","value":1,"asset":"USDC","category":"token",` +
+		`"rawContract":{"rawValue":"0xf4240","address":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","decimals":6}}`
+
+	transfers, err := NewAlchemyProvider("test-key").ParsePayload(activityPayload(withoutLog, usdcActivityAtLogZero))
+	require.NoError(t, err)
+	require.Len(t, transfers, 1, "a token transfer at the native value position would hide the transaction's native deposit")
+	assert.Equal(t, 0, transfers[0].LogIndex)
+}
+
+func TestParse_Payload_RefusesABodyThatIsNotAnEvent(t *testing.T) {
+	_, err := NewAlchemyProvider("test-key").ParsePayload([]byte(`[1,2]`))
+	assert.Error(t, err)
+}
+
+func TestParse_Payload_AnInternalTransferIsTheNativeValueOfItsTransaction(t *testing.T) {
+	internal := `{"blockNum":"0x10","hash":"0xbatch","fromAddress":"0xcontract","toAddress":"0xto","value":0.5,"asset":"ETH","category":"internal",` +
+		`"rawContract":{"rawValue":"0x6f05b59d3b20000","address":"","decimals":18},"typeTraceAddress":"CALL_0_1"}`
+
+	transfers, err := NewAlchemyProvider("test-key").ParsePayload(activityPayload(internal))
+	require.NoError(t, err)
+	require.Len(t, transfers, 1)
+	assert.Equal(t, types.NativeValuePosition, transfers[0].LogIndex)
+	assert.Nil(t, transfers[0].Token)
+}
+
+func TestParse_Payload_LeavesOutNFTTransfers(t *testing.T) {
+	erc721 := `{"blockNum":"0x10","hash":"0xbatch","fromAddress":"0xfrom","toAddress":"0xto","value":null,"asset":"PUNK","category":"erc721",` +
+		`"erc721TokenId":"0x1","rawContract":{"rawValue":null,"address":"0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB"},"log":{"logIndex":"0x2","blockHash":"0xblock"}}`
+	erc1155 := `{"blockNum":"0x10","hash":"0xbatch","fromAddress":"0xfrom","toAddress":"0xto","value":null,"asset":null,"category":"erc1155",` +
+		`"rawContract":{"rawValue":null,"address":"0x76BE3b62873462d2142405439777e971754E8E77"},"log":{"logIndex":"0x3","blockHash":"0xblock"}}`
+
+	transfers, err := NewAlchemyProvider("test-key").ParsePayload(activityPayload(erc721, usdcActivityAtLogZero, erc1155))
+	require.NoError(t, err)
+	require.Len(t, transfers, 1, "an NFT is not a deposit and must not take the native value position")
+	assert.Equal(t, "USDC", transfers[0].Asset)
 }
 
 func TestClient_Diff_Addresses(t *testing.T) {

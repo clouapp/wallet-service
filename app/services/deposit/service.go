@@ -16,8 +16,8 @@ import (
 	"github.com/macrowallets/waas/app/services/blockheight"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit/pending"
+	"github.com/macrowallets/waas/app/services/depositrecord"
 	"github.com/macrowallets/waas/app/services/webhook"
-	"github.com/macrowallets/waas/pkg/pgerr"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -75,9 +75,11 @@ type Service struct {
 }
 
 // transactionStore is the deposit rows the scanner writes and the tracker updates.
+// Within (depositrecord.Store) opens one transaction, which the queries made with its
+// callback context join: a deposit's record, a sweep's confirmation and its
+// sweep.confirmed webhook row.
 type transactionStore interface {
-	Create(ctx context.Context, tx *models.Transaction) error
-	CountByChainAndTxHash(ctx context.Context, chainID, txHash, txType string) (int64, error)
+	depositrecord.Store
 	CountInternalTransfers(ctx context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error)
 	FindPendingByChain(ctx context.Context, chainID string) ([]models.Transaction, error)
 	FindConfirmedOutboundWithoutFee(ctx context.Context, chainID string, limit int) ([]models.Transaction, error)
@@ -251,10 +253,11 @@ func (s *Service) scanLatestBlocks(ctx context.Context, chainID string) error {
 }
 
 // processTransfer records a transfer to a watched address as a pending deposit and
-// reports whether it created one; a transaction already recorded is left as it is,
-// including one another process inserted at the same time (the unique deposit index
-// rejects the second insert).
-func (s *Service) processTransfer(ctx context.Context, chainID string, adapter types.Chain, transfer types.DetectedTransfer) (bool, error) {
+// reports whether it created one. A transfer already recorded (by this scanner, by
+// the provider push or by another process at the same time) is left as it is
+// (depositrecord.Record); siblings are the transfers of its transaction this scan
+// records with it.
+func (s *Service) processTransfer(ctx context.Context, chainID string, adapter types.Chain, transfer types.DetectedTransfer, siblings []depositrecord.Transfer) (bool, error) {
 	watched, err := s.isWatchedAddress(ctx, chainID, transfer.To)
 	if err != nil {
 		return false, classify(pending.ClassDatabase, err)
@@ -269,14 +272,6 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 	}
 	if err != nil || addr == nil {
 		slog.Warn("watched-address cache lists an address the database does not hold; skipping the transfer", "chain", chainID, "address", transfer.To, "tx", transfer.TxHash)
-		return false, nil
-	}
-
-	exists, err := s.txRepo.CountByChainAndTxHash(ctx, chainID, transfer.TxHash, models.TxTypeDeposit)
-	if err != nil {
-		return false, classify(pending.ClassDatabase, fmt.Errorf("check recorded deposit: %w", err))
-	}
-	if exists > 0 {
 		return false, nil
 	}
 
@@ -304,7 +299,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		Chain:          chainID,
 		TxType:         models.TxTypeDeposit,
 		TxHash:         transfer.TxHash,
-		LogIndex:       models.ScannerDepositLogIndex,
+		LogIndex:       transfer.LogIndex,
 		FromAddress:    transfer.From,
 		ToAddress:      transfer.To,
 		DestinationTag: transfer.DestinationTag,
@@ -322,17 +317,18 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		RawPayload:     depositPayload(transfer),
 	}
 
-	if err := s.txRepo.Create(ctx, tx); err != nil {
-		if pgerr.IsUniqueViolation(err) {
-			slog.Info("deposit already recorded by another process", "chain", chainID, "tx", transfer.TxHash)
-			return false, nil
-		}
-		return false, classify(pending.ClassDatabase, fmt.Errorf("insert tx: %w", err))
+	outcome, err := depositrecord.Record(ctx, s.txRepo, tx, siblings)
+	if err != nil {
+		return false, classify(pending.ClassDatabase, fmt.Errorf("record deposit: %w", err))
+	}
+	if outcome != depositrecord.Created {
+		depositrecord.LogSkipped(outcome, tx)
+		return false, nil
 	}
 
 	s.publishDeposit(ctx, types.EventDepositPending, *tx)
 
-	slog.Info("deposit detected", "chain", chainID, "tx", transfer.TxHash, "user", addr.ExternalUserID, "asset", asset, "amount", transfer.Amount.String())
+	slog.Info("deposit detected", "chain", chainID, "tx", transfer.TxHash, "log_index", transfer.LogIndex, "user", addr.ExternalUserID, "asset", asset, "amount", transfer.Amount.String())
 	return true, nil
 }
 
