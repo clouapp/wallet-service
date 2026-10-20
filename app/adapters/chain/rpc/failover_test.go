@@ -920,7 +920,7 @@ func TestFailover_Call_AContractRevertNeverMovesOnNorCountsAFailure(t *testing.T
 // sepoliaIdentityClient is failoverClient with fallbacks checked for Sepolia.
 func sepoliaIdentityClient(primary string, fallbacks ...string) *RPCClient {
 	client, _, _ := failoverClient(primary, fallbacks...)
-	client.identity, client.network = evmChainIDReader, "11155111"
+	client.identity, client.network = client.identityThrough(evmChainIDReader), "11155111"
 	return client
 }
 

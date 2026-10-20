@@ -1,6 +1,9 @@
 package models
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func networkIDPointer(id int64) *int64 { return &id }
 
@@ -164,5 +167,28 @@ func TestSolana_GenesisHash_NamesEachClusterBothWays(t *testing.T) {
 	}
 	if SolanaGenesisHash(NetworkEthereumSepolia) != "" || SolanaNetworkOfGenesis("unknown") != "" {
 		t.Fatal("a network that is not a Solana cluster has no genesis")
+	}
+}
+
+func TestTron_GenesisBlockID_NamesEachNetworkBothWays(t *testing.T) {
+	for _, network := range []string{NetworkTronMainnet, NetworkTronNile, NetworkTronShasta} {
+		id := TronGenesisBlockID(network)
+		if len(id) != 64 || TronNetworkOfGenesis(strings.ToUpper(id)) != network {
+			t.Fatalf("%s: genesis block %q names %q", network, id, TronNetworkOfGenesis(id))
+		}
+	}
+	if TronGenesisBlockID(NetworkSolanaMainnet) != "" || TronNetworkOfGenesis("unknown") != "" {
+		t.Fatal("a network that is not TRON has no genesis block")
+	}
+}
+
+func TestXRPL_NetworkID_NamesEachNetworkBothWays(t *testing.T) {
+	for network, want := range map[string]string{NetworkXRPLMainnet: "0", NetworkXRPLTestnet: "1"} {
+		if got := XRPLNetworkID(network); got != want || XRPLNetworkOfID(got) != network {
+			t.Fatalf("%s: network id %q names %q", network, got, XRPLNetworkOfID(got))
+		}
+	}
+	if XRPLNetworkID(NetworkTronNile) != "" || XRPLNetworkOfID("2") != "" {
+		t.Fatal("a network that is not a known XRP Ledger has no network id")
 	}
 }

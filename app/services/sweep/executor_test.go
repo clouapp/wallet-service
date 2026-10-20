@@ -1503,6 +1503,38 @@ func TestBroadcast_RawPayload_KeepsOnlyAKnownLastValidBlock(t *testing.T) {
 	}
 }
 
+// utxoChain spends the outpoints inputs (Bitcoin family).
+type utxoChain struct {
+	*mocks.MockChain
+	inputs []string
+	err    error
+}
+
+func (c utxoChain) SpentInputs(*types.SignedTx) ([]string, error) { return c.inputs, c.err }
+
+func TestBroadcast_RawPayload_KeepsTheInputsABitcoinTransactionSpends(t *testing.T) {
+	signed := &types.SignedTx{RawBytes: []byte("signed"), TxHash: "txid"}
+	inputs := []string{strings.Repeat("ab", 32) + ":0", strings.Repeat("cd", 32) + ":2"}
+
+	raw, err := broadcastRawPayload(utxoChain{MockChain: mocks.NewMockChain("btc"), inputs: inputs}, signed, 0, chain.BroadcastOutcomeUnknown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload struct {
+		Inputs  []string `json:"spent_inputs"`
+		Outcome string   `json:"broadcast_outcome"`
+	}
+	if decodeErr := json.Unmarshal([]byte(raw), &payload); decodeErr != nil || strings.Join(payload.Inputs, ",") != strings.Join(inputs, ",") ||
+		payload.Outcome != chain.BroadcastOutcomeUnknown {
+		t.Fatalf("payload %s, %v; want the inputs and the unknown outcome", raw, decodeErr)
+	}
+
+	undecodable, err := broadcastRawPayload(utxoChain{MockChain: mocks.NewMockChain("btc"), err: errors.New("bad bytes")}, signed, 0, "")
+	if err != nil || undecodable != "{}" {
+		t.Fatalf("payload %s, %v; inputs that cannot be read are only a missing proof", undecodable, err)
+	}
+}
+
 func TestExecute_Linked_AnUnknownGasSeedOutcomeIsAwaitedLikeASentOne(t *testing.T) {
 	fixture := newLinkedTokenLeg(t)
 	registry := chain.NewRegistry()
