@@ -260,13 +260,19 @@ O receptor de um webhook é sempre uma URL `https://` de um host público. Ao re
   `fc00::/7`), compartilhado (`100.64.0.0/10`), link-local (`169.254.0.0/16`, `fe80::/10`), de metadados de
   nuvem (`169.254.169.254`, `169.254.170.2`, `fd00:ec2::254`, `100.100.100.200`, `168.63.129.16`,
   `metadata.google.internal`, ...), não especificado, multicast, broadcast ou reservado, também na forma
-  IPv4 mapeada em IPv6 (`::ffff:169.254.169.254`), NAT64 ou 6to4;
+  IPv4 mapeada em IPv6 (`::ffff:169.254.169.254`), NAT64 ou 6to4, e os relays Teredo (`2001::/32`),
+  NAT64 de uso local (`64:ff9b:1::/48`) e anycast 6to4 (`192.88.99.0/24`);
 - o host é um nome de um só rótulo (`openbao`, `wallet-service`), um nome interno (`.internal`, `.local`,
   `.svc`, `.home.arpa`, ...) ou um IPv4 fora da forma canônica (`2130706433`, `0x7f000001`, `0177.0.0.1`,
-  `127.1`).
+  `127.1`);
+- a porta é 22 ou 25, ou, quando o ambiente define `WEBHOOK_ALLOWED_PORTS` (por exemplo `443,8443`), uma
+  porta fora dessa lista.
 
-Em cada entrega o nome é resolvido de novo e a conexão vai só para um endereço que passa na mesma regra,
-sem proxy: um nome que passe a apontar para dentro depois do registro (DNS rebinding) não recebe nada. Uma
+Quando a recusa vem do que o nome resolve, a mensagem é sempre a mesma (`the url host resolves to an
+address that is not allowed`), qualquer que seja a faixa: a resposta não diz qual registro interno existe.
+
+Em cada entrega o nome é resolvido de novo e a conexão vai só para um endereço que passa na mesma regra
+(conferido no socket, logo antes de conectar, a cada endereço tentado), sem proxy: um nome que passe a apontar para dentro depois do registro (DNS rebinding) não recebe nada. Uma
 entrega recusada nunca é enviada: o evento fica `failed`, com `last_error` `refused: <regra>`, e não é
 tentado de novo. O `webhook.test` responde só `{"delivered":true}` ou o 502 fixo `webhook test delivery
 failed`: o corpo e os headers da resposta do receptor nunca voltam para quem chamou (e só os primeiros

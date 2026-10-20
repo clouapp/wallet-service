@@ -255,14 +255,23 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   resolves to a loopback, private (RFC 1918, fc00::/7), shared (100.64.0.0/10), link-local, cloud
   metadata (169.254.169.254, 169.254.170.2, fd00:ec2::254, 100.100.100.200, 168.63.129.16,
   `metadata.google.internal`, ...), unspecified, multicast, broadcast or reserved address (also
-  IPv4-mapped, NAT64 and 6to4), a single-label or internal name (`.internal`, `.local`, `.svc`,
-  ...) and an IPv4 address in a numeric form (`2130706433`, `0x7f000001`, `0177.0.0.1`, `127.1`).
-  Loopback is allowed only under `APP_ENV=testing` (the suites' httptest receivers). A name that
-  does not resolve when it is registered is not refused there. The delivery client
+  IPv4-mapped, NAT64 and 6to4, and the relays Teredo 2001::/32, local-use NAT64 64:ff9b:1::/48
+  and 6to4 anycast 192.88.99.0/24), a single-label or internal name (`.internal`, `.local`,
+  `.svc`, ...), an IPv4 address in a numeric form (`2130706433`, `0x7f000001`, `0177.0.0.1`,
+  `127.1`) and the ports 22 and 25 (every policy refuses them; `WEBHOOK_ALLOWED_PORTS`, e.g.
+  `443,8443`, limits webhooks to its ports, a list without a valid entry to 443). A name refused
+  for what it resolves to always gets one sentence, `egress.ReasonResolved`, whatever the range,
+  so the answer does not tell which internal record exists; a literal or a name rule keeps its
+  own. Loopback is allowed only under `APP_ENV=testing` (the suites' httptest receivers, a local
+  e2e run), never when `ENV`, `ENVIRONMENT` or `APP_ENV` is `prod`, `production`, `staging` or
+  `stage`, and a warning is logged at boot either way (`providers.webhookDestinationPolicy`). A
+  name that does not resolve when it is registered is not refused there. The delivery client
   (`app/adapters/webhook/delivery`, registered by the webhook provider over the same guard)
   checks the URL again and opens every connection through `egress.Guard.DialContext`, never
-  through a proxy: the name is resolved there and the connection goes to the checked address,
-  so a record rebound after registration (DNS rebinding) reaches nothing the guard refuses. A
+  through a proxy: Go's dialer resolves the name there (its own deadline share per address and
+  IPv6/IPv4 fallback) and its `ControlContext` refuses, right before connect, every socket address
+  the guard does not allow, so a record rebound after registration (DNS rebinding) reaches nothing
+  the guard refuses and a silent address does not take the whole timeout. A
   refused delivery (a config stored before the guard, or a rebound name) is a build error
   matching `webhook.ErrURLNotAllowed`: `Deliver` marks the event `failed` with
   `refused: <rule>`, logs its host only and acknowledges it (never sent, never retried), and
@@ -280,8 +289,8 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `TestWallet_Webhook_TestAnswersOnlyWhetherItWasDelivered` (`tests/feature/api/dashboard/wallets`),
   `TestCreate_Webhook_RefusesAnInternalDestination`, `TestUpdate_Webhook_RefusesToKeepAnInternalDestinationActive`
   (`tests/feature/api/external/webhooks`), contract step 98 and
-  `TestComposition_Root_GuardsEveryWebhookDestination` (`bootstrap`). Receiver side:
-  `docs/vault-summary-v2.md`.
+  `TestComposition_Root_GuardsEveryWebhookDestination` (`bootstrap`),
+  `TestWebhook_DestinationPolicy_*` (`app/providers`). Receiver side: `docs/vault-summary-v2.md`.
 - Webhook delivery is at least once. An event is a `webhook_events` row (one per config, type
   and subject: the partial unique index of migration 260) written before the queue send, and
   receivers deduplicate on `X-Vault-Delivery-Id` (the row id), which every resend keeps. Three
@@ -730,6 +739,7 @@ BTC_RPC_URL=https://blockstream.info/testnet/api
 API_KEY_SECRET=dev-secret-key-not-for-production
 WITHDRAWAL_STALE_AFTER_HOURS=6   # outbound transfers unsettled this long are warned about and counted by /health
 WEBHOOK_ALLOW_HTTP=false         # true also accepts http:// webhook URLs (a dev or test receiver, still a public host)
+WEBHOOK_ALLOWED_PORTS=           # e.g. 443,8443: the only ports a webhook may use (empty: any but 22 and 25)
 RPC_ALLOW_LINK_LOCAL=false       # true also accepts link-local and cloud metadata RPC endpoints
 DEPOSIT_SCAN_ALERT_LAG_BLOCKS=0  # tracker warns when a scan trails the head by more (0: the chain's catch-up window)
 DEPOSIT_SCAN_ALERT_STALE_MINUTES=10  # tracker warns when a scanned chain has no completed cycle for longer
@@ -775,11 +785,17 @@ family keeps its own list (next section): its list writes are refused.
   networks and internal names are allowed; a link-local or cloud metadata destination, an
   unspecified, multicast or reserved address and a numeric-form host are refused (422 on the
   platform API, the rule as the message) before the endpoint is asked anything.
-  `RPC_ALLOW_LINK_LOCAL=true` also accepts link-local and metadata destinations. The check is
-  on the URL when it is written, not on each connection: a name that resolves to a link-local
-  address is not caught. — guarded by `TestApply_RefusesALinkLocalOrMetadataEndpointBeforeAskingIt`
-  (`app/services/rpcendpoints`), `TestUpdate_RPC_RefusesALinkLocalOrMetadataEndpointBeforeAskingIt`
-  and `TestReplace_RPC_RefusesALinkLocalOrMetadataEndpointEvenWithoutANetworkCheck` (`app/services/chains`).
+  `RPC_ALLOW_LINK_LOCAL=true` also accepts link-local and metadata destinations. A write also
+  resolves the name and refuses one that resolves to a refused address (`egress.ReasonResolved`;
+  `169.254.169.254.nip.io` is refused), and every connection of the shared provider transport
+  (`pkg/httpclient` `New`/`NewClient`: the RPC nodes and every chain and provider API) opens
+  through the same guard (`providers.RPCDestinations`, installed with `httpclient.GuardConnections`
+  by the chain provider), so no endpoint reaches a refused address whatever its name resolves to
+  then. With `HTTPS_PROXY` set that guard sees the proxy, not the endpoint. — guarded by
+  `TestApply_RefusesALinkLocalOrMetadataEndpointBeforeAskingIt` (`app/services/rpcendpoints`),
+  `TestUpdate_RPC_RefusesALinkLocalOrMetadataEndpointBeforeAskingIt` and
+  `TestReplace_RPC_RefusesALinkLocalOrMetadataEndpointEvenWithoutANetworkCheck` (`app/services/chains`),
+  `TestGuardConnections_*` (`pkg/httpclient`) and `TestComposition_Root_GuardsEveryProviderConnection`.
 - **Every write checks the network.** Each endpoint a change adds or enables, and a new primary, must
   answer `eth_chainId` equal to `network_id` (EVM), `getGenesisHash` equal to its cluster's
   (`models.SolanaGenesisHash`, Solana), block 0's id equal to its network's (`/wallet/getblockbynum`
