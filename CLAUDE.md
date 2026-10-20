@@ -226,12 +226,17 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `webhook.test`), under the config's secret: `X-Vault-Timestamp` is the unix second of that
   send, `X-Vault-Signature-V2` is `t=<that second>,v1=<hex HMAC-SHA256 of "<t>.<raw body>">`,
   and the legacy `X-Vault-Signature` (hex HMAC-SHA256 of the body alone) is still sent while
-  receivers move to V2. Nothing stores or queues a signature or a timestamp, so every retry,
-  re-dispatch and redelivery carries the time of its own send and a receiver can refuse a
-  delivery whose `t` is too far from its clock (a replay). — guarded by
-  `TestDeliver_Signature_*`, `TestRedeliver_Signature_AnOldEventIsSignedWithTheTimeOfTheResend`,
-  `TestSendTest_Signature_SignsTheTestDeliveryLikeAnyOther` (`app/services/webhook`) and
-  `TestPost_*` (`app/adapters/webhook/delivery`). Receiver side: `docs/vault-summary-v2.md`.
+  receivers move to V2. The time is read from `webhook.Deps.Now` (`time.Now` when nil).
+  Nothing stores or queues a signature or a timestamp, so every retry, re-dispatch and
+  redelivery carries the time of its own send and a receiver can refuse a delivery whose `t` is
+  too far from its clock (a replay). The delivery client never follows a redirect
+  (`httpclient.NewClientWithoutRedirects`), so the signed headers reach only the config's URL,
+  and only a 2xx answer marks an event delivered: a 3xx is a failed attempt like a 4xx or a 5xx.
+  A delivery refused before the POST (no timestamped signature) is a build error and not an
+  attempt. — guarded by `TestDeliver_Signature_*`, `TestDeliver_Redirect_IsAFailedAttemptNotADelivery`,
+  `TestRedeliver_Signature_AnOldEventIsSignedWithTheTimeOfTheResend`, `TestSendTest_*`
+  (`app/services/webhook`), `TestPost_*` (`app/adapters/webhook/delivery`) and
+  `TestNewClientWithoutRedirects_*` (`pkg/httpclient`). Receiver side: `docs/vault-summary-v2.md`.
 - Webhook delivery is at least once. An event is a `webhook_events` row (one per config, type
   and subject: the partial unique index of migration 260) written before the queue send, and
   receivers deduplicate on `X-Vault-Delivery-Id` (the row id), which every resend keeps. Three
@@ -262,10 +267,12 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
     account are requeued (the wallet of the event's transaction, or `data.wallet_id` of its
     payload for an event without one; an event whose wallet cannot be told is left alone): a
     legacy webhook received every account's events before it was claimed, and its new owner
-    never gets another account's events sent again. — guarded by
+    never gets another account's events sent again. Migration 660 indexes what this reads
+    (`webhook_events (webhook_config_id, created_at)`, `wallets (account_id)`). — guarded by
     `tests/feature/api/external/webhooks` (`TestRedeliver_Webhook_*`, among them
     `TestRedeliver_Webhook_AClaimedLegacyWebhook*`), `TestRedeliver_*` (`app/services/webhook`)
-    and `TestWebhookEventRepository_*Redelivery_*AccountsWallets` (`tests/feature/repositories`).
+    `TestWebhookEventRepository_*Redelivery_*AccountsWallets` (`tests/feature/repositories`) and
+    `TestRedelivery_Indexes_CoverTheConfigWindowAndTheAccountWallets` (`tests/migrations`).
 - Deposit events: `deposit.pending`, `deposit.confirmed` and `deposit.failed` are sent once per
   deposit, with the transaction id as subject (the key the backfill looks up).
   `deposit.confirming` reports progress and may arrive several times, with increasing

@@ -262,14 +262,15 @@ informado ao registrar o webhook; ele nunca é devolvido pela API nem enviado na
 
 Cada tentativa é assinada no momento do envio: uma retentativa, um reenvio do outbox e um pedido de
 reenvio (`POST /api/v1/webhooks/{webhookId}/redeliver`) trazem um `t` novo e uma assinatura nova, com o
-mesmo `X-Vault-Delivery-Id`. A assinatura legada cobre apenas o corpo, de modo que uma entrega capturada
+mesmo `X-Vault-Delivery-Id`. Só uma resposta 2xx conta como entregue: um redirecionamento (3xx) não é
+seguido, para que os headers assinados não vão a outra URL, e conta como falha, como um 4xx ou 5xx. A assinatura legada cobre apenas o corpo, de modo que uma entrega capturada
 continua válida para sempre; a V2 cobre também o instante do envio e permite recusar uma repetição.
 
 Para verificar uma entrega:
 
 1. Ler o corpo bruto, exatamente como chegou, antes de qualquer parse JSON.
-2. Separar `X-Vault-Signature-V2` nas vírgulas: `t` é o timestamp e cada `v1` é uma assinatura candidata
-   (pode haver mais de uma; basta uma coincidir).
+2. Separar `X-Vault-Signature-V2` nas vírgulas: `t` é o timestamp (exatamente um, só dígitos; recusar o
+   header com dois) e cada `v1` é uma assinatura candidata (pode haver mais de uma; basta uma coincidir).
 3. Calcular o hex de `HMAC-SHA256(secret, t + "." + corpo)` e compará-lo em tempo constante com cada `v1`.
 4. Recusar (401) quando nenhum `v1` coincide ou quando `|agora - t|` passa da tolerância; recomendamos
    5 minutos. Quando `X-Vault-Signature-V2` está presente, não recorrer à assinatura legada.
@@ -292,19 +293,21 @@ printf '%s' '1760950000.{"id":"5b0c4c1e-0000-4000-8000-000000000001","type":"web
 ```php
 function verifyVaultSignatureV2(string $rawBody, string $header, string $secret, int $toleranceSeconds = 300): bool
 {
-    $timestamp = null;
+    $timestamps = [];
     $signatures = [];
     foreach (explode(',', $header) as $part) {
         [$key, $value] = array_pad(explode('=', trim($part), 2), 2, '');
         if ($key === 't') {
-            $timestamp = $value;
+            $timestamps[] = $value;
         } elseif ($key === 'v1' && $value !== '') {
             $signatures[] = $value;
         }
     }
-    if ($timestamp === null || ! ctype_digit($timestamp) || $signatures === []) {
+    // Exactly one t, made of digits only: a header with two is refused, never read by its first or last.
+    if (count($timestamps) !== 1 || ! ctype_digit($timestamps[0]) || strlen($timestamps[0]) > 11 || $signatures === []) {
         return false;
     }
+    $timestamp = $timestamps[0];
 
     $expected = hash_hmac('sha256', $timestamp . '.' . $rawBody, $secret);
     $matches = false;

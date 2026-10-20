@@ -28,7 +28,7 @@ func NewWebhookController(webhooks *webhook.Service) *WebhookController {
 // Store godoc
 //
 //	@Summary		Create a webhook
-//	@Description	Registers an account-level webhook endpoint. Deliveries are POSTed as JSON and signed with `secret` when each attempt is sent: `X-Vault-Signature-V2` is `t=<unix seconds>,v1=<hex HMAC-SHA256 of '<t>.<raw body>'>`, so a receiver refuses a `t` too far from its clock (5 minutes recommended) and with it a replayed delivery; `X-Vault-Timestamp` repeats `t`; the legacy `X-Vault-Signature` (hex HMAC-SHA256 of the raw body alone) is still sent while receivers move to V2. `X-Vault-Event` carries the event type and `X-Vault-Delivery-Id` the event id. Supported events include deposit.confirmed, withdrawal.broadcast, withdrawal.confirmed and withdrawal.failed. Withdrawal events are only delivered for wallets of the token's account.
+//	@Description	Registers an account-level webhook endpoint. Deliveries are POSTed as JSON and signed with `secret` when each attempt is sent: `X-Vault-Signature-V2` is `t=<unix seconds>,v1=<hex HMAC-SHA256 of '<t>.<raw body>'>`, so a receiver refuses a `t` too far from its clock (5 minutes recommended) and with it a replayed delivery; `X-Vault-Timestamp` repeats `t`; the legacy `X-Vault-Signature` (hex HMAC-SHA256 of the raw body alone) is still sent while receivers move to V2. `X-Vault-Event` carries the event type and `X-Vault-Delivery-Id` the event id. Only a 2xx answer counts as delivered: a redirect is not followed and is retried like a 4xx or a 5xx. Supported events include deposit.confirmed, withdrawal.broadcast, withdrawal.confirmed and withdrawal.failed. Withdrawal events are only delivered for wallets of the token's account.
 //	@Tags			Webhooks
 //	@Accept			json
 //	@Produce		json
