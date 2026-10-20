@@ -185,6 +185,8 @@ type evmReorgChain struct {
 	spend        chain.NonceSpend
 	spendErr     error
 	spendCalls   []spendCall
+	// lookupErr makes every lookup of a transaction fail.
+	lookupErr error
 }
 
 var (
@@ -193,6 +195,9 @@ var (
 )
 
 func (c *evmReorgChain) GetTransactionBlock(ctx context.Context, txHash string) (uint64, error) {
+	if c.lookupErr != nil {
+		return 0, c.lookupErr
+	}
 	if c.nullReceipts {
 		return 0, nil
 	}
@@ -200,6 +205,9 @@ func (c *evmReorgChain) GetTransactionBlock(ctx context.Context, txHash string) 
 }
 
 func (c *evmReorgChain) SearchTransactionBlock(ctx context.Context, txHash string) (uint64, error) {
+	if c.lookupErr != nil {
+		return 0, c.lookupErr
+	}
 	if c.nullReceipts && !c.indexed {
 		return 0, nil
 	}

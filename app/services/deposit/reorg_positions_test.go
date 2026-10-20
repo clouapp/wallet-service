@@ -7,9 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/depositevents"
 	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/types"
@@ -254,5 +257,168 @@ func TestMove_Deposit_WaitsForTheTransactionsDepositLock(t *testing.T) {
 	}
 	if got := reorgDeposit(t, reorgDepositTx); got.BlockNumber != reorgDepositBlock+1 {
 		t.Fatalf("block %d, want the deposit moved once the lock was free", got.BlockNumber)
+	}
+}
+
+// A nonce proof that cannot be made, a lookup that fails: nothing is proven, the
+// deposit stays unresolved and is never failed.
+func TestRunConfirmationCheck_AFailedProofOrLookupProvesNothing(t *testing.T) {
+	cases := map[string]func(*evmReorgChain){
+		"the nonce proof fails": func(evm *evmReorgChain) { evm.spendErr = errors.New("missing trie node") },
+		"the lookup fails":      func(evm *evmReorgChain) { evm.lookupErr = errors.New("503 from every endpoint") },
+	}
+	for name, setUp := range cases {
+		t.Run(name, func(t *testing.T) {
+			f, evm := newEVMReorgFixture(t)
+			f.chain.mine(reorgDepositBlock, "a", reorgTransfer(reorgDepositTx, reorgDepositTo))
+			f.recordDeposit(t, reorgDepositBlock)
+			f.chain.mine(reorgDepositBlock, "b")
+			setUp(evm)
+
+			f.pass(t, reorgDepositBlock+reorgRequiredConfs)
+
+			got := reorgDeposit(t, reorgDepositTx)
+			if seen, _ := reorgMark(t, got); got.Status != string(types.TxStatusPending) || seen == 0 || len(depositEventsFor(t, types.EventDepositFailed, got.ID)) != 0 {
+				t.Fatalf("status %s seen %d, want it unresolved, never failed", got.Status, seen)
+			}
+		})
+	}
+}
+
+// The nonce proof finds our own transaction, mined again and failed on chain: the
+// deposit fails with the on-chain code, it is not moved to that block.
+func TestRunConfirmationCheck_OurTransactionFoundFailedByTheNonceProofFailsTheDeposit(t *testing.T) {
+	f, evm := newEVMReorgFixture(t)
+	f.chain.mine(reorgDepositBlock, "a", reorgTransfer(reorgDepositTx, reorgDepositTo))
+	f.recordDeposit(t, reorgDepositBlock)
+	f.chain.mine(reorgDepositBlock, "b")
+	f.chain.mine(reorgDepositBlock+1, "b", reorgTransfer(reorgDepositTx, reorgDepositTo))
+	evm.nullReceipts = true
+	evm.spend = chain.NonceSpend{Spent: true, Ours: true, Block: reorgDepositBlock + 1, Result: "reverted"}
+
+	f.pass(t, reorgDepositBlock+reorgRequiredConfs)
+
+	got := reorgDeposit(t, reorgDepositTx)
+	if got.Status != string(types.TxStatusFailed) || got.ErrorMessage != "onchain_reverted" || got.BlockNumber != reorgDepositBlock {
+		t.Fatalf("status %s error %q block %d, want failed with onchain_reverted where it was", got.Status, got.ErrorMessage, got.BlockNumber)
+	}
+}
+
+const reorgReplacementTx = "0x00000000000000000000000000000000000000000000000000000000000000e9"
+
+// The sender replaced the deposit's transaction (a speed-up with the same nonce,
+// payee and amount) and the competing fork mined the replacement: the original can
+// never land and fails reorged_out, and the replacement, which did pay the address,
+// is recorded and confirms.
+func TestRunConfirmationCheck_AReplacementThatPaysTheAddressInTheCompetingBlockIsRecorded(t *testing.T) {
+	f, evm := newEVMReorgFixture(t)
+	f.chain.mine(reorgDepositBlock, "a", reorgTransfer(reorgDepositTx, reorgDepositTo))
+	f.recordDeposit(t, reorgDepositBlock)
+	f.chain.mine(reorgDepositBlock, "b", reorgTransfer(reorgReplacementTx, reorgDepositTo))
+	evm.spend = chain.NonceSpend{Spent: true, Block: reorgDepositBlock}
+
+	f.pass(t, reorgDepositBlock+reorgRequiredConfs)
+
+	if got := reorgDeposit(t, reorgDepositTx); got.Status != string(types.TxStatusFailed) || got.ErrorMessage != reorgedOutCode {
+		t.Fatalf("original %s %q, want failed reorged_out", got.Status, got.ErrorMessage)
+	}
+	replacement := reorgDeposit(t, reorgReplacementTx)
+	if replacement.BlockHash != reorgHash("b", reorgDepositBlock) || replacement.Amount != "5000000000000000" || replacement.ToAddress != reorgDepositTo {
+		t.Fatalf("replacement %+v, want it recorded from the competing block", replacement)
+	}
+	f.pass(t, reorgDepositBlock+reorgRequiredConfs)
+	if got := reorgDeposit(t, reorgReplacementTx); got.Status != string(types.TxStatusConfirmed) {
+		t.Fatalf("replacement %s, want confirmed", got.Status)
+	}
+}
+
+// The scanner moved its checkpoint past the reorganized height on the old fork: a
+// reorganization found by a deposit's check rescans the new fork from that height
+// up to the checkpoint, so a deposit only the new fork holds is recorded; what is
+// above the checkpoint is the scanner's.
+func TestRunConfirmationCheck_AReorganizationRescansTheNewForkUpToTheCheckpoint(t *testing.T) {
+	f := newReorgFixture(t)
+	f.chain.mine(reorgDepositBlock, "a", reorgTransfer(reorgDepositTx, reorgDepositTo))
+	f.recordDeposit(t, reorgDepositBlock)
+	if err := f.svc.saveCheckpoint(context.Background(), reorgChainID, reorgDepositBlock+5); err != nil {
+		t.Fatal(err)
+	}
+	f.chain.mine(reorgDepositBlock, "b", reorgTransfer(reorgDepositTx, reorgDepositTo))
+	f.chain.mine(reorgDepositBlock+2, "b", reorgTransfer(reorgOtherTx, reorgOtherTo))
+	f.chain.mine(reorgDepositBlock+7, "b", reorgTransfer(reorgReplacementTx, reorgOtherTo))
+
+	f.pass(t, reorgDepositBlock+reorgRequiredConfs+5)
+
+	if got := reorgDeposit(t, reorgOtherTx); got.BlockNumber != reorgDepositBlock+2 || got.BlockHash != reorgHash("b", reorgDepositBlock+2) {
+		t.Fatalf("deposit of the new fork %+v, want it recorded by the rescan", got)
+	}
+	var above int64
+	if err := countDepositRows(reorgReplacementTx, &above); err != nil || above != 0 {
+		t.Fatalf("%d rows (%v) for a block above the checkpoint, want it left to the scanner", above, err)
+	}
+	if rows := reorgDepositRows(t); len(rows) != 1 || rows[0].BlockHash != reorgHash("b", reorgDepositBlock) {
+		t.Fatalf("rows of the deposit %+v, want one, moved to the competing block", rows)
+	}
+}
+
+func countDepositRows(txHash string, out *int64) error {
+	count, err := facades.Orm().Query().Model(&models.Transaction{}).Where("tx_type", models.TxTypeDeposit).Where("tx_hash", txHash).Count()
+	*out = count
+	return err
+}
+
+// confirmingMidway is the production publisher, except that while deposit.failed is
+// staged another process confirms the deposit (the window between the failure's
+// read of the row and its write).
+type confirmingMidway struct {
+	*depositevents.Publisher
+	id uuid.UUID
+}
+
+func (c confirmingMidway) Stage(ctx context.Context, eventType types.EventType, tx models.Transaction) (func(context.Context), error) {
+	now := time.Now().UTC()
+	if _, err := facades.Orm().Query().Model(&models.Transaction{}).Where("id = ?", c.id).
+		Update(map[string]any{"status": string(types.TxStatusConfirmed), "confirmed_at": now}); err != nil {
+		return nil, err
+	}
+	return c.Publisher.Stage(ctx, eventType, tx)
+}
+
+// deposit.failed and the failed status are written in one transaction, the status
+// only from the status the failure read: a deposit confirmed in between keeps its
+// status and no deposit.failed is left in the outbox.
+func TestFail_Deposit_ADepositConfirmedWhileItsFailureIsWrittenKeepsNoFailure(t *testing.T) {
+	f := newReorgFixture(t)
+	f.chain.mine(reorgDepositBlock, "a", reorgTransfer(reorgDepositTx, reorgDepositTo))
+	f.recordDeposit(t, reorgDepositBlock)
+	deposit := reorgDeposit(t, reorgDepositTx)
+	f.svc.SetDepositEvents(confirmingMidway{Publisher: newDepositPublisher(f.webhooks, chainAssetDecimals{reorgChainID + "/" + reorgChainID: etherDecimals}), id: deposit.ID})
+
+	err := f.svc.failDeposit(context.Background(), deposit, reorgedOutCode)
+
+	if !errors.Is(err, models.ErrTransactionSettled) {
+		t.Fatalf("err %v, want ErrTransactionSettled", err)
+	}
+	if got := reorgDeposit(t, reorgDepositTx); got.Status != string(types.TxStatusConfirmed) || len(depositEventsFor(t, types.EventDepositFailed, got.ID)) != 0 {
+		t.Fatalf("status %s and %d deposit.failed rows, want confirmed and none", got.Status, len(depositEventsFor(t, types.EventDepositFailed, got.ID)))
+	}
+}
+
+// With a publisher that cannot stage, deposit.failed is published before the row is
+// written: the row read again first keeps a deposit settled meanwhile from being
+// reported failed.
+func TestFail_Deposit_APublisherThatCannotStageReportsNothingForASettledDeposit(t *testing.T) {
+	f := newReorgFixture(t)
+	f.chain.mine(reorgDepositBlock, "a", reorgTransfer(reorgDepositTx, reorgDepositTo))
+	f.recordDeposit(t, reorgDepositBlock)
+	stale := reorgDeposit(t, reorgDepositTx)
+	f.pass(t, reorgDepositBlock+reorgRequiredConfs)
+	events := &recordingDepositEvents{}
+	f.svc.SetDepositEvents(events)
+
+	err := f.svc.failDeposit(context.Background(), stale, reorgedOutCode)
+
+	if !errors.Is(err, models.ErrTransactionSettled) || len(events.events) != 0 {
+		t.Fatalf("err %v and %v published, want ErrTransactionSettled and nothing", err, events.events)
 	}
 }

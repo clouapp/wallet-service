@@ -32,6 +32,8 @@ const (
 	// starts: the sender's nonce was unspent there on every fork of a reorganization
 	// shallower than this. A deeper one proves nothing and is left to the operator.
 	reorgSpendLookback = 64
+	// reorgRescanLimit bounds the blocks a detected reorganization rescans.
+	reorgRescanLimit = 256
 )
 
 // reorgPass is the reorganization check of one tracker pass over one chain. The
@@ -44,6 +46,8 @@ type reorgPass struct {
 	reader  chain.BlockHashReader
 	hashes  map[uint64]canonicalHash
 	blocks  map[uint64]scannedBlock
+	// rescanned is the heights a detected reorganization recorded again this pass.
+	rescanned map[uint64]bool
 }
 
 type canonicalHash struct {
@@ -58,7 +62,7 @@ type scannedBlock struct {
 
 func newReorgPass(adapter types.Chain) *reorgPass {
 	reader, _ := adapter.(chain.BlockHashReader)
-	return &reorgPass{adapter: adapter, reader: reader, hashes: map[uint64]canonicalHash{}, blocks: map[uint64]scannedBlock{}}
+	return &reorgPass{adapter: adapter, reader: reader, hashes: map[uint64]canonicalHash{}, blocks: map[uint64]scannedBlock{}, rescanned: map[uint64]bool{}}
 }
 
 // checks reports whether tx is a deposit whose recorded block is compared with the
@@ -140,8 +144,52 @@ func (s *Service) depositBlockAllowsConfirmation(ctx context.Context, pass *reor
 	}
 	slog.Warn("deposit's block was reorganized away; locating its transaction",
 		"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "block", tx.BlockNumber, "recorded_hash", tx.BlockHash, "canonical_hash", canonical)
+	if payloadUnixTime(tx, reorgSeenAtPayloadKey).IsZero() {
+		s.rescanReorganized(ctx, pass, recordedBlock(tx))
+	}
 	s.relocateDeposit(ctx, pass, tx)
 	return false
+}
+
+// rescanReorganized records again, the first time a deposit's check finds its block
+// reorganized away, the blocks of the new fork from that height up to the scan
+// checkpoint (at most reorgRescanLimit): the scanner read those heights on the old
+// fork and will not read them again, so a deposit only the new fork holds (a
+// replacement of the transaction, another payment) would never be recorded. It is
+// the scanner's recording path (idempotent, under each transaction's deposit lock);
+// a block that cannot be read is kept pending for the scanner's retry. Heights above
+// the checkpoint are the scanner's.
+func (s *Service) rescanReorganized(ctx context.Context, pass *reorgPass, from uint64) {
+	chainID := pass.adapter.ID()
+	checkpoint, found, err := s.loadCheckpoint(ctx, chainID)
+	if err != nil || !found || checkpoint < from {
+		return
+	}
+	to := min(checkpoint, from+reorgRescanLimit-1)
+	recorded := 0
+	for height := from; height <= to && ctx.Err() == nil; height++ {
+		recorded += s.recordBlockOnce(ctx, pass, height)
+	}
+	slog.Warn("reorganization: the new fork's blocks under the scan checkpoint were recorded again",
+		"chain", chainID, "from_block", from, "to_block", to, "checkpoint", checkpoint, "recorded", recorded)
+}
+
+// recordBlockOnce records the deposits of block through the scanner's path, once
+// per pass; a block that cannot be read or recorded is kept pending.
+func (s *Service) recordBlockOnce(ctx context.Context, pass *reorgPass, height uint64) int {
+	if pass.rescanned[height] {
+		return 0
+	}
+	pass.rescanned[height] = true
+	chainID := pass.adapter.ID()
+	transfers, err := pass.transfersOf(ctx, height)
+	outcome := s.tryBlock(ctx, chainID, pass.adapter, fetchedBlock{number: height, transfers: transfers, err: err})
+	if outcome.err != nil {
+		if pendingErr := s.recordPending(ctx, chainID, height, outcome); pendingErr != nil {
+			slog.Error("reorganization: a block of the new fork was neither recorded nor kept pending", "chain", chainID, "block", height, "error", errors.Join(outcome.err, pendingErr))
+		}
+	}
+	return outcome.recorded
 }
 
 // relocateDeposit decides about a deposit whose block was reorganized away. The
@@ -208,6 +256,9 @@ func (s *Service) proveLoss(ctx context.Context, pass *reorgPass, tx models.Tran
 			s.markReorgUnresolved(ctx, tx, moveErr.Error())
 		}
 	default:
+		// The transaction that spent the nonce may be a replacement that pays the
+		// address too (a speed-up, a re-bundle): its block is recorded first.
+		s.recordBlockOnce(ctx, pass, spend.Block)
 		slog.Warn("reorganized deposit can never land: another transaction spent its sender's nonce",
 			"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "sender", sender, "nonce", nonce, "spent_in_block", spend.Block)
 		s.failReorganized(ctx, tx, models.DepositFailureReorgedOut)
@@ -265,12 +316,12 @@ func (s *Service) moveDeposit(ctx context.Context, pass *reorgPass, tx models.Tr
 	}
 	var moved types.DetectedTransfer
 	err = s.txRepo.Within(ctx, func(ctx context.Context) error {
-		if err := s.txRepo.LockTransactionDeposits(ctx, tx.Chain, tx.TxHash); err != nil {
-			return err
+		if lockErr := s.txRepo.LockTransactionDeposits(ctx, tx.Chain, tx.TxHash); lockErr != nil {
+			return lockErr
 		}
-		rows, err := s.txRepo.FindDepositsByChainAndTxHash(ctx, tx.Chain, tx.TxHash)
-		if err != nil {
-			return err
+		rows, readErr := s.txRepo.FindDepositsByChainAndTxHash(ctx, tx.Chain, tx.TxHash)
+		if readErr != nil {
+			return readErr
 		}
 		taken := make(map[int]bool, len(rows))
 		for _, row := range rows {
