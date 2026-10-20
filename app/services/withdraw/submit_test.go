@@ -69,12 +69,16 @@ func (e *submitEvents) PublishFailed(_ context.Context, _ *models.Withdrawal, co
 // planSweep plans a withdrawal and executes it the way the test says.
 type planSweep struct {
 	mockSweepSvc
-	strategy  sweep.Strategy
-	shortfall error
-	planErr   error
-	result    *sweep.Result
-	planned   uuid.UUID
-	plannedTo sweep.Destination
+	// settlement and settleErr answer SettleUnanswered; settled counts the calls.
+	settlement sweep.SendSettlement
+	settleErr  error
+	settled    int
+	strategy   sweep.Strategy
+	shortfall  error
+	planErr    error
+	result     *sweep.Result
+	planned    uuid.UUID
+	plannedTo  sweep.Destination
 }
 
 func (p *planSweep) PlanForWithdrawalTo(_ context.Context, walletID uuid.UUID, asset string, amount *big.Int, to sweep.Destination, callerAccountID uuid.UUID) (*sweep.Plan, error) {
@@ -84,6 +88,14 @@ func (p *planSweep) PlanForWithdrawalTo(_ context.Context, walletID uuid.UUID, a
 		return nil, p.planErr
 	}
 	return &sweep.Plan{WalletID: walletID, Asset: asset, Amount: amount, Strategy: p.strategy, Shortfall: p.shortfall}, nil
+}
+
+func (p *planSweep) SettleUnanswered(_ context.Context, tx *models.Transaction) (sweep.SendSettlement, error) {
+	p.settled++
+	if p.settlement.Transaction == nil {
+		p.settlement.Transaction = tx
+	}
+	return p.settlement, p.settleErr
 }
 
 func (p *planSweep) ExecutePlan(context.Context, *sweep.Plan, sweep.SigningCredentials, uuid.UUID, string, string) (*sweep.Result, error) {
@@ -576,4 +588,73 @@ func TestSubmit_SameKey_ASecondSubmitWaitsForTheFirstsOutcome(t *testing.T) {
 	if runner.signed != 1 || !result.Replayed || result.Withdrawal.TxHash != "0xsent" {
 		t.Fatalf("signed %d, second %+v: the second submit replays the first one's outcome", runner.signed, result)
 	}
+}
+
+func TestSubmit_Retry_OfASendNeverAnsweredIsSettledBeforeItIsReplayed(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		settlement sweep.SendSettlement
+		settleErr  error
+		resigned   bool
+		failed     bool
+	}{
+		{"the transfer is on its way", sweep.SendSettlement{Sent: true}, nil, false, false},
+		{"the send never happened", sweep.SendSettlement{}, nil, true, false},
+		{"nothing can be verified yet", sweep.SendSettlement{}, sweep.ErrSendUnverified, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wallet := sealedCreateWallet(t, "eth", nil)
+			existingID := uuid.New()
+			rows := newSubmitRows()
+			rows.byID = map[uuid.UUID]*models.Withdrawal{existingID: {ID: existingID, WalletID: wallet.ID, Status: models.WithdrawalStatusBroadcasting}}
+			fresh := &models.Transaction{ID: uuid.New(), TxHash: "NEW"}
+			runner := &planSweep{strategy: sweep.StrategyDirectFromBase, result: &sweep.Result{FinalWithdrawTx: fresh},
+				settlement: tc.settlement, settleErr: tc.settleErr}
+			executed := &countingRunner{planSweep: runner}
+			svc := newSubmitService(t, wallet, runner, rows, &submitEvents{})
+			svc.sweep = executed
+			unanswered := &models.Transaction{ID: uuid.New(), TxHash: "OLD", Status: string(types.TxStatusConfirming),
+				RawPayload: `{"broadcast_outcome":"pending","signed_tx":"aa"}`}
+			txs := newMemTransactions()
+			txs.byKey = map[string]*models.Transaction{existingID.String(): unanswered}
+			svc.transactionRepo = txs
+			in := submitInput(wallet)
+			in.IdempotencyKey = existingID.String()
+
+			result, err := svc.Submit(context.Background(), in)
+			if runner.settled != 1 {
+				t.Fatalf("settled %d times: a row whose send was never answered is checked before any replay", runner.settled)
+			}
+			if executed.executions != map[bool]int{true: 1, false: 0}[tc.resigned] {
+				t.Fatalf("executions %d: signed again only when the send provably never happened", executed.executions)
+			}
+			if tc.settleErr != nil {
+				if !errors.Is(err, sweep.ErrSendUnverified) || len(rows.failed) != 0 {
+					t.Fatalf("err %v failed %v: unverified is neither replayed nor failed", err, rows.failed)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "OLD"
+			if tc.resigned {
+				want = "NEW"
+			}
+			if result.Withdrawal.TxHash != want {
+				t.Fatalf("withdrawal carries %s, want %s", result.Withdrawal.TxHash, want)
+			}
+		})
+	}
+}
+
+// countingRunner counts the plans executed.
+type countingRunner struct {
+	*planSweep
+	executions int
+}
+
+func (c *countingRunner) ExecutePlan(ctx context.Context, plan *sweep.Plan, creds sweep.SigningCredentials, txID uuid.UUID, to, user string) (*sweep.Result, error) {
+	c.executions++
+	return c.planSweep.ExecutePlan(ctx, plan, creds, txID, to, user)
 }

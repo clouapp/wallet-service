@@ -2,6 +2,7 @@ package withdraw
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/cacheguard"
+	"github.com/macrowallets/waas/app/services/chain"
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/webhook"
@@ -64,6 +66,7 @@ type transactionStore interface {
 type sweepRunner interface {
 	PlanForWithdrawalTo(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int, to sweep.Destination, callerAccountID uuid.UUID) (*sweep.Plan, error)
 	ExecutePlan(ctx context.Context, plan *sweep.Plan, creds sweep.SigningCredentials, withdrawalTxID uuid.UUID, toAddress string, externalUserID string) (*sweep.Result, error)
+	SettleUnanswered(ctx context.Context, tx *models.Transaction) (sweep.SendSettlement, error)
 }
 
 type Service struct {
@@ -176,7 +179,13 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 	if req.IdempotencyKey != "" {
 		existing, err := s.transactionRepo.FindByIdempotencyKey(ctx, req.IdempotencyKey)
 		if err == nil && existing != nil && existing.Status != string(types.TxStatusFailed) {
-			return existing, &Metadata{}, nil
+			replay, settleErr := s.replayable(ctx, existing)
+			if settleErr != nil {
+				return nil, nil, settleErr
+			}
+			if replay != nil {
+				return replay, &Metadata{}, nil
+			}
 		}
 	}
 
@@ -323,6 +332,40 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		"sweeps", len(result.Sweeps),
 	)
 	return finalTx, meta, nil
+}
+
+// replayable is the transaction a retry with its key replays: existing, or, for a
+// row recorded before a send that was never answered (a crash between the two, a
+// refusal whose mark failed), what sweep.SettleUnanswered finds first: the transfer
+// on its way, or nil when the send provably never happened (the row is failed and
+// the withdrawal is signed again). A row that cannot be verified yet is
+// sweep.ErrSendUnverified: neither replayed nor signed again.
+func (s *Service) replayable(ctx context.Context, existing *models.Transaction) (*models.Transaction, error) {
+	if !awaitsSendAnswer(existing) {
+		return existing, nil
+	}
+	settlement, err := s.sweep.SettleUnanswered(ctx, existing)
+	if err != nil {
+		return nil, err
+	}
+	if !settlement.Sent {
+		return nil, nil
+	}
+	if settlement.Transaction != nil {
+		return settlement.Transaction, nil
+	}
+	return existing, nil
+}
+
+// awaitsSendAnswer reports a row recorded before its send whose send was never
+// answered (broadcast_outcome pending).
+func awaitsSendAnswer(tx *models.Transaction) bool {
+	var payload map[string]json.RawMessage
+	var outcome string
+	if json.Unmarshal([]byte(tx.RawPayload), &payload) == nil {
+		_ = json.Unmarshal(payload[chain.BroadcastOutcomePayloadKey], &outcome)
+	}
+	return outcome == chain.BroadcastOutcomePending
 }
 
 // decryptShareA decrypts the wallet's MPC customer share (share A) using the

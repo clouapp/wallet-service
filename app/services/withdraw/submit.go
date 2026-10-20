@@ -13,6 +13,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/cacheguard"
 	"github.com/macrowallets/waas/app/services/chainregistry"
+	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/pkg/mpcshare"
 )
@@ -162,6 +163,12 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (*SubmitResult, er
 	}
 	tx, _, err := s.Request(ctx, request)
 	mpcshare.DiscardPassphrase(&request.Passphrase)
+	if errors.Is(err, sweep.ErrSendUnverified) {
+		// The transfer of an earlier try may be on its way: the withdrawal is neither
+		// failed (and refunded) nor signed again.
+		slog.Warn("withdrawal retry waits for its earlier send to be verified", "withdrawal_id", w.ID, "error", err)
+		return nil, &ExecuteError{Err: err}
+	}
 	if err != nil {
 		failureCode := FailureCode(err)
 		if markErr := s.submitRows.MarkFailed(ctx, w.ID, failureCode); markErr != nil {
