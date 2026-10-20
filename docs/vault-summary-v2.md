@@ -461,7 +461,11 @@ configs legadas sem dono recebem tudo. Deduplicação por (config, tipo, transa�
   depósito XRP é um `Payment` com resultado `tesSUCCESS` num ledger validado, pelo valor de `delivered_amount` em drops
   (um pagamento parcial credita o que chegou, não o `Amount` pedido); pagamentos `tec…`, moedas emitidas (IOU),
   pagamentos de uma conta para si mesma e os demais tipos de transação não são depósitos. A varredura periódica só roda com
-  `xrp`/`txrp` em `LOCAL_DEPOSIT_SCAN_CHAINS`.
+  `xrp`/`txrp` em `LOCAL_DEPOSIT_SCAN_CHAINS`. Com `LOCAL_XRP_STREAM_ENABLED=true` (desligado por padrão), uma assinatura
+  WebSocket dos endereços observados faz ler, pelo RPC da chain, o ledger de cada pagamento recebido assim que ele é
+  validado (segundos), em vez de esperar o próximo ciclo da varredura; o depósito vem sempre do RPC, nunca do que o
+  stream diz, os eventos e os campos são os mesmos, e a varredura continua rodando como garantia (o mesmo pagamento
+  nunca gera dois depósitos).
 - Solana (`sol`/`tsol`): além do SOL nativo, a varredura credita os tokens SPL (Token e Token-2022) cujo mint está no
   registro de tokens da chain. O depósito vai para o dono da conta de token (o endereço da carteira), pelo aumento
   líquido do saldo desse dono no mint (`preTokenBalances`/`postTokenBalances`), com `asset` = símbolo do token e

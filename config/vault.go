@@ -95,6 +95,16 @@ func registerVault() {
 			// Spacing paces the wallets of one pass so public RPCs are not rate limited.
 			"balance_refresh_interval_seconds": envInt("LOCAL_BALANCE_REFRESH_INTERVAL_SECONDS", 60),
 			"balance_refresh_spacing_ms":       envInt("LOCAL_BALANCE_REFRESH_SPACING_MS", 500),
+			// Real-time XRP deposits, off by default: an XRPL WebSocket subscription to the
+			// watched addresses of one XRP chain, which must also be in deposit_scan_chains
+			// (the ledger scan stays the guarantee); a heard payment makes the ledger be read
+			// through the chain RPC. The URL is a rippled or Clio wss:// endpoint (ws:// on
+			// the loopback only) of the chain's network; it may carry a key and is never
+			// logged. A misconfigured stream is logged and the other local workers run.
+			"xrp_stream_enabled":                 envBool("LOCAL_XRP_STREAM_ENABLED", false),
+			"xrp_stream_chain":                   envString("LOCAL_XRP_STREAM_CHAIN", ""),
+			"xrp_stream_url":                     envString("LOCAL_XRP_STREAM_URL", ""),
+			"xrp_stream_address_refresh_seconds": envInt("LOCAL_XRP_STREAM_ADDRESS_REFRESH_SECONDS", 15),
 		},
 		// An outbound transfer (withdrawal, sweep, gas seed) still pending or confirming
 		// this many hours after it was recorded is warned about on every tracker pass

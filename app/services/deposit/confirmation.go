@@ -136,6 +136,13 @@ func (s *Service) updateConfirmations(ctx context.Context, chainID string, adapt
 func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, currentBlock uint64, pending []models.Transaction) error {
 	confirmedWallets := newWalletSet()
 	defer func() { s.refreshBalances(ctx, confirmedWallets.ids) }()
+	return s.confirmPending(ctx, adapter, currentBlock, pending, confirmedWallets)
+}
+
+// confirmPending is applyConfirmations without the balance refresh: the wallets
+// whose movement it confirmed or failed are added to confirmedWallets, for the
+// caller to refresh (after releasing a lock it holds).
+func (s *Service) confirmPending(ctx context.Context, adapter types.Chain, currentBlock uint64, pending []models.Transaction, confirmedWallets *walletSet) error {
 	finality := newFinalityHeights(adapter)
 	reorgs := newReorgPass(adapter)
 	for _, tx := range pending {
