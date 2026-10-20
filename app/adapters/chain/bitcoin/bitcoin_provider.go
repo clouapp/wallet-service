@@ -30,6 +30,8 @@ type bitcoinProvider interface {
 	latestBlock(ctx context.Context) (uint64, error)
 	scanBlock(ctx context.Context, blockNum uint64) ([]types.DetectedTransfer, error)
 	transactionBlock(ctx context.Context, txID string) (uint64, error)
+	// blockHash is the hash of the block the provider holds at height (block_hash.go).
+	blockHash(ctx context.Context, height uint64) (string, error)
 	feeRate(ctx context.Context) (int64, error)
 	// transactionFee is what txID paid, inputs minus outputs, in satoshis.
 	transactionFee(ctx context.Context, txID string) (int64, error)
@@ -267,16 +269,5 @@ func (p directProvider) verifyNetwork(ctx context.Context) error {
 }
 
 func (p directProvider) genesisHash(ctx context.Context) (string, error) {
-	if p.live.restAPI {
-		body, err := p.live.esploraGet(ctx, "/block-height/0")
-		if err != nil {
-			return "", err
-		}
-		return strings.TrimSpace(string(body)), nil
-	}
-	var hash string
-	if err := p.live.rpc.Call(ctx, "getblockhash", &hash, 0); err != nil {
-		return "", err
-	}
-	return hash, nil
+	return p.readBlockHash(ctx, 0)
 }
