@@ -616,14 +616,15 @@ func TestFailover_Broadcast_AlreadyKnownOnTheNextEndpointIsASuccess(t *testing.T
 	}
 }
 
-func TestFailover_Broadcast_AlreadyKnownOnTheFirstEndpointStaysItsAnswer(t *testing.T) {
+func TestFailover_Broadcast_AlreadyKnownOnThePrimaryIsASuccessToo(t *testing.T) {
+	// A retry of bytes still in the primary's pool: the node holds them, so they were
+	// sent; reading it as a refusal would let a caller sign the payment again.
 	primary := newFakeNode(t, answers(rpcFailure(-32000, "already known")))
 	fallback := newFakeNode(t, answers(result(`"0xhash"`)))
 	client, _, _ := failoverClient(primary.URL(), fallback.URL())
 
 	err := client.Call(context.Background(), "eth_sendRawTransaction", nil, "0xraw")
-	var rpcErr *RPCError
-	if errors.Is(err, ErrBroadcastAlreadyKnown) || !errors.As(err, &rpcErr) || fallback.total() != 0 {
+	if !errors.Is(err, ErrBroadcastAlreadyKnown) || fallback.total() != 0 {
 		t.Fatalf("err = %v, fallback = %d", err, fallback.total())
 	}
 }
