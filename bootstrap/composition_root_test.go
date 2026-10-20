@@ -17,6 +17,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/pkg/egress"
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
@@ -87,4 +88,19 @@ func TestComposition_Root_GuardsEveryWebhookDestination(t *testing.T) {
 		"http is refused unless WEBHOOK_ALLOW_HTTP is set")
 	_, err = container.MustMake[*walletrecords.Webhooks]().Register(context.Background(), uuid.New(), metadata, "s", "deposit.confirmed")
 	assert.ErrorIs(t, err, webhook.ErrURLNotAllowed)
+}
+
+// Every connection of the shared provider transport (RPC nodes, chain and provider
+// APIs) opens through the RPC guard the chain provider installs: a link-local or
+// metadata destination is refused before anything is sent.
+func TestComposition_Root_GuardsEveryProviderConnection(t *testing.T) {
+	for _, url := range []string{
+		"http://169.254.169.254/latest/meta-data/",
+		"http://[fd00:ec2::254]/latest/meta-data/",
+		"http://metadata.google.internal/computeMetadata/v1/",
+		"http://rpc.example.com:25/",
+	} {
+		_, err := httpclient.NewClient(time.Second).Do(context.Background(), httpclient.Request{Method: httpclient.MethodGet, URL: url})
+		assert.ErrorIs(t, err, egress.ErrRefused, url)
+	}
 }

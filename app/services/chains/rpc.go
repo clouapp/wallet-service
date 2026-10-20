@@ -46,13 +46,13 @@ type RPCView struct {
 // permission catalog, so a platform_admins row is the gate. The pair is not
 // a second gate.
 type RPC struct {
-	store          RPCStore
-	admins         PlatformAdmins
-	activity       activitylog.Writer
-	sealer         RPCSealer
-	dialer         EndpointDialer
-	verify         PrimaryVerifier
-	allowLinkLocal bool
+	store        RPCStore
+	admins       PlatformAdmins
+	activity     activitylog.Writer
+	sealer       RPCSealer
+	dialer       EndpointDialer
+	verify       PrimaryVerifier
+	destinations destinationGuard
 }
 
 // RPCDeps is everything the platform chain-RPC editor needs. Store, Admins,
@@ -64,9 +64,10 @@ type RPCDeps struct {
 	Sealer   RPCSealer
 	Dialer   EndpointDialer
 	Verify   PrimaryVerifier
-	// AllowLinkLocal also accepts a link-local or cloud metadata endpoint
-	// (RPC_ALLOW_LINK_LOCAL); a private node is always accepted.
-	AllowLinkLocal bool
+	// Destinations checks the endpoint and what its name resolves to (the RPC guard of
+	// the composition root); nil refuses link-local and metadata destinations over the
+	// system resolver. A private node is always accepted.
+	Destinations destinationGuard
 }
 
 // NewRPC builds the platform chain-RPC editor.
@@ -89,14 +90,17 @@ func NewRPC(deps RPCDeps) *RPC {
 	if deps.Verify == nil {
 		panic("chain rpc: endpoint verifier is required")
 	}
+	if deps.Destinations == nil {
+		deps.Destinations = defaultRPCDestinations()
+	}
 	return &RPC{
-		store:          deps.Store,
-		admins:         deps.Admins,
-		activity:       deps.Activity,
-		sealer:         deps.Sealer,
-		dialer:         deps.Dialer,
-		verify:         deps.Verify,
-		allowLinkLocal: deps.AllowLinkLocal,
+		store:        deps.Store,
+		admins:       deps.Admins,
+		activity:     deps.Activity,
+		sealer:       deps.Sealer,
+		dialer:       deps.Dialer,
+		verify:       deps.Verify,
+		destinations: deps.Destinations,
 	}
 }
 
@@ -149,7 +153,7 @@ func (s *RPC) Update(ctx context.Context, actorID uuid.UUID, chainID string, bod
 	if invalid != nil && !invalid.empty() {
 		return RPCView{}, invalid
 	}
-	if refusal := rpcDestination(s.allowLinkLocal, plaintext); refusal != nil {
+	if refusal := rpcDestination(ctx, s.destinations, plaintext); refusal != nil {
 		refused := &ValidationError{}
 		refused.add(fieldRPCURL, refusal.Error())
 		return RPCView{}, refused

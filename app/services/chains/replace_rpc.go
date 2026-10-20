@@ -36,23 +36,27 @@ type ReplaceRPCDeps struct {
 	Seal      func(plaintext string) (string, error)
 	Verify    PrimaryVerifier
 	Fallbacks FallbackDisabler
-	// AllowLinkLocal also accepts a link-local or cloud metadata endpoint
-	// (RPC_ALLOW_LINK_LOCAL); a private node is always accepted.
-	AllowLinkLocal bool
+	// Destinations checks the endpoint and what its name resolves to (the RPC guard of
+	// the composition root); nil refuses link-local and metadata destinations over the
+	// system resolver. A private node is always accepted.
+	Destinations destinationGuard
 }
 
 // ReplaceRPC writes one chain's sealed rpc_url. The endpoint is never returned.
 type ReplaceRPC struct {
-	store          RPCStore
-	seal           func(plaintext string) (string, error)
-	verify         PrimaryVerifier
-	fallbacks      FallbackDisabler
-	allowLinkLocal bool
+	store        RPCStore
+	seal         func(plaintext string) (string, error)
+	verify       PrimaryVerifier
+	fallbacks    FallbackDisabler
+	destinations destinationGuard
 }
 
 // NewReplaceRPC wires the chain endpoint writer.
 func NewReplaceRPC(deps ReplaceRPCDeps) *ReplaceRPC {
-	return &ReplaceRPC{store: deps.Store, seal: deps.Seal, verify: deps.Verify, fallbacks: deps.Fallbacks, allowLinkLocal: deps.AllowLinkLocal}
+	if deps.Destinations == nil {
+		deps.Destinations = defaultRPCDestinations()
+	}
+	return &ReplaceRPC{store: deps.Store, seal: deps.Seal, verify: deps.Verify, fallbacks: deps.Fallbacks, destinations: deps.Destinations}
 }
 
 // Replace asks rawURL which network it serves, then seals it and stores it for
@@ -84,7 +88,7 @@ func (r *ReplaceRPC) Replace(ctx context.Context, chainID, rawURL string, skipNe
 	}
 	// A link-local or cloud metadata endpoint is refused before it is asked anything,
 	// --skip-network-check or not.
-	if err := rpcDestination(r.allowLinkLocal, rawURL); err != nil {
+	if err := rpcDestination(ctx, r.destinations, rawURL); err != nil {
 		return "", fmt.Errorf("url refused: %w", err)
 	}
 	if r == nil || r.store == nil {

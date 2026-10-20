@@ -16,6 +16,8 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/chainregistry"
+	"github.com/macrowallets/waas/pkg/egress"
+	"github.com/macrowallets/waas/tests/fakedns"
 )
 
 const (
@@ -162,6 +164,11 @@ func newHarness(t *testing.T, primary string, fallbacks ...models.ChainRPCEndpoi
 			return chainregistry.EndpointProbe{Network: models.NetworkEthereumSepolia, Head: 11937030, Latency: 120 * time.Millisecond}
 		},
 		Now: func() time.Time { return time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC) },
+		// Names resolve through a fake server: no test asks the network, and a name
+		// that does not resolve is left to the dial.
+		Destinations: egress.NewGuard(egress.RPCPolicy(false), fakedns.Start(t, map[string][]string{
+			"169.254.169.254.nip.io": {"169.254.169.254"},
+		}).Resolver()),
 	}
 	h.service = NewService(h.deps)
 	return h

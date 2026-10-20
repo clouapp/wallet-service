@@ -8,10 +8,10 @@ import (
 )
 
 // Policy says which destinations an outbound URL may name. The zero value is the
-// policy of a webhook receiver: https only, to a public host. Each field relaxes
-// one rule; unspecified, multicast, broadcast and reserved addresses, and host names
-// in a numeric form (2130706433, 0x7f000001, 0177.0.0.1, 127.1), are refused by
-// every policy.
+// policy of a webhook receiver: https only, to a public host. Each Allow field
+// relaxes one rule; unspecified, multicast, broadcast and reserved addresses, host
+// names in a numeric form (2130706433, 0x7f000001, 0177.0.0.1, 127.1) and the ports
+// of SSH (22) and SMTP (25) are refused by every policy.
 type Policy struct {
 	// AllowHTTP accepts http:// besides https:// (a dev or test receiver).
 	AllowHTTP bool
@@ -27,6 +27,9 @@ type Policy struct {
 	AllowLinkLocal bool
 	// AllowUserinfo accepts user:password@ in the URL (a node behind basic auth).
 	AllowUserinfo bool
+	// AllowedPorts, when not empty, are the only ports a destination may use (a URL
+	// without a port uses 443 for https and 80 for http).
+	AllowedPorts []int
 }
 
 // RPCPolicy is the policy of an RPC node URL that an operator or a platform admin
@@ -60,6 +63,9 @@ func (p Policy) CheckURL(rawURL string) error {
 	}
 	addr, literal, err := p.checkHost(parsed.Hostname())
 	if err != nil {
+		return err
+	}
+	if err := p.checkPort(urlPort(scheme, parsed.Port())); err != nil {
 		return err
 	}
 	testReceiver := p.AllowLoopback && literal && addr.Unmap().IsLoopback()
@@ -166,6 +172,39 @@ func hostNameByte(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '_'
 }
 
+// refusedPorts are the ports no destination may use: SSH and SMTP, which a signed
+// POST could still talk to.
+var refusedPorts = map[int]bool{22: true, 25: true}
+
+// checkPort refuses a refused port, or one outside AllowedPorts when it is set.
+func (p Policy) checkPort(port int) error {
+	if refusedPorts[port] {
+		return refuse(ReasonPort)
+	}
+	if len(p.AllowedPorts) == 0 {
+		return nil
+	}
+	for _, allowed := range p.AllowedPorts {
+		if port == allowed {
+			return nil
+		}
+	}
+	return refuse(ReasonPort)
+}
+
+// urlPort is the port a URL connects to: its own, or its scheme's default. The
+// port text was validated already.
+func urlPort(scheme, port string) int {
+	if port == "" {
+		if scheme == "http" {
+			return 80
+		}
+		return 443
+	}
+	n, _ := strconv.Atoi(port)
+	return n
+}
+
 func validPort(port string) bool {
 	if port == "" {
 		return true
@@ -214,17 +253,22 @@ var metadataAddrs = map[netip.Addr]bool{
 // does not cover.
 var sharedAddressSpace = netip.MustParsePrefix("100.64.0.0/10")
 
-// reservedPrefixes are the special-purpose ranges no public receiver is on.
+// reservedPrefixes are the special-purpose ranges no public receiver is on, among
+// them the transition relays that reach another network: the 6to4 relay anycast
+// (192.88.99.0/24), Teredo (2001::/32) and local-use NAT64 (64:ff9b:1::/48).
 var reservedPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("0.0.0.0/8"),
 	netip.MustParsePrefix("192.0.0.0/24"),
 	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("192.88.99.0/24"),
 	netip.MustParsePrefix("198.18.0.0/15"),
 	netip.MustParsePrefix("198.51.100.0/24"),
 	netip.MustParsePrefix("203.0.113.0/24"),
 	netip.MustParsePrefix("240.0.0.0/4"),
 	netip.MustParsePrefix("::/96"),
+	netip.MustParsePrefix("64:ff9b:1::/48"),
 	netip.MustParsePrefix("100::/64"),
+	netip.MustParsePrefix("2001::/32"),
 	netip.MustParsePrefix("2001:db8::/32"),
 	netip.MustParsePrefix("fec0::/10"),
 }

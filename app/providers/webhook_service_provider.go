@@ -22,10 +22,6 @@ import (
 	"github.com/macrowallets/waas/pkg/egress"
 )
 
-// appEnvTesting is the APP_ENV of the test suites, the one environment whose webhook
-// receivers may be on loopback (httptest servers).
-const appEnvTesting = "testing"
-
 // WebhookServiceProvider binds the webhook config, event, and subscription
 // repositories by type, the outbound webhook service with its SQS queue, the
 // destination guard every webhook URL goes through (registration, webhook.test and
@@ -35,7 +31,7 @@ type WebhookServiceProvider struct{}
 
 func (p *WebhookServiceProvider) Register(app foundation.Application) {
 	app.Singleton((*egress.Guard)(nil), func(foundation.Application) (any, error) {
-		return egress.NewGuard(webhookDestinationPolicy(), nil), nil
+		return newWebhookDestinations(), nil
 	})
 	app.Singleton((*delivery.Client)(nil), func(app foundation.Application) (any, error) {
 		guard, err := resolve[*egress.Guard](app)
@@ -136,15 +132,6 @@ func newWebhookService(app foundation.Application) (*webhook.Service, error) {
 		return webhook.DeliverySettingsFromStored(stored.MaxAttempts, stored.TimeoutSeconds), nil
 	})
 	return service, nil
-}
-
-// webhookDestinationPolicy is the policy of a webhook receiver: https to a public
-// host, http too with WEBHOOK_ALLOW_HTTP, and loopback only in the test suites.
-func webhookDestinationPolicy() egress.Policy {
-	return egress.Policy{
-		AllowHTTP:     facades.Config().GetBool("vault.outbound.webhook_allow_http"),
-		AllowLoopback: facades.Config().GetString("app.env") == appEnvTesting,
-	}
 }
 
 // newWebhookSyncService keeps the provider subscriptions in step with the

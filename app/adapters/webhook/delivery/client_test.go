@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/netip"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -17,18 +16,12 @@ import (
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/egress"
 	"github.com/macrowallets/waas/pkg/httpclient"
+	"github.com/macrowallets/waas/tests/fakedns"
 )
 
 // testGuard is the webhook policy with loopback allowed for the httptest receivers.
 func testGuard() *egress.Guard {
 	return egress.NewGuard(egress.Policy{AllowLoopback: true}, nil)
-}
-
-// pinnedResolver answers every name with one address, as a DNS record would.
-type pinnedResolver struct{ addr netip.Addr }
-
-func (r pinnedResolver) LookupNetIP(context.Context, string, string) ([]netip.Addr, error) {
-	return []netip.Addr{r.addr}, nil
 }
 
 func signedCall(url string) webhook.SignedDelivery {
@@ -56,7 +49,7 @@ func TestPost_RefusesAnInternalDestinationBeforeAnyConnection(t *testing.T) {
 		"https://user:pass@hooks.example.com/in":   egress.ReasonUserinfo,
 	}
 	for url, reason := range cases {
-		_, err := NewClient(egress.NewGuard(egress.Policy{}, pinnedResolver{netip.MustParseAddr("93.184.216.34")})).Post(context.Background(), signedCall(url))
+		_, err := NewClient(egress.NewGuard(egress.Policy{}, fakedns.Start(t, nil).Resolver())).Post(context.Background(), signedCall(url))
 		if !errors.Is(err, webhook.ErrURLNotAllowed) || !httpclient.IsBuild(err) {
 			t.Fatalf("%s: err = %v, want a not-sent refusal", url, err)
 		}
@@ -76,11 +69,11 @@ func TestPost_ConnectsOnlyToTheAddressTheNameResolvesToWhenItIsAllowed(t *testin
 	_, port, _ := net.SplitHostPort(server.Listener.Addr().String())
 	// A name that was public when the webhook was registered and now resolves to
 	// the loopback receiver (DNS rebinding).
-	rebound := pinnedResolver{netip.MustParseAddr("127.0.0.1")}
+	rebound := fakedns.Start(t, map[string][]string{"hooks.example.test": {"127.0.0.1"}}).Resolver()
 	call := signedCall("http://hooks.example.test:" + port + "/in")
 
 	_, err := NewClient(egress.NewGuard(egress.Policy{AllowHTTP: true}, rebound)).Post(context.Background(), call)
-	if !errors.Is(err, webhook.ErrURLNotAllowed) || webhook.RefusalReason(err) != egress.ReasonLoopback || !httpclient.IsBuild(err) {
+	if !errors.Is(err, webhook.ErrURLNotAllowed) || webhook.RefusalReason(err) != egress.ReasonResolved || !httpclient.IsBuild(err) {
 		t.Fatalf("err = %v, want the loopback refusal of the resolved address", err)
 	}
 	if received.Load() != 0 {

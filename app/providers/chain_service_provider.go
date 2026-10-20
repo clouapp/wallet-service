@@ -14,6 +14,7 @@ import (
 	"github.com/macrowallets/waas/app/services/currencies"
 	"github.com/macrowallets/waas/app/services/rpcendpoints"
 	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
 // ChainServiceProvider binds the chain, token, chain-resource, and currency
@@ -22,8 +23,12 @@ import (
 type ChainServiceProvider struct{}
 
 func (p *ChainServiceProvider) Register(app foundation.Application) {
-	// Before any RPC client is built: fingerprints are keyed with APP_KEY.
+	// Before any RPC client is built: fingerprints are keyed with APP_KEY, and every
+	// connection of the shared provider transport (RPC nodes, chain and provider APIs)
+	// opens through the RPC guard, so none reaches a link-local or metadata address
+	// unless RPC_ALLOW_LINK_LOCAL, whatever its name resolves to.
 	chainpkg.SetRPCFingerprintKey([]byte(facades.Config().GetString("app.key")))
+	httpclient.GuardConnections(RPCDestinations().DialContext)
 	app.Singleton((*repositories.ChainRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewChainRepository(nil), nil
 	})
@@ -105,13 +110,13 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 			return nil, err
 		}
 		return chainsvc.NewRPC(chainsvc.RPCDeps{
-			Store:          chains,
-			Admins:         admins,
-			Activity:       activityLog,
-			Sealer:         chainRPCSealer{},
-			Dialer:         registry,
-			Verify:         platformPrimaryVerifier(),
-			AllowLinkLocal: RPCAllowsLinkLocal(),
+			Store:        chains,
+			Admins:       admins,
+			Activity:     activityLog,
+			Sealer:       chainRPCSealer{},
+			Dialer:       registry,
+			Verify:       platformPrimaryVerifier(),
+			Destinations: RPCDestinations(),
 		}), nil
 	})
 	app.Singleton((*rpcendpoints.Service)(nil), func(app foundation.Application) (any, error) {
@@ -127,7 +132,7 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
-		deps := rpcendpoints.Deps{Chains: chains, Endpoints: endpoints, Sealer: chainRPCSealer{}, Dialer: registry, AllowLinkLocal: RPCAllowsLinkLocal()}
+		deps := rpcendpoints.Deps{Chains: chains, Endpoints: endpoints, Sealer: chainRPCSealer{}, Dialer: registry, Destinations: RPCDestinations()}
 		if store := chainRPCHealthStore(); store != nil {
 			deps.Health = store
 		}
@@ -223,11 +228,4 @@ func (chainRPCSealer) Open(stored string) (string, error) {
 // (chains:set-rpc then chains:align-network do, from artisan).
 func platformPrimaryVerifier() *chainregistry.PrimaryVerifier {
 	return chainregistry.NewPrimaryVerifier(openChainEndpoint, nil)
-}
-
-// RPCAllowsLinkLocal is RPC_ALLOW_LINK_LOCAL: whether an RPC endpoint a platform admin
-// or an operator writes may be a link-local or cloud metadata destination (off by
-// default; a private node is always allowed, egress.RPCPolicy).
-func RPCAllowsLinkLocal() bool {
-	return facades.Config().GetBool("vault.outbound.rpc_allow_link_local")
 }

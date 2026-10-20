@@ -46,6 +46,8 @@ const (
 	ReasonPrivate    = "the url host must not be or resolve to a private or shared address"
 	ReasonLinkLocal  = "the url host must not be or resolve to a link-local or cloud metadata address"
 	ReasonReserved   = "the url host must not be or resolve to an unspecified, multicast, broadcast or reserved address"
+	ReasonPort       = "the url port is not allowed"
+	ReasonResolved   = "the url host resolves to an address that is not allowed"
 )
 
 func refuse(reason string) error {

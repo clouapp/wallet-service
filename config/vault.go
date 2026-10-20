@@ -143,12 +143,22 @@ func registerVault() {
 		},
 		// Outbound destinations a customer or a platform admin stores. A webhook URL is
 		// https to a public host; WEBHOOK_ALLOW_HTTP also accepts http:// (a dev or test
-		// receiver, still on a public host), off by default. An RPC URL may name a
-		// private network, loopback, http and credentials; RPC_ALLOW_LINK_LOCAL also
-		// accepts link-local and cloud metadata addresses, off by default.
+		// receiver, still on a public host), off by default; WEBHOOK_ALLOWED_PORTS
+		// (comma-separated, e.g. 443,8443) limits the ports when set. An RPC URL may name
+		// a private network, loopback, http and credentials; RPC_ALLOW_LINK_LOCAL also
+		// accepts link-local and cloud metadata addresses, off by default. Ports 22 and
+		// 25 are always refused.
 		"outbound": map[string]any{
-			"webhook_allow_http":   envBool("WEBHOOK_ALLOW_HTTP", false),
-			"rpc_allow_link_local": envBool("RPC_ALLOW_LINK_LOCAL", false),
+			"webhook_allow_http":    envBool("WEBHOOK_ALLOW_HTTP", false),
+			"webhook_allowed_ports": envString("WEBHOOK_ALLOWED_PORTS", ""),
+			"rpc_allow_link_local":  envBool("RPC_ALLOW_LINK_LOCAL", false),
+		},
+		// The deployment the process runs in (ENV: dev, staging or prod; ENVIRONMENT:
+		// development, staging or production). On a production-like one APP_ENV=testing
+		// never allows loopback webhook receivers.
+		"deployment": map[string]any{
+			"env":         envString("ENV", ""),
+			"environment": envString("ENVIRONMENT", ""),
 		},
 		"webhooks": map[string]any{
 			"alchemy_auth_token": envString("ALCHEMY_AUTH_TOKEN", ""),
