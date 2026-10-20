@@ -296,7 +296,7 @@ func (s *Service) settleByInputsSpend(ctx context.Context, adapter types.Chain, 
 	if block, err := searchTransactionBlock(ctx, adapter, tx.TxHash); err == nil && block > 0 {
 		return chain.NonceSpend{Spent: true, Ours: true, Block: block}, true
 	}
-	spend, err := reader.InputsSpend(ctx, inputsQueryOf(tx, inputs))
+	spend, err := reader.InputsSpend(ctx, s.inputsQueryOf(ctx, tx, inputs))
 	switch {
 	case err != nil:
 		slog.Warn("cannot read who spent the inputs of an unknown-outcome transfer; it stays pending (withdrawals:reconcile)",
@@ -374,14 +374,37 @@ func unknownOutcomeProof(tx models.Transaction) (nonceProof, bool) {
 	return proof, true
 }
 
-// inputsQueryOf is the inputs proof's question about tx: its hash, inputs, and what
-// it pays.
-func inputsQueryOf(tx models.Transaction, inputs []string) chain.InputsQuery {
+// inputsQueryOf is the inputs proof's question about tx: its hash, inputs, what it
+// pays, and how to tell another transfer of ours (a spender that is a copy of tx only
+// when it is none of our other rows).
+func (s *Service) inputsQueryOf(ctx context.Context, tx models.Transaction, inputs []string) chain.InputsQuery {
 	amount, ok := new(big.Int).SetString(strings.TrimSpace(tx.Amount), 10)
 	if !ok {
 		amount = nil
 	}
-	return chain.InputsQuery{TxHash: tx.TxHash, Inputs: inputs, To: tx.ToAddress, Amount: amount}
+	return chain.InputsQuery{TxHash: tx.TxHash, Inputs: inputs, To: tx.ToAddress, Amount: amount,
+		OwnTransfer: func(txID string) (bool, error) { return s.ownOtherTransfer(ctx, tx, txID) }}
+}
+
+// outboundTxTypes are the rows this service broadcast (isOutboundTxType).
+var outboundTxTypes = []string{models.TxTypeWithdrawal, models.TxTypeSweep, models.TxTypeGasSeed}
+
+// ownOtherTransfer reports whether txID is the hash of an outbound row of ours on
+// tx's chain other than tx: another withdrawal, sweep or gas seed.
+func (s *Service) ownOtherTransfer(ctx context.Context, tx models.Transaction, txID string) (bool, error) {
+	if strings.EqualFold(strings.TrimSpace(txID), strings.TrimSpace(tx.TxHash)) {
+		return false, nil
+	}
+	for _, txType := range outboundTxTypes {
+		count, err := s.txRepo.CountByChainAndTxHash(ctx, tx.Chain, txID, txType)
+		if err != nil {
+			return false, err
+		}
+		if count > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // recordCopy keeps on the row the transaction that carried it when it is a copy of

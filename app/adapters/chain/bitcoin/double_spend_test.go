@@ -2,6 +2,7 @@ package bitcoin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -139,6 +140,7 @@ func TestBitcoin_SearchTransactionBlock_FindsTheTransactionOnAnyProvider(t *test
 func TestBitcoin_InputsSpend_ProvesADoubleSpendOnlyWhenEveryInputIsSpentElsewhereAndDeep(t *testing.T) {
 	ctx := context.Background()
 	elsewhere := paying(map[string]int64{"tltc1qsomeoneelse000000000000000000000000": 25_000, "tltc1qchange000000000000000000000000000": 9_000})
+	ourDestinationOtherAmount := paying(map[string]int64{ourPayment.To: 24_000, "tltc1qchange000000000000000000000000000": 9_500})
 	copyOfOurs := paying(map[string]int64{ourPayment.To: 25_000, "tltc1qchange000000000000000000000000000": 8_500})
 	cases := []struct {
 		name          string
@@ -203,6 +205,13 @@ func TestBitcoin_InputsSpend_ProvesADoubleSpendOnlyWhenEveryInputIsSpentElsewher
 			want:          chain.InputsSpend{Ours: true, TxHash: ourTxID},
 		},
 		{
+			name:          "a transaction paying our destination another amount is a conflict, not a copy",
+			confirmations: 1,
+			spends:        map[string]string{inputA: spentBy(otherTxID, 4990), inputB: spentBy(otherTxID, 4990)},
+			txs:           map[string]string{otherTxID: ourDestinationOtherAmount},
+			want:          chain.InputsSpend{Conflicted: true, Block: 4990},
+		},
+		{
 			name:          "a malleated or re-signed copy paying our destination and amount",
 			confirmations: 1,
 			spends:        map[string]string{inputA: spentBy(otherTxID, 4990), inputB: spentBy(otherTxID, 4990)},
@@ -226,6 +235,26 @@ func TestBitcoin_InputsSpend_ProvesADoubleSpendOnlyWhenEveryInputIsSpentElsewher
 			assert.Equal(t, tc.want, spend)
 		})
 	}
+	t.Run("another transfer of ours paying the same is a conflict, never a copy", func(t *testing.T) {
+		esplora, url := newSpendsEsplora(t, 5000)
+		esplora.outspends[outspendKey(inputA)] = spentBy(otherTxID, 4990)
+		esplora.outspends[outspendKey(inputB)] = spentBy(otherTxID, 4990)
+		esplora.txs[otherTxID] = copyOfOurs
+		query := ourPayment
+		var asked []string
+		query.OwnTransfer = func(txID string) (bool, error) {
+			asked = append(asked, txID)
+			return txID == otherTxID, nil
+		}
+		spend, err := newSpendsLive(t, 1, url).InputsSpend(ctx, query)
+		require.NoError(t, err)
+		assert.Equal(t, chain.InputsSpend{Conflicted: true, Block: 4990}, spend)
+		assert.Equal(t, []string{otherTxID}, asked, "each spender is asked once")
+
+		query.OwnTransfer = func(string) (bool, error) { return false, errors.New("database down") }
+		_, err = newSpendsLive(t, 1, url).InputsSpend(ctx, query)
+		require.Error(t, err, "a spender that cannot be told apart from our own transfers proves nothing")
+	})
 	t.Run("a conflicting transaction whose outputs cannot be read proves nothing", func(t *testing.T) {
 		esplora, url := newSpendsEsplora(t, 5000)
 		esplora.outspends[outspendKey(inputA)] = spentBy(otherTxID, 4990)

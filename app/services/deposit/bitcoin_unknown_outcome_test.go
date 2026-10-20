@@ -56,7 +56,18 @@ func (c *utxoChain) InputsSpend(_ context.Context, query chain.InputsQuery) (cha
 	if query.To != "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx" || query.Amount == nil || query.Amount.Int64() != 10000 {
 		return chain.InputsSpend{}, fmt.Errorf("the proof is asked about %s %v, not what the withdrawal pays", query.To, query.Amount)
 	}
-	return c.spends[query.TxHash], c.spendErr
+	spend := c.spends[query.TxHash]
+	// A copy is checked against our own transfers, as the adapter does.
+	if spend.Ours && spend.TxHash != "" && spend.TxHash != query.TxHash && query.OwnTransfer != nil {
+		own, err := query.OwnTransfer(spend.TxHash)
+		if err != nil {
+			return chain.InputsSpend{}, err
+		}
+		if own {
+			return chain.InputsSpend{Conflicted: true, Block: spend.Block}, c.spendErr
+		}
+	}
+	return spend, c.spendErr
 }
 
 func (c *utxoChain) asked(txHash string) int {
@@ -126,6 +137,12 @@ func TestRunConfirmationCheck_BitcoinUnknownOutcomesAreSettledByTheirInputs(t *t
 
 	openTx, open := utxoWithdrawal(t, w.ID, utxoInputs, true)
 
+	// Another withdrawal of ours pays the same destination and amount from the same
+	// inputs: it is a conflict, never a copy of this one.
+	supersededTx, superseded := utxoWithdrawal(t, w.ID, utxoInputs, true)
+	otherTx, _ := utxoWithdrawal(t, w.ID, utxoInputs, false)
+	utxo.spends[supersededTx.TxHash] = chain.InputsSpend{Ours: true, Block: utxoHead - 9, TxHash: otherTx.TxHash}
+
 	mempoolTx, mempool := utxoWithdrawal(t, w.ID, utxoInputs, true)
 	utxo.spends[mempoolTx.TxHash] = chain.InputsSpend{Ours: true}
 
@@ -149,6 +166,13 @@ func TestRunConfirmationCheck_BitcoinUnknownOutcomesAreSettledByTheirInputs(t *t
 	}
 	if got := reloadWithdrawal(t, conflicted.ID); got.Status != models.WithdrawalStatusFailed {
 		t.Fatalf("conflicted withdrawal %s, want failed", got.Status)
+	}
+	if got := reloadTransaction(t, supersededTx.ID); got.Status != string(types.TxStatusFailed) || got.ErrorMessage != models.WithdrawalFailureNotLanded {
+		t.Fatalf("inputs spent by another withdrawal of ours: status %s error %q, want failed %s (never confirmed from it)",
+			got.Status, got.ErrorMessage, models.WithdrawalFailureNotLanded)
+	}
+	if got := reloadWithdrawal(t, superseded.ID); got.Status != models.WithdrawalStatusFailed {
+		t.Fatalf("superseded withdrawal %s, want failed", got.Status)
 	}
 	if got := webhookEvents(t, string(types.EventWithdrawalFailed), conflicted.ID); len(got) != 1 {
 		t.Fatalf("%d withdrawal.failed events for the conflicted withdrawal, want 1", len(got))

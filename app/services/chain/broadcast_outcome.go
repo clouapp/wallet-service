@@ -59,12 +59,15 @@ type SpentInputsReader interface {
 
 // InputsQuery is the transfer InputsSpend reads about: its hash, the outpoints it
 // spends, and what it pays (To, Amount in base units). A transaction that spends
-// them and pays the same is ours: a malleated or re-signed copy.
+// them and pays the same is ours (a malleated or re-signed copy), unless OwnTransfer
+// says it is another transfer of ours (another withdrawal paying the same): that
+// one is a conflict. OwnTransfer may be nil; an error from it proves nothing.
 type InputsQuery struct {
-	TxHash string
-	Inputs []string
-	To     string
-	Amount *big.Int
+	TxHash      string
+	Inputs      []string
+	To          string
+	Amount      *big.Int
+	OwnTransfer func(txID string) (bool, error)
 }
 
 // InputsSpend is what a provider says about the inputs of a transfer the network

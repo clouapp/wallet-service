@@ -78,7 +78,8 @@ const btcDoubleSpendDepth = 6
 // InputsSpend reads, from the first provider that can say (an Esplora indexer),
 // which transaction spent each input of query.TxHash, and the tip. An input spent by
 // the transfer itself, or by a transaction paying query.To exactly query.Amount (a
-// malleated or re-signed copy), is Ours (in its block, or in the mempool). Every
+// malleated or re-signed copy) that is not another transfer of ours
+// (query.OwnTransfer), is Ours (in its block, or in the mempool). Every
 // input spent by other transactions paying someone else, each at least the
 // double-spend depth deep (the larger of the chain's confirmations and
 // DoubleSpendDepth, 6 by default), is Conflicted: the transfer can never land.
@@ -113,6 +114,16 @@ func (a *BitcoinLive) InputsSpend(ctx context.Context, query chain.InputsQuery) 
 		}
 		if known, ok := copies[spend.txID]; ok {
 			return known, nil
+		}
+		if query.OwnTransfer != nil {
+			own, ownErr := query.OwnTransfer(spend.txID)
+			if ownErr != nil {
+				return false, fmt.Errorf("btc inputs spend: is %s another transfer of ours: %w", spend.txID, ownErr)
+			}
+			if own {
+				copies[spend.txID] = false
+				return false, nil
+			}
 		}
 		outputs, outputsErr := providers.transactionOutputs(ctx, spend.txID)
 		if outputsErr != nil {

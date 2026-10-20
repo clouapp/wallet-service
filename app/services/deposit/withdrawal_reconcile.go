@@ -189,7 +189,7 @@ func (s *Service) judge(ctx context.Context, adapter types.Chain, tx models.Tran
 	}
 	if reader, ok := adapter.(chain.InputsSpendReader); ok {
 		if inputs, ok := spentInputsOf(tx); ok {
-			judgeInputsSpend(ctx, reader, tx, inputs, report)
+			s.judgeInputsSpend(ctx, reader, tx, inputs, report)
 			return
 		}
 	}
@@ -208,9 +208,9 @@ func (s *Service) judge(ctx context.Context, adapter types.Chain, tx models.Tran
 // judgeInputsSpend reads who spent the inputs of a Bitcoin-family transfer into
 // report: every one spent by other transactions paying someone else, at the
 // double-spend depth, fails it not_landed; spent by itself or by a copy paying the
-// same in a block, it landed.
-func judgeInputsSpend(ctx context.Context, reader chain.InputsSpendReader, tx models.Transaction, inputs []string, report *WithdrawalReconcileReport) {
-	spend, err := reader.InputsSpend(ctx, inputsQueryOf(tx, inputs))
+// same in a block (and none of our other rows), it landed.
+func (s *Service) judgeInputsSpend(ctx context.Context, reader chain.InputsSpendReader, tx models.Transaction, inputs []string, report *WithdrawalReconcileReport) {
+	spend, err := reader.InputsSpend(ctx, s.inputsQueryOf(ctx, tx, inputs))
 	switch {
 	case err != nil:
 		report.Verdict, report.Reason = ReconcileUnknown, "who spent its inputs cannot be read: "+chain.ClientText(err)
