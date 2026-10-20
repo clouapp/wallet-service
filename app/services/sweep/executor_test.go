@@ -1758,6 +1758,8 @@ func TestSettle_Unanswered_NeverSignsAgainAndFailsOnlyBytesThatCanNeverBeValid(t
 		{"the pool refuses it for its own reasons", 0, sealedSignedBefore, refusal("txpool is full"), unknown, true},
 		{"the fee cap is below the base fee now", 0, sealedSignedBefore, refusal("max fee per gas less than block base fee"), unknown, true},
 		{"the balance moved (the original may have landed)", 0, sealedSignedBefore, refusal("insufficient funds for gas * price + value"), unknown, true},
+		{"a duplicate the node only remembers by its id (TRON's recent-id cache)", 0, sealedSignedBefore, refusal("tron broadcast refused: DUP_TRANSACTION_ERROR: dup transaction"), unknown, true},
+		{"an adapter's unknown outcome, whatever its text", 0, sealedSignedBefore, answer("", chain.UnknownOutcome(errors.New("already known to one endpoint, not verified"))), unknown, true},
 		{"the signature can never be valid", 0, sealedSignedBefore, refusal("invalid sender"), invalid, true},
 		{"the bytes do not decode", 0, sealedSignedBefore, refusal("rlp: expected input list for types.LegacyTx"), invalid, true},
 		{"the bytes were not kept", 0, "", answer("0xsignedhash", nil), unknown, false},

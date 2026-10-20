@@ -37,10 +37,11 @@ var neverValidPhrases = []string{
 }
 
 // Answers of a node that already holds these exact bytes, for an adapter that
-// returns them as a refusal.
+// returns them as a refusal. A TRON DUP_TRANSACTION_ERROR is not one: the node's
+// recent-id cache also remembers a push it refused.
 var alreadyHeldPhrases = []string{
 	"already known", "known transaction", "already imported", "already in mempool", "already been processed",
-	"txn-already-in-mempool", "txn-already-known", "transaction already in block chain", "dup_transaction", "tefalready",
+	"txn-already-in-mempool", "txn-already-known", "transaction already in block chain", "tefalready",
 }
 
 // SettleUnanswered settles a withdrawal row recorded before its send whose send was
@@ -85,12 +86,15 @@ func (s *service) SettleUnanswered(ctx context.Context, tx *models.Transaction) 
 
 	_, sendErr := adapter.BroadcastTransaction(ctx, &types.SignedTx{ChainID: tx.Chain, RawBytes: raw, TxHash: tx.TxHash})
 	switch {
-	case sendErr == nil || answerHas(sendErr, alreadyHeldPhrases):
+	case sendErr == nil:
 		return s.recordAnswer(ctx, tx, chain.BroadcastOutcomeAccepted), nil
 	case errors.Is(sendErr, chain.ErrUnknownOutcome):
+		// The adapter already weighed the answer (a TRON duplicate no endpoint has).
 		return s.recordAnswer(ctx, tx, chain.BroadcastOutcomeUnknown), nil
 	case chain.RequestNotSent(sendErr) || errors.Is(sendErr, chain.ErrRateLimited):
 		return nil, fmt.Errorf("%w: the same bytes reached no node: %w", ErrSendUnverified, sendErr)
+	case answerHas(sendErr, alreadyHeldPhrases):
+		return s.recordAnswer(ctx, tx, chain.BroadcastOutcomeAccepted), nil
 	case answerHas(sendErr, neverValidPhrases):
 		return nil, s.failNeverValid(ctx, tx, sendErr)
 	}
