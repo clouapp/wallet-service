@@ -14,8 +14,12 @@ const (
 	// the row is tracked by the hash of its signed bytes like any sent transfer.
 	BroadcastOutcomePayloadKey = "broadcast_outcome"
 	BroadcastOutcomeUnknown    = "unknown"
-	// SenderNoncePayloadKey is the nonce the signed transaction spends (EVM).
+	// SenderNoncePayloadKey is the nonce the signed transaction spends (EVM); a
+	// scanned deposit keeps it too, next to SenderPayloadKey.
 	SenderNoncePayloadKey = "sender_nonce"
+	// SenderPayloadKey is the account that signed a scanned deposit's transaction
+	// (EVM): with its nonce, it proves the transaction can never land.
+	SenderPayloadKey = "sender"
 	// BroadcastHeadPayloadKey is the chain head read just before the send (EVM): no
 	// block before it can hold the transfer.
 	BroadcastHeadPayloadKey = "broadcast_head"

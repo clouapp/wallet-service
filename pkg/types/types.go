@@ -190,6 +190,12 @@ type DetectedTransfer struct {
 	// DestinationTag is the XRP Ledger destination tag of the payment; nil means
 	// none, and it is always nil on the other chains.
 	DestinationTag *uint32 `json:"destination_tag,omitempty"`
+	// Sender and SenderNonce are the account that signed the transaction and the
+	// nonce it spent (EVM; for a token transfer, the transaction's signer, not the
+	// token sender). The confirmation tracker proves with them that a deposit whose
+	// block was reorganized away can never land. Empty and nil on other chains.
+	Sender      string  `json:"sender,omitempty"`
+	SenderNonce *uint64 `json:"sender_nonce,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
