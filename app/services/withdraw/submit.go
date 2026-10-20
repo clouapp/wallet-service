@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/cacheguard"
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/pkg/mpcshare"
@@ -113,6 +116,11 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (*SubmitResult, er
 	if callerAccountID == uuid.Nil && in.Wallet.AccountID != nil {
 		callerAccountID = *in.Wallet.AccountID
 	}
+	release, err := s.holdIdempotencyKey(ctx, in.IdempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 
 	created, err := s.Create(ctx, CreateInput{
 		Wallet:             in.Wallet,
@@ -211,4 +219,46 @@ func classifyCreateError(err error) error {
 		return err
 	}
 	return &CreateRowError{Endpoint: "create_wallet_withdrawal", Err: err}
+}
+
+const (
+	// A submit waits at most sameKeyWait (under the API gateway's 29 s) for another
+	// one with its idempotency key, polling every sameKeyPoll; the key's lock frees
+	// itself after sameKeyLockTTL if its holder died.
+	sameKeyWait    = 25 * time.Second
+	sameKeyPoll    = 100 * time.Millisecond
+	sameKeyLockTTL = 3 * time.Minute
+)
+
+// holdIdempotencyKey serializes the submits of one idempotency key: a second one
+// waits for the first to finish (its transfer recorded, sent and marked) and then
+// sees its outcome, instead of replaying a row whose bytes have not left yet. A
+// submit without a key is never held. A key still held after sameKeyWait is
+// answered as a withdrawal in progress (nothing is marked).
+func (s *Service) holdIdempotencyKey(ctx context.Context, key string) (func(), error) {
+	key = strings.TrimSpace(key)
+	if key == "" || s.cache == nil {
+		return func() {}, nil
+	}
+	lockKey := "vault:lock:withdrawal-key:" + key
+	deadline := time.Now().Add(sameKeyWait)
+	for {
+		acquired, err := cacheguard.Acquire(s.cache, lockKey, sameKeyLockTTL)
+		if err != nil {
+			return nil, &CreateRowError{Endpoint: "withdrawal_key_lock", Err: err}
+		}
+		if acquired {
+			return func() { s.cache.Forget(lockKey) }, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, &ExecuteError{Err: fmt.Errorf("%w: another submit with this idempotency key is still running", ErrConcurrentWithdraw)}
+		}
+		timer := time.NewTimer(sameKeyPoll)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
 }

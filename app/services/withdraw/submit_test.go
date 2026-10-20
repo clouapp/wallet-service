@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -463,7 +464,9 @@ func (s *sendingSweep) ExecutePlan(_ context.Context, plan *sweep.Plan, _ sweep.
 		return nil, errors.New("the plan names no withdrawal: the transfer could not be found by a retry")
 	}
 	key := plan.IdempotencyKey
-	tx := &models.Transaction{ID: txID, TxHash: "0xsent", Status: string(types.TxStatusConfirming), IdempotencyKey: &key}
+	// The executor records what the send answered once the bytes left.
+	tx := &models.Transaction{ID: txID, TxHash: "0xsent", Status: string(types.TxStatusConfirming), IdempotencyKey: &key,
+		RawPayload: `{"broadcast_outcome":"accepted"}`}
 	if s.txs.byKey == nil {
 		s.txs.byKey = map[string]*models.Transaction{}
 	}
@@ -513,5 +516,64 @@ func TestSubmit_Retry_AfterACrashBetweenTheSendAndItsMarkNeverSignsAgain(t *test
 	}
 	if w := result.Withdrawal; w.Status != models.WithdrawalStatusBroadcast || w.TxHash != "0xsent" {
 		t.Fatalf("retry result %+v: the transfer sent the first time", w)
+	}
+}
+
+// holdingSweep sends like sendingSweep, but holds the send until release closes.
+type holdingSweep struct {
+	sendingSweep
+	started chan struct{}
+	release chan struct{}
+}
+
+func (h *holdingSweep) ExecutePlan(ctx context.Context, plan *sweep.Plan, creds sweep.SigningCredentials, txID uuid.UUID, to, user string) (*sweep.Result, error) {
+	result, err := h.sendingSweep.ExecutePlan(ctx, plan, creds, txID, to, user)
+	close(h.started)
+	<-h.release
+	return result, err
+}
+
+func TestSubmit_SameKey_ASecondSubmitWaitsForTheFirstsOutcome(t *testing.T) {
+	wallet := sealedCreateWallet(t, "eth", nil)
+	rows := newSubmitRows()
+	txs := newMemTransactions()
+	runner := &holdingSweep{
+		sendingSweep: sendingSweep{planSweep: planSweep{strategy: sweep.StrategyDirectFromBase}, txs: txs, rows: rows},
+		started:      make(chan struct{}), release: make(chan struct{}),
+	}
+	svc := newSubmitService(t, wallet, &runner.planSweep, rows, &submitEvents{})
+	svc.sweep = runner
+	svc.transactionRepo = txs
+	in := submitInput(wallet)
+
+	first := make(chan error, 1)
+	go func() {
+		_, err := svc.Submit(context.Background(), in)
+		first <- err
+	}()
+	<-runner.started // the first submit recorded its transfer and holds the send
+
+	second := make(chan *SubmitResult, 1)
+	secondErr := make(chan error, 1)
+	go func() {
+		result, err := svc.Submit(context.Background(), in)
+		second <- result
+		secondErr <- err
+	}()
+	select {
+	case <-second:
+		t.Fatal("the second submit with the same key answered before the first one's bytes left")
+	case <-time.After(300 * time.Millisecond):
+	}
+	close(runner.release)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	result := <-second
+	if err := <-secondErr; err != nil {
+		t.Fatal(err)
+	}
+	if runner.signed != 1 || !result.Replayed || result.Withdrawal.TxHash != "0xsent" {
+		t.Fatalf("signed %d, second %+v: the second submit replays the first one's outcome", runner.signed, result)
 	}
 }
