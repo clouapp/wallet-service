@@ -326,7 +326,10 @@ The ECS services run tasks for as long as they live; the scheduled tasks run onc
 `<arn>:<json-key>::`), never as plain environment. The keys:
 
 - `APP_KEY` (32 bytes, never rotated in place: it seals TOTP secrets, RPC URLs and ingest
-  signing secrets at rest; `.env.prod.example`), `JWT_SECRET`;
+  signing secrets at rest; `.env.prod.example`), `JWT_SECRET`. It also seals the signed bytes a
+  withdrawal row keeps until its send is answered (`signed_tx` in `transactions.raw_payload`):
+  after a rotation they no longer open, and a same-key retry of such a row records an unknown
+  outcome that the tracker's proofs settle (nothing is signed again);
 - `DB_PASSWORD`, `REDIS_PASSWORD`;
 - mail credentials;
 - the provider and price keys: `TRON_API_KEY`, `ALCHEMY_AUTH_TOKEN`, `HELIUS_API_KEY`,

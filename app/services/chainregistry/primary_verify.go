@@ -36,8 +36,8 @@ func NewPrimaryVerifier(open func(stored string) (string, error), profile func()
 // chain's own network, or, for a primary record (eth, sol, ...), the network the
 // configured profile names for it: the move chains:align-network makes next, then
 // moved is true. Another network is chain.ErrWrongNetwork and an endpoint that does
-// not answer is ErrEndpointUnverified. A chain whose endpoints cannot be asked
-// (Bitcoin family, TRON, XRP) is ErrEndpointIdentityUnsupported: nothing is checked.
+// not answer is ErrEndpointUnverified. A chain whose endpoints cannot be asked (the
+// Bitcoin family) is ErrEndpointIdentityUnsupported: nothing is checked.
 func (v *PrimaryVerifier) Verify(ctx context.Context, record models.Chain, candidate string) (network string, moved bool, err error) {
 	if !models.RPCFallbacksSupported(record.AdapterType) {
 		return "", false, ErrEndpointIdentityUnsupported

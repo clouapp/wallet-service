@@ -232,9 +232,11 @@ Each chain has an ordered endpoint list. Position 1 is the primary (`chains.rpc_
 `chains:set-rpc` writes); positions 2 and after are fallbacks (`chain_rpc_endpoints`), tried in order
 when the endpoints before them cannot serve a call. URLs are sealed with `APP_KEY` at rest and are
 never printed: commands and the platform API show an endpoint by its host and a fingerprint.
-EVM chains (`eth`, `polygon`, `bsc`, `base`, `arbitrum` and their `t`-prefixed records) and Solana
-(`sol`, `tsol`) fail over through this list. Bitcoin-family chains use `<PREFIX>_FALLBACK_RPC_URL`;
-TRON and XRP have no fallback yet.
+EVM chains (`eth`, `polygon`, `bsc`, `base`, `arbitrum` and their `t`-prefixed records), Solana
+(`sol`, `tsol`), TRON (`tron`, `ttron`) and XRP (`xrp`, `txrp`) fail over through this list. A TRON
+endpoint must answer its block 0 id (`/wallet/getblockbynum`, `num` 0) and an XRP server its
+`server_info` `network_id` (mainnet 0, altnet 1) before it is written or used. Bitcoin-family chains
+use `<PREFIX>_FALLBACK_RPC_URL`.
 
 ### Read the list and its health
 
@@ -368,7 +370,7 @@ go run . artisan chains:rpc-endpoints eth --defaults --apply                    
   - Set up alerts for quota limits
 
 ### Redundancy Strategy
-Give every EVM and Solana chain **fallback endpoints from other providers**: the service tries them in
+Give every EVM, Solana, TRON and XRP chain **fallback endpoints from other providers**: the service tries them in
 order when the primary cannot serve a call. See [Fallback Endpoints and Failover](#fallback-endpoints-and-failover)
 below. Bitcoin-family chains take their fallbacks from `<PREFIX>_FALLBACK_RPC_URL` (`CLAUDE.md`,
 "Bitcoin-family provider failover").

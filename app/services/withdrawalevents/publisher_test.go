@@ -238,6 +238,7 @@ func TestPublish_Broadcast_SaysWhenTheBroadcastOutcomeIsUnknown(t *testing.T) {
 	}
 
 	accepted := newFixture()
+	accepted.tx.RawPayload = `{"broadcast_outcome":"accepted"}`
 	if err := accepted.publisher.PublishBroadcast(context.Background(), accepted.withdrawal, accepted.tx); err != nil {
 		t.Fatal(err)
 	}

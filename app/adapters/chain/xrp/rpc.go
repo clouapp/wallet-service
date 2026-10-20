@@ -5,14 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"math/big"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/macrowallets/waas/app/adapters/chain/rpc"
 	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
 const (
@@ -315,6 +316,8 @@ func (a *Live) TransactionExpired(ctx context.Context, txHash string, lastLedger
 	if txHash == "" || lastLedger == 0 {
 		return false, fmt.Errorf("xrp expiry: tx hash and last ledger are required")
 	}
+	// The ledgers held and the search come from one server.
+	ctx = rpc.PinEndpoint(ctx)
 	minLedger := uint64(1)
 	if lastLedger > xrpLastLedgerWindow {
 		minLedger = lastLedger - xrpLastLedgerWindow
@@ -476,57 +479,120 @@ func (a *Live) call(ctx context.Context, method string, params []any, dest any) 
 	return a.callWithLimit(ctx, method, params, dest, xrpRPCMaxResponseBytes)
 }
 
-// callWithLimit is call with an answer of up to limit bytes.
+// callWithLimit is call with an answer of up to limit bytes, put to the chain's
+// endpoints in order (rpc.Endpoints: the primary, then each fallback of the
+// chain's network).
 func (a *Live) callWithLimit(ctx context.Context, method string, params []any, dest any, limit int) error {
-	body, err := json.Marshal(xrpRPCRequest{Method: method, Params: params})
+	result, err := a.request(ctx, method, params, limit, nil)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.endpoint(), bytes.NewReader(body))
+	return decodeXRPResult(method, result, dest)
+}
+
+// request puts one method to the endpoints and returns the result of the one that
+// served it. judge, for a broadcast, says what a result means for failover; a
+// broadcast moves to the next endpoint only while the previous one certainly did not
+// take the bytes.
+func (a *Live) request(ctx context.Context, method string, params []any, limit int, judge func(json.RawMessage) (rpc.Outcome, error)) (json.RawMessage, error) {
+	body, err := json.Marshal(xrpRPCRequest{Method: method, Params: params})
 	if err != nil {
-		return fmt.Errorf("xrp %s: %w", method, err)
+		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := a.http.Do(req)
+	var result json.RawMessage
+	err = a.endpoints.Do(ctx, judge != nil, func(ctx context.Context, at rpc.Attempt) (rpc.Outcome, error) {
+		raw, kind, exchangeErr := a.exchange(ctx, at.URL, method, body, limit)
+		if exchangeErr == nil && judge != nil {
+			kind, exchangeErr = judge(raw)
+		}
+		if exchangeErr == nil {
+			result = raw
+		}
+		return kind, exchangeErr
+	})
+	return result, err
+}
+
+// rippled errors (result.error) that say what the server cannot do now, not what is
+// wrong with the request. The ones rippled checks before it runs the method (the
+// server is not synced, has no current or closed ledger, is too busy or amendment
+// blocked) never read the request, so a submit refused with them was not relayed.
+var (
+	xrpNotRunErrors = map[string]bool{
+		"noNetwork": true, "noCurrent": true, "noClosed": true, "tooBusy": true, "amendmentBlocked": true, "notSynced": true,
+	}
+	xrpUnavailableErrors = map[string]bool{"internal": true, "failedToForward": true, "notReady": true}
+	// A server that does not serve the method or does not hold the ledger asked
+	// about (a short history): another one may.
+	xrpUnsupportedErrors = map[string]bool{"unknownCmd": true, "lgrNotFound": true, "notImpl": true}
+)
+
+const xrpRateLimitedError = "slowDown"
+
+// exchange posts one request to rawURL and says what the answer means for
+// failover: a rate limit (HTTP 429/503 slowDown), a server that cannot answer (a
+// transport error, a non-200 status, a body that is not JSON or has no result, a
+// server not synced or too busy), a method or ledger the server does not serve, or
+// the result, whatever its status says about the request.
+func (a *Live) exchange(ctx context.Context, rawURL, method string, body []byte, limit int) (json.RawMessage, rpc.Outcome, error) {
+	resp, err := a.client.Do(ctx, httpclient.Request{
+		Method:   httpclient.MethodPost,
+		URL:      rawURL,
+		Header:   map[string]string{"Content-Type": "application/json"},
+		Body:     body,
+		HasBody:  true,
+		MaxBytes: int64(limit) + 1,
+	})
 	if err != nil {
-		return fmt.Errorf("xrp %s: %w", method, err)
+		return nil, rpc.OutcomeUnavailable, fmt.Errorf("xrp %s: %w", method, err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("xrp %s: http %d", method, resp.StatusCode)
+	if len(resp.Body) > limit {
+		return nil, rpc.OutcomeUnavailable, fmt.Errorf("xrp %s: response larger than %d bytes", method, limit)
 	}
-	raw, err := readLimited(resp.Body, limit)
-	if err != nil {
-		return fmt.Errorf("xrp %s: %w", method, err)
+	switch status := resp.StatusCode; {
+	case status == http.StatusTooManyRequests || (status == http.StatusServiceUnavailable && bytes.Contains(resp.Body, []byte(xrpRateLimitedError))):
+		return nil, rpc.OutcomeRateLimited, fmt.Errorf("xrp %s: %w (HTTP %d)", method, chain.ErrRateLimited, status)
+	case status == http.StatusNotFound || status == http.StatusMethodNotAllowed:
+		return nil, rpc.OutcomeUnsupported, fmt.Errorf("xrp %s: http %d", method, status)
+	case status != http.StatusOK:
+		return nil, rpc.OutcomeUnavailable, fmt.Errorf("xrp %s: http %d", method, status)
 	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder := json.NewDecoder(bytes.NewReader(resp.Body))
 	decoder.UseNumber()
 	var envelope struct {
 		Result json.RawMessage `json:"result"`
 	}
 	if err := decoder.Decode(&envelope); err != nil {
-		return fmt.Errorf("xrp %s: response is not json", method)
+		return nil, rpc.OutcomeUnavailable, fmt.Errorf("xrp %s: response is not json: %w", method, err)
 	}
 	if len(envelope.Result) == 0 {
-		return fmt.Errorf("xrp %s: response has no result", method)
+		return nil, rpc.OutcomeUnavailable, fmt.Errorf("xrp %s: response has no result", method)
 	}
-	inner := json.NewDecoder(bytes.NewReader(envelope.Result))
+	var state xrpRPCError
+	_ = json.Unmarshal(envelope.Result, &state)
+	if state.Status == "error" {
+		switch {
+		case state.Error == xrpRateLimitedError:
+			return nil, rpc.OutcomeRateLimited, fmt.Errorf("xrp %s: %w (%s)", method, chain.ErrRateLimited, state.Error)
+		case xrpNotRunErrors[state.Error]:
+			return nil, rpc.OutcomeUnavailable, chain.NotSent(fmt.Errorf("xrp %s: %s", method, state.Error))
+		case xrpUnavailableErrors[state.Error]:
+			return nil, rpc.OutcomeUnavailable, fmt.Errorf("xrp %s: %s", method, state.Error)
+		case xrpUnsupportedErrors[state.Error]:
+			return nil, rpc.OutcomeUnsupported, fmt.Errorf("xrp %s: %s", method, state.Error)
+		}
+	}
+	return envelope.Result, rpc.OutcomeAnswer, nil
+}
+
+// decodeXRPResult decodes a result into dest, numbers kept as json.Number.
+func decodeXRPResult(method string, result json.RawMessage, dest any) error {
+	inner := json.NewDecoder(bytes.NewReader(result))
 	inner.UseNumber()
 	if err := inner.Decode(dest); err != nil {
 		return fmt.Errorf("xrp %s: result is not the expected shape", method)
 	}
 	return nil
-}
-
-func readLimited(body io.Reader, limit int) ([]byte, error) {
-	raw, err := io.ReadAll(io.LimitReader(body, int64(limit)+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(raw) > limit {
-		return nil, fmt.Errorf("response larger than %d bytes", limit)
-	}
-	return raw, nil
 }
 
 // parseDrops accepts a JSON string of an integer. A JSON number is refused so

@@ -64,8 +64,9 @@ var (
 		"rate limit", "rate-limit", "ratelimit", "too many requests", "request limit", "requests limit",
 		"daily limit", "quota", "capacity limit", "throttl",
 	}
-	// noStatePhrases are a node without the state of an old block (no archive): the
-	// call moves on, the node stays healthy for every other call.
+	// noStatePhrases are a node without the state of a block. For a past block (no
+	// archive) the call moves on and the node stays healthy; for a current read the
+	// node is broken and counts a failure (exchange).
 	noStatePhrases = []string{
 		"missing trie node", "historical state", "state is not available", "state not available", "pruned",
 	}
@@ -176,6 +177,45 @@ func shapeKey(method string, params []interface{}) string {
 func shapeRefused(err error) bool {
 	var rpcErr *rpcError
 	return errors.As(err, &rpcErr) && rpcErr != nil && rpcErr.Code == jsonRPCInvalidParams
+}
+
+// historicalRead reports a call that names a past block: the block of
+// eth_getBlockByNumber and the block-number reads is their first parameter, an
+// eth_getLogs filter names it by blockHash, fromBlock or toBlock, and every other
+// read names it last. A past block is an explicit number ("0x10"), "earliest" or
+// an EIP-1898 block object; "latest", "pending", "safe", "finalized" and no block
+// at all are current reads.
+func historicalRead(method string, params []interface{}) bool {
+	if len(params) == 0 {
+		return false
+	}
+	switch method {
+	case "eth_getBlockByNumber", "eth_getBlockReceipts", "eth_getBlockTransactionCountByNumber", "eth_getTransactionByBlockNumberAndIndex":
+		return pastBlock(params[0])
+	case "eth_getLogs":
+		filter, ok := params[0].(map[string]interface{})
+		if !ok {
+			return false
+		}
+		if _, byHash := filter["blockHash"]; byHash {
+			return true
+		}
+		return pastBlock(filter["fromBlock"]) || pastBlock(filter["toBlock"])
+	}
+	return pastBlock(params[len(params)-1])
+}
+
+// pastBlock reports a block parameter that names a past block.
+func pastBlock(block interface{}) bool {
+	switch b := block.(type) {
+	case string:
+		return b == "earliest" || (strings.HasPrefix(b, "0x") && len(b) <= len("0x")+16)
+	case map[string]interface{}:
+		_, byHash := b["blockHash"]
+		_, byNumber := b["blockNumber"]
+		return byHash || byNumber
+	}
+	return false
 }
 
 // MissingState reports a node's answer that it has no state for the block asked
