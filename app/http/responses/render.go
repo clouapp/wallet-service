@@ -62,6 +62,7 @@ const (
 	CodeDestinationBelowReserve       = resources.CodeDestinationBelowReserve
 	CodeDestinationTagRequired        = resources.CodeDestinationTagRequired
 	CodeDestinationTagUnsupported     = resources.CodeDestinationTagUnsupported
+	CodeWebhookURLNotAllowed          = resources.CodeWebhookURLNotAllowed
 )
 
 const contentTypeJSON = "application/json"

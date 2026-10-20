@@ -12,11 +12,11 @@ import (
 	"github.com/goravel/framework/facades"
 	"github.com/stretchr/testify/require"
 
-	_ "github.com/macrowallets/waas/app/adapters/webhook/delivery"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/database/migrations"
+	"github.com/macrowallets/waas/pkg/egress"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 	"github.com/stretchr/testify/assert"
@@ -53,9 +53,12 @@ func deliveredSignature(t *testing.T, secret string) string {
 	}))
 	defer server.Close()
 
+	// The receiver is an httptest server on loopback; the booted app's delivery
+	// client allows loopback in the test suites only.
 	svc := webhook.NewService(webhook.Deps{
-		Configs: repositories.NewWebhookConfigRepository(nil, facades.Crypt()),
-		Events:  repositories.NewWebhookEventRepository(nil),
+		Configs:      repositories.NewWebhookConfigRepository(nil, facades.Crypt()),
+		Events:       repositories.NewWebhookEventRepository(nil),
+		Destinations: egress.NewGuard(egress.Policy{AllowLoopback: true}, nil),
 	})
 	cfg, err := svc.CreateConfig(context.Background(), server.URL, secret, []string{"deposit.confirmed"}, nil)
 	require.NoError(t, err)

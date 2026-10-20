@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,27 +18,37 @@ import (
 	"github.com/stretchr/testify/mock"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/egress"
 	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/mocks"
 )
 
 // The delivery adapter imports this package, so these tests cannot import it.
-// Register the same POST the adapter uses so Deliver signs with the loaded secret.
+// Register the same guarded POST the adapter uses so Deliver signs with the loaded
+// secret and a refused destination comes back as the adapter returns it.
 func init() {
-	SetDeliveryClient(func() DeliveryClient { return testHTTPDelivery{} })
+	guard := testDestinations()
+	delivery := testHTTPDelivery{guard: guard, transport: httpclient.NewDirectTransport(guard.DialContext)}
+	SetDeliveryClient(func() DeliveryClient { return delivery })
 }
 
-type testHTTPDelivery struct{}
+type testHTTPDelivery struct {
+	guard     *egress.Guard
+	transport *httpclient.DirectTransport
+}
 
-func (testHTTPDelivery) Post(ctx context.Context, call SignedDelivery) (httpclient.Response, error) {
+func (d testHTTPDelivery) Post(ctx context.Context, call SignedDelivery) (httpclient.Response, error) {
 	if ctx == nil {
 		return httpclient.Response{}, fmt.Errorf("webhook delivery: context is required")
 	}
 	if call.Timeout <= 0 {
 		return httpclient.Response{}, fmt.Errorf("webhook delivery: timeout is required")
 	}
-	return httpclient.NewClientWithoutRedirects(call.Timeout).Do(ctx, httpclient.Request{
+	if err := d.guard.CheckURL(call.URL); err != nil {
+		return httpclient.Response{}, httpclient.BuildFailure(fmt.Errorf("%w: %w", ErrURLNotAllowed, err))
+	}
+	resp, err := d.transport.ClientWithoutRedirects(call.Timeout).Do(ctx, httpclient.Request{
 		Method: httpclient.MethodPost,
 		URL:    call.URL,
 		Header: map[string]string{
@@ -51,6 +62,10 @@ func (testHTTPDelivery) Post(ctx context.Context, call SignedDelivery) (httpclie
 		Body:    call.Body,
 		HasBody: true,
 	})
+	if errors.Is(err, egress.ErrRefused) {
+		return httpclient.Response{}, httpclient.BuildFailure(fmt.Errorf("%w: %w", ErrURLNotAllowed, err))
+	}
+	return resp, err
 }
 
 func TestService_Create_Config(t *testing.T) {
@@ -259,12 +274,12 @@ func TestService_Deliver_Unreachable(t *testing.T) {
 	svc, _ := newMemoryWebhookService()
 	ctx := context.Background()
 
-	cfg, err := svc.CreateConfig(ctx, "http://localhost:1/nope", "s", []string{"deposit.confirmed"}, nil)
+	cfg, err := svc.CreateConfig(ctx, "http://127.0.0.1:1/nope", "s", []string{"deposit.confirmed"}, nil)
 	if err != nil {
 		t.Fatalf("CreateConfig: %v", err)
 	}
 	msg := types.WebhookMessage{
-		EventID: uuid.NewString(), Payload: "{}", DeliveryURL: "http://localhost:1/nope", ConfigID: cfg.ID.String(),
+		EventID: uuid.NewString(), Payload: "{}", DeliveryURL: "http://127.0.0.1:1/nope", ConfigID: cfg.ID.String(),
 	}
 
 	err = svc.Deliver(ctx, msg)
@@ -283,9 +298,10 @@ func TestEnqueue_Event_QueuePayloadCarriesNoSecret(t *testing.T) {
 	}).Return(nil).Maybe()
 	store := newMemoryWebhook()
 	svc := NewService(Deps{
-		SQS:     sender,
-		Configs: store,
-		Events:  memoryEvents{store: store},
+		SQS:          sender,
+		Configs:      store,
+		Events:       memoryEvents{store: store},
+		Destinations: testDestinations(),
 	})
 	events := []string{string(types.EventDepositPending), string(types.EventWithdrawalBroadcasting)}
 	cfg, err := svc.CreateConfig(ctx, "https://example.com/hook", secret, events, nil)

@@ -36,19 +36,23 @@ type ReplaceRPCDeps struct {
 	Seal      func(plaintext string) (string, error)
 	Verify    PrimaryVerifier
 	Fallbacks FallbackDisabler
+	// AllowLinkLocal also accepts a link-local or cloud metadata endpoint
+	// (RPC_ALLOW_LINK_LOCAL); a private node is always accepted.
+	AllowLinkLocal bool
 }
 
 // ReplaceRPC writes one chain's sealed rpc_url. The endpoint is never returned.
 type ReplaceRPC struct {
-	store     RPCStore
-	seal      func(plaintext string) (string, error)
-	verify    PrimaryVerifier
-	fallbacks FallbackDisabler
+	store          RPCStore
+	seal           func(plaintext string) (string, error)
+	verify         PrimaryVerifier
+	fallbacks      FallbackDisabler
+	allowLinkLocal bool
 }
 
 // NewReplaceRPC wires the chain endpoint writer.
 func NewReplaceRPC(deps ReplaceRPCDeps) *ReplaceRPC {
-	return &ReplaceRPC{store: deps.Store, seal: deps.Seal, verify: deps.Verify, fallbacks: deps.Fallbacks}
+	return &ReplaceRPC{store: deps.Store, seal: deps.Seal, verify: deps.Verify, fallbacks: deps.Fallbacks, allowLinkLocal: deps.AllowLinkLocal}
 }
 
 // Replace asks rawURL which network it serves, then seals it and stores it for
@@ -77,6 +81,11 @@ func (r *ReplaceRPC) Replace(ctx context.Context, chainID, rawURL string, skipNe
 	}
 	if !isEnvReference && !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
 		return "", fmt.Errorf("url must start with http:// or https:// (or be env:NAME)")
+	}
+	// A link-local or cloud metadata endpoint is refused before it is asked anything,
+	// --skip-network-check or not.
+	if err := rpcDestination(r.allowLinkLocal, rawURL); err != nil {
+		return "", fmt.Errorf("url refused: %w", err)
 	}
 	if r == nil || r.store == nil {
 		return "", fmt.Errorf("chain repository is not configured")

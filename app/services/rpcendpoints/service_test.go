@@ -133,6 +133,7 @@ type harness struct {
 	store    *memoryStore
 	verified []string
 	dialer   *recordingDialer
+	deps     Deps
 	service  *Service
 }
 
@@ -155,13 +156,14 @@ func newHarness(t *testing.T, primary string, fallbacks ...models.ChainRPCEndpoi
 		keyedEndpoint: models.EVMNetworkIDEthereumSepolia, mainnetNode: models.EVMNetworkIDEthereumMainnet,
 		tenderly + "/v2": models.EVMNetworkIDEthereumSepolia,
 	}
-	h.service = NewService(Deps{
+	h.deps = Deps{
 		Chains: h.store, Endpoints: h.store, Sealer: fakeSealer{}, Verify: known.verify(&h.verified), Dialer: h.dialer,
 		Probe: func(context.Context, string, chainregistry.EndpointTarget, string) chainregistry.EndpointProbe {
 			return chainregistry.EndpointProbe{Network: models.NetworkEthereumSepolia, Head: 11937030, Latency: 120 * time.Millisecond}
 		},
 		Now: func() time.Time { return time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC) },
-	})
+	}
+	h.service = NewService(h.deps)
 	return h
 }
 

@@ -20,10 +20,14 @@ const (
 )
 
 // mapError turns a webhook service failure into the answer the external API
-// has always given. Update keeps the shared internal-error body, Store and
-// Index keep theirs; the cause stays in the log.
+// has always given. A URL the outbound guard refuses (on create, or a claim or an
+// update that keeps it active) is 422 webhook_url_not_allowed with the rule it
+// broke. Update keeps the shared internal-error body, Store and Index keep theirs;
+// the cause stays in the log.
 func mapError(ctx http.Context, err error, action string) http.Response {
 	switch {
+	case errors.Is(err, webhook.ErrURLNotAllowed):
+		return responses.Error(ctx, http.StatusUnprocessableEntity, responses.CodeWebhookURLNotAllowed, webhook.RefusalReason(err))
 	case errors.Is(err, webhook.ErrWebhookConfigNotFound):
 		return responses.Error(ctx, http.StatusNotFound, responses.CodeNotFound, webhook.ErrWebhookConfigNotFound.Error())
 	case errors.Is(err, webhook.ErrWebhookOwnershipNotProven):

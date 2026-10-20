@@ -44,8 +44,15 @@ func (s *Whitelist) Remove(ctx context.Context, walletID, entryID uuid.UUID) err
 	return s.Delete(ctx, entry)
 }
 
-// Register adds a webhook scoped to the wallet.
+// Register adds a webhook scoped to the wallet. A URL the URL check refuses is its
+// error (webhook.ErrURLNotAllowed) and nothing is stored.
 func (s *Webhooks) Register(ctx context.Context, walletID uuid.UUID, url, secret, events string) (*models.WebhookConfig, error) {
+	if s.urls == nil {
+		return nil, fmt.Errorf("register wallet webhook: url check is required")
+	}
+	if err := s.urls.CheckURL(ctx, url); err != nil {
+		return nil, err
+	}
 	cfg := &models.WebhookConfig{
 		ID:       uuid.New(),
 		URL:      url,

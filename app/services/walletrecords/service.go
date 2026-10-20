@@ -341,11 +341,23 @@ type WebhookStore interface {
 	Delete(ctx context.Context, cfg *models.WebhookConfig) error
 }
 
-// Webhooks reads and writes wallet webhook configs.
-type Webhooks struct{ store WebhookStore }
+// URLChecker refuses a webhook URL whose destination is not public. *webhook.Service
+// implements it (CheckURL), the one rule every route that registers a webhook applies.
+type URLChecker interface {
+	CheckURL(ctx context.Context, rawURL string) error
+}
 
-// NewWebhooks builds the wallet webhook config service.
-func NewWebhooks(store WebhookStore) *Webhooks { return &Webhooks{store: store} }
+// Webhooks reads and writes wallet webhook configs.
+type Webhooks struct {
+	store WebhookStore
+	urls  URLChecker
+}
+
+// NewWebhooks builds the wallet webhook config service. urls checks the URL Register
+// stores; without it Register refuses every URL.
+func NewWebhooks(store WebhookStore, urls URLChecker) *Webhooks {
+	return &Webhooks{store: store, urls: urls}
+}
 
 func (s *Webhooks) ready(ctx context.Context, op string) error {
 	return requireStore(ctx, storeOf(s, func() any {

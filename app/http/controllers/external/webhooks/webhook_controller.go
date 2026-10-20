@@ -28,7 +28,7 @@ func NewWebhookController(webhooks *webhook.Service) *WebhookController {
 // Store godoc
 //
 //	@Summary		Create a webhook
-//	@Description	Registers an account-level webhook endpoint. Deliveries are POSTed as JSON and signed with `secret` when each attempt is sent: `X-Vault-Signature-V2` is `t=<unix seconds>,v1=<hex HMAC-SHA256 of '<t>.<raw body>'>`, so a receiver refuses a `t` too far from its clock (5 minutes recommended) and with it a replayed delivery; `X-Vault-Timestamp` repeats `t`; the legacy `X-Vault-Signature` (hex HMAC-SHA256 of the raw body alone) is still sent while receivers move to V2. `X-Vault-Event` carries the event type and `X-Vault-Delivery-Id` the event id. Only a 2xx answer counts as delivered: a redirect is not followed and is retried like a 4xx or a 5xx. Supported events include deposit.confirmed, withdrawal.broadcast, withdrawal.confirmed and withdrawal.failed. Withdrawal events are only delivered for wallets of the token's account.
+//	@Description	Registers an account-level webhook endpoint. Deliveries are POSTed as JSON and signed with `secret` when each attempt is sent: `X-Vault-Signature-V2` is `t=<unix seconds>,v1=<hex HMAC-SHA256 of '<t>.<raw body>'>`, so a receiver refuses a `t` too far from its clock (5 minutes recommended) and with it a replayed delivery; `X-Vault-Timestamp` repeats `t`; the legacy `X-Vault-Signature` (hex HMAC-SHA256 of the raw body alone) is still sent while receivers move to V2. `X-Vault-Event` carries the event type and `X-Vault-Delivery-Id` the event id. Only a 2xx answer counts as delivered: a redirect is not followed and is retried like a 4xx or a 5xx. Supported events include deposit.confirmed, withdrawal.broadcast, withdrawal.confirmed and withdrawal.failed. Withdrawal events are only delivered for wallets of the token's account. The URL must be https to a public host: a URL that is not https, carries credentials, or names (or resolves to) a loopback, private, link-local, cloud metadata or reserved address, or a single-label or internal host, is refused with 422 webhook_url_not_allowed and the rule it broke; every delivery connects only to an address that passes the same check.
 //	@Tags			Webhooks
 //	@Accept			json
 //	@Produce		json
@@ -37,6 +37,7 @@ func NewWebhookController(webhooks *webhook.Service) *WebhookController {
 //	@Param			body	body		webhooksrequests.StoreRequest	true	"Webhook configuration"
 //	@Success		201		{object}	resources.WebhookConfig
 //	@Failure		400		{object}	responses.ErrorBody	"Missing required fields"
+//	@Failure		422		{object}	responses.ErrorBody	"validation_failed, or webhook_url_not_allowed: the URL is not https to a public host"
 //	@Failure		500		{object}	responses.ErrorBody
 //	@Failure		429		{object}	responses.ErrorBody	"Rate limit exceeded (too_many_requests, Retry-After header)"
 //	@Router			/api/v1/webhooks [post]
@@ -89,7 +90,7 @@ func (c *WebhookController) Index(ctx http.Context) http.Response {
 // Update godoc
 //
 //	@Summary		Update a webhook subscription
-//	@Description	Replaces the subscribed events and/or toggles is_active on one of the account's webhooks. A legacy webhook created before account ownership was recorded is claimed by the calling account when `secret` matches its signing secret. The secret itself is never changed or returned.
+//	@Description	Replaces the subscribed events and/or toggles is_active on one of the account's webhooks. A legacy webhook created before account ownership was recorded is claimed by the calling account when `secret` matches its signing secret. The secret itself is never changed or returned. An update that leaves a webhook active on a URL the outbound guard refuses is 422 webhook_url_not_allowed; turning it off (`is_active: false`) is always allowed.
 //	@Tags			Webhooks
 //	@Accept			json
 //	@Produce		json
@@ -102,6 +103,7 @@ func (c *WebhookController) Index(ctx http.Context) http.Response {
 //	@Failure		401			{object}	responses.ErrorBody
 //	@Failure		403			{object}	responses.ErrorBody	"Secret does not match a legacy webhook"
 //	@Failure		404			{object}	responses.ErrorBody	"webhook not found"
+//	@Failure		422			{object}	responses.ErrorBody	"webhook_url_not_allowed: the webhook's URL is not https to a public host"
 //	@Failure		429			{object}	responses.ErrorBody	"Rate limit exceeded (too_many_requests, Retry-After header)"
 //	@Router			/api/v1/webhooks/{webhookId} [patch]
 func (c *WebhookController) Update(ctx http.Context) http.Response {

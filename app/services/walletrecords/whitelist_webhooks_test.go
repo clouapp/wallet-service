@@ -124,7 +124,7 @@ func TestWebhooks_Register(t *testing.T) {
 	wallet := uuid.New()
 	store := &memoryWebhooks{}
 
-	cfg, err := walletrecords.NewWebhooks(store).Register(context.Background(), wallet, "https://example.com/hook", "wh_secret", "deposit.confirmed")
+	cfg, err := walletrecords.NewWebhooks(store, &recordingURLs{}).Register(context.Background(), wallet, "https://example.com/hook", "wh_secret", "deposit.confirmed")
 
 	require.NoError(t, err)
 	assert.Same(t, store.created, cfg)
@@ -137,20 +137,59 @@ func TestWebhooks_Register(t *testing.T) {
 	assert.Equal(t, "deposit.confirmed", cfg.Events)
 
 	boom := errors.New("pq: down")
-	cfg, err = walletrecords.NewWebhooks(&memoryWebhooks{createErr: boom}).Register(context.Background(), wallet, "https://example.com/hook", "", "")
+	cfg, err = walletrecords.NewWebhooks(&memoryWebhooks{createErr: boom}, &recordingURLs{}).Register(context.Background(), wallet, "https://example.com/hook", "", "")
 	assert.ErrorIs(t, err, boom)
 	assert.Nil(t, cfg)
+}
+
+// recordingURLs records the URLs it is asked about and answers err.
+type recordingURLs struct {
+	asked []string
+	err   error
+}
+
+func (r *recordingURLs) CheckURL(_ context.Context, rawURL string) error {
+	r.asked = append(r.asked, rawURL)
+	return r.err
+}
+
+func TestWebhooks_Register_ChecksTheURLBeforeStoringIt(t *testing.T) {
+	refused := errors.New("webhook url is not allowed: the url host must not be or resolve to a link-local or cloud metadata address")
+	urls := &recordingURLs{err: refused}
+	store := &memoryWebhooks{}
+
+	cfg, err := walletrecords.NewWebhooks(store, urls).Register(context.Background(), uuid.New(), "http://169.254.169.254/latest/meta-data/", "s", "deposit.confirmed")
+
+	assert.ErrorIs(t, err, refused)
+	assert.Nil(t, cfg)
+	assert.Nil(t, store.created, "a refused URL was stored")
+	assert.Equal(t, []string{"http://169.254.169.254/latest/meta-data/"}, urls.asked)
+
+	allowed := &recordingURLs{}
+	_, err = walletrecords.NewWebhooks(store, allowed).Register(context.Background(), uuid.New(), "https://hooks.example.com/in", "s", "deposit.confirmed")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"https://hooks.example.com/in"}, allowed.asked)
+}
+
+func TestWebhooks_Register_WithoutAURLCheckStoresNothing(t *testing.T) {
+	store := &memoryWebhooks{}
+
+	cfg, err := walletrecords.NewWebhooks(store, nil).Register(context.Background(), uuid.New(), "https://hooks.example.com/in", "s", "deposit.confirmed")
+
+	assert.Error(t, err)
+	assert.Nil(t, cfg)
+	assert.Nil(t, store.created)
 }
 
 func TestWebhooks_Remove(t *testing.T) {
 	cfg := &models.WebhookConfig{ID: uuid.New()}
 
 	store := &memoryWebhooks{found: cfg}
-	require.NoError(t, walletrecords.NewWebhooks(store).Remove(context.Background(), uuid.New(), cfg.ID))
+	require.NoError(t, walletrecords.NewWebhooks(store, nil).Remove(context.Background(), uuid.New(), cfg.ID))
 	assert.Same(t, cfg, store.deleted)
 
 	for name, missing := range map[string]*memoryWebhooks{"no row": {}, "outage": {findErr: errors.New("pq: down")}} {
-		err := walletrecords.NewWebhooks(missing).Remove(context.Background(), uuid.New(), uuid.New())
+		err := walletrecords.NewWebhooks(missing, nil).Remove(context.Background(), uuid.New(), uuid.New())
 		assert.ErrorIs(t, err, walletrecords.ErrWebhookNotFound, name)
 		assert.Nil(t, missing.deleted, name)
 	}
@@ -174,7 +213,7 @@ func TestWebhooks_SendTest(t *testing.T) {
 	t.Run("posts the test body of the webhook the wallet holds", func(t *testing.T) {
 		sender := &recordingSender{}
 
-		err := walletrecords.NewWebhooks(&memoryWebhooks{found: cfg}).SendTest(context.Background(), sender, wallet, cfg.ID)
+		err := walletrecords.NewWebhooks(&memoryWebhooks{found: cfg}, nil).SendTest(context.Background(), sender, wallet, cfg.ID)
 
 		require.NoError(t, err)
 		assert.Same(t, cfg, sender.cfg)
@@ -184,7 +223,7 @@ func TestWebhooks_SendTest(t *testing.T) {
 	t.Run("a webhook the wallet does not hold sends nothing", func(t *testing.T) {
 		sender := &recordingSender{}
 
-		err := walletrecords.NewWebhooks(&memoryWebhooks{}).SendTest(context.Background(), sender, wallet, cfg.ID)
+		err := walletrecords.NewWebhooks(&memoryWebhooks{}, nil).SendTest(context.Background(), sender, wallet, cfg.ID)
 
 		assert.ErrorIs(t, err, walletrecords.ErrWebhookNotFound)
 		assert.Nil(t, sender.cfg)
@@ -193,7 +232,7 @@ func TestWebhooks_SendTest(t *testing.T) {
 	t.Run("a refused delivery is marked and keeps its cause", func(t *testing.T) {
 		boom := errors.New("HTTP 500")
 
-		err := walletrecords.NewWebhooks(&memoryWebhooks{found: cfg}).SendTest(context.Background(), &recordingSender{err: boom}, wallet, cfg.ID)
+		err := walletrecords.NewWebhooks(&memoryWebhooks{found: cfg}, nil).SendTest(context.Background(), &recordingSender{err: boom}, wallet, cfg.ID)
 
 		assert.ErrorIs(t, err, walletrecords.ErrWebhookTestFailed)
 		assert.ErrorIs(t, err, boom)
