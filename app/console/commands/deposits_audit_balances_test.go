@@ -36,6 +36,7 @@ var (
 // auditFlags expects the flags a run reads, with the values given.
 func auditFlags(ctx *mocksconsole.Context, options map[string]string, limit, maxReads, spacing int) {
 	ctx.EXPECT().ArgumentString("chain").Return(" teth ")
+	ctx.EXPECT().OptionBool("show-addresses").Return(options["show-addresses"] == "true").Maybe()
 	ctx.EXPECT().OptionInt("limit").Return(limit)
 	ctx.EXPECT().OptionInt("max-reads").Return(maxReads)
 	ctx.EXPECT().OptionInt("spacing-ms").Return(spacing)
@@ -47,7 +48,7 @@ func auditFlags(ctx *mocksconsole.Context, options map[string]string, limit, max
 func TestDeposits_AuditBalances_SignatureArgumentsAndFlags(t *testing.T) {
 	cmd := NewDepositsAuditBalances(&fakeBalanceAuditor{})
 	ext := cmd.Extend()
-	if cmd.Signature() != "deposits:audit-balances" || ext.Category != "deposit" || len(ext.Arguments) != 1 || len(ext.Flags) != 7 {
+	if cmd.Signature() != "deposits:audit-balances" || ext.Category != "deposit" || len(ext.Arguments) != 1 || len(ext.Flags) != 8 {
 		t.Fatalf("signature %q category %q arguments %d flags %d", cmd.Signature(), ext.Category, len(ext.Arguments), len(ext.Flags))
 	}
 }
@@ -75,7 +76,7 @@ func TestDeposits_AuditBalances_PassesTheFlagsAndExitsCleanWhenEveryBalanceIsExp
 	}}
 	ctx := mocksconsole.NewContext(t)
 	auditFlags(ctx, map[string]string{"account": auditAccount.String(), "dust": "10", "asset": "eth, usdc,"}, 50, 200, 100)
-	ctx.EXPECT().Info("teth address 3f0c9d2e-1b4a-4c8e-9a7d-5e6f7a8b9c0d 0xchild wallet 7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d USDC (0x1c7D): on chain 0, recorded 0, difference 0 (dust 0): in_flight: 1 transactions still pending or confirming").Return()
+	ctx.EXPECT().Info("teth address 3f0c9d2e-1b4a-4c8e-9a7d-5e6f7a8b9c0d wallet 7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d USDC (0x1c7D): on chain 0, recorded 0, difference 0 (dust 0): in_flight: 1 transactions still pending or confirming").Return()
 	ctx.EXPECT().Info("teth: 2 addresses audited, 4 balances read: 3 ok, 0 mismatched, 1 in flight, 0 unverified; read-only, nothing written").Return()
 
 	if err := NewDepositsAuditBalances(auditor).Handle(ctx); err != nil {
@@ -106,18 +107,42 @@ func TestDeposits_AuditBalances_AMismatchOrAnUnverifiedBalanceExitsNonZeroAndSay
 		},
 	}}
 	ctx := mocksconsole.NewContext(t)
-	auditFlags(ctx, map[string]string{"after": auditedWallet.String()}, 100, 500, 250)
+	auditFlags(ctx, map[string]string{"after": auditedWallet.String(), "show-addresses": "true"}, 100, 500, 250)
 	ctx.EXPECT().Warning("teth address 3f0c9d2e-1b4a-4c8e-9a7d-5e6f7a8b9c0d 0xchild wallet 7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d ETH: on chain 5000, recorded 0, difference +5000 (dust 10): mismatch: the chain holds more than the recorded transactions explain (a deposit no row records)").Return()
 	ctx.EXPECT().Warning("teth address 3f0c9d2e-1b4a-4c8e-9a7d-5e6f7a8b9c0d 0xchild wallet 7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d USDC (0x1c7D): recorded 7, on chain unknown: unverified: balance not read: rpc 429").Return()
 	ctx.EXPECT().Info("teth: 1 addresses audited, 2 balances read: 0 ok, 1 mismatched, 0 in flight, 1 unverified; read-only, nothing written").Return()
+	ctx.EXPECT().Info("a mismatch can be a deposit in blocks the scanner had not reached yet: run again once it caught up before acting on one").Return()
 	ctx.EXPECT().Info("more addresses left: run again with --after=3f0c9d2e-1b4a-4c8e-9a7d-5e6f7a8b9c0d").Return()
 	ctx.EXPECT().Error("1 balances differ from their recorded transactions and 1 could not be verified").Return()
 
-	if err := NewDepositsAuditBalances(auditor).Handle(ctx); err == nil {
-		t.Fatal("expected a non-zero exit")
+	err := NewDepositsAuditBalances(auditor).Handle(ctx)
+	var coded interface{ ExitCode() int }
+	if !errors.As(err, &coded) || coded.ExitCode() != 1 {
+		t.Fatalf("err %v, want exit status 1 for a mismatch", err)
 	}
 	if auditor.audit.After != auditedWallet {
 		t.Fatalf("resumed after %s", auditor.audit.After)
+	}
+}
+
+func TestDeposits_AuditBalances_AnUnverifiedOnlyRunExitsTwo(t *testing.T) {
+	auditor := &fakeBalanceAuditor{report: balanceaudit.Report{
+		Chain: "teth", Addresses: 1, Reads: 1, Unverified: 1,
+		Rows: []balanceaudit.Row{{
+			AddressID: auditedAddress, WalletID: auditedWallet, Address: "0xchild", Asset: "ETH",
+			Expected: big.NewInt(7), Status: balanceaudit.StatusUnverified, Reason: "balance not read: rpc 429",
+		}},
+	}}
+	ctx := mocksconsole.NewContext(t)
+	auditFlags(ctx, nil, 100, 500, 250)
+	ctx.EXPECT().Warning("teth address 3f0c9d2e-1b4a-4c8e-9a7d-5e6f7a8b9c0d wallet 7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d ETH: recorded 7, on chain unknown: unverified: balance not read: rpc 429").Return()
+	ctx.EXPECT().Info("teth: 1 addresses audited, 1 balances read: 0 ok, 0 mismatched, 0 in flight, 1 unverified; read-only, nothing written").Return()
+	ctx.EXPECT().Error("0 balances differ from their recorded transactions and 1 could not be verified").Return()
+
+	err := NewDepositsAuditBalances(auditor).Handle(ctx)
+	var coded interface{ ExitCode() int }
+	if !errors.As(err, &coded) || coded.ExitCode() != 2 {
+		t.Fatalf("err %v, want exit status 2 when nothing differs but a balance could not be verified", err)
 	}
 }
 

@@ -1,4 +1,6 @@
-package deposit_test
+// Package health_test runs the health readings of the deposit service against real
+// store adapters whose server never answers.
+package health_test
 
 import (
 	"context"

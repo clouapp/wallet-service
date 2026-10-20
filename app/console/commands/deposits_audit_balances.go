@@ -26,8 +26,10 @@ const defaultAuditSpacing = 250 * time.Millisecond
 
 // DepositsAuditBalances compares, read-only, the on-chain balance of each deposit
 // address of a chain with what its recorded transactions explain, and reports the
-// differences beyond dust. It exits 1 when one differs or cannot be verified, so a
-// scheduler that runs it daily sees it; nothing schedules it by default.
+// differences beyond dust. It exits 1 when one differs and 2 when none differs but
+// one cannot be verified, so a scheduler that runs it daily sees it; nothing
+// schedules it by default. A mismatch can be a deposit in blocks the scanner had not
+// reached when the balance was read: a run after it caught up clears it.
 type DepositsAuditBalances struct {
 	audits balanceAuditor
 }
@@ -62,6 +64,7 @@ func (c *DepositsAuditBalances) Extend() command.Extend {
 			&command.IntFlag{Name: "spacing-ms", Value: int(defaultAuditSpacing / time.Millisecond), Usage: "milliseconds between two balance reads"},
 			&command.StringFlag{Name: "dust", Usage: "tolerance of every asset in base units (default: the chain's dust threshold of each asset, else 0)"},
 			&command.StringFlag{Name: "asset", Usage: "comma-separated symbols to audit (default: the native asset and every token the chain lists)"},
+			&command.BoolFlag{Name: "show-addresses", Usage: "print each address beside its id (default: ids only)"},
 		},
 	}
 }
@@ -72,18 +75,55 @@ func (c *DepositsAuditBalances) Handle(ctx console.Context) error {
 		return fail(ctx, err)
 	}
 	report, err := c.audits.AuditBalances(context.Background(), audit)
-	printBalanceAuditRows(ctx, report)
+	printBalanceAuditRows(ctx, report, ctx.OptionBool("show-addresses"))
 	if err != nil {
 		return fail(ctx, err)
 	}
 	ctx.Info(balanceAuditSummary(report))
+	if report.Mismatched > 0 {
+		ctx.Info("a mismatch can be a deposit in blocks the scanner had not reached yet: run again once it caught up before acting on one")
+	}
 	if report.Next != uuid.Nil {
 		ctx.Info(fmt.Sprintf("more addresses left: run again with --after=%s", report.Next))
 	}
-	if report.Mismatched > 0 || report.Unverified > 0 {
-		return fail(ctx, fmt.Errorf("%d balances differ from their recorded transactions and %d could not be verified", report.Mismatched, report.Unverified))
+	if outcome := balanceAuditOutcome(report); outcome != nil {
+		return fail(ctx, outcome)
 	}
 	return nil
+}
+
+// exitStatus is a command failure that names its exit status; the artisan wrapper
+// (bootstrap.exitOnFailures) exits with it.
+type exitStatus struct {
+	err  error
+	code int
+}
+
+func (e exitStatus) Error() string { return e.err.Error() }
+func (e exitStatus) Unwrap() error { return e.err }
+func (e exitStatus) ExitCode() int { return e.code }
+
+const (
+	// exitMismatch is a run where a balance differs from what its rows explain.
+	exitMismatch = 1
+	// exitUnverified is a run where nothing differs but a balance could not be verified.
+	exitUnverified = 2
+)
+
+// balanceAuditOutcome is the failure of a run with a mismatch (exit 1) or, with
+// none, an unverified balance (exit 2); nil when every balance is explained.
+func balanceAuditOutcome(report balanceaudit.Report) error {
+	if report.Mismatched == 0 && report.Unverified == 0 {
+		return nil
+	}
+	code := exitUnverified
+	if report.Mismatched > 0 {
+		code = exitMismatch
+	}
+	return exitStatus{
+		err:  fmt.Errorf("%d balances differ from their recorded transactions and %d could not be verified", report.Mismatched, report.Unverified),
+		code: code,
+	}
 }
 
 // balanceAuditFromFlags reads the audit request; a malformed flag is an error.
@@ -133,26 +173,31 @@ func optionalUUID(text, flag string) (*uuid.UUID, error) {
 }
 
 // printBalanceAuditRows prints every row that is not ok: a mismatch or an unverified
-// balance as a warning, an asset in flight as information.
-func printBalanceAuditRows(ctx console.Context, report balanceaudit.Report) {
+// balance as a warning, an asset in flight as information. Addresses are named by id
+// unless showAddresses.
+func printBalanceAuditRows(ctx console.Context, report balanceaudit.Report, showAddresses bool) {
 	for _, row := range report.Rows {
 		switch row.Status {
 		case balanceaudit.StatusOK:
 			continue
 		case balanceaudit.StatusInFlight:
-			ctx.Info(redactedLine(balanceAuditLine(report.Chain, row)))
+			ctx.Info(redactedLine(balanceAuditLine(report.Chain, row, showAddresses)))
 		default:
-			ctx.Warning(redactedLine(balanceAuditLine(report.Chain, row)))
+			ctx.Warning(redactedLine(balanceAuditLine(report.Chain, row, showAddresses)))
 		}
 	}
 }
 
-func balanceAuditLine(chainID string, row balanceaudit.Row) string {
+func balanceAuditLine(chainID string, row balanceaudit.Row, showAddress bool) string {
 	asset := row.Asset
 	if row.TokenContract != "" {
 		asset += " (" + row.TokenContract + ")"
 	}
-	line := fmt.Sprintf("%s address %s %s wallet %s %s: ", chainID, row.AddressID, row.Address, row.WalletID, asset)
+	address := row.AddressID.String()
+	if showAddress {
+		address += " " + row.Address
+	}
+	line := fmt.Sprintf("%s address %s wallet %s %s: ", chainID, address, row.WalletID, asset)
 	if row.OnChain == nil {
 		line += fmt.Sprintf("recorded %s, on chain unknown", amountText(row.Expected))
 	} else {
