@@ -62,6 +62,8 @@ type reorgChain struct {
 	// failedOnChain is the on-chain failure result of a transaction mined in a
 	// block whose receipt failed (EVM), by hash.
 	failedOnChain map[string]string
+	// onScan runs after each ScanBlock, from the scanning goroutine.
+	onScan func(height uint64)
 }
 
 var _ chain.BlockHashReader = (*reorgChain)(nil)
@@ -143,13 +145,23 @@ func (c *reorgChain) GetTransactionBlock(_ context.Context, txHash string) (uint
 
 func (c *reorgChain) ScanBlock(_ context.Context, height uint64) ([]types.DetectedTransfer, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.scans++
 	block, ok := c.blocks[height]
+	onScan := c.onScan
+	c.mu.Unlock()
+	if onScan != nil {
+		onScan(height)
+	}
 	if !ok {
 		return nil, fmt.Errorf("no block at %d", height)
 	}
 	return append([]types.DetectedTransfer(nil), block.transfers...), nil
+}
+
+func (c *reorgChain) setOnScan(onScan func(height uint64)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onScan = onScan
 }
 
 func (c *reorgChain) scanCount() int {

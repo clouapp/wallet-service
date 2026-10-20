@@ -34,6 +34,10 @@ const (
 	reorgSpendLookback = 64
 	// reorgRescanLimit bounds the blocks a detected reorganization rescans.
 	reorgRescanLimit = 256
+	// reorgRescanBudget bounds the time the rescans of one tracker pass take (a
+	// Lambda invocation lasts 60 s); the heights they do not reach are the pending
+	// retry's.
+	reorgRescanBudget = 15 * time.Second
 )
 
 // reorgPass is the reorganization check of one tracker pass over one chain. The
@@ -46,8 +50,11 @@ type reorgPass struct {
 	reader  chain.BlockHashReader
 	hashes  map[uint64]canonicalHash
 	blocks  map[uint64]scannedBlock
-	// rescanned is the heights a detected reorganization recorded again this pass.
-	rescanned map[uint64]bool
+	// rescanned is the heights a detected reorganization recorded again (or left to
+	// the pending retry) this pass; rescanUntil ends the pass's rescans, set by the
+	// first (reorgRescanBudget).
+	rescanned   map[uint64]bool
+	rescanUntil time.Time
 }
 
 type canonicalHash struct {
@@ -101,6 +108,38 @@ func (p *reorgPass) transfersOf(ctx context.Context, block uint64) ([]types.Dete
 	return transfers, err
 }
 
+// creditsAt is the transfers of block, read like the scanner reads it, that credit
+// tx as it was recorded. An internal transfer (native value a contract sends, which
+// only a provider's traces report) is in no transfer the scanner reads: its
+// transaction is in block (the caller located it there), so the block's hash at the
+// deposit's own position stands for it.
+func (p *reorgPass) creditsAt(ctx context.Context, tx models.Transaction, block uint64) ([]types.DetectedTransfer, error) {
+	if internalTransfer(tx) {
+		hash, err := p.hashAt(ctx, block)
+		if err != nil {
+			return nil, fmt.Errorf("the hash of block %d, which holds the transaction, was not read: %w", block, err)
+		}
+		return []types.DetectedTransfer{{TxHash: tx.TxHash, BlockNumber: block, BlockHash: hash, LogIndex: tx.LogIndex}}, nil
+	}
+	transfers, err := p.transfersOf(ctx, block)
+	if err != nil {
+		return nil, fmt.Errorf("block %d, which holds the transaction, was not read: %w", block, err)
+	}
+	var credits []types.DetectedTransfer
+	for _, transfer := range transfers {
+		if creditsDeposit(transfer, tx) {
+			credits = append(credits, transfer)
+		}
+	}
+	return credits, nil
+}
+
+// internalTransfer reports whether tx records an EVM internal transfer, at a
+// position below types.NativeValuePosition (the Alchemy push).
+func internalTransfer(tx models.Transaction) bool {
+	return tx.LogIndex < types.NativeValuePosition
+}
+
 // sameBlockHash compares block hashes like transaction hashes: hex in any case,
 // base58 (Solana) exactly.
 func sameBlockHash(a, b string) bool {
@@ -114,7 +153,9 @@ func sameBlockHash(a, b string) bool {
 // cannot be read leaves it unconfirmed that pass. A hash that matches again clears
 // the deposit's reorganization mark. A hash that differs means its block was
 // reorganized away: relocateDeposit decides, and the deposit is not confirmed that
-// pass. An unresolved deposit is not looked at before its next check.
+// pass. An unresolved deposit is not looked at before its next check. A deposit
+// recorded without a hash takes it from its block first
+// (hashlessDepositAllowsConfirmation).
 func (s *Service) depositBlockAllowsConfirmation(ctx context.Context, pass *reorgPass, tx models.Transaction) bool {
 	if !pass.checks(tx) {
 		return true
@@ -123,15 +164,7 @@ func (s *Service) depositBlockAllowsConfirmation(ctx context.Context, pass *reor
 		return false
 	}
 	if strings.TrimSpace(tx.BlockHash) == "" {
-		// Nothing to compare yet: the recorded block must credit the deposit, which
-		// records its hash (and the deposit confirms after the check of a later
-		// pass); a block that does not is a relocation.
-		if err := s.moveDeposit(ctx, pass, tx, recordedBlock(tx)); err != nil {
-			slog.Warn("deposit recorded without a block hash: its block does not show it; locating its transaction",
-				"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "block", tx.BlockNumber, "error", err)
-			s.relocateDeposit(ctx, pass, tx)
-		}
-		return false
+		return s.hashlessDepositAllowsConfirmation(ctx, pass, tx)
 	}
 	canonical, err := pass.hashAt(ctx, recordedBlock(tx))
 	if err != nil {
@@ -145,10 +178,42 @@ func (s *Service) depositBlockAllowsConfirmation(ctx context.Context, pass *reor
 	slog.Warn("deposit's block was reorganized away; locating its transaction",
 		"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "block", tx.BlockNumber, "recorded_hash", tx.BlockHash, "canonical_hash", canonical)
 	if payloadUnixTime(tx, reorgSeenAtPayloadKey).IsZero() {
+		// Marked first, so a pass that ends during the rescan (a Lambda timeout)
+		// does not start it again.
+		tx = s.markReorgUnresolved(ctx, tx, "its block was reorganized away; the new fork is recorded again first")
 		s.rescanReorganized(ctx, pass, recordedBlock(tx))
 	}
 	s.relocateDeposit(ctx, pass, tx)
 	return false
+}
+
+// hashlessDepositAllowsConfirmation checks a deposit the ingest recorded without a
+// block hash (Alchemy native transfers, Helius): nothing to compare yet, so the
+// recorded block must credit it, which records its hash, and the deposit confirms
+// after the check of a later pass; a block that does not is a relocation. An
+// internal transfer is in no block the scanner reads: its transaction's block
+// stands for it, and in the recorded block it takes that block's hash and confirms
+// this pass, by depth and its receipt.
+func (s *Service) hashlessDepositAllowsConfirmation(ctx context.Context, pass *reorgPass, tx models.Transaction) bool {
+	if !internalTransfer(tx) {
+		if err := s.moveDeposit(ctx, pass, tx, recordedBlock(tx)); err != nil {
+			slog.Warn("deposit recorded without a block hash: its block does not show it; locating its transaction",
+				"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "block", tx.BlockNumber, "error", err)
+			s.relocateDeposit(ctx, pass, tx)
+		}
+		return false
+	}
+	block, err := locateTransaction(ctx, pass.adapter, tx.TxHash)
+	if err != nil || block != recordedBlock(tx) {
+		s.settleLocated(ctx, pass, tx, block, err)
+		return false
+	}
+	if err := s.moveDeposit(ctx, pass, tx, block); err != nil {
+		slog.Warn("internal transfer deposit not confirmed this pass: its block's hash was not recorded",
+			"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "block", tx.BlockNumber, "error", err)
+		return false
+	}
+	return true
 }
 
 // rescanReorganized records again, the first time a deposit's check finds its block
@@ -157,21 +222,37 @@ func (s *Service) depositBlockAllowsConfirmation(ctx context.Context, pass *reor
 // fork and will not read them again, so a deposit only the new fork holds (a
 // replacement of the transaction, another payment) would never be recorded. It is
 // the scanner's recording path (idempotent, under each transaction's deposit lock);
-// a block that cannot be read is kept pending for the scanner's retry. Heights above
-// the checkpoint are the scanner's.
+// a block that cannot be read is kept pending for the scanner's retry. The rescans
+// of a pass end reorgRescanBudget after the first starts, and the heights they do
+// not reach are handed to the pending retry. Heights above the checkpoint are the
+// scanner's.
 func (s *Service) rescanReorganized(ctx context.Context, pass *reorgPass, from uint64) {
 	chainID := pass.adapter.ID()
 	checkpoint, found, err := s.loadCheckpoint(ctx, chainID)
 	if err != nil || !found || checkpoint < from {
 		return
 	}
+	if pass.rescanUntil.IsZero() {
+		pass.rescanUntil = s.now().Add(reorgRescanBudget)
+	}
 	to := min(checkpoint, from+reorgRescanLimit-1)
 	recorded := 0
+	var late []uint64
 	for height := from; height <= to && ctx.Err() == nil; height++ {
-		recorded += s.recordBlockOnce(ctx, pass, height)
+		switch {
+		case s.now().Before(pass.rescanUntil):
+			recorded += s.recordBlockOnce(ctx, pass, height)
+		case !pass.rescanned[height]:
+			pass.rescanned[height] = true
+			late = append(late, height)
+		}
+	}
+	deferred, err := s.deferPending(ctx, chainID, late, "a reorganization rescan ran out of time before this block")
+	if err != nil {
+		slog.Error("reorganization: blocks of the new fork were neither recorded nor kept pending", "chain", chainID, "blocks", len(late)-deferred, "error", err)
 	}
 	slog.Warn("reorganization: the new fork's blocks under the scan checkpoint were recorded again",
-		"chain", chainID, "from_block", from, "to_block", to, "checkpoint", checkpoint, "recorded", recorded)
+		"chain", chainID, "from_block", from, "to_block", to, "checkpoint", checkpoint, "recorded", recorded, "left_to_the_pending_retry", deferred)
 }
 
 // recordBlockOnce records the deposits of block through the scanner's path, once
@@ -206,6 +287,12 @@ func (s *Service) recordBlockOnce(ctx context.Context, pass *reorgPass, height u
 // the mempool lands later, and the scanner never records a transaction twice.
 func (s *Service) relocateDeposit(ctx context.Context, pass *reorgPass, tx models.Transaction) {
 	block, err := locateTransaction(ctx, pass.adapter, tx.TxHash)
+	s.settleLocated(ctx, pass, tx, block, err)
+}
+
+// settleLocated is relocateDeposit's decision once the transaction was looked up:
+// block is where the lookup found it (0 for nowhere), err its failure.
+func (s *Service) settleLocated(ctx context.Context, pass *reorgPass, tx models.Transaction, block uint64, err error) {
 	var onChain *chain.TransactionFailedError
 	switch {
 	case errors.As(err, &onChain):
@@ -296,12 +383,12 @@ func depositPayload(transfer types.DetectedTransfer) string {
 
 // moveDeposit records the block a reorganization moved a deposit's transaction to
 // (its height may be the old one: the competing block often includes the same
-// transaction), or the block of a deposit recorded without a hash. The block is
-// read like the scanner reads it and must credit the address the asset and amount
-// the deposit recorded; the deposit takes that block's hash, which the next pass
-// compares, and that transfer's position in it (a block-wide position, an EVM or
-// TRON log index, differs from one block to another), so a later scan or push of
-// the block finds it recorded (depositrecord). The rows of the transaction are read
+// transaction), or the block of a deposit recorded without a hash. The block must
+// credit the address the asset and amount the deposit recorded (creditsAt); the
+// deposit takes that block's hash, which the next pass compares, and that
+// transfer's position in it (a block-wide position, an EVM or TRON log index,
+// differs from one block to another), so a later scan or push of the block finds it
+// recorded (depositrecord). The rows of the transaction are read
 // and written under its deposit lock, the one the scanner and the push take, and a
 // transfer whose position another deposit of the transaction holds is not taken
 // (two like transfers of one transaction are two deposits). The deposit confirms
@@ -310,9 +397,9 @@ func depositPayload(transfer types.DetectedTransfer) string {
 // that disagree, a transaction that now credits another amount or address) changes
 // nothing and is the error.
 func (s *Service) moveDeposit(ctx context.Context, pass *reorgPass, tx models.Transaction, block uint64) error {
-	transfers, err := pass.transfersOf(ctx, block)
+	credits, err := pass.creditsAt(ctx, tx, block)
 	if err != nil {
-		return fmt.Errorf("block %d, which holds the transaction, was not read: %w", block, err)
+		return err
 	}
 	var moved types.DetectedTransfer
 	err = s.txRepo.Within(ctx, func(ctx context.Context) error {
@@ -332,8 +419,8 @@ func (s *Service) moveDeposit(ctx context.Context, pass *reorgPass, tx models.Tr
 			}
 		}
 		found := false
-		for _, transfer := range transfers {
-			if creditsDeposit(transfer, tx) && !taken[transfer.LogIndex] {
+		for _, transfer := range credits {
+			if !taken[transfer.LogIndex] {
 				moved, found = transfer, true
 				break
 			}
@@ -383,18 +470,19 @@ func creditsDeposit(transfer types.DetectedTransfer, tx models.Transaction) bool
 // markReorgUnresolved leaves a reorganized deposit unconfirmed and marks it in
 // raw_payload: when it was first seen (kept) and its next check, the time since then
 // (at least reorgRecheckMin, at most reorgRecheckMax) from now. The health check
-// counts the open deposits so marked.
-func (s *Service) markReorgUnresolved(ctx context.Context, tx models.Transaction, reason string) {
+// counts the open deposits so marked. It returns tx with the mark.
+func (s *Service) markReorgUnresolved(ctx context.Context, tx models.Transaction, reason string) models.Transaction {
 	now := s.now()
 	seen := payloadUnixTime(tx, reorgSeenAtPayloadKey)
 	if seen.IsZero() {
 		seen = now
 	}
 	next := now.Add(min(max(now.Sub(seen), reorgRecheckMin), reorgRecheckMax))
-	s.editPayload(ctx, tx, map[string]any{reorgSeenAtPayloadKey: seen.Unix(), reorgNextCheckAtPayloadKey: next.Unix()})
+	tx.RawPayload = s.editPayload(ctx, tx, map[string]any{reorgSeenAtPayloadKey: seen.Unix(), reorgNextCheckAtPayloadKey: next.Unix()})
 	slog.Warn("reorganized deposit unresolved; it stays unconfirmed",
 		"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "block", tx.BlockNumber, "reason", reason,
 		"seen_at", seen.UTC().Format(time.RFC3339), "next_check_at", next.UTC().Format(time.RFC3339))
+	return tx
 }
 
 // clearReorgMark drops the reorganization mark of a deposit resolved by a matching

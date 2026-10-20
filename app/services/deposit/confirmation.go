@@ -528,9 +528,10 @@ func (s *Service) recordPayloadValue(ctx context.Context, tx models.Transaction,
 }
 
 // editPayload sets the keys of set and removes the keys of drop in the row's
-// raw_payload, which keeps every other key. A write that fails is logged: the check
-// that needed it runs again next pass.
-func (s *Service) editPayload(ctx context.Context, tx models.Transaction, set map[string]any, drop ...string) {
+// raw_payload, which keeps every other key, and returns the payload the row now
+// holds. A write that fails is logged (the check that needed it runs again next
+// pass) and returns the payload unchanged.
+func (s *Service) editPayload(ctx context.Context, tx models.Transaction, set map[string]any, drop ...string) string {
 	payload := map[string]any{}
 	_ = json.Unmarshal([]byte(tx.RawPayload), &payload)
 	for key, value := range set {
@@ -545,7 +546,9 @@ func (s *Service) editPayload(ctx context.Context, tx models.Transaction, set ma
 	}
 	if err != nil {
 		slog.Error("record transaction payload", "tx_id", tx.ID, "error", err)
+		return tx.RawPayload
 	}
+	return string(raw)
 }
 
 // forgetSignedBytes drops the signed bytes a withdrawal row recorded before its send

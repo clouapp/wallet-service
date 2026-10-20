@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math/big"
+	"slices"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/deposit/pending"
 	"github.com/macrowallets/waas/app/services/depositevents"
 	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
@@ -123,7 +125,10 @@ func TestRunConfirmationCheck_AnIngestDepositWithoutABlockHashIsCheckedBeforeItC
 			} else {
 				f = newReorgFixtureOver(t, inner, inner)
 			}
-			f.chain.mine(reorgDepositBlock, "a", reorgTransfer(reorgDepositTx, reorgDepositTo))
+			// The native value of the transaction, as an EVM push records it.
+			native := reorgTransfer(reorgDepositTx, reorgDepositTo)
+			native.LogIndex = types.NativeValuePosition
+			f.chain.mine(reorgDepositBlock, "a", native)
 			f.recordDeposit(t, reorgDepositBlock)
 			deposit := reorgDeposit(t, reorgDepositTx)
 			if _, err := facades.Orm().Query().Model(&models.Transaction{}).Where("id = ?", deposit.ID).
@@ -343,14 +348,19 @@ func TestRunConfirmationCheck_AReorganizationRescansTheNewForkUpToTheCheckpoint(
 	if err := f.svc.saveCheckpoint(context.Background(), reorgChainID, reorgDepositBlock+5); err != nil {
 		t.Fatal(err)
 	}
-	f.chain.mine(reorgDepositBlock, "b", reorgTransfer(reorgDepositTx, reorgDepositTo))
+	f.chain.mine(reorgDepositBlock, "b", reorgTransfer(reorgDepositTx, reorgDepositTo), reorgTransfer(reorgForkTx, reorgOtherTo))
 	f.chain.mine(reorgDepositBlock+2, "b", reorgTransfer(reorgOtherTx, reorgOtherTo))
 	f.chain.mine(reorgDepositBlock+7, "b", reorgTransfer(reorgReplacementTx, reorgOtherTo))
 
 	f.pass(t, reorgDepositBlock+reorgRequiredConfs+5)
 
-	if got := reorgDeposit(t, reorgOtherTx); got.BlockNumber != reorgDepositBlock+2 || got.BlockHash != reorgHash("b", reorgDepositBlock+2) {
-		t.Fatalf("deposit of the new fork %+v, want it recorded by the rescan", got)
+	for _, want := range []struct {
+		tx    string
+		block uint64
+	}{{reorgForkTx, reorgDepositBlock}, {reorgOtherTx, reorgDepositBlock + 2}} {
+		if got := reorgDeposit(t, want.tx); recordedBlock(got) != want.block || got.BlockHash != reorgHash("b", want.block) {
+			t.Fatalf("deposit of the new fork %+v, want it recorded by the rescan in block %d", got, want.block)
+		}
 	}
 	var above int64
 	if err := countDepositRows(reorgReplacementTx, &above); err != nil || above != 0 {
@@ -358,6 +368,132 @@ func TestRunConfirmationCheck_AReorganizationRescansTheNewForkUpToTheCheckpoint(
 	}
 	if rows := reorgDepositRows(t); len(rows) != 1 || rows[0].BlockHash != reorgHash("b", reorgDepositBlock) {
 		t.Fatalf("rows of the deposit %+v, want one, moved to the competing block", rows)
+	}
+}
+
+// reorgForkTx pays a watched address in the new fork's block at the deposit's own
+// height, which the rescan starts at.
+const reorgForkTx = "0x00000000000000000000000000000000000000000000000000000000000000e4"
+
+// The reorganization is marked before the new fork is recorded again: a pass that
+// ends during that rescan (a Lambda timeout) leaves the mark, and the next pass
+// does not start the rescan again.
+func TestRunConfirmationCheck_APassThatEndsDuringTheRescanDoesNotStartItAgain(t *testing.T) {
+	f := newReorgFixture(t)
+	f.chain.mine(reorgDepositBlock, "a", reorgTransfer(reorgDepositTx, reorgDepositTo))
+	f.recordDeposit(t, reorgDepositBlock)
+	if err := f.svc.saveCheckpoint(context.Background(), reorgChainID, reorgDepositBlock+5); err != nil {
+		t.Fatal(err)
+	}
+	for height := uint64(reorgDepositBlock); height <= reorgDepositBlock+5; height++ {
+		f.chain.mine(height, "b")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f.chain.setOnScan(func(uint64) { cancel() })
+	f.chain.setTip(reorgDepositBlock + reorgRequiredConfs + 5)
+
+	_ = f.svc.RunConfirmationCheck(ctx)
+
+	f.chain.setOnScan(nil)
+	if seen, _ := reorgMark(t, reorgDeposit(t, reorgDepositTx)); seen == 0 {
+		t.Fatal("no reorganization mark after a pass that ended during the rescan")
+	}
+	scans := f.chain.scanCount()
+	f.clock.advance(2 * time.Hour)
+	f.pass(t, reorgDepositBlock+reorgRequiredConfs+6)
+	if again := f.chain.scanCount() - scans; again != 0 {
+		t.Fatalf("%d blocks read by the next pass, want no rescan", again)
+	}
+}
+
+// The rescans of a pass share a time budget: the heights they do not reach go to
+// the pending retry, which records them.
+func TestRunConfirmationCheck_TheRescanLeavesWhatItsBudgetDoesNotReachToThePendingRetry(t *testing.T) {
+	f := newReorgFixture(t)
+	store, storeErr := pending.NewFileStore(pending.FileStoreDeps{Dir: t.TempDir()})
+	if storeErr != nil {
+		t.Fatal(storeErr)
+	}
+	f.svc.SetPendingStore(store)
+	f.chain.mine(reorgDepositBlock, "a", reorgTransfer(reorgDepositTx, reorgDepositTo))
+	f.recordDeposit(t, reorgDepositBlock)
+	if err := f.svc.saveCheckpoint(context.Background(), reorgChainID, reorgDepositBlock+5); err != nil {
+		t.Fatal(err)
+	}
+	for height := uint64(reorgDepositBlock); height <= reorgDepositBlock+5; height++ {
+		f.chain.mine(height, "b")
+	}
+	f.chain.mine(reorgDepositBlock+4, "b", reorgTransfer(reorgOtherTx, reorgOtherTo))
+	// A block already pending keeps its own entry.
+	failed := pending.Entry{Chain: reorgChainID, Block: reorgDepositBlock + 3, ErrorClass: pending.ClassRPC, LastError: "rpc down",
+		Attempts: 2, FirstFailedAt: f.clock.Now(), LastFailedAt: f.clock.Now(), NextRetryAt: f.clock.Now().Add(time.Hour)}
+	if err := store.Put(context.Background(), failed); err != nil {
+		t.Fatal(err)
+	}
+	f.chain.setOnScan(func(uint64) { f.clock.advance(reorgRescanBudget / 2) })
+
+	f.pass(t, reorgDepositBlock+reorgRequiredConfs+5)
+
+	f.chain.setOnScan(nil)
+	var early int64
+	if err := countDepositRows(reorgOtherTx, &early); err != nil || early != 0 {
+		t.Fatalf("%d rows (%v) for a height past the budget, want it left to the pending retry", early, err)
+	}
+	entries, listErr := f.svc.ListPending(context.Background(), reorgChainID)
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	var heights []uint64
+	for _, entry := range entries {
+		heights = append(heights, entry.Block)
+	}
+	slices.Sort(heights)
+	if want := []uint64{reorgDepositBlock + 2, reorgDepositBlock + 3, reorgDepositBlock + 4, reorgDepositBlock + 5}; !slices.Equal(heights, want) {
+		t.Fatalf("pending heights %v, want %v", heights, want)
+	}
+	for _, entry := range entries {
+		if entry.Block == failed.Block && (entry.Attempts != failed.Attempts || entry.LastError != failed.LastError) {
+			t.Fatalf("entry of a block already pending %+v, want it kept", entry)
+		}
+	}
+	if _, err := f.svc.ReprocessDuePending(context.Background(), reorgChainID); err != nil {
+		t.Fatal(err)
+	}
+	if got := reorgDeposit(t, reorgOtherTx); got.BlockNumber != reorgDepositBlock+4 {
+		t.Fatalf("deposit of the new fork %+v, want it recorded by the pending retry", got)
+	}
+}
+
+// The budget is the pass's, not each rescan's: a second reorganized deposit, far
+// from the first, rescans nothing once the first spent it.
+func TestRunConfirmationCheck_TheRescansOfAPassShareOneBudget(t *testing.T) {
+	f := newReorgFixture(t)
+	store, storeErr := pending.NewFileStore(pending.FileStoreDeps{Dir: t.TempDir()})
+	if storeErr != nil {
+		t.Fatal(storeErr)
+	}
+	f.svc.SetPendingStore(store)
+	far := uint64(reorgDepositBlock + reorgRescanLimit + 50)
+	f.chain.mine(reorgDepositBlock, "a", reorgTransfer(reorgDepositTx, reorgDepositTo))
+	f.chain.mine(far, "a", reorgTransfer(reorgOtherTx, reorgOtherTo))
+	f.chain.setTip(far)
+	f.recordDeposit(t, reorgDepositBlock)
+	f.recordDeposit(t, far)
+	if err := f.svc.saveCheckpoint(context.Background(), reorgChainID, far+5); err != nil {
+		t.Fatal(err)
+	}
+	for height := uint64(reorgDepositBlock); height <= far+5; height++ {
+		f.chain.mine(height, "b")
+	}
+	scans := f.chain.scanCount()
+	f.chain.setOnScan(func(uint64) { f.clock.advance(reorgRescanBudget / 4) })
+
+	f.pass(t, far+reorgRequiredConfs+5)
+
+	f.chain.setOnScan(nil)
+	if read := f.chain.scanCount() - scans; read != 4 {
+		t.Fatalf("%d blocks read by the pass, want the 4 one budget allows", read)
 	}
 }
 
@@ -382,6 +518,47 @@ func (c confirmingMidway) Stage(ctx context.Context, eventType types.EventType, 
 		return nil, err
 	}
 	return c.Publisher.Stage(ctx, eventType, tx)
+}
+
+// committedAtSend is the production publisher, except that its staged send first
+// reads the deposit through another connection: what it reads is what is committed
+// when deposit.failed is sent.
+type committedAtSend struct {
+	*depositevents.Publisher
+	id   uuid.UUID
+	seen *string
+}
+
+func (c committedAtSend) Stage(ctx context.Context, eventType types.EventType, tx models.Transaction) (func(context.Context), error) {
+	send, err := c.Publisher.Stage(ctx, eventType, tx)
+	if err != nil {
+		return nil, err
+	}
+	return func(ctx context.Context) {
+		var row models.Transaction
+		if err := facades.Orm().Query().Where("id = ?", c.id).FirstOrFail(&row); err == nil {
+			*c.seen = row.Status
+		}
+		send(ctx)
+	}, nil
+}
+
+// deposit.failed is sent only once the failure is committed.
+func TestFail_Deposit_SendsDepositFailedOnlyOnceTheFailureIsCommitted(t *testing.T) {
+	f := newReorgFixture(t)
+	f.chain.mine(reorgDepositBlock, "a", reorgTransfer(reorgDepositTx, reorgDepositTo))
+	f.recordDeposit(t, reorgDepositBlock)
+	deposit := reorgDeposit(t, reorgDepositTx)
+	var seen string
+	f.svc.SetDepositEvents(committedAtSend{Publisher: newDepositPublisher(f.webhooks, chainAssetDecimals{reorgChainID + "/" + reorgChainID: etherDecimals}), id: deposit.ID, seen: &seen})
+
+	if err := f.svc.failDeposit(context.Background(), deposit, reorgedOutCode); err != nil {
+		t.Fatal(err)
+	}
+
+	if seen != string(types.TxStatusFailed) {
+		t.Fatalf("deposit read as %q when deposit.failed was sent, want %q", seen, types.TxStatusFailed)
+	}
 }
 
 // deposit.failed and the failed status are written in one transaction, the status
