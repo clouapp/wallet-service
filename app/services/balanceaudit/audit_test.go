@@ -55,9 +55,10 @@ func (l *listedAddresses) ListForBalanceAudit(_ context.Context, chainID string,
 
 // recordedLedger answers the sums the repository would.
 type recordedLedger struct {
-	entries []models.AddressLedgerEntry
-	fees    []models.AddressFeeEntry
-	asked   [][]string
+	entries  []models.AddressLedgerEntry
+	fees     []models.AddressFeeEntry
+	asked    [][]string
+	withRent []bool
 }
 
 func (r *recordedLedger) AddressLedger(_ context.Context, _ string, addresses []string) ([]models.AddressLedgerEntry, error) {
@@ -65,7 +66,8 @@ func (r *recordedLedger) AddressLedger(_ context.Context, _ string, addresses []
 	return r.entries, nil
 }
 
-func (r *recordedLedger) AddressFees(context.Context, string, []string) ([]models.AddressFeeEntry, error) {
+func (r *recordedLedger) AddressFees(_ context.Context, _ string, _ []string, withAccountRent bool) ([]models.AddressFeeEntry, error) {
+	r.withRent = append(r.withRent, withAccountRent)
 	return r.fees, nil
 }
 
@@ -419,5 +421,58 @@ func TestAudit_Balances_RefusesAnUnknownChainOrAssetAndBadBounds(t *testing.T) {
 	}
 	if _, err := f.svc.AuditBalances(context.Background(), Audit{ChainID: auditChain, Assets: []string{"DOGE"}}); !errors.Is(err, ErrInvalidAudit) {
 		t.Fatalf("err = %v, want ErrInvalidAudit", err)
+	}
+}
+
+func TestAudit_Balances_SaysWhichWayABalanceDiffers(t *testing.T) {
+	f := newAuditFixture(t)
+	f.balances.native["0xchild"] = 900 // 150 below the 1050 its rows explain
+	report, err := f.svc.AuditBalances(context.Background(), Audit{ChainID: auditChain})
+	if err != nil {
+		t.Fatal(err)
+	}
+	less := row(t, report, childID, "ETH")
+	if less.Status != StatusMismatch || !amountIs(less.Difference, -150) || !strings.Contains(less.Reason, "less") || !strings.Contains(less.Reason, "outflow") {
+		t.Fatalf("child ETH %+v, want a shortfall named as an unrecorded outflow", less)
+	}
+	more := row(t, report, missedID, "ETH")
+	if !strings.Contains(more.Reason, "more") || !strings.Contains(more.Reason, "deposit") {
+		t.Fatalf("missed ETH %+v, want a surplus named as an unrecorded deposit", more)
+	}
+}
+
+// rentChain is the audit's adapter on a chain whose transfers pay account rent.
+type rentChain struct{ *mocks.MockChain }
+
+func (rentChain) TransactionAccountRent(context.Context, string) (*big.Int, error) {
+	return big.NewInt(0), nil
+}
+
+func TestAudit_Balances_OnAChainThatPaysAccountRentAsksForItAndLeavesARowWithoutOneUnverified(t *testing.T) {
+	f := newAuditFixture(t)
+	registry := chain.NewRegistry()
+	registry.RegisterChain(rentChain{f.adapter})
+	registry.RegisterToken(types.Token{Symbol: "USDC", Contract: usdc, Decimals: 6, ChainID: auditChain})
+	f.ledger.fees[1].MissingRent = 1
+	svc := NewService(Deps{Chains: registry, Addresses: f.addresses, Ledger: f.ledger})
+
+	report, err := svc.AuditBalances(context.Background(), Audit{ChainID: auditChain})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.ledger.withRent) != 1 || !f.ledger.withRent[0] {
+		t.Fatalf("fees asked with account rent %v, want true on a chain that records it", f.ledger.withRent)
+	}
+	child := row(t, report, childID, "ETH")
+	if child.Status != StatusUnverified || !strings.Contains(child.Reason, "account rent") {
+		t.Fatalf("child ETH %+v, want unverified until its rent is backfilled", child)
+	}
+
+	plain := newAuditFixture(t)
+	if _, err := plain.svc.AuditBalances(context.Background(), Audit{ChainID: auditChain}); err != nil {
+		t.Fatal(err)
+	}
+	if len(plain.ledger.withRent) != 1 || plain.ledger.withRent[0] {
+		t.Fatalf("fees asked with account rent %v, want false elsewhere", plain.ledger.withRent)
 	}
 }

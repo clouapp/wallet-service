@@ -202,6 +202,9 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 				tx.Fee = got
 			}
 		}
+		if confirmedNow && isOutboundTxType(tx.TxType) {
+			tx = s.recordAccountRent(ctx, adapter, tx)
+		}
 		if tx.TxType == models.TxTypeSweep && confirmedNow {
 			if err := s.persistSweepConfirmed(ctx, tx, confs, newStatus, confirmedAt, fee); err != nil {
 				slog.Error("confirm sweep", "tx_id", tx.ID, "error", err)

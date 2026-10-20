@@ -238,7 +238,8 @@ func (s *Service) loadLedger(ctx context.Context, p plan, addresses []models.Add
 	if err != nil {
 		return nil, err
 	}
-	fees, err := s.ledger.AddressFees(ctx, p.ChainID, values)
+	_, recordsRent := p.adapter.(chain.AccountRentReader)
+	fees, err := s.ledger.AddressFees(ctx, p.ChainID, values, recordsRent)
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +330,7 @@ func (s *Service) auditAddress(ctx context.Context, p plan, address models.Addre
 		default:
 			row.OnChain = onChain
 			row.Difference = new(big.Int).Sub(onChain, expected)
-			row.Status, row.Reason = judge(row, inFlight, asset.token == nil, ledger.fees.MissingFees)
+			row.Status, row.Reason = judge(row, inFlight, asset.token == nil, ledger.fees)
 		}
 		if row.Status == StatusMismatch {
 			slog.Warn(mismatchMessage,
@@ -346,13 +347,16 @@ func (s *Service) auditAddress(ctx context.Context, p plan, address models.Addre
 }
 
 // judge is the verdict on a read balance: an asset with transactions in flight, or
-// a native balance whose confirmed outbound rows lack their fee, is not judged.
-func judge(row Row, inFlight int, native bool, missingFees int) (Status, string) {
+// a native balance whose outbound rows lack their fee or their account rent, is not
+// judged.
+func judge(row Row, inFlight int, native bool, fees models.AddressFeeEntry) (Status, string) {
 	switch {
 	case inFlight > 0:
 		return StatusInFlight, fmt.Sprintf("%d transactions still pending or confirming", inFlight)
-	case native && missingFees > 0:
-		return StatusUnverified, fmt.Sprintf("%d confirmed outbound transfers have no recorded fee (transactions:backfill-fees)", missingFees)
+	case native && fees.MissingFees > 0:
+		return StatusUnverified, fmt.Sprintf("%d outbound transfers confirmed or failed on chain have no recorded fee (transactions:backfill-fees)", fees.MissingFees)
+	case native && fees.MissingRent > 0:
+		return StatusUnverified, fmt.Sprintf("%d confirmed outbound transfers have no recorded account rent (transactions:backfill-fees)", fees.MissingRent)
 	case new(big.Int).Abs(row.Difference).Cmp(row.Dust) <= 0:
 		return StatusOK, ""
 	case row.Difference.Sign() > 0:

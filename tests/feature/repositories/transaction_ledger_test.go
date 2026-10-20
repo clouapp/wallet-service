@@ -45,6 +45,10 @@ func (s *TransactionRepositoryTestSuite) TestAddress_Ledger_SumsWhatTheRecordedR
 	s.ledgerRow(walletID, models.TxTypeWithdrawal, "failed", ledgerBase, ledgerOther, "ETH", "", "100", "12")
 	s.ledgerRow(walletID, models.TxTypeWithdrawal, "failed", ledgerBase, ledgerOther, "ETH", "", "100", "")
 	s.ledgerRow(walletID, models.TxTypeWithdrawal, "confirmed", ledgerBase, ledgerOther, "ETH", "", "40", "")
+	// One mined and failed on chain whose burned fee was never recorded.
+	minedFailed := s.makeTx(walletID, models.TxTypeWithdrawal, "failed")
+	minedFailed.Chain, minedFailed.FromAddress, minedFailed.ToAddress, minedFailed.Asset, minedFailed.BlockNumber = models.ChainTETH, ledgerBase, ledgerOther, "ETH", 500
+	s.Require().NoError(s.repo.Create(ctx, minedFailed))
 	// A deposit row whose sender is the base (a withdrawal to a watched address of
 	// another wallet) is that wallet's credit, never the base's debit.
 	s.ledgerRow(walletID, models.TxTypeDeposit, "confirmed", ledgerBase, ledgerOther, "ETH", "", "100", "")
@@ -71,14 +75,14 @@ func (s *TransactionRepositoryTestSuite) TestAddress_Ledger_SumsWhatTheRecordedR
 	s.Equal(models.AddressLedgerEntry{Address: ledgerBase, Asset: "ETH", Credited: "0", Debited: "440"}, byKey[ledgerBase+"/"])
 	s.Equal(models.AddressLedgerEntry{Address: ledgerBase, Asset: "USDC", TokenContract: ledgerUSDC, Credited: "2500000", Debited: "0"}, byKey[ledgerBase+"/"+ledgerUSDC])
 
-	fees, err := s.repo.AddressFees(ctx, models.ChainTETH, []string{ledgerBase, ledgerChild})
+	fees, err := s.repo.AddressFees(ctx, models.ChainTETH, []string{ledgerBase, ledgerChild}, false)
 	s.Require().NoError(err)
 	feesByAddress := map[string]models.AddressFeeEntry{}
 	for _, entry := range fees {
 		feesByAddress[entry.Address] = entry
 	}
-	s.Equal(models.AddressFeeEntry{Address: ledgerBase, Fees: "63", MissingFees: 1}, feesByAddress[ledgerBase],
-		"the gas seed and the paid and burned withdrawal fees; the confirmed withdrawal without one is missing, the refused one paid none")
+	s.Equal(models.AddressFeeEntry{Address: ledgerBase, Fees: "63", MissingFees: 2}, feesByAddress[ledgerBase],
+		"the gas seed and the paid and burned withdrawal fees; the confirmed withdrawal without one and the one mined and failed without one are missing, the refused one paid none")
 	s.Equal(models.AddressFeeEntry{Address: ledgerChild, Fees: "250"}, feesByAddress[ledgerChild], "the sweep's gas")
 }
 
@@ -88,7 +92,7 @@ func (s *TransactionRepositoryTestSuite) TestAddress_Ledger_CountsTheOutboundRow
 	s.ledgerRow(walletID, models.TxTypeSweep, "pending", ledgerChild, ledgerBase, "USDC", ledgerUSDC, "5", "")
 	s.ledgerRow(walletID, models.TxTypeWithdrawal, "confirming", ledgerBase, ledgerOther, "ETH", "", "5", "")
 
-	fees, err := s.repo.AddressFees(ctx, models.ChainTETH, []string{ledgerBase, ledgerChild})
+	fees, err := s.repo.AddressFees(ctx, models.ChainTETH, []string{ledgerBase, ledgerChild}, false)
 	s.Require().NoError(err)
 	s.ElementsMatch([]models.AddressFeeEntry{
 		{Address: ledgerBase, Fees: "0", InFlight: 1},
@@ -98,6 +102,32 @@ func (s *TransactionRepositoryTestSuite) TestAddress_Ledger_CountsTheOutboundRow
 	none, err := s.repo.AddressLedger(ctx, models.ChainTETH, nil)
 	s.Require().NoError(err)
 	s.Empty(none)
+}
+
+func (s *TransactionRepositoryTestSuite) TestAddress_Fees_AddTheAccountRentAndCountTheRowsWithoutOne() {
+	ctx := context.Background()
+	walletID := s.insertWallet()
+	rented := s.makeTx(walletID, models.TxTypeWithdrawal, "confirmed")
+	rented.Chain, rented.FromAddress, rented.ToAddress, rented.Asset, rented.TokenContract, rented.Fee = models.ChainTSOL, "SoBase", "SoOther", "USDC", "4zMMC9", "5000"
+	rented.RawPayload = `{"account_rent":"2039280"}`
+	s.Require().NoError(s.repo.Create(ctx, rented))
+	unrented := s.makeTx(walletID, models.TxTypeSweep, "confirmed")
+	unrented.Chain, unrented.FromAddress, unrented.ToAddress, unrented.Asset, unrented.Fee = models.ChainTSOL, "SoBase", "SoOther", "SOL", "5000"
+	s.Require().NoError(s.repo.Create(ctx, unrented))
+
+	withRent, err := s.repo.AddressFees(ctx, models.ChainTSOL, []string{"SoBase"}, true)
+	s.Require().NoError(err)
+	s.Equal([]models.AddressFeeEntry{{Address: "SoBase", Fees: "2049280", MissingRent: 1}}, withRent,
+		"both fees and the rent the withdrawal paid for the recipient's token account; the sweep has no rent recorded")
+
+	withoutRent, err := s.repo.AddressFees(ctx, models.ChainTSOL, []string{"SoBase"}, false)
+	s.Require().NoError(err)
+	s.Equal([]models.AddressFeeEntry{{Address: "SoBase", Fees: "2049280"}}, withoutRent, "a chain that records no rent counts none missing")
+
+	missing, err := s.repo.FindConfirmedOutboundWithoutAccountRent(ctx, models.ChainTSOL, 10)
+	s.Require().NoError(err)
+	s.Require().Len(missing, 1)
+	s.Equal(unrented.ID, missing[0].ID)
 }
 
 func (s *AddressRepositoryTestSuite) TestList_ForBalanceAudit_PagesTheChainsAddressesByIDWithinAnAccount() {

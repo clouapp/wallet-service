@@ -15,13 +15,17 @@ type AddressLedgerEntry struct {
 }
 
 // AddressFeeEntry is what the outbound rows of one address (withdrawals, sweeps and
-// gas seeds it sent, of any asset) cost it in native fees: the fees recorded on the
-// confirmed rows and on the rows that failed on chain, in base units as numeric text;
-// how many confirmed rows have no fee recorded; and how many are still pending or
-// confirming.
+// gas seeds it sent, of any asset) cost it in native base units beside the amounts
+// they moved, as numeric text: the fees recorded on the confirmed rows and on the
+// rows that failed on chain, plus the account rent they paid (raw_payload
+// account_rent, Solana). MissingFees counts the confirmed rows, and those mined and
+// failed on chain, with no fee recorded; MissingRent the confirmed rows with no
+// account rent recorded, on a chain that records it; InFlight the rows still pending
+// or confirming.
 type AddressFeeEntry struct {
 	Address     string
 	Fees        string
 	MissingFees int
+	MissingRent int
 	InFlight    int
 }

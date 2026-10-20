@@ -34,7 +34,7 @@ type addressLister interface {
 // (the transaction repository).
 type ledgerReader interface {
 	AddressLedger(ctx context.Context, chainID string, addresses []string) ([]models.AddressLedgerEntry, error)
-	AddressFees(ctx context.Context, chainID string, addresses []string) ([]models.AddressFeeEntry, error)
+	AddressFees(ctx context.Context, chainID string, addresses []string, withAccountRent bool) ([]models.AddressFeeEntry, error)
 }
 
 // Service runs balance audits.
