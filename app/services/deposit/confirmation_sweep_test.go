@@ -30,6 +30,9 @@ type sweepConfirmMemory struct {
 }
 
 func (s *sweepConfirmMemory) Create(context.Context, *models.Transaction) error { return nil }
+func (s *sweepConfirmMemory) CountByChainAndTxHash(context.Context, string, string, string) (int64, error) {
+	return 0, nil
+}
 func (s *sweepConfirmMemory) FindDepositsByChainAndTxHash(context.Context, string, string) ([]models.Transaction, error) {
 	return nil, nil
 }
@@ -66,9 +69,6 @@ func (s *sweepConfirmMemory) FindConfirmedNativeDeposits(context.Context, string
 }
 func (s *sweepConfirmMemory) SetBlock(context.Context, uuid.UUID, uint64, string, int) error {
 	return nil
-}
-func (s *sweepConfirmMemory) CountByChainAndTxHash(context.Context, string, string, string) (int64, error) {
-	return 0, nil
 }
 func (s *sweepConfirmMemory) MarkFailedFrom(context.Context, uuid.UUID, string, string) error {
 	return nil

@@ -129,8 +129,7 @@ func (r *TransactionRepository) FindByChainAndTxHash(ctx context.Context, chainI
 	return &tx, nil
 }
 
-// CountByChainAndTxHash counts rows for a chain, hash, and type (another outbound
-// row of ours carrying a hash: the inputs proof's copy check).
+// CountByChainAndTxHash counts rows for a chain, hash, and type.
 func (r *TransactionRepository) CountByChainAndTxHash(ctx context.Context, chainID, txHash, txType string) (int64, error) {
 	count, err := r.Query(ctx).Model(&models.Transaction{}).
 		Where("chain", chainID).
