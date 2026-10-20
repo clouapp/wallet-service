@@ -1,8 +1,9 @@
 # Macro Wallets — Backend (WaaS)
 
 Multi-chain Wallet-as-a-Service API: module `github.com/macrowallets/waas`, Go 1.25,
-[Goravel](https://goravel.dev) v1.17 (Gin HTTP driver, Postgres, Redis), AWS Lambda in
-production. The front end (`macro-wallets-front`, port 2001) is a separate repository.
+[Goravel](https://goravel.dev) v1.17 (Gin HTTP driver, Postgres, Redis), on AWS (the
+production runtime is proposed in [`docs/PRODUCTION_RUNTIME.md`](docs/PRODUCTION_RUNTIME.md)).
+The front end (`macro-wallets-front`, port 2001) is a separate repository.
 
 This file holds the **invariants of the system**: the things that must stay true whatever
 the code looks like, each with the test that guards it. The **shape of the code** (layers,
@@ -23,6 +24,12 @@ today and has a fix tracked elsewhere. Do not read either as permission.
   on a host without Lambda, see `.ai/guidelines/queues-and-workers.md`).
   Deploy (SAM `template.yaml`, EventBridge, the Lambda modes) is out of scope for any
   reorganization: `main.go` only has to keep compiling. — guarded by `go build ./...`.
+- Every `LAMBDA_MODE` that `template.yaml` sets is a case of that switch (an unknown one falls
+  to the local server, which in Lambda never serves an invocation), and every schedule in
+  `template.yaml` and `template.dev.yaml` is one EventBridge accepts: a rate of at least one
+  minute, or a six-field cron. `template.yaml` schedules no deposit scan
+  (`docs/PRODUCTION_RUNTIME.md`). — guarded by `TestTemplate_LambdaModes_AreHandledByMain` and
+  `TestTemplate_Schedules_AreValidEventBridgeExpressions` (`tests/architecture`).
 - Goravel is assembled in `bootstrap/app.go` (`foundation.Setup()…Create()`): migrations,
   providers, seeders (`WithSeeders(seeders.All)`, from `database/seeders`), jobs, commands,
   rules, config, the global middleware chain, routing and the Gate callback. There is no
@@ -317,8 +324,10 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `app/console/commands/scan_deposits_test.go`.
 - One scanner per chain: a `ScanLatestBlocks` cycle holds `vault:lock:deposit_scan:<chain>`
   (`cacheguard.Acquire`, TTL 2 min, above the 60 s `deposit_scanner` Lambda timeout). A held
-  lock skips the cycle; a lock store that is down or missing fails it. `scan:deposits
-  --block|--tx|--pending|--retry-pending` take no lock and never move the checkpoint;
+  lock skips the cycle; a lock store that is down or missing fails it. The lock has no owner
+  token and no renewal, and a local scan cycle has no deadline: a cycle longer than the TTL
+  loses it, so a deployment runs one scanning process (`docs/PRODUCTION_RUNTIME.md` §5).
+  `scan:deposits --block|--tx|--pending|--retry-pending` take no lock and never move the checkpoint;
   `--set-checkpoint --apply` takes it and refuses while a scan holds it. —
   guarded by `app/services/deposit/scan_lock_test.go`.
 - A block is never marked scanned while its deposits are not all read and recorded: it is
@@ -544,13 +553,17 @@ Single Go binary, multiple Lambda modes via `LAMBDA_MODE` env:
 |------|---------|
 | **local** (default) | Goravel HTTP server |
 | `api` | API Gateway (Lambda) |
-| `deposit_scanner` | EventBridge cron |
+| `deposit_scanner` | on demand: `template.yaml` schedules no scan (the local workers scan) |
 | `confirmation_tracker` | EventBridge cron |
 | `webhook_reconciler` | EventBridge cron |
 | `webhook_worker` | SQS queue |
+| `webhook_poller` | long-running process: long-polls the webhook queue in place of `webhook_worker` |
 
 Locally, it runs as a standard Goravel HTTP server (`facades.Route().Run()`).
-In production, the same binary is deployed to Lambda with `LAMBDA_MODE` selecting the handler.
+`template.yaml` is the Lambda layout of the same binary, with `LAMBDA_MODE` selecting the
+handler; as it stands it does not run the service (`docs/PRODUCTION_RUNTIME.md` §1, which also
+proposes the production runtime: a long-running service for the API, the local workers and
+the poller).
 
 Local mode shuts down gracefully (`pkg/lifecycle`): SIGTERM/SIGINT stops the HTTP server (in-flight requests drain) and the local scanner/refresher loops within `SHUTDOWN_TIMEOUT_SECONDS` (default 15, keep it below the 20 s grace of `macro-e2e api`); exit 0 when clean, 2 when the deadline expires, 1 on a second signal.
 
@@ -825,7 +838,7 @@ The confirmation tracker (and the confirmation step of each scan cycle) confirms
 
 ### XRP deposits
 
-`ScanBlock` on `xrp`/`txrp` reads one validated ledger (rippled `ledger`, `transactions` and `expand` true; API v1 `metaData` and API v2 `tx_json`/`meta` shapes) and reports, in ledger order (`TransactionIndex`), every `Payment` with `meta.TransactionResult` `tesSUCCESS` that delivered XRP to another account: the amount is `meta.delivered_amount` in drops (a partial payment credits what arrived, never `Amount`), `From` is `Account`, `To` is `Destination`, and `DestinationTag` is carried to `transactions.destination_tag` and to the `deposit.*` webhooks (`destination_tag`, omitted without a tag and on other chains). Not deposits: `tec…` payments, issued-currency or MPT deliveries (an object `delivered_amount`; the token registry does not model XRPL issued currencies), payments an account makes to itself, and every other type, including `CheckCash`, `EscrowFinish`, `PaymentChannelClaim` and `AccountDelete`, which can also deliver XRP. A ledger that is not validated, not closed, not the one asked for, without its transactions list, with a transaction not expanded or without metadata, or a payment whose `delivered_amount` is missing or `unavailable`, is an error, never an empty ledger, so the engine retries it and then keeps it pending. An XRP withdrawal is a `Payment` from the base address to its destination, so it is a deposit only when that destination is itself a watched address (as on every chain). The head is the validated ledger, so with 1 required confirmation a deposit is confirmed on the cycle that records it (tip − ledger + 1). A scanner runs only where one is scheduled for the chain: the local workers scan the chains in `LOCAL_DEPOSIT_SCAN_CHAINS` (`xrp`/`txrp` must be listed), the SAM `deposit_scanner` schedules (`template.yaml`) list no XRP chain, and `artisan scan:deposits` scans on demand; the first cycle starts at the head, without history. A ledger closes every 3–5 s, so the default windows (`DEPOSIT_SCAN_BATCH_BLOCKS` 50, `DEPOSIT_SCAN_CATCH_UP_BLOCKS` 500, 8 ledgers fetched at a time) are about 3–4 minutes and 30–40 minutes of ledgers; a ledger the load-balanced public servers do not have yet answers `lgrNotFound` and is retried. — guarded by `TestLive_ScanBlock_*` (`app/adapters/chain/xrp/scan_test.go`, altnet ledgers recorded in `testdata/xrpl`) and `TestXRP_Deposit_*` (`app/services/deposit/xrp_deposit_test.go`).
+`ScanBlock` on `xrp`/`txrp` reads one validated ledger (rippled `ledger`, `transactions` and `expand` true; API v1 `metaData` and API v2 `tx_json`/`meta` shapes) and reports, in ledger order (`TransactionIndex`), every `Payment` with `meta.TransactionResult` `tesSUCCESS` that delivered XRP to another account: the amount is `meta.delivered_amount` in drops (a partial payment credits what arrived, never `Amount`), `From` is `Account`, `To` is `Destination`, and `DestinationTag` is carried to `transactions.destination_tag` and to the `deposit.*` webhooks (`destination_tag`, omitted without a tag and on other chains). Not deposits: `tec…` payments, issued-currency or MPT deliveries (an object `delivered_amount`; the token registry does not model XRPL issued currencies), payments an account makes to itself, and every other type, including `CheckCash`, `EscrowFinish`, `PaymentChannelClaim` and `AccountDelete`, which can also deliver XRP. A ledger that is not validated, not closed, not the one asked for, without its transactions list, with a transaction not expanded or without metadata, or a payment whose `delivered_amount` is missing or `unavailable`, is an error, never an empty ledger, so the engine retries it and then keeps it pending. An XRP withdrawal is a `Payment` from the base address to its destination, so it is a deposit only when that destination is itself a watched address (as on every chain). The head is the validated ledger, so with 1 required confirmation a deposit is confirmed on the cycle that records it (tip − ledger + 1). A scanner runs only where one is scheduled for the chain: the local workers scan the chains in `LOCAL_DEPOSIT_SCAN_CHAINS` (`xrp`/`txrp` must be listed), `template.yaml` schedules no `deposit_scanner` run for any chain, and `artisan scan:deposits` scans on demand; the first cycle starts at the head, without history. A ledger closes every 3–5 s, so the default windows (`DEPOSIT_SCAN_BATCH_BLOCKS` 50, `DEPOSIT_SCAN_CATCH_UP_BLOCKS` 500, 8 ledgers fetched at a time) are about 3–4 minutes and 30–40 minutes of ledgers; a ledger the load-balanced public servers do not have yet answers `lgrNotFound` and is retried. — guarded by `TestLive_ScanBlock_*` (`app/adapters/chain/xrp/scan_test.go`, altnet ledgers recorded in `testdata/xrpl`) and `TestXRP_Deposit_*` (`app/services/deposit/xrp_deposit_test.go`).
 
 ### Solana deposits
 
@@ -931,5 +944,9 @@ A TRC-20 sweep's gas_seed gives the child what it lacks to pay the estimated ban
 ## Deploy
 
 ```bash
-make deploy ENV=prod    # AWS Lambda via SAM
+make deploy ENV=dev     # template.dev.yaml: queues, KMS key, the host's IAM user (docs/AWS_DEV_STACK.md)
+make deploy ENV=prod    # template.yaml via SAM; validate (sam validate --lint) runs first
 ```
+
+`template.yaml` does not run the service as it stands; the production runtime, its options and
+the decisions still open are in `docs/PRODUCTION_RUNTIME.md`.
