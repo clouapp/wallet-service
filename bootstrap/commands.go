@@ -123,6 +123,7 @@ func Commands() []console.Command {
 		})),
 		commands.NewTransactionsBackfillFees(deposits, registry),
 		commands.NewDepositsVerifyReceipts(deposits),
+		commands.NewDepositsReorgs(deposits),
 		commands.NewWithdrawalsReconcile(deposits),
 	})
 }

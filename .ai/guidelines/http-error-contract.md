@@ -202,6 +202,7 @@ two bugfixes that landed in the commits before it.
 | any failure | 2026-10-02, one error envelope on every failure; string `error`, raw Goravel 422, or empty middleware body | those shapes | `{"error":{"code","message"}}`; validation also has `errors` |
 | `GET /health` | 2026-10-03, scanner already on the branch | `{"status","version"}` | also `deposit_scanner` |
 | `GET /health` | 2026-10-19, outbound transfers left unsettled (#114) | `{"status","version","deposit_scanner"}` | also `confirmation_tracker`: `status` (`ok`, `stale_transactions`, `transactions_store_unavailable`), `stale` per chain, `stale_total`, `stale_after_hours` (`WITHDRAWAL_STALE_AFTER_HOURS`, default 6) |
+| `GET /health` | 2026-10-20, reorganized deposits nothing resolved (#115) | `confirmation_tracker` without them | also `confirmation_tracker.reorg_unresolved` per chain and `reorg_unresolved_total`; `status` `reorg_unresolved` when some are and no outbound transfer is stale (`stale_transactions` wins) |
 | `POST /v1/accounts/{id}/users` | invalid role, 2026-10-03, account roles | enum `owner admin viewer` | enum `owner admin auditor user` |
 | `GET /v1/chains`, `GET /api/v1/chains` | 2026-10-03, base/arbitrum/bsc from #1 | eth, btc, polygon, sol and their testnets | also `base`, `tbase`, `arbitrum`, `tarbitrum`, `bsc`, `tbsc` |
 | `GET /v1/chains`, `GET /api/v1/chains` | 2026-10-06, TRON and Litecoin (6704fa2), XRP Ledger (368b082) seeded | the chains above | also `tron`, `ltc`, `xrp` |

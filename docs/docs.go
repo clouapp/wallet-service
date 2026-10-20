@@ -8149,6 +8149,16 @@ const docTemplate = `{
                 "error": {
                     "type": "string"
                 },
+                "reorg_unresolved": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "reorg_unresolved_total": {
+                    "type": "integer",
+                    "example": 0
+                },
                 "stale": {
                     "type": "object",
                     "additionalProperties": {
