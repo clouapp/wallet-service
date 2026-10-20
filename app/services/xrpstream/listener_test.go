@@ -308,6 +308,32 @@ func TestRun_RetriesALedgerThatFailedOnTheNextLedgersThenLeavesItToTheScan(t *te
 	f.recorder.none(t)
 }
 
+// failingRecorder fails every read, as a chain RPC far behind the stream does.
+type failingRecorder struct{ reads map[uint64]int }
+
+func (r *failingRecorder) RecordStreamedLedger(_ context.Context, _ string, ledger uint64) (int, error) {
+	r.reads[ledger]++
+	return 0, errors.New("ledger past the chain head")
+}
+
+func TestRecord_KeepsAtMostTheBoundOfFailedLedgersWaitingForARetry(t *testing.T) {
+	recorder := &failingRecorder{reads: map[uint64]int{}}
+	s := NewService(Deps{ChainID: testChain, Deposits: recorder})
+	overflow := uint64(maxRetriedLedgers + 1)
+
+	for ledger := uint64(1); ledger <= overflow; ledger++ {
+		s.record(context.Background(), ledger)
+	}
+	if len(s.retries) != maxRetriedLedgers || s.retries[overflow] != 0 {
+		t.Fatalf("%d ledgers waiting, ledger %d among them: %v; want the first %d only", len(s.retries), overflow, s.retries[overflow] != 0, maxRetriedLedgers)
+	}
+	s.retryFailed(context.Background())
+
+	if recorder.reads[1] != 2 || recorder.reads[maxRetriedLedgers] != 2 || recorder.reads[overflow] != 1 {
+		t.Fatalf("reads %d, %d and %d, want the waiting ledgers read again and the one past the bound left to the scan", recorder.reads[1], recorder.reads[maxRetriedLedgers], recorder.reads[overflow])
+	}
+}
+
 func TestRun_FollowsTheWatchedAddressesOnEachRefresh(t *testing.T) {
 	session := newFakeSession(100)
 	f := run(t, time.Nanosecond, session)
