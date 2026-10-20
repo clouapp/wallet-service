@@ -250,13 +250,19 @@ func TestParse_Payload_TheFirstLogOfABlockIsPositionZero(t *testing.T) {
 	assert.Equal(t, 0, transfers[0].LogIndex)
 }
 
-func TestParse_Payload_ATokenTransferWithoutItsLogIndexIsRefused(t *testing.T) {
+func TestParse_Payload_SkipsATokenTransferWithoutItsLogIndexAndKeepsTheOthers(t *testing.T) {
 	withoutLog := `{"blockNum":"0x10","hash":"0xbatch","fromAddress":"0xfrom","toAddress":"0xto","value":1,"asset":"USDC","category":"token",` +
 		`"rawContract":{"rawValue":"0xf4240","address":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","decimals":6}}`
 
-	_, err := NewAlchemyProvider("test-key").ParsePayload(activityPayload(withoutLog))
-	require.Error(t, err, "a token transfer at the native value position would hide the transaction's native deposit")
-	assert.Contains(t, err.Error(), "logIndex")
+	transfers, err := NewAlchemyProvider("test-key").ParsePayload(activityPayload(withoutLog, usdcActivityAtLogZero))
+	require.NoError(t, err)
+	require.Len(t, transfers, 1, "a token transfer at the native value position would hide the transaction's native deposit")
+	assert.Equal(t, 0, transfers[0].LogIndex)
+}
+
+func TestParse_Payload_RefusesABodyThatIsNotAnEvent(t *testing.T) {
+	_, err := NewAlchemyProvider("test-key").ParsePayload([]byte(`[1,2]`))
+	assert.Error(t, err)
 }
 
 func TestParse_Payload_AnInternalTransferIsTheNativeValueOfItsTransaction(t *testing.T) {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/macrowallets/waas/app/adapters/chain/rpc"
 	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/pkg/solanacredit"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -140,7 +141,7 @@ func solanaBlockCredits(slot uint64, block *solanaBlockAccounts, nativeAsset str
 			accounts[i] = key.Pubkey
 			lamports[i] = new(big.Int).Sub(new(big.Int).SetUint64(meta.PostBalances[i]), new(big.Int).SetUint64(meta.PreBalances[i]))
 		}
-		for _, c := range chain.SolanaLamportCredits(accounts, lamports) {
+		for _, c := range solanacredit.Lamports(accounts, lamports) {
 			credit(feePayer, c.Account, c.Amount, nativeAsset, nil, c.Index)
 		}
 		tokenCredits, err := solanaTokenCredits(meta, len(keys), tokens)
@@ -153,7 +154,7 @@ func solanaBlockCredits(slot uint64, block *solanaBlockAccounts, nativeAsset str
 				from = feePayer
 			}
 			token := c.token
-			credit(from, c.owner, c.amount, token.Symbol, &token, chain.SolanaTokenCreditPosition(len(keys), c.accountIndex))
+			credit(from, c.owner, c.amount, token.Symbol, &token, solanacredit.TokenPosition(c.accountIndex))
 		}
 	}
 	return transfers, nil

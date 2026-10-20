@@ -179,12 +179,12 @@ func TestSolana_ScanBlock_CreditsRegisteredSPLTokensToTheTokenAccountOwner(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The swap has 25 account keys: token credits are numbered after them, by the
+	// Token credits are numbered after every possible account index (256), by the
 	// index of the credited token account (3 for USDC, 4 for wrapped SOL), so they
 	// never collide with the lamport credits of the same transaction.
 	want := append(append([]wantTransfer(nil), v1FixtureNativeCredits...),
-		wantTransfer{v1FixtureSwap, v1FixtureSeller, v1FixtureBuyer, 2_200, "USDC", devnetUSDCMint, 28},
-		wantTransfer{v1FixtureSwap, v1FixtureSeller, v1FixtureBuyer, 6_010, "WSOL", nativeSOLMint, 29},
+		wantTransfer{v1FixtureSwap, v1FixtureSeller, v1FixtureBuyer, 2_200, "USDC", devnetUSDCMint, 259},
+		wantTransfer{v1FixtureSwap, v1FixtureSeller, v1FixtureBuyer, 6_010, "WSOL", nativeSOLMint, 260},
 	)
 	assertTransfers(t, transfers, want, v1FixtureSlot, v1FixtureBlockhash, v1FixtureBlockTime)
 	if transfers[3].Token.Decimals != 6 || transfers[4].Token.Decimals != 9 {
@@ -206,11 +206,11 @@ func TestSolana_ScanBlock_CreditsEachOwnerOfAMintAndToken2022(t *testing.T) {
 			tokenCredits = append(tokenCredits, transfer)
 		}
 	}
-	// 19 account keys; the Token-2022 account is index 3, the USDC accounts 6 and 8.
+	// The Token-2022 account is index 3, the USDC accounts 6 and 8: after 256.
 	assertTransfers(t, tokenCredits, []wantTransfer{
-		{twoOwnersFixtureSwap, twoOwnersFixturePool, twoOwnersFixtureTrader, 1_252_097_624_717, "T22", token2022FixtureMint, 22},
-		{twoOwnersFixtureSwap, twoOwnersFixtureTrader, twoOwnersFixturePool, 36_868, "USDC", devnetUSDCMint, 25},
-		{twoOwnersFixtureSwap, twoOwnersFixtureTrader, twoOwnersFixtureFeeOwner, 1, "USDC", devnetUSDCMint, 27},
+		{twoOwnersFixtureSwap, twoOwnersFixturePool, twoOwnersFixtureTrader, 1_252_097_624_717, "T22", token2022FixtureMint, 259},
+		{twoOwnersFixtureSwap, twoOwnersFixtureTrader, twoOwnersFixturePool, 36_868, "USDC", devnetUSDCMint, 262},
+		{twoOwnersFixtureSwap, twoOwnersFixtureTrader, twoOwnersFixtureFeeOwner, 1, "USDC", devnetUSDCMint, 264},
 	}, twoOwnersFixtureSlot, twoOwnersFixtureBlockhash, 1792278060)
 }
 
@@ -285,7 +285,7 @@ func TestSolana_BlockCredits_SkipFailedTransactionsAndOwnersWhoseTotalDidNotRise
 	// fell (a mint), so the fee payer is the sender.
 	minted := tokenBlock(keys, nil, []solanaTokenBalance{usdcBalance(3, "owner", "7")}, false)
 	got, err := solanaBlockCredits(1, minted, models.NativeSOL, usdcIndex())
-	if err != nil || len(got) != 1 || got[0].To != "owner" || got[0].From != "payer" || got[0].Amount.Int64() != 7 || got[0].LogIndex != 7 {
+	if err != nil || len(got) != 1 || got[0].To != "owner" || got[0].From != "payer" || got[0].Amount.Int64() != 7 || got[0].LogIndex != 259 {
 		t.Fatalf("minted credit %+v, %v", got, err)
 	}
 }

@@ -7,7 +7,7 @@ import (
 
 	"github.com/gagliardetto/solana-go"
 
-	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/pkg/solanacredit"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -28,7 +28,7 @@ type solanaTokenBalance struct {
 }
 
 // solanaTokenCredit is the net increase of one registered mint held by one owner in
-// one transaction (chain.SolanaTokenCredits): accountIndex is the owner's lowest token
+// one transaction (solanacredit.Tokens): accountIndex is the owner's lowest token
 // account of that mint whose balance changed; from is the owner whose holding of that
 // mint fell most, "" when none did (a mint).
 type solanaTokenCredit struct {
@@ -59,13 +59,13 @@ func indexSolanaTokens(chainID string, tokens []types.Token) (map[string]types.T
 // solanaTokenCredits returns the owners whose total of a registered mint rose in one
 // successful transaction, ordered by accountIndex: each registered balance before the
 // transaction is a negative change of its token account and each balance after it a
-// positive one (chain.SolanaTokenCredits nets them per owner and mint). A registered
+// positive one (solanacredit.Tokens nets them per owner and mint). A registered
 // balance that cannot be read is an error.
 func solanaTokenCredits(meta *solanaTransactionMeta, keyCount int, tokens map[string]types.Token) ([]solanaTokenCredit, error) {
 	if len(tokens) == 0 {
 		return nil, nil
 	}
-	var changes []chain.SolanaTokenChange
+	var changes []solanacredit.TokenChange
 	chainDecimals := make(map[string]uint8)
 	collect := func(balances []solanaTokenBalance, after bool) error {
 		for _, balance := range balances {
@@ -81,7 +81,7 @@ func solanaTokenCredits(meta *solanaTransactionMeta, keyCount int, tokens map[st
 			} else {
 				amount.Neg(amount)
 			}
-			changes = append(changes, chain.SolanaTokenChange{Index: balance.AccountIndex, Owner: balance.Owner, Mint: balance.Mint, Delta: amount})
+			changes = append(changes, solanacredit.TokenChange{Index: balance.AccountIndex, Owner: balance.Owner, Mint: balance.Mint, Delta: amount})
 		}
 		return nil
 	}
@@ -93,7 +93,7 @@ func solanaTokenCredits(meta *solanaTransactionMeta, keyCount int, tokens map[st
 	}
 
 	var credits []solanaTokenCredit
-	for _, c := range chain.SolanaTokenCredits(changes) {
+	for _, c := range solanacredit.Tokens(changes) {
 		token := tokens[c.Mint]
 		if decimals, read := chainDecimals[c.Mint]; read && token.Decimals != 0 && decimals != token.Decimals {
 			slog.Warn("solana token decimals differ from the registry row; the row is used",

@@ -2,6 +2,7 @@ package deposit
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"sync"
 	"testing"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/depositrecord"
 	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/types"
@@ -368,4 +370,70 @@ func TestPush_Of_ATransferTheScannerRecordedBeforePositionsIsNotRecordedAgain(t 
 	assert.Equal(t, old.ID, rows[0].ID)
 	assert.Equal(t, types.NativeValuePosition, rows[0].LogIndex, "only the scanner moves its own old row, on its next scan")
 	assert.Empty(t, f.events.pending())
+}
+
+// The scanner and the push record one transfer at the same moment, numbering it
+// differently (the push listed the transaction's accounts in another order): the
+// transaction lock makes one of them see the other's row.
+func TestRecord_ConcurrentScanAndPushOfOneTransferKeepOneRow(t *testing.T) {
+	f := newPositionsFixture(t, positionsChain, models.NativeETH)
+	alice := f.watch(t, positionsChain, "0xalice")
+	transactions := repositoryOf(t)
+	for attempt := 0; attempt < 10; attempt++ {
+		txHash := fmt.Sprintf("0xrace%02d", attempt)
+		row := func(source string, position int) *models.Transaction {
+			return &models.Transaction{
+				ID: uuid.New(), AddressID: &alice.ID, WalletID: alice.WalletID, ExternalUserID: alice.ExternalUserID,
+				Chain: positionsChain, TxType: models.TxTypeDeposit, TxHash: txHash, LogIndex: position,
+				ToAddress: alice.Address, Amount: "10000000", Asset: models.SymbolUSDT, TokenContract: positionsUSDT,
+				RequiredConfs: 3, Status: "pending", BlockNumber: positionsBlock, BlockHash: positionsBlockHash,
+				Direction: models.TxDirectionInbound, Source: source, RawPayload: "{}",
+			}
+		}
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		outcomes := make([]depositrecord.Outcome, 2)
+		for i, candidate := range []*models.Transaction{row(models.TxSourceChain, 3), row(models.TxSourceDepositIngest, 5)} {
+			wg.Add(1)
+			go func(i int, candidate *models.Transaction) {
+				defer wg.Done()
+				<-start
+				outcome, err := depositrecord.Record(context.Background(), transactions, candidate, nil)
+				assert.NoError(t, err)
+				outcomes[i] = outcome
+			}(i, candidate)
+		}
+		close(start)
+		wg.Wait()
+
+		require.Len(t, depositsOf(t, positionsChain, txHash), 1, "attempt %d: outcomes %v", attempt, outcomes)
+		assert.ElementsMatch(t, []depositrecord.Outcome{depositrecord.Created, depositrecord.OtherSource}, outcomes)
+	}
+}
+
+// Outputs 0 and 2 pay alice the same amount; the push recorded output 0 and stopped.
+// The scanner reports both, so the pushed row is its output 0 and output 2 is new.
+func TestScan_Block_RecordsTheTwinOutputThePushLeftOut(t *testing.T) {
+	const btcTx = "9b0fc92260312ce44e74ef369f5c66bbb85848f2eddd5a7a1cde251e54ccfdd5"
+	f := newPositionsFixture(t, models.ChainBTC, models.NativeBTC)
+	alice := f.watch(t, models.ChainBTC, "bc1qalice")
+	output := func(vout int) types.DetectedTransfer {
+		return types.DetectedTransfer{TxHash: btcTx, BlockNumber: positionsBlock, BlockHash: "00000000block",
+			To: alice.Address, Amount: big.NewInt(50_000), Asset: models.NativeBTC, LogIndex: vout}
+	}
+	require.NoError(t, f.newIngestService().Ingest(context.Background(), ingest.InboundEvent{
+		ChainID: models.ChainBTC, Transfers: []providers.InboundTransfer{{
+			TxHash: btcTx, BlockNumber: positionsBlock, BlockHash: "00000000block", To: alice.Address,
+			Amount: big.NewInt(50_000), Asset: "BTC", LogIndex: 0,
+		}},
+	}))
+	f.blocks[positionsBlock] = []types.DetectedTransfer{output(0), output(2)}
+
+	assert.Equal(t, 1, f.scan(t, models.ChainBTC, positionsBlock))
+
+	rows := depositsOf(t, models.ChainBTC, btcTx)
+	require.Len(t, rows, 2)
+	assert.Equal(t, []int{0, 2}, []int{rows[0].LogIndex, rows[1].LogIndex})
+	assert.Equal(t, models.TxSourceDepositIngest, rows[0].Source)
+	assert.Equal(t, models.TxSourceChain, rows[1].Source)
 }

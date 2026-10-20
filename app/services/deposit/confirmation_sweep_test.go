@@ -36,6 +36,12 @@ func (s *sweepConfirmMemory) FindDepositsByChainAndTxHash(context.Context, strin
 func (s *sweepConfirmMemory) ClaimDepositPosition(context.Context, uuid.UUID, int) (bool, error) {
 	return false, nil
 }
+func (s *sweepConfirmMemory) LockTransactionDeposits(context.Context, string, string) error {
+	return nil
+}
+func (s *sweepConfirmMemory) Within(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
 func (s *sweepConfirmMemory) CountInternalTransfers(context.Context, string, string, uuid.UUID) (int64, error) {
 	return 0, nil
 }
@@ -77,11 +83,6 @@ func (s *sweepConfirmMemory) committedByID(id uuid.UUID) (sweepConfirmRow, bool)
 
 // sweepConfirmStore joins confirmation updates to one transaction.
 type sweepConfirmStore struct {
-	*sweepConfirmMemory
-}
-
-// sweepConfirmStoreWithoutTx updates rows and cannot open a transaction.
-type sweepConfirmStoreWithoutTx struct {
 	*sweepConfirmMemory
 }
 
@@ -285,25 +286,6 @@ func TestApply_Confirmations_RollsBackSweepConfirmationWhenTheWebhookInsertFails
 	}
 	if _, ok := store.committedByID(deposit.ID); !ok || deposits.n != 1 {
 		t.Fatalf("deposit kept=%v published=%d", ok, deposits.n)
-	}
-}
-
-func TestApply_Confirmations_RefusesSweepConfirmationWithoutATransaction(t *testing.T) {
-	memory := &sweepConfirmMemory{}
-	events := &sweepConfirmEventRepo{}
-	sender, sent := newSweepConfirmSender(t, nil)
-	svc := &Service{
-		txRepo:     &sweepConfirmStoreWithoutTx{sweepConfirmMemory: memory},
-		webhookSvc: sweepConfirmWebhook(events, sender),
-	}
-	sweep := confirmingTx(models.TxTypeSweep, 1)
-
-	err := svc.applyConfirmations(context.Background(), mocks.NewMockChain("eth"), 100, []models.Transaction{sweep})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := memory.committedByID(sweep.ID); ok || *sent != 0 || len(events.created) != 0 || memory.withins != 0 {
-		t.Fatalf("kept=%v sent=%d events=%d withins=%d", ok, *sent, len(events.created), memory.withins)
 	}
 }
 

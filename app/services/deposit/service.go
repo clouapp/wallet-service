@@ -75,6 +75,9 @@ type Service struct {
 }
 
 // transactionStore is the deposit rows the scanner writes and the tracker updates.
+// Within (depositrecord.Store) opens one transaction, which the queries made with its
+// callback context join: a deposit's record, a sweep's confirmation and its
+// sweep.confirmed webhook row.
 type transactionStore interface {
 	depositrecord.Store
 	CountInternalTransfers(ctx context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error)
@@ -245,8 +248,9 @@ func (s *Service) scanLatestBlocks(ctx context.Context, chainID string) error {
 // processTransfer records a transfer to a watched address as a pending deposit and
 // reports whether it created one. A transfer already recorded (by this scanner, by
 // the provider push or by another process at the same time) is left as it is
-// (depositrecord.Record).
-func (s *Service) processTransfer(ctx context.Context, chainID string, adapter types.Chain, transfer types.DetectedTransfer) (bool, error) {
+// (depositrecord.Record); siblings are the transfers of its transaction this scan
+// records with it.
+func (s *Service) processTransfer(ctx context.Context, chainID string, adapter types.Chain, transfer types.DetectedTransfer, siblings []depositrecord.Transfer) (bool, error) {
 	watched, err := s.isWatchedAddress(ctx, chainID, transfer.To)
 	if err != nil {
 		return false, classify(pending.ClassDatabase, err)
@@ -306,7 +310,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		RawPayload:     "{}",
 	}
 
-	outcome, err := depositrecord.Record(ctx, s.txRepo, tx)
+	outcome, err := depositrecord.Record(ctx, s.txRepo, tx, siblings)
 	if err != nil {
 		return false, classify(pending.ClassDatabase, fmt.Errorf("record deposit: %w", err))
 	}

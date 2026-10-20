@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"strings"
 	"testing"
 	"time"
 
@@ -114,20 +113,21 @@ func TestParse_Payload_InvalidJSON(t *testing.T) {
 	assert.Contains(t, err.Error(), "unmarshal")
 }
 
-func TestParse_Payload_EmptyTxid(t *testing.T) {
-	payload := []byte(`[{"txid":"","blockNumber":1,"blockHash":"h","toAddress":"bc1q","vout":0,"amount":1,"timestamp":1}]`)
-	p := NewQuickNodeProvider("k")
-	_, err := p.ParsePayload(payload)
-	require.Error(t, err)
-	assert.Contains(t, strings.ToLower(err.Error()), "txid")
-}
+func TestParse_Payload_SkipsAnItemItCannotReadAndKeepsTheOthers(t *testing.T) {
+	for name, bad := range map[string]string{
+		"empty txid":    `{"txid":"","blockNumber":1,"blockHash":"h","toAddress":"bc1q","vout":0,"amount":1,"timestamp":1}`,
+		"missing vout":  `{"txid":"a","blockNumber":1,"blockHash":"h","toAddress":"bc1qa","amount":1,"timestamp":1}`,
+		"negative vout": `{"txid":"a","blockNumber":1,"blockHash":"h","toAddress":"bc1qa","vout":-1,"amount":1,"timestamp":1}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			payload := []byte(`[` + bad + `,{"txid":"b","blockNumber":1,"blockHash":"h","toAddress":"bc1qb","vout":1,"amount":1,"timestamp":1}]`)
 
-func TestParse_Payload_AnOutputWithoutItsVoutIsRefused(t *testing.T) {
-	payload := []byte(`[{"txid":"a","blockNumber":1,"blockHash":"h","toAddress":"bc1qa","amount":1,"timestamp":1}]`)
-
-	_, err := NewQuickNodeProvider("k").ParsePayload(payload)
-	require.Error(t, err, "without its vout the output has no position to be told from the other outputs")
-	assert.Contains(t, err.Error(), "vout")
+			out, err := NewQuickNodeProvider("k").ParsePayload(payload)
+			require.NoError(t, err, "without its vout an output has no position; the others keep theirs")
+			require.Len(t, out, 1)
+			assert.Equal(t, "b", out[0].TxHash)
+		})
+	}
 }
 
 func TestParse_Payload_TwoOutputsOfOneTransactionKeepTheirVouts(t *testing.T) {

@@ -157,7 +157,7 @@ func TestProcess_Transfers_NativeHumanUsesChainDecimals(t *testing.T) {
 		Asset:         "BTC",
 		LogIndex:      -1,
 	}
-	err := svc.processTransfer(t.Context(), models.ChainBTC, mockChain, transfer)
+	err := svc.ProcessTransfers(t.Context(), models.ChainBTC, []providers.InboundTransfer{transfer})
 	require.NoError(t, err)
 	require.Len(t, txs.created, 1)
 	assert.Equal(t, "50000000", txs.created[0].Amount)
@@ -166,8 +166,9 @@ func TestProcess_Transfers_NativeHumanUsesChainDecimals(t *testing.T) {
 	mockChain.NativeDecimalsVal = 0
 	skipped := &ingestTxRepo{}
 	svc.txRepo = skipped
-	err = svc.processTransfer(t.Context(), models.ChainBTC, mockChain, transfer)
+	_, err = svc.depositRow(t.Context(), models.ChainBTC, mockChain, transfer)
 	assert.Error(t, err)
+	require.NoError(t, svc.ProcessTransfers(t.Context(), models.ChainBTC, []providers.InboundTransfer{transfer}))
 	assert.Empty(t, skipped.created)
 }
 
@@ -369,6 +370,10 @@ func (f *ingestTxRepo) FindDepositsByChainAndTxHash(_ context.Context, chainID, 
 }
 func (f *ingestTxRepo) ClaimDepositPosition(context.Context, uuid.UUID, int) (bool, error) {
 	return false, nil
+}
+func (f *ingestTxRepo) LockTransactionDeposits(context.Context, string, string) error { return nil }
+func (f *ingestTxRepo) Within(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
 }
 func (f *ingestTxRepo) CountInternalTransfers(_ context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error) {
 	if owner, ok := f.internalHashes[txHash]; ok && owner == walletID {

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -286,7 +287,10 @@ func (q *QuickNodeProvider) ParsePayload(body []byte) ([]providers.InboundTransf
 	for i, item := range items {
 		t, err := quicknodeItemToTransfer(item)
 		if err != nil {
-			return nil, fmt.Errorf("quicknode: item %d: %w", i, err)
+			// Left to the deposit scanner (a stream whose filter predates the vout
+			// sends none until its addresses are synced); the other items are kept.
+			slog.Warn("quicknode: item skipped", "item", i, "tx", item.Txid, "error", err)
+			continue
 		}
 		out = append(out, t)
 	}

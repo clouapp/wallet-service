@@ -134,7 +134,7 @@ func TestHelius_ParsePayload_CreditsATokenAfterTheAccountKeysInBaseUnits(t *test
 	assert.Equal(t, "", tx.Token.Symbol, "the registry names the token")
 	assert.False(t, tx.AmountIsHuman)
 	assert.Equal(t, 0, big.NewInt(2_200).Cmp(tx.Amount))
-	assert.Equal(t, 4+2, tx.LogIndex, "after the 4 account keys, at the lowest changed token account")
+	assert.Equal(t, 256+2, tx.LogIndex, "after every possible account index, at the lowest changed token account")
 }
 
 func TestHelius_ParsePayload_SkipsAFailedTransaction(t *testing.T) {
@@ -148,7 +148,7 @@ func TestHelius_ParsePayload_SkipsAFailedTransaction(t *testing.T) {
 	assert.Empty(t, transfers, "a failed transaction only moves its fee")
 }
 
-func TestHelius_ParsePayload_RefusesWhatItCannotPosition(t *testing.T) {
+func TestHelius_ParsePayload_SkipsATransactionItCannotPositionAndKeepsTheOthers(t *testing.T) {
 	cases := map[string][]map[string]interface{}{
 		"no account data": nil,
 		"a token account missing from the accounts": {
@@ -163,17 +163,34 @@ func TestHelius_ParsePayload_RefusesWhatItCannotPosition(t *testing.T) {
 			accountEntry("payer", -5_000),
 			accountEntry("ataReceiver", 0, tokenChange("", "ataReceiver", heliusUSDCMint, "1500")),
 		},
+		"a token change listed twice": {
+			accountEntry("payer", -5_000, tokenChange("receiver", "ataReceiver", heliusUSDCMint, "1500")),
+			accountEntry("ataReceiver", 0, tokenChange("receiver", "ataReceiver", heliusUSDCMint, "1500")),
+		},
 	}
 	for name, accounts := range cases {
 		t.Run(name, func(t *testing.T) {
-			fields := map[string]interface{}{}
+			bad := map[string]interface{}{"signature": "badSig", "slot": 7}
 			if accounts != nil {
-				fields["accountData"] = accounts
+				bad["accountData"] = accounts
 			}
-			_, err := NewHeliusProvider("k").ParsePayload(enhancedTx(t, fields))
-			assert.Error(t, err)
+			good := map[string]interface{}{"signature": heliusSig, "slot": 7, "accountData": []map[string]interface{}{
+				accountEntry("payer", -1_005_000), accountEntry("receiver", 1_000_000),
+			}}
+			payload, err := json.Marshal([]map[string]interface{}{bad, good})
+			require.NoError(t, err)
+
+			transfers, err := NewHeliusProvider("k").ParsePayload(payload)
+			require.NoError(t, err, "one transaction that cannot be read does not refuse the others")
+			require.Len(t, transfers, 1)
+			assert.Equal(t, heliusSig, transfers[0].TxHash)
 		})
 	}
+}
+
+func TestHelius_ParsePayload_RefusesABodyThatIsNotTransactions(t *testing.T) {
+	_, err := NewHeliusProvider("k").ParsePayload([]byte(`{"not":"an array"}`))
+	assert.Error(t, err)
 }
 
 // scannerFixture is the devnet slot 512232469 the Solana scanner tests read.
@@ -280,13 +297,13 @@ func TestHelius_ParsePayload_FindsTheScannersCreditsAtTheScannersPositions(t *te
 		got = append(got, credit{transfer.To, mint, transfer.Amount.String(), transfer.LogIndex})
 	}
 	// The scanner's credits of that transaction (scan_spl_test.go): lamports at 1, 4
-	// and 6; USDC and wrapped SOL to the buyer at 28 and 29 (25 account keys).
+	// and 6; USDC and wrapped SOL to the buyer at 259 and 260 (token accounts 3 and 4).
 	assert.Subset(t, got, []credit{
 		{lamports1, "", "5000", 1},
 		{"5jt5jvW22vR6Hij4NWbJL9mZZzL3mgeGzcQhSdFECF4E", "", "6010", 4},
 		{"955q2iVFTaJZR39F8j7QwqFZiVf5U9wFUfbDNWUenGqb", "", "1488440", 6},
-		{buyer, usdcMint, "2200", 28},
-		{buyer, wsolMint, "6010", 29},
+		{buyer, usdcMint, "2200", 259},
+		{buyer, wsolMint, "6010", 260},
 	})
 	for _, transfer := range transfers {
 		if transfer.Token != nil && transfer.Token.Contract == usdcMint {

@@ -104,51 +104,76 @@ func (s *Service) ProcessTransfers(ctx context.Context, chainID string, transfer
 		return fmt.Errorf("load chain %s: %w", chainID, err)
 	}
 
+	// The deposit rows are built first, so each one is recorded knowing the other
+	// transfers of its transaction in this push (depositrecord.Record).
+	var rows []*models.Transaction
+	siblings := make(map[string][]depositrecord.Transfer)
 	for _, transfer := range transfers {
-		if err := s.processTransfer(ctx, chainID, adapter, transfer); err != nil {
+		row, err := s.depositRow(ctx, chainID, adapter, transfer)
+		if err != nil {
 			slog.Error("ingest process transfer", "tx", transfer.TxHash, "error", err)
+			continue
+		}
+		if row != nil {
+			rows = append(rows, row)
+			siblings[row.TxHash] = append(siblings[row.TxHash], depositrecord.TransferOf(*row))
+		}
+	}
+	for _, row := range rows {
+		if err := s.record(ctx, row, siblings[row.TxHash]); err != nil {
+			slog.Error("ingest process transfer", "tx", row.TxHash, "error", err)
 		}
 	}
 	return nil
 }
 
-func (s *Service) processTransfer(ctx context.Context, chainID string, adapter types.Chain, transfer providers.InboundTransfer) error {
+// record records one deposit row and publishes deposit.pending when it is new.
+func (s *Service) record(ctx context.Context, tx *models.Transaction, siblings []depositrecord.Transfer) error {
+	outcome, err := depositrecord.Record(ctx, s.txRepo, tx, siblings)
+	if err != nil {
+		return fmt.Errorf("record deposit: %w", err)
+	}
+	if outcome != depositrecord.Created {
+		depositrecord.LogSkipped(outcome, tx)
+		return nil
+	}
+	s.publishDepositPending(ctx, *tx)
+	slog.Info("ingest deposit", "chain", tx.Chain, "tx", tx.TxHash, "log_index", tx.LogIndex, "user", tx.ExternalUserID, "asset", tx.Asset, "amount", tx.Amount)
+	return nil
+}
+
+// depositRow is the deposit row of a pushed transfer to a watched address, with its
+// amount in base units and its token from the registry; nil when the transfer is not
+// a deposit (an unwatched address, an unregistered token, a sweep of the wallet).
+func (s *Service) depositRow(ctx context.Context, chainID string, adapter types.Chain, transfer providers.InboundTransfer) (*models.Transaction, error) {
 	if transfer.Amount == nil && !transfer.AmountIsHuman {
-		return fmt.Errorf("missing amount")
+		return nil, fmt.Errorf("missing amount")
 	}
 
-	if s.addresses != nil {
-		isMine, err := s.addresses.SIsMember(ctx, "vault:addresses:"+chainID, transfer.To).Result()
-		if err != nil || !isMine {
-			return nil
-		}
-	} else {
-		count, err := s.addressRepo.CountByChainAndAddress(ctx, chainID, transfer.To)
-		if err != nil || count == 0 {
-			return nil
-		}
+	if !s.watched(ctx, chainID, transfer.To) {
+		return nil, nil
 	}
 
 	addr, err := s.addressRepo.FindByChainAndAddress(ctx, chainID, transfer.To)
 	if err != nil || addr == nil {
-		return fmt.Errorf("lookup address: %w", err)
+		return nil, fmt.Errorf("lookup address: %w", err)
 	}
 
 	internal, err := s.txRepo.CountInternalTransfers(ctx, chainID, transfer.TxHash, addr.WalletID)
 	if err != nil {
-		return fmt.Errorf("check internal transfer: %w", err)
+		return nil, fmt.Errorf("check internal transfer: %w", err)
 	}
 	if internal > 0 {
 		slog.Info("ingest skipped a sweep or gas seed of the wallet", "chain", chainID, "tx", transfer.TxHash, "to", transfer.To)
-		return nil
+		return nil, nil
 	}
 
 	asset := adapter.NativeAsset()
 	var tokenContract string
 	if transfer.Token != nil {
-		seeded, findErr := s.registry.FindTokenByContract(chainID, transfer.Token.Contract)
-		if findErr != nil {
-			return nil
+		seeded, registered := s.registeredToken(chainID, transfer.Token.Contract)
+		if !registered {
+			return nil, nil
 		}
 		asset = seeded.Symbol
 		tokenContract = seeded.Contract
@@ -157,18 +182,18 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		if transfer.AmountIsHuman {
 			base, convErr := withdraw.ResolveWithdrawalAmount(chainID, adapter.NativeAsset(), 0, seeded.Symbol, transfer.HumanAmount, []types.Token{*seeded})
 			if convErr != nil {
-				return convErr
+				return nil, convErr
 			}
 			transfer.Amount = base.BaseUnits
 		}
 	} else if transfer.AmountIsHuman {
 		reader, ok := adapter.(interface{ NativeDecimals() int })
 		if !ok {
-			return fmt.Errorf("chain %s native decimals are not loaded", chainID)
+			return nil, fmt.Errorf("chain %s native decimals are not loaded", chainID)
 		}
 		base, convErr := amount.DecimalToBaseUnits(transfer.HumanAmount, reader.NativeDecimals())
 		if convErr != nil {
-			return convErr
+			return nil, convErr
 		}
 		transfer.Amount = base
 		if transfer.Asset != "" {
@@ -178,13 +203,13 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		asset = types.CanonicalAssetSymbol(transfer.Asset)
 	}
 	if transfer.Amount == nil {
-		return fmt.Errorf("missing amount")
+		return nil, fmt.Errorf("missing amount")
 	}
 	if transfer.Amount.Sign() < 0 {
-		return fmt.Errorf("amount %s: %w", transfer.Amount, amount.ErrNegativeAmount)
+		return nil, fmt.Errorf("amount %s: %w", transfer.Amount, amount.ErrNegativeAmount)
 	}
 
-	tx := &models.Transaction{
+	return &models.Transaction{
 		ID:             uuid.New(),
 		AddressID:      &addr.ID,
 		WalletID:       addr.WalletID,
@@ -207,21 +232,32 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		Direction:      models.TxDirectionInbound,
 		Source:         models.TxSourceDepositIngest,
 		RawPayload:     "{}",
-	}
+	}, nil
+}
 
-	outcome, err := depositrecord.Record(ctx, s.txRepo, tx)
+// watched reports whether address is a watched address of the chain. A lookup that
+// fails reports false, logged: the push does not record the transfer, the scanner
+// does.
+func (s *Service) watched(ctx context.Context, chainID, address string) bool {
+	if s.addresses != nil {
+		isMine, err := s.addresses.SIsMember(ctx, "vault:addresses:"+chainID, address).Result()
+		if err != nil {
+			slog.Warn("ingest: watched-address set unavailable, transfer left to the scanner", "chain", chainID, "error", err)
+		}
+		return err == nil && isMine
+	}
+	count, err := s.addressRepo.CountByChainAndAddress(ctx, chainID, address)
 	if err != nil {
-		return fmt.Errorf("record deposit: %w", err)
+		slog.Warn("ingest: watched-address lookup failed, transfer left to the scanner", "chain", chainID, "error", err)
 	}
-	if outcome != depositrecord.Created {
-		depositrecord.LogSkipped(outcome, tx)
-		return nil
-	}
+	return err == nil && count > 0
+}
 
-	s.publishDepositPending(ctx, *tx)
-
-	slog.Info("ingest deposit", "chain", chainID, "tx", transfer.TxHash, "log_index", transfer.LogIndex, "user", addr.ExternalUserID, "asset", asset, "amount", transfer.Amount.String())
-	return nil
+// registeredToken is the chain's token row for contract; false for a token the
+// registry does not list, which is not a deposit.
+func (s *Service) registeredToken(chainID, contract string) (*types.Token, bool) {
+	token, err := s.registry.FindTokenByContract(chainID, contract)
+	return token, err == nil && token != nil
 }
 
 func (s *Service) publishDepositPending(ctx context.Context, tx models.Transaction) {

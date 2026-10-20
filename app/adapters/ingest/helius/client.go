@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net/url"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/httpclient"
+	"github.com/macrowallets/waas/pkg/solanacredit"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -250,7 +252,7 @@ func (h *HeliusProvider) VerifyInbound(headers providers.Header, body []byte, se
 // accountData lists every account key of the transaction, in key order, with its
 // lamport change and the changes of the token balances it holds: the same balances
 // the deposit scanner reads from getBlock, so the credits and their positions are the
-// scanner's (chain.SolanaLamportCredits, chain.SolanaTokenCredits). nativeTransfers
+// scanner's (solanacredit.Lamports, solanacredit.Tokens). nativeTransfers
 // and tokenTransfers (one per instruction, not netted) are not read.
 type heliusEnhancedTx struct {
 	Signature        string              `json:"signature"`
@@ -289,7 +291,10 @@ func (h *HeliusProvider) ParsePayload(body []byte) ([]providers.InboundTransfer,
 		}
 		credits, err := enhancedTxCredits(tx)
 		if err != nil {
-			return nil, fmt.Errorf("helius: transaction %s: %w", tx.Signature, err)
+			// Left to the deposit scanner: recording it without its positions could
+			// record it twice. The other transactions of the push are kept.
+			slog.Warn("helius: transaction skipped, its credits cannot be placed", "tx", tx.Signature, "error", err)
+			continue
 		}
 		out = append(out, credits...)
 	}
@@ -331,13 +336,19 @@ func enhancedTxCredits(tx heliusEnhancedTx) ([]providers.InboundTransfer, error)
 			index[entry.Account] = i
 		}
 	}
-	var changes []chain.SolanaTokenChange
+	var changes []solanacredit.TokenChange
+	seen := make(map[string]bool)
 	for _, entry := range tx.AccountData {
 		for _, token := range entry.TokenBalanceChanges {
 			position, listed := index[token.TokenAccount]
 			if !listed {
 				return nil, fmt.Errorf("token account %s is not one of its accounts", token.TokenAccount)
 			}
+			key := token.TokenAccount + "/" + token.Mint
+			if seen[key] {
+				return nil, fmt.Errorf("token account %s is listed twice", token.TokenAccount)
+			}
+			seen[key] = true
 			if token.UserAccount == "" || strings.TrimSpace(token.Mint) == "" {
 				return nil, fmt.Errorf("token account %s has no owner or mint", token.TokenAccount)
 			}
@@ -345,7 +356,7 @@ func enhancedTxCredits(tx heliusEnhancedTx) ([]providers.InboundTransfer, error)
 			if !ok {
 				return nil, fmt.Errorf("token account %s: amount %q is not a base-unit integer", token.TokenAccount, token.RawTokenAmount.TokenAmount)
 			}
-			changes = append(changes, chain.SolanaTokenChange{Index: position, Owner: token.UserAccount, Mint: token.Mint, Delta: delta})
+			changes = append(changes, solanacredit.TokenChange{Index: position, Owner: token.UserAccount, Mint: token.Mint, Delta: delta})
 		}
 	}
 
@@ -357,17 +368,17 @@ func enhancedTxCredits(tx heliusEnhancedTx) ([]providers.InboundTransfer, error)
 		}
 	}
 	var out []providers.InboundTransfer
-	for _, c := range chain.SolanaLamportCredits(accounts, lamports) {
+	for _, c := range solanacredit.Lamports(accounts, lamports) {
 		out = append(out, transfer(feePayer, c.Account, c.Amount, models.ChainSOL, nil, c.Index))
 	}
-	for _, c := range chain.SolanaTokenCredits(changes) {
+	for _, c := range solanacredit.Tokens(changes) {
 		from := c.From
 		if from == "" {
 			from = feePayer
 		}
 		// The token row (symbol, decimals) comes from the registry in the ingest service;
 		// unregistered mints are left there.
-		out = append(out, transfer(from, c.Owner, c.Amount, "spl", &types.Token{Contract: c.Mint}, chain.SolanaTokenCreditPosition(len(accounts), c.Index)))
+		out = append(out, transfer(from, c.Owner, c.Amount, "spl", &types.Token{Contract: c.Mint}, solanacredit.TokenPosition(c.Index)))
 	}
 	return out, nil
 }

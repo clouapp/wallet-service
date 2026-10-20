@@ -129,6 +129,17 @@ func (r *TransactionRepository) FindByChainAndTxHash(ctx context.Context, chainI
 	return &tx, nil
 }
 
+// LockTransactionDeposits takes the advisory lock of one chain transaction's
+// deposits, held until the database transaction of ctx ends (Within): the deposit
+// recorders of the scanner and the push decide on a transaction one at a time. Called
+// outside a transaction, the lock ends with the statement.
+func (r *TransactionRepository) LockTransactionDeposits(ctx context.Context, chainID, txHash string) error {
+	if _, err := r.Query(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "deposits/"+chainID+"/"+txHash); err != nil {
+		return fmt.Errorf("lock transaction deposits: %w", err)
+	}
+	return nil
+}
+
 // FindDepositsByChainAndTxHash returns the deposit rows of one transaction, ordered by
 // position (log_index).
 func (r *TransactionRepository) FindDepositsByChainAndTxHash(ctx context.Context, chainID, txHash string) ([]models.Transaction, error) {

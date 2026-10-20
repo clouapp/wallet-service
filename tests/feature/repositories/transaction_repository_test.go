@@ -221,6 +221,44 @@ func (s *TransactionRepositoryTestSuite) TestFind_DepositsByChainAndTxHash_Retur
 	s.Empty(none)
 }
 
+// lockFree asks, from another connection, whether the deposits lock of the
+// transaction is free (it takes and releases it at once when it is).
+func (s *TransactionRepositoryTestSuite) lockFree(chainID, txHash string) bool {
+	s.T().Helper()
+	var free []struct{ Free bool }
+	s.Require().NoError(facades.Orm().Query().Raw(
+		"SELECT pg_try_advisory_xact_lock(hashtextextended(?, 0)) AS free", "deposits/"+chainID+"/"+txHash,
+	).Scan(&free))
+	s.Require().Len(free, 1)
+	return free[0].Free
+}
+
+func (s *TransactionRepositoryTestSuite) TestLock_TransactionDeposits_IsHeldUntilTheTransactionEnds() {
+	ctx := context.Background()
+	held := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- s.repo.Within(ctx, func(txCtx context.Context) error {
+			if err := s.repo.LockTransactionDeposits(txCtx, "eth", "0xbatch"); err != nil {
+				return err
+			}
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+
+	s.False(s.lockFree("eth", "0xbatch"), "a second recorder of the transaction waits")
+	s.True(s.lockFree("eth", "0xother"), "another transaction is not held")
+	s.True(s.lockFree("polygon", "0xbatch"), "the same hash on another chain is not held")
+
+	close(release)
+	s.Require().NoError(<-done)
+	s.True(s.lockFree("eth", "0xbatch"), "the lock ends with the transaction")
+}
+
 func (s *TransactionRepositoryTestSuite) TestClaim_DepositPosition_MovesOnlyARowRecordedBeforePositions() {
 	ctx := context.Background()
 	walletID := s.insertWallet()

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"strconv"
 	"strings"
@@ -308,7 +309,9 @@ func (a *AlchemyProvider) ParsePayload(body []byte) ([]providers.InboundTransfer
 		}
 		t, err := activityToTransfer(act)
 		if err != nil {
-			return nil, fmt.Errorf("alchemy: parse activity (tx=%s): %w", act.Hash, err)
+			// Left to the deposit scanner; the other activities of the push are kept.
+			slog.Warn("alchemy: activity skipped", "tx", act.Hash, "category", act.Category, "error", err)
+			continue
 		}
 		transfers = append(transfers, t)
 	}

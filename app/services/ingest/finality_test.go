@@ -28,9 +28,9 @@ func TestProcess_Transfers_RecordsTheChainFinalityPolicy(t *testing.T) {
 	txs := &ingestTxRepo{}
 	svc := NewService(Deps{Registry: reg, AddressRepo: addrs, Transactions: txs})
 
-	err := svc.processTransfer(t.Context(), models.ChainBSC, mockChain, providers.InboundTransfer{
+	err := svc.ProcessTransfers(t.Context(), models.ChainBSC, []providers.InboundTransfer{{
 		TxHash: "0xbscdeposit", BlockNumber: 100, To: to, From: "0xfrom", Amount: big.NewInt(5), Asset: models.NativeBNB, LogIndex: -1,
-	})
+	}})
 	require.NoError(t, err)
 	require.Len(t, txs.created, 1)
 	assert.Equal(t, models.FinalityFinalizedTag, txs.created[0].Finality)

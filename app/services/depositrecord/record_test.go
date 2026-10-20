@@ -17,8 +17,12 @@ import (
 
 // memoryStore holds deposit rows like the transactions table does: one row per
 // (chain, tx_hash, log_index), a second insert or a move onto a taken position
-// fails with a unique violation.
+// fails with a unique violation. Within holds one lock, as the transaction lock
+// serializes the Records of one transaction.
 type memoryStore struct {
+	txMu      sync.Mutex
+	locks     int
+	lockErr   error
 	mu        sync.Mutex
 	rows      []models.Transaction
 	findErr   error
@@ -32,6 +36,19 @@ type memoryStore struct {
 
 func uniqueViolation() error {
 	return fmt.Errorf("create transaction: %w", errors.New(`ERROR: duplicate key value violates unique constraint "transactions_deposit_chain_tx_log_unique" (SQLSTATE 23505)`))
+}
+
+func (m *memoryStore) Within(ctx context.Context, fn func(context.Context) error) error {
+	m.txMu.Lock()
+	defer m.txMu.Unlock()
+	return fn(ctx)
+}
+
+func (m *memoryStore) LockTransactionDeposits(context.Context, string, string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.locks++
+	return m.lockErr
 }
 
 func (m *memoryStore) FindDepositsByChainAndTxHash(_ context.Context, chainID, txHash string) ([]models.Transaction, error) {
@@ -142,7 +159,7 @@ func deposit(source string, position int, to, contract, amount string) *models.T
 
 func record(t *testing.T, store *memoryStore, row *models.Transaction) Outcome {
 	t.Helper()
-	outcome, err := Record(context.Background(), store, row)
+	outcome, err := Record(context.Background(), store, row, nil)
 	require.NoError(t, err)
 	return outcome
 }
@@ -204,28 +221,50 @@ func TestRecord_Skips_ATransactionMinedAgainAtTheSameHeight(t *testing.T) {
 	assert.Equal(t, 1, store.count())
 }
 
+func TestRecord_SameBlock_ComparesNumbersWhenAHashIsMissing(t *testing.T) {
+	store := &memoryStore{}
+	pushed := deposit(models.TxSourceDepositIngest, 3, "0xalice", testUSDT, "10")
+	pushed.BlockHash = "" // a provider push without the block hash
+	require.Equal(t, Created, record(t, store, pushed))
+
+	twin := deposit(models.TxSourceDepositIngest, 4, "0xalice", testUSDT, "10")
+	assert.Equal(t, Created, record(t, store, twin), "same block number, one hash unknown: the same block, so a twin transfer")
+
+	elsewhere := deposit(models.TxSourceDepositIngest, 9, "0xalice", testUSDT, "10")
+	elsewhere.BlockHash = ""
+	elsewhere.BlockNumber = 105
+	assert.Equal(t, OtherBlock, record(t, store, elsewhere))
+}
+
 func TestRecord_SameBlock_ARowWithoutABlockIsNotAnotherBlock(t *testing.T) {
 	store := &memoryStore{}
 	unplaced := deposit(models.TxSourceDepositIngest, 3, "0xalice", testUSDT, "10")
 	unplaced.BlockHash, unplaced.BlockNumber = "", 0
 	require.Equal(t, Created, record(t, store, unplaced))
 
-	assert.Equal(t, Created, record(t, store, deposit(models.TxSourceChain, 7, "0xbob", testUSDT, "20")))
+	assert.Equal(t, Created, record(t, store, deposit(models.TxSourceDepositIngest, 7, "0xalice", testUSDT, "10")))
 }
 
-func TestRecord_SameBlock_ComparesNumbersWhenAHashIsMissing(t *testing.T) {
+func TestRecord_Inserts_ADifferentTransferOfATransactionRecordedFromAnotherBlock(t *testing.T) {
 	store := &memoryStore{}
-	native := deposit(models.TxSourceDepositIngest, types.NativeValuePosition, "0xalice", "", "5")
-	native.BlockHash = "" // a provider push without the block hash
-	require.Equal(t, Created, record(t, store, native))
+	orphaned := deposit(models.TxSourceChain, 3, "0xalice", testUSDT, "10")
+	orphaned.BlockHash = "0xorphaned"
+	require.Equal(t, Created, record(t, store, orphaned))
 
-	token := deposit(models.TxSourceChain, 3, "0xalice", testUSDT, "10")
-	assert.Equal(t, Created, record(t, store, token), "same block number, one hash unknown: the same block")
+	// The first scan, of the orphaned block, did not record bob (its address was not
+	// watched yet); the transaction mined again pays him too.
+	bob := deposit(models.TxSourceChain, 42, "0xbob", testUSDT, "20")
+	bob.BlockNumber, bob.BlockHash = 101, "0xcanonical"
+	assert.Equal(t, Created, record(t, store, bob))
+}
 
-	elsewhere := deposit(models.TxSourceChain, 4, "0xalice", testUSDT, "11")
-	elsewhere.BlockHash = ""
-	elsewhere.BlockNumber = 105
-	assert.Equal(t, OtherBlock, record(t, store, elsewhere))
+func TestRecord_Skips_ADifferentTransferAtARecordedPosition(t *testing.T) {
+	store := &memoryStore{}
+	require.Equal(t, Created, record(t, store, deposit(models.TxSourceDepositIngest, types.NativeValuePosition, "0xalice", "", "10")))
+
+	// A second contract-made native transfer of the same transaction.
+	assert.Equal(t, PositionTaken, record(t, store, deposit(models.TxSourceDepositIngest, types.NativeValuePosition, "0xbob", "", "20")))
+	assert.Equal(t, 1, store.count())
 }
 
 func TestRecord_Claims_TheRowTheScannerRecordedBeforePositions(t *testing.T) {
@@ -315,6 +354,50 @@ func TestRecord_Skips_APushOfATransferTheScannerRecordedBeforePositions(t *testi
 	assert.Equal(t, 1, store.count())
 }
 
+func TestRecord_Inserts_ATwinTheOtherSourceDidNotRecordWhenThisSourceReportsBoth(t *testing.T) {
+	store := &memoryStore{}
+	// The push recorded output 0 and failed before output 2, which pays the same
+	// address the same amount.
+	require.Equal(t, Created, record(t, store, deposit(models.TxSourceDepositIngest, 0, "bc1alice", "", "5000")))
+	siblings := []Transfer{
+		{Position: 0, To: "bc1alice", Amount: "5000"},
+		{Position: 2, To: "bc1alice", Amount: "5000"},
+	}
+
+	outcome, err := Record(context.Background(), store, deposit(models.TxSourceChain, 2, "bc1alice", "", "5000"), siblings)
+	require.NoError(t, err)
+	assert.Equal(t, Created, outcome, "the push's row is the scanner's output 0, not output 2")
+
+	outcome, err = Record(context.Background(), store, deposit(models.TxSourceChain, 0, "bc1alice", "", "5000"), siblings)
+	require.NoError(t, err)
+	assert.Equal(t, SamePosition, outcome)
+	assert.Equal(t, 2, store.count())
+}
+
+func TestRecord_Skips_TheOtherSourcesRowWhenThisSourceHasAnotherTransferAtItsPosition(t *testing.T) {
+	store := &memoryStore{}
+	require.Equal(t, Created, record(t, store, deposit(models.TxSourceDepositIngest, 30, "owner", "mint", "2200")))
+	// The scanner's transfer at 30 is another one: the sources number the transaction
+	// differently, and the pushed row is the scanner's transfer at 28.
+	siblings := []Transfer{
+		{Position: 28, To: "owner", Contract: "mint", Amount: "2200"},
+		{Position: 30, To: "other", Contract: "mint", Amount: "7"},
+	}
+
+	outcome, err := Record(context.Background(), store, deposit(models.TxSourceChain, 28, "owner", "mint", "2200"), siblings)
+	require.NoError(t, err)
+	assert.Equal(t, OtherSource, outcome)
+	assert.Equal(t, 1, store.count())
+}
+
+func TestRecord_Takes_TheTransactionLockForEveryDecision(t *testing.T) {
+	store := &memoryStore{}
+	record(t, store, deposit(models.TxSourceChain, 3, "0xalice", testUSDT, "10"))
+	record(t, store, deposit(models.TxSourceChain, 3, "0xalice", testUSDT, "10"))
+
+	assert.Equal(t, 2, store.locks)
+}
+
 func TestRecord_Inserts_IdenticalTransfersOfOneSourceAtTheirPositions(t *testing.T) {
 	store := &memoryStore{}
 	require.Equal(t, Created, record(t, store, deposit(models.TxSourceDepositIngest, 3, "0xalice", testUSDT, "10")))
@@ -326,7 +409,7 @@ func TestRecord_Inserts_IdenticalTransfersOfOneSourceAtTheirPositions(t *testing
 func TestRecord_Treats_AUniqueViolationOnInsertAsRecorded(t *testing.T) {
 	store := &memoryStore{createErr: uniqueViolation()}
 
-	outcome, err := Record(context.Background(), store, deposit(models.TxSourceChain, 3, "0xalice", testUSDT, "10"))
+	outcome, err := Record(context.Background(), store, deposit(models.TxSourceChain, 3, "0xalice", testUSDT, "10"), nil)
 	require.NoError(t, err)
 	assert.Equal(t, Concurrent, outcome)
 }
@@ -335,15 +418,24 @@ func TestRecord_Returns_OtherInsertFailures(t *testing.T) {
 	boom := errors.New("connection refused")
 	store := &memoryStore{createErr: boom}
 
-	_, err := Record(context.Background(), store, deposit(models.TxSourceChain, 3, "0xalice", testUSDT, "10"))
+	_, err := Record(context.Background(), store, deposit(models.TxSourceChain, 3, "0xalice", testUSDT, "10"), nil)
 	assert.ErrorIs(t, err, boom)
+}
+
+func TestRecord_Returns_ALockFailureWithoutDeciding(t *testing.T) {
+	boom := errors.New("connection refused")
+	store := &memoryStore{lockErr: boom}
+
+	_, err := Record(context.Background(), store, deposit(models.TxSourceChain, 3, "0xalice", testUSDT, "10"), nil)
+	assert.ErrorIs(t, err, boom)
+	assert.Zero(t, store.creates, "without the lock the scanner and the push could both insert")
 }
 
 func TestRecord_Returns_ALookupFailureWithoutInserting(t *testing.T) {
 	boom := errors.New("connection refused")
 	store := &memoryStore{findErr: boom}
 
-	_, err := Record(context.Background(), store, deposit(models.TxSourceChain, 3, "0xalice", testUSDT, "10"))
+	_, err := Record(context.Background(), store, deposit(models.TxSourceChain, 3, "0xalice", testUSDT, "10"), nil)
 	assert.ErrorIs(t, err, boom)
 	assert.Zero(t, store.creates)
 }
@@ -387,7 +479,7 @@ func TestRecord_Concurrent_ScansOfOneTransferKeepOneRow(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			outcome, err := Record(context.Background(), store, deposit(models.TxSourceChain, 3, "0xalice", testUSDT, "10"))
+			outcome, err := Record(context.Background(), store, deposit(models.TxSourceChain, 3, "0xalice", testUSDT, "10"), nil)
 			assert.NoError(t, err)
 			outcomes <- outcome
 		}()

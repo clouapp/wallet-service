@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/solanacredit"
 )
 
 // The credit's position is the lowest token account of the owner and mint whose
@@ -25,5 +26,5 @@ func TestSolana_BlockCredits_ATokenCreditIsNumberedByItsLowestChangedAccount(t *
 	assert.Equal(t, "owner", got[0].To)
 	assert.Equal(t, "sender", got[0].From)
 	assert.Equal(t, int64(7), got[0].Amount.Int64())
-	assert.Equal(t, len(keys)+3, got[0].LogIndex)
+	assert.Equal(t, solanacredit.TokenPosition(3), got[0].LogIndex)
 }

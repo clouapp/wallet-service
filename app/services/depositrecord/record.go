@@ -23,16 +23,25 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-// ErrClaimContended is a row recorded before positions that other processes kept
+// ErrClaimContended is a row recorded before positions that other writers kept
 // moving while this one tried to claim it; the transfer is not recorded this time.
 var ErrClaimContended = errors.New("depositrecord: the transaction's deposits kept changing while it was recorded")
+
+// errClaimLost is a claim of an old row another writer moved first.
+var errClaimLost = errors.New("depositrecord: the old row was moved by another writer")
 
 // maxDecisions bounds how often Record decides again after losing a claim.
 const maxDecisions = 3
 
 // Store is the deposit rows of one transaction: read, inserted, and an old row moved
-// to the position of the transfer it records.
+// to the position of the transfer it records, under a lock per transaction.
 type Store interface {
+	// Within runs fn in one database transaction; the queries made with the context
+	// fn receives join it.
+	Within(ctx context.Context, fn func(ctx context.Context) error) error
+	// LockTransactionDeposits takes the lock of the chain transaction's deposits,
+	// held until the database transaction of ctx ends.
+	LockTransactionDeposits(ctx context.Context, chainID, txHash string) error
 	// FindDepositsByChainAndTxHash returns every deposit row of the transaction.
 	FindDepositsByChainAndTxHash(ctx context.Context, chainID, txHash string) ([]models.Transaction, error)
 	// ClaimDepositPosition moves deposit id from types.NativeValuePosition to position
@@ -41,65 +50,103 @@ type Store interface {
 	Create(ctx context.Context, tx *models.Transaction) error
 }
 
+// Transfer is what tells one transfer of a transaction from another: its position,
+// recipient, token contract ("" for the native asset) and base-unit amount.
+type Transfer struct {
+	Position int
+	To       string
+	Contract string
+	Amount   string
+}
+
+// TransferOf is the transfer a deposit row records.
+func TransferOf(row models.Transaction) Transfer {
+	return Transfer{Position: row.LogIndex, To: row.ToAddress, Contract: row.TokenContract, Amount: row.Amount}
+}
+
 // Outcome is what Record did with a transfer.
 type Outcome string
 
 const (
 	// Created inserted the deposit row.
 	Created Outcome = "created"
-	// SamePosition found a row of the transaction at the transfer's position.
+	// SamePosition found the transfer recorded at its position.
 	SamePosition Outcome = "same_position"
-	// OtherBlock found the transaction's deposits recorded from another block: the
-	// transaction was mined again after a reorganization, where block-wide positions
-	// (EVM and TRON log indexes) differ, and its transfers are already recorded.
+	// PositionTaken found another transfer at the position: the sources numbered the
+	// transaction differently, or two transfers share one position (two contract-made
+	// native transfers of an EVM transaction). Nothing is inserted.
+	PositionTaken Outcome = "position_taken"
+	// OtherBlock found the transfer recorded from another block: the transaction was
+	// mined again after a reorganization, where block-wide positions (EVM and TRON log
+	// indexes) differ.
 	OtherBlock Outcome = "other_block"
 	// ClaimedUnpositioned moved the row this source recorded for the same transfer
 	// before positions existed to the transfer's position, keeping its id.
 	ClaimedUnpositioned Outcome = "claimed_unpositioned"
 	// OtherSource found the same transfer recorded by the other source (scanner or
-	// provider push) at another position.
+	// provider push) at a position none of this source's transfers has.
 	OtherSource Outcome = "other_source"
-	// Concurrent lost the insert or the claim to another process (unique violation).
+	// Concurrent lost the insert or the claim to a writer that does not take the lock
+	// (unique violation).
 	Concurrent Outcome = "concurrent"
 )
 
 // Record inserts row unless a deposit row of its transaction already records the
-// same transfer. It fails only when the rows cannot be read or written.
-func Record(ctx context.Context, store Store, row *models.Transaction) (Outcome, error) {
+// same transfer. siblings are the transfers of the same transaction the source
+// reports with row (row's own included or not): a row of the other source that is one
+// of them, at its position, is not taken for row. Each call holds the transaction's
+// lock, so the scanner and the push never decide on the same transaction at once. It
+// fails only when the rows cannot be read or written.
+func Record(ctx context.Context, store Store, row *models.Transaction, siblings []Transfer) (Outcome, error) {
 	if row == nil {
 		return "", fmt.Errorf("deposit row is required")
 	}
 	for decision := 0; decision < maxDecisions; decision++ {
-		recorded, err := store.FindDepositsByChainAndTxHash(ctx, row.Chain, row.TxHash)
-		if err != nil {
-			return "", fmt.Errorf("load recorded deposits of tx %s: %w", row.TxHash, err)
-		}
-		outcome, unpositioned := match(row, recorded)
-		if outcome != "" {
-			return outcome, nil
-		}
-		if unpositioned == nil {
-			return create(ctx, store, row)
-		}
-		claimed, err := store.ClaimDepositPosition(ctx, unpositioned.ID, row.LogIndex)
-		if err != nil {
-			if pgerr.IsUniqueViolation(err) {
-				return Concurrent, nil
+		var outcome Outcome
+		err := store.Within(ctx, func(ctx context.Context) error {
+			if err := store.LockTransactionDeposits(ctx, row.Chain, row.TxHash); err != nil {
+				return fmt.Errorf("lock the deposits of tx %s: %w", row.TxHash, err)
 			}
-			return "", fmt.Errorf("move deposit %s to position %d: %w", unpositioned.ID, row.LogIndex, err)
-		}
-		if claimed {
-			return ClaimedUnpositioned, nil
+			var err error
+			outcome, err = decide(ctx, store, row, siblings)
+			return err
+		})
+		switch {
+		case err == nil:
+			return outcome, nil
+		case errors.Is(err, errClaimLost):
+			continue
+		case pgerr.IsUniqueViolation(err):
+			return Concurrent, nil
+		default:
+			return "", err
 		}
 	}
 	return "", ErrClaimContended
 }
 
-func create(ctx context.Context, store Store, row *models.Transaction) (Outcome, error) {
-	if err := store.Create(ctx, row); err != nil {
-		if pgerr.IsUniqueViolation(err) {
-			return Concurrent, nil
+// decide reads the transaction's deposits, under its lock, and writes row when none
+// of them is its transfer.
+func decide(ctx context.Context, store Store, row *models.Transaction, siblings []Transfer) (Outcome, error) {
+	recorded, err := store.FindDepositsByChainAndTxHash(ctx, row.Chain, row.TxHash)
+	if err != nil {
+		return "", fmt.Errorf("load recorded deposits of tx %s: %w", row.TxHash, err)
+	}
+	outcome, old := match(row, recorded, siblings)
+	switch {
+	case outcome != "":
+		return outcome, nil
+	case old != nil:
+		claimed, err := store.ClaimDepositPosition(ctx, old.ID, row.LogIndex)
+		if err != nil {
+			return "", fmt.Errorf("move deposit %s to position %d: %w", old.ID, row.LogIndex, err)
 		}
+		if !claimed {
+			return "", errClaimLost
+		}
+		return ClaimedUnpositioned, nil
+	}
+	if err := store.Create(ctx, row); err != nil {
 		return "", fmt.Errorf("insert deposit of tx %s: %w", row.TxHash, err)
 	}
 	return Created, nil
@@ -107,14 +154,18 @@ func create(ctx context.Context, store Store, row *models.Transaction) (Outcome,
 
 // match decides from the transaction's recorded deposits: an outcome when the
 // transfer is recorded, the old row to claim, or neither when it must be inserted.
-func match(row *models.Transaction, recorded []models.Transaction) (Outcome, *models.Transaction) {
+func match(row *models.Transaction, recorded []models.Transaction, siblings []Transfer) (Outcome, *models.Transaction) {
+	mine := TransferOf(*row)
 	for i := range recorded {
 		if recorded[i].LogIndex == row.LogIndex {
-			return SamePosition, nil
+			if sameTransfer(TransferOf(recorded[i]), mine) {
+				return SamePosition, nil
+			}
+			return PositionTaken, nil
 		}
 	}
 	for i := range recorded {
-		if !sameBlock(recorded[i], *row) {
+		if !sameBlock(recorded[i], *row) && sameTransfer(TransferOf(recorded[i]), mine) {
 			return OtherBlock, nil
 		}
 	}
@@ -122,24 +173,36 @@ func match(row *models.Transaction, recorded []models.Transaction) (Outcome, *mo
 	// transfer's own position would have matched above.
 	for i := range recorded {
 		old := &recorded[i]
-		if old.LogIndex == types.NativeValuePosition && old.Source == row.Source && sameTransfer(*old, *row) {
+		if old.LogIndex == types.NativeValuePosition && old.Source == row.Source && sameTransfer(TransferOf(*old), mine) {
 			return "", old
 		}
 	}
 	for i := range recorded {
-		if recorded[i].Source != row.Source && sameTransfer(recorded[i], *row) {
+		other := TransferOf(recorded[i])
+		if recorded[i].Source != row.Source && sameTransfer(other, mine) && !reports(siblings, other) {
 			return OtherSource, nil
 		}
 	}
 	return "", nil
 }
 
-// sameTransfer reports whether two rows credit the same amount of the same asset to
-// the same address. Addresses and contracts compare without case: a hex contract may
-// be stored checksummed by one writer and lower-cased by another, and taking two
-// transfers for one only leaves a deposit unrecorded, never recorded twice.
-func sameTransfer(a, b models.Transaction) bool {
-	return strings.EqualFold(a.ToAddress, b.ToAddress) && strings.EqualFold(a.TokenContract, b.TokenContract) && a.Amount == b.Amount
+// reports tells whether the source reports transfer itself, at its position.
+func reports(siblings []Transfer, transfer Transfer) bool {
+	for _, sibling := range siblings {
+		if sibling.Position == transfer.Position && sameTransfer(sibling, transfer) {
+			return true
+		}
+	}
+	return false
+}
+
+// sameTransfer reports whether two transfers credit the same amount of the same asset
+// to the same address, whatever their positions. Addresses and contracts compare
+// without case: a hex contract may be stored checksummed by one writer and
+// lower-cased by another, and taking two transfers for one only leaves a deposit
+// unrecorded, never recorded twice.
+func sameTransfer(a, b Transfer) bool {
+	return strings.EqualFold(a.To, b.To) && strings.EqualFold(a.Contract, b.Contract) && a.Amount == b.Amount
 }
 
 // sameBlock compares the block hashes when both rows have one, the heights when both
@@ -154,12 +217,14 @@ func sameBlock(a, b models.Transaction) bool {
 	return true
 }
 
-// LogSkipped logs a transfer Record did not insert: a reorganization at warning
-// level, a claimed or another source's row at info level, the usual second sight of a
-// transfer at debug level.
+// LogSkipped logs a transfer Record did not insert: a position another transfer holds
+// and a reorganization at warning level, a claimed or another source's row at info
+// level, the usual second sight of a transfer at debug level.
 func LogSkipped(outcome Outcome, row *models.Transaction) {
 	attrs := []any{"chain", row.Chain, "tx", row.TxHash, "log_index", row.LogIndex, "to", row.ToAddress, "source", row.Source, "outcome", string(outcome)}
 	switch outcome {
+	case PositionTaken:
+		slog.Warn("deposit not recorded: another transfer of the transaction holds its position", attrs...)
 	case OtherBlock:
 		slog.Warn("transaction already recorded from another block (reorganized), its transfer is not recorded again", attrs...)
 	case ClaimedUnpositioned:
