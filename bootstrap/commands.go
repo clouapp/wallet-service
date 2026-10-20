@@ -17,6 +17,7 @@ import (
 	"github.com/macrowallets/waas/app/container"
 	appfacades "github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/providers"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/repositories/chaincatalog"
 	"github.com/macrowallets/waas/app/services/activity"
@@ -34,6 +35,7 @@ import (
 	"github.com/macrowallets/waas/app/services/sharemigration"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/walletrecords"
+	"github.com/macrowallets/waas/app/services/webhook"
 )
 
 // Commands are the artisan commands of the application, each built with the
@@ -80,10 +82,11 @@ func Commands() []console.Command {
 		}),
 		commands.NewPriceCheckUpdate(prices),
 		commands.NewChainsSetRPC(chains.NewReplaceRPC(chains.ReplaceRPCDeps{
-			Store:     container.MustMake[*repositories.ChainRepository](),
-			Seal:      func(plaintext string) (string, error) { return settings.Seal(appfacades.Crypt(), plaintext) },
-			Verify:    chainregistry.NewPrimaryVerifier(decryptChainRPC, configuredChainProfile),
-			Fallbacks: container.MustMake[*repositories.ChainRPCEndpointRepository](),
+			Store:          container.MustMake[*repositories.ChainRepository](),
+			Seal:           func(plaintext string) (string, error) { return settings.Seal(appfacades.Crypt(), plaintext) },
+			Verify:         chainregistry.NewPrimaryVerifier(decryptChainRPC, configuredChainProfile),
+			Fallbacks:      container.MustMake[*repositories.ChainRPCEndpointRepository](),
+			AllowLinkLocal: providers.RPCAllowsLinkLocal(),
 		})),
 		commands.NewChainsAlignNetwork(chainregistry.NewAligner(chainregistry.AlignerDeps{
 			Store:       repositories.NewChainRegistryRepository(nil),
@@ -131,6 +134,8 @@ func Commands() []console.Command {
 			Ledger:    container.MustMake[*repositories.TransactionRepository](),
 		})),
 		commands.NewWithdrawalsReconcile(deposits),
+		// Read-only: the active webhook configs whose URL the outbound guard refuses.
+		commands.NewWebhooksAuditURLs(container.MustMake[*webhook.Service]()),
 	})
 }
 

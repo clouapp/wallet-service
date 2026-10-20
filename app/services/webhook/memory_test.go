@@ -42,7 +42,7 @@ func newMemoryWebhook() *memoryWebhook {
 
 func newMemoryWebhookService() (*Service, *memoryWebhook) {
 	store := newMemoryWebhook()
-	return NewService(Deps{Configs: store, Events: memoryEvents{store: store}}), store
+	return NewService(Deps{Configs: store, Events: memoryEvents{store: store}, Destinations: testDestinations()}), store
 }
 
 func newTestWebhookSvc() *Service {

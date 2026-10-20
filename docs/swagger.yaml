@@ -3088,7 +3088,12 @@ paths:
         event id. Only a 2xx answer counts as delivered: a redirect is not followed
         and is retried like a 4xx or a 5xx. Supported events include deposit.confirmed,
         withdrawal.broadcast, withdrawal.confirmed and withdrawal.failed. Withdrawal
-        events are only delivered for wallets of the token''s account.'
+        events are only delivered for wallets of the token''s account. The URL must
+        be https to a public host: a URL that is not https, carries credentials, or
+        names (or resolves to) a loopback, private, link-local, cloud metadata or
+        reserved address, or a single-label or internal host, is refused with 422
+        webhook_url_not_allowed and the rule it broke; every delivery connects only
+        to an address that passes the same check.'
       parameters:
       - description: Webhook configuration
         in: body
@@ -3105,6 +3110,11 @@ paths:
             $ref: '#/definitions/webhooks.WebhookConfig'
         "400":
           description: Missing required fields
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "422":
+          description: 'validation_failed, or webhook_url_not_allowed: the URL is
+            not https to a public host'
           schema:
             $ref: '#/definitions/responses.ErrorBody'
         "429":
@@ -3125,10 +3135,12 @@ paths:
     patch:
       consumes:
       - application/json
-      description: Replaces the subscribed events and/or toggles is_active on one
-        of the account's webhooks. A legacy webhook created before account ownership
+      description: 'Replaces the subscribed events and/or toggles is_active on one
+        of the account''s webhooks. A legacy webhook created before account ownership
         was recorded is claimed by the calling account when `secret` matches its signing
-        secret. The secret itself is never changed or returned.
+        secret. The secret itself is never changed or returned. An update that leaves
+        a webhook active on a URL the outbound guard refuses is 422 webhook_url_not_allowed;
+        turning it off (`is_active: false`) is always allowed.'
       parameters:
       - description: Webhook UUID
         in: path
@@ -3162,6 +3174,11 @@ paths:
             $ref: '#/definitions/responses.ErrorBody'
         "404":
           description: webhook not found
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "422":
+          description: 'webhook_url_not_allowed: the webhook''s URL is not https to
+            a public host'
           schema:
             $ref: '#/definitions/responses.ErrorBody'
         "429":
@@ -6291,8 +6308,11 @@ paths:
     post:
       consumes:
       - application/json
-      description: Registers a webhook scoped to a specific wallet. Requires wallet
-        or account owner/admin.
+      description: 'Registers a webhook scoped to a specific wallet. Requires wallet
+        or account owner/admin. The URL must be https to a public host: a URL that
+        is not https, carries credentials, or names (or resolves to) a loopback, private,
+        link-local, cloud metadata or reserved address, or a single-label or internal
+        host, is refused with 422 webhook_url_not_allowed and the rule it broke.'
       parameters:
       - description: Wallet UUID
         in: path
@@ -6318,6 +6338,11 @@ paths:
             $ref: '#/definitions/responses.ErrorBody'
         "403":
           description: Forbidden
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "422":
+          description: 'webhook_url_not_allowed: the URL is not https to a public
+            host'
           schema:
             $ref: '#/definitions/responses.ErrorBody'
       security:
@@ -6360,8 +6385,11 @@ paths:
       - Wallet Webhooks
   /wallets/{walletId}/webhooks/{webhookId}/test:
     post:
-      description: Posts one webhook.test body to the webhook URL, signed the same
-        way as a normal delivery. A refused URL is an error, not a success.
+      description: 'Posts one webhook.test body to the webhook URL, signed the same
+        way as a normal delivery. A refused URL is an error, not a success. The answer
+        is only whether the receiver answered 2xx: its body and headers are never
+        returned. A webhook whose URL the outbound guard refuses (stored before the
+        guard) is not posted: 422 webhook_url_not_allowed.'
       parameters:
       - description: Wallet UUID
         in: path
@@ -6386,6 +6414,11 @@ paths:
             $ref: '#/definitions/responses.ErrorBody'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "422":
+          description: 'webhook_url_not_allowed: the URL is not https to a public
+            host'
           schema:
             $ref: '#/definitions/responses.ErrorBody'
         "502":

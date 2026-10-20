@@ -56,7 +56,7 @@ func (c *WebhookController) Index(ctx http.Context) http.Response {
 // Store godoc
 //
 //	@Summary		Create a webhook for a wallet
-//	@Description	Registers a webhook scoped to a specific wallet. Requires wallet or account owner/admin.
+//	@Description	Registers a webhook scoped to a specific wallet. Requires wallet or account owner/admin. The URL must be https to a public host: a URL that is not https, carries credentials, or names (or resolves to) a loopback, private, link-local, cloud metadata or reserved address, or a single-label or internal host, is refused with 422 webhook_url_not_allowed and the rule it broke.
 //	@Tags			Wallet Webhooks
 //	@Security		BearerAuth
 //	@Accept			json
@@ -66,6 +66,7 @@ func (c *WebhookController) Index(ctx http.Context) http.Response {
 //	@Success		201			{object}	webhookresources.WebhookConfig
 //	@Failure		400			{object}	responses.ErrorBody
 //	@Failure		403			{object}	responses.ErrorBody
+//	@Failure		422			{object}	responses.ErrorBody	"webhook_url_not_allowed: the URL is not https to a public host"
 //	@Router			/wallets/{walletId}/webhooks [post]
 func (c *WebhookController) Store(ctx http.Context) http.Response {
 	wallet := requestctx.MustWallet(ctx)
@@ -114,7 +115,7 @@ func (c *WebhookController) Destroy(ctx http.Context) http.Response {
 // Test godoc
 //
 //	@Summary		Send a signed test webhook
-//	@Description	Posts one webhook.test body to the webhook URL, signed the same way as a normal delivery. A refused URL is an error, not a success.
+//	@Description	Posts one webhook.test body to the webhook URL, signed the same way as a normal delivery. A refused URL is an error, not a success. The answer is only whether the receiver answered 2xx: its body and headers are never returned. A webhook whose URL the outbound guard refuses (stored before the guard) is not posted: 422 webhook_url_not_allowed.
 //	@Tags			Wallet Webhooks
 //	@Security		BearerAuth
 //	@Produce		json
@@ -123,6 +124,7 @@ func (c *WebhookController) Destroy(ctx http.Context) http.Response {
 //	@Success		200			{object}	WebhookTestResponse
 //	@Failure		403			{object}	responses.ErrorBody
 //	@Failure		404			{object}	responses.ErrorBody
+//	@Failure		422			{object}	responses.ErrorBody	"webhook_url_not_allowed: the URL is not https to a public host"
 //	@Failure		502			{object}	responses.ErrorBody
 //	@Router			/wallets/{walletId}/webhooks/{webhookId}/test [post]
 func (c *WebhookController) Test(ctx http.Context) http.Response {

@@ -45,6 +45,10 @@ const (
 	CodeDestinationBelowReserve       = "destination_below_reserve"
 	CodeDestinationTagRequired        = "destination_tag_required"
 	CodeDestinationTagUnsupported     = "destination_tag_not_supported"
+	// CodeWebhookURLNotAllowed is a webhook URL the outbound guard refuses (HTTP 422):
+	// not https, or a host that is or resolves to a loopback, private, link-local,
+	// metadata or reserved address, or an internal name. The message is the rule.
+	CodeWebhookURLNotAllowed = "webhook_url_not_allowed"
 	// CodeExpired is an XRP payment that can no longer be included in a ledger;
 	// CodeNotLanded an EVM transfer no node knows whose nonce another transaction
 	// spent. A payment a validated ledger or a block includes with a failure result
