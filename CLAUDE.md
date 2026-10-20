@@ -908,6 +908,46 @@ guarded by `app/adapters/chain/solana/scan_spl_test.go` (devnet slots 512232469 
 `TestRegister_ActiveChains_SolanaScansTheRegisteredSPLTokens`,
 `TestSolana_Deposit_RecordsAnSPLCreditWithItsSymbolAndMint` and `pkg/solanacredit/credits_test.go`.
 
+### Provider push subscriptions (ingest)
+
+Alchemy (EVM), Helius (Solana) and QuickNode (Bitcoin) push deposits to
+`POST /v1/webhooks/ingest/{provider}/{chainID}` once a subscription exists: the provider's webhook and
+its `webhook_subscriptions` row. Two artisan commands manage them:
+
+```bash
+go run . artisan ingest:subscribe alchemy teth            # dry run: network, webhook URL, address count
+go run . artisan ingest:subscribe alchemy teth --apply    # create the webhook, store the row, sync addresses
+go run . artisan ingest:subscriptions                     # provider, chain, status, last sync, webhook host
+```
+
+- `ingest:subscribe` needs `WEBHOOK_INGEST_BASE_URL` (`vault.webhooks.ingest_base_url`: the public https
+  origin, a path prefix allowed, no credentials, query or fragment) and the provider's API key
+  (`ALCHEMY_AUTH_TOKEN`, `HELIUS_API_KEY`, `QUICKNODE_API_KEY` as `vault.webhooks.*`, or the
+  `provider_<name>` platform setting). Each missing one is named and the command exits 1, dry run or not.
+- The chain's network (`models.Chain.ResolveNetwork` with its RPC URL) must be one the provider pushes
+  (`providers.SubscriptionNetwork`): Alchemy Ethereum, Polygon, Base, Arbitrum and BSC, mainnet and
+  testnet (`ETH_SEPOLIA`, `MATIC_AMOY`, ...); Helius Solana mainnet and devnet; QuickNode Bitcoin mainnet
+  and testnet4 (`bitcoin-testnet4`, the Streams slug as read from the docs on 2026-10-20, not yet tried
+  against the API).
+- A subscription of the provider on the chain already there is left as it is (exit 0); another
+  provider's active subscription on the chain is refused (the address sync serves one per chain).
+- `--apply` creates the webhook with the chain's watched addresses, then stores the row with the
+  signing secret sealed (`settings.Seal`, `enc:v1:`): Alchemy's `signing_key`, the Helius
+  `authHeader` it generates, the QuickNode stream's `security_token`. A webhook whose row cannot be
+  stored (no secret, sealing or the insert failed) is deleted; when the delete fails too, the error names
+  the provider webhook to delete by hand. The address sync (`webhooksync.SyncChainAddresses`) runs once
+  the row exists; when it fails the row stays (the `webhook_reconciler` syncs it again) and the command
+  exits 1.
+- The ingest signature check (`middleware.ProviderSignature`) and the address sync open the secret with
+  `settings.OpenStored` (sealed, or the bare envelope of an older row). QuickNode deliveries are checked
+  as Streams signs them: HMAC-SHA256 keyed with the security token over `X-QN-Nonce` +
+  `X-QN-Timestamp` + body, hex in `X-QN-Signature`; streams are created uncompressed.
+- `ingest:subscriptions` prints no signing secret and the webhook URL by its host only.
+- No real provider call runs in the tests. — guarded by `app/services/ingestsubscription/service_test.go`,
+  `app/console/commands/ingest_subscribe_test.go`, `app/services/ingest/providers/networks_test.go`,
+  `app/adapters/ingest/quicknode` (`TestCreate_Webhook_*`, `TestQuick_NodeVerifyInbound_*`) and
+  `TestFind_All_ListsEverySubscriptionByChainAndProvider` (`tests/feature/repositories`).
+
 ### Deposit scan pacing
 
 Every scan cycle (Lambda and local) reads its window at the moment of use: `DEPOSIT_SCAN_BATCH_BLOCKS`
