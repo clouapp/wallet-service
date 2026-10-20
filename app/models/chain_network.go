@@ -97,6 +97,21 @@ var solanaGenesisHashes = map[string]string{
 	NetworkSolanaTestnet: "4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY",
 }
 
+// Block 0 ids of the TRON networks (/wallet/getblockbynum num 0, read on 2026-10-20
+// from api.trongrid.io and nile.trongrid.io): they tell which network a java-tron
+// HTTP endpoint serves, whatever its host says.
+var tronGenesisBlockIDs = map[string]string{
+	NetworkTronMainnet: "00000000000000001ebf88508a03865c71d452e25f4d51194196a1d22b6653dc",
+	NetworkTronNile:    "0000000000000000d698d4192c56cb6be724a558448e2684802de4d6cd8690dc",
+}
+
+// network_id of the XRP Ledger networks, as server_info reports it (read on
+// 2026-10-20 from s1.ripple.com, xrplcluster.com and s.altnet.rippletest.net).
+var xrplNetworkIDs = map[string]string{
+	NetworkXRPLMainnet: "0",
+	NetworkXRPLTestnet: "1",
+}
+
 var testnetNetworks = map[string]struct{}{
 	NetworkEthereumSepolia: {},
 	NetworkPolygonAmoy:     {},
@@ -289,8 +304,36 @@ func SolanaGenesisHash(network string) string {
 // SolanaNetworkOfGenesis names the Solana cluster whose genesis hash is genesis,
 // or "" when it is not a known cluster.
 func SolanaNetworkOfGenesis(genesis string) string {
-	for network, hash := range solanaGenesisHashes {
-		if hash == strings.TrimSpace(genesis) {
+	return networkOf(solanaGenesisHashes, strings.TrimSpace(genesis))
+}
+
+// TronGenesisBlockID is the block 0 id (lowercase hex) of a TRON network, or ""
+// for any other network.
+func TronGenesisBlockID(network string) string {
+	return tronGenesisBlockIDs[network]
+}
+
+// TronNetworkOfGenesis names the TRON network whose block 0 id is id, or "" when it
+// is not a known network.
+func TronNetworkOfGenesis(id string) string {
+	return networkOf(tronGenesisBlockIDs, strings.ToLower(strings.TrimSpace(id)))
+}
+
+// XRPLNetworkID is the network_id (decimal) of an XRP Ledger network, or "" for any
+// other network.
+func XRPLNetworkID(network string) string {
+	return xrplNetworkIDs[network]
+}
+
+// XRPLNetworkOfID names the XRP Ledger network whose network_id is id, or "" when
+// it is not a known network.
+func XRPLNetworkOfID(id string) string {
+	return networkOf(xrplNetworkIDs, strings.TrimSpace(id))
+}
+
+func networkOf(identities map[string]string, identity string) string {
+	for network, known := range identities {
+		if known == identity {
 			return network
 		}
 	}

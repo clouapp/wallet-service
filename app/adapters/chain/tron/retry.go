@@ -95,7 +95,3 @@ func tronSleepContext(ctx context.Context, d time.Duration) error {
 		return nil
 	}
 }
-
-func withoutURL(err error) error {
-	return httpclient.WithoutURL(err)
-}

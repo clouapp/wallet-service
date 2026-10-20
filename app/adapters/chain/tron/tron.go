@@ -4,14 +4,16 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
-	"net/http"
 	"strings"
 	"time"
 
+	"github.com/macrowallets/waas/app/adapters/chain/rpc"
 	"github.com/macrowallets/waas/app/services/addressing"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/httpclient"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -37,7 +39,16 @@ type TronConfig struct {
 	ChainName    string
 	NativeSymbol string
 	RPCURL       string
-	// APIKey is the optional TronGrid key, sent as TRON-PRO-API-KEY and never logged.
+	// RPCFallbacks are tried in order after RPCURL when it cannot serve a call
+	// (rpc.Endpoints failover). Each answers its block 0 id, which must be
+	// GenesisBlockID, before its first use; an empty GenesisBlockID checks none.
+	RPCFallbacks   []chain.RPCFallback
+	GenesisBlockID string
+	// RPCHealth receives the health of the endpoints each time it changes; nil
+	// records nothing.
+	RPCHealth chain.RPCHealthSink
+	// APIKey is the optional TronGrid key, sent as TRON-PRO-API-KEY to the primary
+	// endpoint only and never logged.
 	APIKey        string
 	IsTestnet     bool
 	Confirmations uint64
@@ -59,7 +70,8 @@ type TronConfig struct {
 // account activation and energy.
 type TronLive struct {
 	cfg          TronConfig
-	http         *http.Client
+	client       *httpclient.Client
+	endpoints    *rpc.Endpoints
 	retry        rateLimitRetry
 	params       *tronChainParamsCache
 	tokens       map[[addressing.TronAddressBodySize]byte]types.Token
@@ -76,9 +88,9 @@ var (
 
 func NewTronLive(cfg TronConfig) *TronLive {
 	tokens, tokensErr := indexTronTokens(cfg.ChainIDStr, cfg.Tokens)
-	return &TronLive{
+	adapter := &TronLive{
 		cfg:          cfg,
-		http:         httpclient.New(tronHTTPTimeout),
+		client:       httpclient.NewClient(tronHTTPTimeout),
 		retry:        defaultRateLimitRetry(),
 		params:       &tronChainParamsCache{},
 		tokens:       tokens,
@@ -86,6 +98,72 @@ func NewTronLive(cfg TronConfig) *TronLive {
 		now:          time.Now,
 		pollInterval: tronBlockInterval,
 	}
+	adapter.endpoints = rpc.NewEndpoints(rpc.EndpointsDeps{
+		URL:       cfg.RPCURL,
+		Fallbacks: cfg.RPCFallbacks,
+		ChainID:   cfg.ChainIDStr,
+		Identity:  adapter.genesisBlockOf,
+		Network:   strings.ToLower(strings.TrimSpace(cfg.GenesisBlockID)),
+		Health:    cfg.RPCHealth,
+	})
+	return adapter
+}
+
+// Endpoint is the URL of the primary endpoint. Callers must not log it.
+func (a *TronLive) Endpoint() string {
+	if a == nil {
+		return ""
+	}
+	return a.endpoints.Endpoint()
+}
+
+// ReplaceEndpoint points later calls at endpoint as the primary and keeps the
+// fallbacks. An empty value does not wipe the current endpoint.
+func (a *TronLive) ReplaceEndpoint(endpoint string) {
+	if a == nil {
+		return
+	}
+	a.endpoints.ReplaceEndpoints(endpoint, a.endpoints.Fallbacks())
+}
+
+// ReplaceEndpoints points later calls at primary and then fallbacks, in order. An
+// empty primary is ignored.
+func (a *TronLive) ReplaceEndpoints(primary string, fallbacks []chain.RPCFallback) {
+	if a == nil {
+		return
+	}
+	a.endpoints.ReplaceEndpoints(primary, fallbacks)
+}
+
+// GenesisBlockID is the id (lowercase hex) of block 0 that the java-tron HTTP
+// endpoint rawURL serves: it names the network (models.TronGenesisBlockID).
+func GenesisBlockID(ctx context.Context, rawURL string) (string, error) {
+	return NewTronLive(TronConfig{RPCURL: rawURL}).genesisBlockOf(ctx, rawURL)
+}
+
+// genesisBlockOf asks rawURL alone for its block 0 id, with the API key when it is
+// the primary.
+func (a *TronLive) genesisBlockOf(ctx context.Context, rawURL string) (string, error) {
+	body, err := json.Marshal(map[string]any{"num": 0})
+	if err != nil {
+		return "", err
+	}
+	at := rpc.Attempt{URL: rawURL, Primary: rawURL == a.endpoints.Endpoint(), Last: true}
+	raw, _, err := a.exchange(ctx, at, "/wallet/getblockbynum", body)
+	if err != nil {
+		return "", httpclient.RedactURL(err, rawURL)
+	}
+	var block struct {
+		BlockID string `json:"blockID"`
+	}
+	if err := json.Unmarshal(raw, &block); err != nil {
+		return "", fmt.Errorf("parse tron block 0: %w", err)
+	}
+	id := strings.ToLower(strings.TrimSpace(block.BlockID))
+	if decoded, err := hex.DecodeString(id); err != nil || len(decoded) != tronBlockIDSize {
+		return "", fmt.Errorf("tron block 0 has an invalid id %q", block.BlockID)
+	}
+	return id, nil
 }
 
 // indexTronTokens keys this chain's registered tokens by the 20-byte contract body
@@ -494,7 +572,10 @@ func (a *TronLive) buildNativeSweep(ctx context.Context, params tronChainParams,
 // ---------------------------------------------------------------------------
 
 // BroadcastTransaction submits the serialized signed transaction with
-// /wallet/broadcasthex and returns its txID.
+// /wallet/broadcasthex and returns its txID (tron_broadcast.go classifies the
+// answer: a duplicate is a success, a node that did not take the bytes passes them
+// to the next endpoint, and a failure that may have handed them over is an unknown
+// outcome).
 func (a *TronLive) BroadcastTransaction(ctx context.Context, signed *types.SignedTx) (string, error) {
 	if signed == nil || len(signed.RawBytes) == 0 {
 		return "", fmt.Errorf("signed transaction is required")
@@ -510,18 +591,16 @@ func (a *TronLive) BroadcastTransaction(ctx context.Context, signed *types.Signe
 	if signed.TxHash != "" && !strings.EqualFold(signed.TxHash, txID) {
 		return "", fmt.Errorf("tron broadcast: tx hash %s does not match txID %s", signed.TxHash, txID)
 	}
-	var response struct {
-		tronCallResult
-		TxID string `json:"txid"`
+	raw, err := a.postRaw(ctx, tronBroadcastPath, map[string]any{"transaction": hex.EncodeToString(signed.RawBytes)}, true)
+	if err != nil {
+		return "", classifyTronBroadcast(err)
 	}
-	if err := a.post(ctx, "/wallet/broadcasthex", map[string]any{"transaction": hex.EncodeToString(signed.RawBytes)}, &response); err != nil {
-		return "", err
-	}
-	if !response.Result {
-		return "", fmt.Errorf("tron broadcast %s refused: %s", txID, response.describe())
+	var response tronBroadcastAnswer
+	if err := decodeTronResult(tronBroadcastPath, raw, &response); err != nil {
+		return "", chain.UnknownOutcome(err)
 	}
 	if response.TxID != "" && !strings.EqualFold(response.TxID, txID) {
-		return "", fmt.Errorf("tron broadcast: node returned txid %s for %s", response.TxID, txID)
+		return "", chain.UnknownOutcome(fmt.Errorf("tron broadcast: node returned txid %s for %s", response.TxID, txID))
 	}
 	return txID, nil
 }
