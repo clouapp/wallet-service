@@ -315,6 +315,14 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `app/services/deposit/checkpoint_guard_test.go`, `checkpoint_operator_test.go`,
   `app/services/chainregistry/align_checkpoints_test.go` and
   `app/console/commands/scan_deposits_test.go`.
+- Each completed scan cycle (one that found nothing new, and the first one, included) records the
+  head it read, the checkpoint it left and when it ended (`vault:scan-activity:<chain>`), and the
+  inbound ingest records when a provider webhook of a known chain arrived (`vault:ingest-push:<chain>`),
+  both in Redis with a 7-day TTL, after the work is saved: a record that fails is logged and never
+  fails the scan or the webhook. A failed cycle and a checkpoint far ahead of the head record
+  nothing, so the scan time ages. `GET /health` and the tracker's alerts read these records only,
+  never a chain. — guarded by `app/services/deposit/scan_activity_test.go`,
+  `app/services/ingest/push_test.go` and `app/adapters/redis/scanactivity/store_test.go`.
 - One scanner per chain: a `ScanLatestBlocks` cycle holds `vault:lock:deposit_scan:<chain>`
   (`cacheguard.Acquire`, TTL 2 min, above the 60 s `deposit_scanner` Lambda timeout). A held
   lock skips the cycle; a lock store that is down or missing fails it. `scan:deposits
@@ -377,8 +385,10 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   truncates every table but `migrations` before and after the test, and also deletes the settings
   cache keys (`*settings:*`, in the worker's Redis index) because the settings service caches
   groups under `settings:platform:<group>` and `settings:account:<uuid>:<group>`, which would
-  outlive the truncated rows and leak a value into the next test. A test that changes the schema
-  uses `fixtures.TestDBFreshSchema(t)`. — guarded by `tests/feature/support/fixtures/reset_test.go`.
+  outlive the truncated rows and leak a value into the next test, and the scan activity keys
+  (`vault:scan-activity:*`, `vault:ingest-push:*`), which would add a chain to the next test's
+  `GET /health`. A test that changes the schema uses `fixtures.TestDBFreshSchema(t)`. — guarded by
+  `tests/feature/support/fixtures/reset_test.go`.
 
 ### 10. Settings
 
@@ -575,7 +585,7 @@ make test-integration TEST_FLAGS='-run TestWalletRepository'
 ```
 
 - Unit vs integration is decided per package from its test imports (`go list`), no build tags: a package is integration when its tests import `tests/feature/support/testenv`, `tests/feature/support/testutil`, `tests` or `bootstrap`.
-- `fixtures.TestDB(t)` (`tests/feature/support/fixtures`) migrates the schema fresh once per test binary (a worker clone already is), then truncates every table but `migrations` before and after each test and deletes the settings cache keys (`*settings:*`) that survive the rows. Tests that run migrations up/down use `fixtures.TestDBFreshSchema(t)` (fresh schema before and after). HTTP suites embed `support.HTTPSuite`; unreachable endpoints use `testutil.ClosedLocalURL`.
+- `fixtures.TestDB(t)` (`tests/feature/support/fixtures`) migrates the schema fresh once per test binary (a worker clone already is), then truncates every table but `migrations` before and after each test and deletes the settings cache keys (`*settings:*`) and the scan activity keys that survive the rows. Tests that run migrations up/down use `fixtures.TestDBFreshSchema(t)` (fresh schema before and after). HTTP suites embed `support.HTTPSuite`; unreachable endpoints use `testutil.ClosedLocalURL`.
 - `go run ./tests/feature/support/testdb prepare | drop-clones` are the template/cleanup steps `make test-integration` runs; both refuse names outside `vault_unit_test*`.
 - Running `go test ./app/repositories` directly still works on `vault_unit_test` itself (no clone; take the lock with `flock ~/.local/state/macro-e2e/locks/vault_unit_test.lock …` when another run may be active).
 - `TEST_TIMEOUT` (default 30m) is a safety net per `go test` invocation.
@@ -636,11 +646,13 @@ SOLANA_RPC_URL=https://api.devnet.solana.com
 BTC_RPC_URL=https://blockstream.info/testnet/api
 API_KEY_SECRET=dev-secret-key-not-for-production
 WITHDRAWAL_STALE_AFTER_HOURS=6   # outbound transfers unsettled this long are warned about and counted by /health
+DEPOSIT_SCAN_ALERT_LAG_BLOCKS=0  # tracker warns when a scan trails the head by more (0: the chain's catch-up window)
+DEPOSIT_SCAN_ALERT_STALE_MINUTES=10  # tracker warns when a scanned chain has no completed cycle for longer
 ```
 
 Redis is the cache driver (rate limits, locks including the per-chain deposit scan lock, settings
 cache, the deposit scanner's watched addresses and its copy of the scan checkpoint, which lives in
-Postgres): the app needs it reachable. `.env.dev.example` / `.env.example` carry the full lists,
+Postgres, and the scan activity `GET /health` reports): the app needs it reachable. `.env.dev.example` / `.env.example` carry the full lists,
 with the throttle variables.
 
 ### RPC endpoints and failover (EVM, Solana)
@@ -880,6 +892,49 @@ workers scan `sol`/`tsol`, `base`/`tbase`, `arbitrum`/`tarbitrum`, `bsc`/`tbsc` 
 of their own, so a slow chain never holds up `eth`, `polygon` and `btc`. — guarded by
 `app/services/deposit/scan_override_test.go`, `config/vault_test.go`,
 `app/providers/deposit_scan_overrides_test.go` and `TestStart_Scans_FastChainsInLoopsOfTheirOwn`.
+
+### Deposit detection observability
+
+- **`GET /health`** (public): `deposit_scanner.chains` has one entry per chain a scan cycle or a
+  provider push touched in the last 7 days: `lag_blocks` (head − checkpoint at the end of its last
+  completed scan cycle, 0 when the checkpoint is ahead of a lagging node) and `last_scanned_at` (when
+  that cycle ended), both absent for a chain only pushed to, and `last_push_at` (the last inbound
+  provider webhook received), absent when none. Times are UTC, to the second; no address or id. The
+  reading is one MGET, reused for 15 s, one at a time (the same single-flight snapshot as
+  `confirmation_tracker`), and `chains_error` says when the store cannot be read and no earlier
+  reading exists. `deposit_scanner.status` does not depend on it.
+- **Alerts** (structured warnings; the repository has no metrics abstraction): every tracker pass
+  (`confirmation_tracker`, and the local confirmation loop) warns `deposit scan lag above the alert
+  threshold` for a scanned chain whose last cycle left the checkpoint more than
+  `DEPOSIT_SCAN_ALERT_LAG_BLOCKS` behind the head (default 0: the chain's catch-up window, a lag the
+  next cycle cannot close), `deposit scan has not completed a cycle within the alert threshold` when
+  that cycle ended more than `DEPOSIT_SCAN_ALERT_STALE_MINUTES` ago (default 10: the scanner stopped,
+  or every cycle fails), and `deposit blocks pending a retry` for each chain with pending blocks.
+  `DEPOSIT_SCAN_ALERT_LAG_BLOCKS_<CHAIN>` and `DEPOSIT_SCAN_ALERT_STALE_MINUTES_<CHAIN>` set one chain
+  apart (`vault.deposit_scan.chains.<chain>`; 0 keeps the global value). On Lambda they are read by
+  the `confirmation_tracker` function. A chain taken out of scanning stops alerting when its record
+  expires (7 days) or is deleted. — guarded by `app/services/deposit/scan_activity_test.go`,
+  `app/providers/deposit_scan_overrides_test.go` and `config/vault_test.go`.
+- **Webhook DLQ alarm**: `template.yaml` and `template.dev.yaml` declare `vault-webhooks-dlq-not-empty-<env>`,
+  a CloudWatch alarm on `ApproximateNumberOfMessagesVisible` > 0 of the webhook dead-letter queue
+  (5-minute maximum, missing data not breaching), notifying the SNS topic of the `AlarmTopicArn`
+  parameter (empty by default: the alarm only changes state). — guarded by
+  `TestWebhook_DeadLetterQueue_RaisesAnAlarmInEveryTemplate` (`tests/architecture`).
+- **Balance audit**: `go run . artisan deposits:audit-balances <chain> [--account=<id>] [--after=<address id>]
+  [--limit=100] [--max-reads=500] [--spacing-ms=250] [--dust=<base units>] [--asset=SYM,...]` reads,
+  per address of the chain (by id, inactive ones included), the native balance and every token the
+  chain lists, at most `--max-reads` reads spaced `--spacing-ms` apart (an address whole or not at all),
+  and compares each with what the recorded transactions explain: confirmed deposits, sweeps and gas
+  seeds in, minus confirmed withdrawals, sweeps and gas seeds out, minus (native) the fees the
+  address's outbound rows paid. A difference within dust (`--dust`, else the adapter's
+  `DustThreshold`, else 0) is ok; an asset with rows in flight is not judged; a native balance with
+  confirmed outbound rows without a fee (`transactions:backfill-fees`), a balance that cannot be read
+  and a token the chain does not list are unverified. Each mismatch is logged at warning level by
+  address id. It exits 1 on a mismatch or an unverified balance and prints the `--after` to resume
+  with. Read-only (it writes, signs and sends nothing) and not scheduled: run it from the host's
+  scheduler to make it daily. — guarded by `app/services/balanceaudit/audit_test.go`,
+  `app/console/commands/deposits_audit_balances_test.go` and `TestAddress_Ledger_*`,
+  `TestList_ForBalanceAudit_*` (`tests/feature/repositories`).
 
 ### Testnet tokens
 
