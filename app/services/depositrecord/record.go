@@ -47,6 +47,8 @@ type Store interface {
 	// ClaimDepositPosition moves deposit id from types.NativeValuePosition to position
 	// and reports false when the row no longer holds that value.
 	ClaimDepositPosition(ctx context.Context, id uuid.UUID, position int) (bool, error)
+	// FillDepositBlockHash writes blockHash on deposit id when it holds none.
+	FillDepositBlockHash(ctx context.Context, id uuid.UUID, blockHash string) error
 	Create(ctx context.Context, tx *models.Transaction) error
 }
 
@@ -86,6 +88,11 @@ const (
 	// OtherSource found the same transfer recorded by the other source (scanner or
 	// provider push) at a position none of this source's transfers has.
 	OtherSource Outcome = "other_source"
+	// OtherPosition found the same transfer recorded by this source at a position it
+	// no longer reports for the transaction: a deposit the reorganization check moved
+	// to the block its transaction was mined in again, with the old block's log index.
+	// Decided only when the source passes its transfers.
+	OtherPosition Outcome = "other_position"
 	// Concurrent lost the insert or the claim to a writer that does not take the lock
 	// (unique violation).
 	Concurrent Outcome = "concurrent"
@@ -126,47 +133,67 @@ func Record(ctx context.Context, store Store, row *models.Transaction, siblings 
 }
 
 // decide reads the transaction's deposits, under its lock, and writes row when none
-// of them is its transfer.
+// of them is its transfer. A recorded row that is the transfer and lacks the block
+// hash row has, at the same height, gets it.
 func decide(ctx context.Context, store Store, row *models.Transaction, siblings []Transfer) (Outcome, error) {
 	recorded, err := store.FindDepositsByChainAndTxHash(ctx, row.Chain, row.TxHash)
 	if err != nil {
 		return "", fmt.Errorf("load recorded deposits of tx %s: %w", row.TxHash, err)
 	}
-	outcome, old := match(row, recorded, siblings)
-	switch {
-	case outcome != "":
-		return outcome, nil
-	case old != nil:
-		claimed, err := store.ClaimDepositPosition(ctx, old.ID, row.LogIndex)
+	found := match(row, recorded, siblings)
+	switch found.outcome {
+	case "":
+		if err := store.Create(ctx, row); err != nil {
+			return "", fmt.Errorf("insert deposit of tx %s: %w", row.TxHash, err)
+		}
+		return Created, nil
+	case ClaimedUnpositioned:
+		claimed, err := store.ClaimDepositPosition(ctx, found.row.ID, row.LogIndex)
 		if err != nil {
-			return "", fmt.Errorf("move deposit %s to position %d: %w", old.ID, row.LogIndex, err)
+			return "", fmt.Errorf("move deposit %s to position %d: %w", found.row.ID, row.LogIndex, err)
 		}
 		if !claimed {
 			return "", errClaimLost
 		}
 		return ClaimedUnpositioned, nil
 	}
-	if err := store.Create(ctx, row); err != nil {
-		return "", fmt.Errorf("insert deposit of tx %s: %w", row.TxHash, err)
+	if lacksHashOf(found.row, row) {
+		if err := store.FillDepositBlockHash(ctx, found.row.ID, row.BlockHash); err != nil {
+			return "", fmt.Errorf("fill the block hash of deposit %s: %w", found.row.ID, err)
+		}
 	}
-	return Created, nil
+	return found.outcome, nil
 }
 
-// match decides from the transaction's recorded deposits: an outcome when the
-// transfer is recorded, the old row to claim, or neither when it must be inserted.
-func match(row *models.Transaction, recorded []models.Transaction, siblings []Transfer) (Outcome, *models.Transaction) {
+// lacksHashOf reports whether recorded, a row of the same transfer, has no block hash
+// where row, at the same height, has one.
+func lacksHashOf(recorded, row *models.Transaction) bool {
+	return recorded != nil && recorded.BlockHash == "" && row.BlockHash != "" &&
+		recorded.BlockNumber > 0 && recorded.BlockNumber == row.BlockNumber
+}
+
+// found is what match decided: the outcome, and the recorded row it is about (the row
+// of the transfer, or the old row to claim); an empty outcome inserts.
+type found struct {
+	outcome Outcome
+	row     *models.Transaction
+}
+
+// match decides from the transaction's recorded deposits whether the transfer is
+// recorded, has an old row to claim, or must be inserted.
+func match(row *models.Transaction, recorded []models.Transaction, siblings []Transfer) found {
 	mine := TransferOf(*row)
 	for i := range recorded {
 		if recorded[i].LogIndex == row.LogIndex {
 			if sameTransfer(TransferOf(recorded[i]), mine) {
-				return SamePosition, nil
+				return found{SamePosition, &recorded[i]}
 			}
-			return PositionTaken, nil
+			return found{PositionTaken, nil}
 		}
 	}
 	for i := range recorded {
 		if !sameBlock(recorded[i], *row) && sameTransfer(TransferOf(recorded[i]), mine) {
-			return OtherBlock, nil
+			return found{OtherBlock, nil}
 		}
 	}
 	// A row at the native value position here is one recorded before positions: the
@@ -174,16 +201,22 @@ func match(row *models.Transaction, recorded []models.Transaction, siblings []Tr
 	for i := range recorded {
 		old := &recorded[i]
 		if old.LogIndex == types.NativeValuePosition && old.Source == row.Source && sameTransfer(TransferOf(*old), mine) {
-			return "", old
+			return found{ClaimedUnpositioned, old}
 		}
 	}
 	for i := range recorded {
 		other := TransferOf(recorded[i])
-		if recorded[i].Source != row.Source && sameTransfer(other, mine) && !reports(siblings, other) {
-			return OtherSource, nil
+		if !sameTransfer(other, mine) || reports(siblings, other) {
+			continue
+		}
+		if recorded[i].Source != row.Source {
+			return found{OtherSource, &recorded[i]}
+		}
+		if siblings != nil {
+			return found{OtherPosition, &recorded[i]}
 		}
 	}
-	return "", nil
+	return found{}
 }
 
 // reports tells whether the source reports transfer itself, at its position.
@@ -231,6 +264,8 @@ func LogSkipped(outcome Outcome, row *models.Transaction) {
 		slog.Info("deposit recorded before transfer positions moved to its position", attrs...)
 	case OtherSource:
 		slog.Info("deposit already recorded by the other source at another position", attrs...)
+	case OtherPosition:
+		slog.Info("deposit already recorded by this source at a position it no longer reports (moved after a reorganization)", attrs...)
 	default:
 		slog.Debug("deposit already recorded", attrs...)
 	}

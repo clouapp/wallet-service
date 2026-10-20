@@ -389,24 +389,31 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   watched addresses, or one address twice, is as many deposits. A deposit is (chain, tx_hash,
   log_index), the unique deposit index (migration 430); `log_index` is the transfer's position in its
   transaction (`types.DetectedTransfer.LogIndex`), which the scanner and the provider push compute
-  alike: `-1` (`types.NativeValuePosition`) for the native value of an EVM, TRON or XRP transaction
-  (an Alchemy internal transfer takes it too); the block-wide log index of an EVM Transfer (Alchemy's
-  `log.logIndex`) and the block-wide event index of a TRON one; the output index (vout) on Bitcoin and
+  alike: `-1` (`types.NativeValuePosition`) for the native value of an EVM, TRON or XRP transaction;
+  below it, an Alchemy internal transfer (native value a contract call sends, which the scanner never
+  reports), from its `typeTraceAddress` (`-2 - fnv32a(call_0_1) mod 2^30`; one without it is skipped);
+  the block-wide log index of an EVM Transfer (Alchemy's `log.logIndex`; a `removed` log is skipped) and
+  the block-wide event index of a TRON one, the logs of failed calls counted; the output index (vout) on Bitcoin and
   Litecoin (the QuickNode filter function reports it); on Solana the account index of a lamport credit
   and 256 plus the lowest changed token account index of a token credit (`pkg/solanacredit`, read from
   `getBlock` balances by the scanner and from `accountData` by the Helius push).
   `models.Transaction.LogIndex` has no ORM default, so position 0 is stored as 0; withdrawals, sweeps
   and gas seeds keep `-1` (`models.TransactionLogIndexNone`). Both sources record through
   `depositrecord.Record`, which takes the transaction's advisory lock
-  (`LockTransactionDeposits`, in one database transaction) so the scanner and the push never decide on
-  one transaction at once, reads its deposit rows and inserts only when none of them is the transfer
-  (same recipient, token contract and amount): a row at the same position (another transfer there is
-  `position_taken`, logged at warning level: two contract-made native transfers of one EVM
-  transaction record the first); the transfer recorded from another block (the transaction was mined
-  again after a reorganization, where EVM and TRON positions differ); the transfer recorded by the
-  other source (`source` `chain` vs `deposit_ingest`) at a position where this source reports no such
-  transfer itself (each source passes the transfers it reports for the transaction, so a twin transfer
-  the other source left out is still recorded); a unique violation. A row the scanner recorded before
+  (`LockTransactionDeposits`, in one database transaction; a hex hash keyed and looked up in any case)
+  so the scanner and the push never decide on one transaction at once, reads its deposit rows and
+  inserts only when none of them is the transfer (same recipient, token contract and amount): a row at
+  the same position (another transfer there is `position_taken`, logged at warning level); the transfer
+  recorded from another block (the transaction was mined again after a reorganization, where EVM and
+  TRON positions differ); the transfer recorded, by either source, at a position where the recording
+  source reports no such transfer itself (`other_source`, or `other_position` for its own row: a
+  deposit the reorganization check moved to the new block with the old block's log index). Each source
+  passes the transfers it reports for the transaction, so a twin transfer at its own position is still
+  recorded; a unique violation counts as recorded. A row of the transfer at the same height without a
+  block hash (Alchemy sends none for a transfer without a log, Helius none at all) gets the hash of the
+  source that has it. The scanner records a block's positioned transfers before its native values.
+  The push fails (5xx, the provider delivers again) when the database could not look up or record a
+  transfer. A row the scanner recorded before
   positions existed is at `-1` whatever the transfer was; a positioned transfer of the same source
   claims it (`ClaimDepositPosition` moves it to the position, keeping its id, so its delivered
   webhooks are not sent again), each old row claimed once. No migration rewrote those rows: only the

@@ -39,6 +39,9 @@ func (s *sweepConfirmMemory) ClaimDepositPosition(context.Context, uuid.UUID, in
 func (s *sweepConfirmMemory) LockTransactionDeposits(context.Context, string, string) error {
 	return nil
 }
+func (s *sweepConfirmMemory) FillDepositBlockHash(context.Context, uuid.UUID, string) error {
+	return nil
+}
 func (s *sweepConfirmMemory) Within(ctx context.Context, fn func(context.Context) error) error {
 	return fn(ctx)
 }

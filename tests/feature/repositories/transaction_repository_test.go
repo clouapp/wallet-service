@@ -3,6 +3,7 @@ package repositories_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -221,16 +222,18 @@ func (s *TransactionRepositoryTestSuite) TestFind_DepositsByChainAndTxHash_Retur
 	s.Empty(none)
 }
 
-// lockFree asks, from another connection, whether the deposits lock of the
-// transaction is free (it takes and releases it at once when it is).
+// lockFree takes the deposits lock of the transaction in another database
+// transaction, giving up after 200 ms, and reports whether it got it.
 func (s *TransactionRepositoryTestSuite) lockFree(chainID, txHash string) bool {
 	s.T().Helper()
-	var free []struct{ Free bool }
-	s.Require().NoError(facades.Orm().Query().Raw(
-		"SELECT pg_try_advisory_xact_lock(hashtextextended(?, 0)) AS free", "deposits/"+chainID+"/"+txHash,
-	).Scan(&free))
-	s.Require().Len(free, 1)
-	return free[0].Free
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	lockErr := errors.New("the lock was not tried")
+	_ = s.repo.Within(ctx, func(txCtx context.Context) error {
+		lockErr = s.repo.LockTransactionDeposits(txCtx, chainID, txHash)
+		return nil
+	})
+	return lockErr == nil
 }
 
 func (s *TransactionRepositoryTestSuite) TestLock_TransactionDeposits_IsHeldUntilTheTransactionEnds() {
@@ -240,7 +243,7 @@ func (s *TransactionRepositoryTestSuite) TestLock_TransactionDeposits_IsHeldUnti
 	done := make(chan error, 1)
 	go func() {
 		done <- s.repo.Within(ctx, func(txCtx context.Context) error {
-			if err := s.repo.LockTransactionDeposits(txCtx, "eth", "0xbatch"); err != nil {
+			if err := s.repo.LockTransactionDeposits(txCtx, "eth", "0xbadc0de1"); err != nil {
 				return err
 			}
 			close(held)
@@ -250,13 +253,14 @@ func (s *TransactionRepositoryTestSuite) TestLock_TransactionDeposits_IsHeldUnti
 	}()
 	<-held
 
-	s.False(s.lockFree("eth", "0xbatch"), "a second recorder of the transaction waits")
-	s.True(s.lockFree("eth", "0xother"), "another transaction is not held")
-	s.True(s.lockFree("polygon", "0xbatch"), "the same hash on another chain is not held")
+	s.False(s.lockFree("eth", "0xbadc0de1"), "a second recorder of the transaction waits")
+	s.False(s.lockFree("eth", "0xBADC0DE1"), "a hex hash is one transaction in any case")
+	s.True(s.lockFree("eth", "0xbadc0de2"), "another transaction is not held")
+	s.True(s.lockFree("polygon", "0xbadc0de1"), "the same hash on another chain is not held")
 
 	close(release)
 	s.Require().NoError(<-done)
-	s.True(s.lockFree("eth", "0xbatch"), "the lock ends with the transaction")
+	s.True(s.lockFree("eth", "0xbadc0de1"), "the lock ends with the transaction")
 }
 
 func (s *TransactionRepositoryTestSuite) TestClaim_DepositPosition_MovesOnlyARowRecordedBeforePositions() {
@@ -281,6 +285,51 @@ func (s *TransactionRepositoryTestSuite) TestClaim_DepositPosition_MovesOnlyARow
 	s.Require().NoError(err)
 	s.False(claimed, "only deposit rows are claimed")
 	s.Equal(types.NativeValuePosition, s.storedPosition(withdrawal.ID))
+}
+
+func (s *TransactionRepositoryTestSuite) TestFill_DepositBlockHash_WritesOnlyAMissingHash() {
+	ctx := context.Background()
+	walletID := s.insertWallet()
+	pushed := s.deposit(walletID, "0xpushed", types.NativeValuePosition)
+	pushed.BlockHash = ""
+	s.Require().NoError(s.repo.Create(ctx, pushed))
+	scanned := s.deposit(walletID, "0xscanned", types.NativeValuePosition)
+	scanned.BlockHash = "0xfirst"
+	s.Require().NoError(s.repo.Create(ctx, scanned))
+
+	s.Require().NoError(s.repo.FillDepositBlockHash(ctx, pushed.ID, "0xblock"))
+	s.Require().NoError(s.repo.FillDepositBlockHash(ctx, scanned.ID, "0xother"))
+
+	found, err := s.repo.FindByID(ctx, pushed.ID)
+	s.Require().NoError(err)
+	s.Equal("0xblock", found.BlockHash)
+	found, err = s.repo.FindByID(ctx, scanned.ID)
+	s.Require().NoError(err)
+	s.Equal("0xfirst", found.BlockHash, "a hash that is there is never replaced")
+}
+
+func (s *TransactionRepositoryTestSuite) TestFind_DepositsByChainAndTxHash_MatchesAHexHashInAnyCase() {
+	ctx := context.Background()
+	walletID := s.insertWallet()
+	upper := s.deposit(walletID, "0xABCDEF01", 3)
+	s.Require().NoError(s.repo.Create(ctx, upper))
+	xrp := s.deposit(walletID, "C0FFEE00C0FFEE00C0FFEE00C0FFEE00C0FFEE00C0FFEE00C0FFEE00C0FFEE00", 4)
+	s.Require().NoError(s.repo.Create(ctx, xrp))
+	base58 := s.deposit(walletID, "5VERv8NMvzbJ", 5)
+	s.Require().NoError(s.repo.Create(ctx, base58))
+
+	found, err := s.repo.FindDepositsByChainAndTxHash(ctx, "eth", "0xabcdef01")
+	s.Require().NoError(err)
+	s.Require().Len(found, 1)
+	s.Equal(upper.ID, found[0].ID)
+
+	found, err = s.repo.FindDepositsByChainAndTxHash(ctx, "eth", strings.ToLower(xrp.TxHash))
+	s.Require().NoError(err)
+	s.Len(found, 1)
+
+	found, err = s.repo.FindDepositsByChainAndTxHash(ctx, "eth", "5verv8nmvzbj")
+	s.Require().NoError(err)
+	s.Empty(found, "a base58 signature is case-sensitive")
 }
 
 func (s *TransactionRepositoryTestSuite) TestClaim_DepositPosition_RefusesATakenPosition() {

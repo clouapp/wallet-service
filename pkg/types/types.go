@@ -178,8 +178,8 @@ type Balance struct {
 
 // NativeValuePosition is the position of the native value a transaction itself
 // carries on an account chain: an EVM transaction's value, a TRON TransferContract,
-// an XRP Payment. Every other transfer has a position of zero or more (see
-// DetectedTransfer.LogIndex).
+// an XRP Payment. Every other transfer the scanner reports has a position of zero or
+// more (see DetectedTransfer.LogIndex).
 const NativeValuePosition = -1
 
 type DetectedTransfer struct {
@@ -194,10 +194,11 @@ type DetectedTransfer struct {
 	// LogIndex is the transfer's position, which tells it from the other transfers
 	// of its transaction; the deposit scanner and the provider ingest compute it alike:
 	// NativeValuePosition for the native value of an EVM, TRON or XRP transaction; the
-	// log index for an EVM token Transfer and the event's index in the block for a TRON
-	// one; the output index (vout) on Bitcoin and Litecoin; on Solana the credited
-	// account's index for SOL and the account count plus the lowest changed token
-	// account index of the owner and mint for a token.
+	// log index in the block for an EVM token Transfer and the event's index in the
+	// block for a TRON one; the output index (vout) on Bitcoin and Litecoin; on Solana
+	// the credited account's index for SOL and 256 plus the lowest changed token account
+	// index of the owner and mint for a token (pkg/solanacredit). Below
+	// NativeValuePosition: an EVM internal transfer, which only the Alchemy push reports.
 	LogIndex  int       `json:"log_index"`
 	Timestamp time.Time `json:"timestamp"`
 	// DestinationTag is the XRP Ledger destination tag of the payment; nil means

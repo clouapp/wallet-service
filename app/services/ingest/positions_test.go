@@ -1,6 +1,8 @@
 package ingest
 
 import (
+	"context"
+	"errors"
 	"math/big"
 	"testing"
 
@@ -33,4 +35,39 @@ func TestProcess_Transfers_RecordsTheTwinTheScannerLeftOut(t *testing.T) {
 	require.Len(t, txs.created, 2)
 	assert.Equal(t, 4, txs.created[1].LogIndex)
 	assert.Equal(t, models.TxSourceDepositIngest, txs.created[1].Source)
+}
+
+// failingCreates fails every insert, as a database that is down does.
+type failingCreates struct {
+	*ingestTxRepo
+}
+
+func (f failingCreates) Create(context.Context, *models.Transaction) error {
+	return errors.New("connection refused")
+}
+
+func TestProcess_Transfers_ReturnsADatabaseFailureSoTheProviderRetries(t *testing.T) {
+	const to = "0xreceiver"
+	reg, addrs, txs := ingestFixture(to)
+	svc := NewService(Deps{Registry: reg, AddressRepo: addrs, Transactions: failingCreates{txs}})
+
+	err := svc.ProcessTransfers(t.Context(), models.ChainETH, []providers.InboundTransfer{
+		{TxHash: "0xone", BlockNumber: 100, To: to, From: "0xfrom", Amount: big.NewInt(5), Asset: models.NativeETH, LogIndex: -1},
+	})
+
+	require.ErrorIs(t, err, ErrStoreFailed, "a 2xx would tell the provider the deposit is recorded")
+}
+
+func TestProcess_Transfers_DoesNotRetryATransferThatIsNotADeposit(t *testing.T) {
+	const to = "0xreceiver"
+	reg, addrs, txs := ingestFixture(to)
+	svc := NewService(Deps{Registry: reg, AddressRepo: addrs, Transactions: txs})
+
+	err := svc.ProcessTransfers(t.Context(), models.ChainETH, []providers.InboundTransfer{
+		{TxHash: "0xnoamount", BlockNumber: 100, To: to, From: "0xfrom", Asset: models.NativeETH, LogIndex: -1},
+		{TxHash: "0xone", BlockNumber: 100, To: to, From: "0xfrom", Amount: big.NewInt(5), Asset: models.NativeETH, LogIndex: -1},
+	})
+
+	require.NoError(t, err, "a transfer the push cannot read is not fixed by a retry")
+	require.Len(t, txs.created, 1)
 }
