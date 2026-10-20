@@ -209,42 +209,57 @@ func parseLedgerEntry(raw json.RawMessage) (xrpLedgerEntry, error) {
 func (l xrpScannedLedger) deposits(asset string) ([]types.DetectedTransfer, error) {
 	var transfers []types.DetectedTransfer
 	for _, entry := range l.entries {
-		if entry.fields.TransactionType != xrpPaymentTransactionType || entry.meta.TransactionResult != xrpSuccessResult {
-			continue
-		}
-		drops, native, err := deliveredDrops(entry.meta.DeliveredAmount)
+		transfer, ok, err := entry.deposit(l.index, l.hash, l.closeTime, asset)
 		if err != nil {
-			return nil, fmt.Errorf("payment %s delivered_amount: %w", entry.hash, err)
+			return nil, err
 		}
-		if !native || drops.Sign() == 0 {
-			continue
+		if ok {
+			transfers = append(transfers, transfer)
 		}
-		if entry.fields.Destination == "" || entry.fields.Account == "" {
-			return nil, fmt.Errorf("payment %s has no account or destination", entry.hash)
-		}
-		// A payment to itself converts the account's own currencies; nothing arrives
-		// from anyone else.
-		if entry.fields.Account == entry.fields.Destination {
-			continue
-		}
-		transfer := types.DetectedTransfer{
-			TxHash:      entry.hash,
-			BlockNumber: l.index,
-			BlockHash:   l.hash,
-			From:        entry.fields.Account,
-			To:          entry.fields.Destination,
-			Amount:      drops,
-			Asset:       asset,
-			LogIndex:    uint(entry.index),
-			Timestamp:   l.closeTime,
-		}
-		if tag := entry.fields.DestinationTag; tag != nil {
-			value := *tag
-			transfer.DestinationTag = &value
-		}
-		transfers = append(transfers, transfer)
 	}
 	return transfers, nil
+}
+
+// deposit is the deposit entry reports in validated ledger ledgerIndex: a Payment
+// whose result is tesSUCCESS that delivered XRP to another account, for the drops
+// delivered_amount reports, with its destination tag. ok is false for anything
+// else; a payment whose delivered_amount, account or destination cannot be read is
+// an error. The ledger scan and the stream (stream.go) read deposits through it.
+func (entry xrpLedgerEntry) deposit(ledgerIndex uint64, ledgerHash string, closeTime time.Time, asset string) (types.DetectedTransfer, bool, error) {
+	if entry.fields.TransactionType != xrpPaymentTransactionType || entry.meta.TransactionResult != xrpSuccessResult {
+		return types.DetectedTransfer{}, false, nil
+	}
+	drops, native, err := deliveredDrops(entry.meta.DeliveredAmount)
+	if err != nil {
+		return types.DetectedTransfer{}, false, fmt.Errorf("payment %s delivered_amount: %w", entry.hash, err)
+	}
+	if !native || drops.Sign() == 0 {
+		return types.DetectedTransfer{}, false, nil
+	}
+	if entry.fields.Destination == "" || entry.fields.Account == "" {
+		return types.DetectedTransfer{}, false, fmt.Errorf("payment %s has no account or destination", entry.hash)
+	}
+	// A payment to itself converts the account's own currencies; nothing arrives
+	// from anyone else.
+	if entry.fields.Account == entry.fields.Destination {
+		return types.DetectedTransfer{}, false, nil
+	}
+	transfer := types.DetectedTransfer{
+		TxHash:      entry.hash,
+		BlockNumber: ledgerIndex,
+		BlockHash:   ledgerHash,
+		From:        entry.fields.Account,
+		To:          entry.fields.Destination,
+		Amount:      drops,
+		Asset:       asset,
+		LogIndex:    uint(entry.index),
+		Timestamp:   closeTime,
+	}
+	if tag := entry.fields.DestinationTag; tag != nil {
+		value := *tag
+		transfer.DestinationTag = &value
+	}
+	return transfer, true, nil
 }
 
 // deliveredDrops reads delivered_amount: drops when it is XRP (a decimal string),
