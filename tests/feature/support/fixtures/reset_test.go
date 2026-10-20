@@ -1,13 +1,18 @@
 package fixtures_test
 
 import (
+	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/app/adapters/redis/scanactivity"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
+	"github.com/macrowallets/waas/tests/feature/support/testenv"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
 
@@ -62,5 +67,28 @@ func TestTestDBEmptiesTablesAndSequencesBetweenTests(t *testing.T) {
 	}
 	if got := rowCount(t, "migrations"); got == 0 || got != migrations {
 		t.Fatalf("migrations rows = %d, want the %d applied ones kept", got, migrations)
+	}
+}
+
+// TestTestDB_ForgetsTheScanActivityARunLeft guards GET /health in the contract
+// snapshot: a scan cycle or a provider push one test recorded in the worker's Redis
+// index outlives the truncated rows and would add a chain to the next test's health.
+func TestTestDB_ForgetsTheScanActivityARunLeft(t *testing.T) {
+	ctx := context.Background()
+	store := scanactivity.New(testenv.TestRedis(t))
+	t.Run("writes", func(t *testing.T) {
+		fixtures.TestDB(t)
+		if err := store.RecordScan(ctx, "eth", deposit.ScanRecord{Head: 10, Checkpoint: 9, At: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.RecordPush(ctx, "sol", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	fixtures.TestDB(t)
+	activity, err := store.ReadActivity(ctx, []string{"eth", "sol"})
+	if err != nil || len(activity) != 0 {
+		t.Fatalf("activity after the reset %+v (err %v), want none", activity, err)
 	}
 }

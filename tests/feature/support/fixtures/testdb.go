@@ -48,11 +48,11 @@ func TestDB(t *testing.T) {
 		t.Fatalf("migration failed: %v", freshSchemaErr)
 	}
 	truncateTables(t)
-	forgetSettingsCache(t)
+	forgetRedisState(t)
 	t.Cleanup(func() {
 		requireSafeTestDatabase(t)
 		truncateTables(t)
-		forgetSettingsCache(t)
+		forgetRedisState(t)
 	})
 }
 
@@ -61,33 +61,46 @@ func TestDB(t *testing.T) {
 // prefix.
 const settingsCachePattern = "*settings:*"
 
-// forgetSettingsCache drops the cached settings groups along with the rows the
-// truncation deleted. The cache lives in Redis, which the truncation does not
-// touch, so a platform group one test cached (or a test package that ran before
-// on the same worker) would otherwise outlive its rows and the next reader would
-// see stale limits. It deletes by pattern on the worker's own test Redis index,
-// never FLUSHDB.
-func forgetSettingsCache(t *testing.T) {
+// redisStatePatterns are the Redis keys the truncation must take along: the cached
+// settings groups, and the scan activity GET /health reports (each chain's last scan
+// cycle and provider push: app/adapters/redis/scanactivity, ScanKeyPrefix and
+// PushKeyPrefix, written out here because that package imports the services whose
+// tests import this one; TestTestDB_ForgetsTheScanActivityARunLeft keeps them equal).
+var redisStatePatterns = []string{
+	settingsCachePattern,
+	"vault:scan-activity:*",
+	"vault:ingest-push:*",
+}
+
+// forgetRedisState drops the Redis keys of redisStatePatterns along with the rows
+// the truncation deleted. Redis is not truncated, so a platform group one test cached
+// (or a test package that ran before on the same worker) would otherwise outlive its
+// rows and the next reader would see stale limits, and a recorded scan cycle would
+// add a chain to the next health check. It deletes by pattern on the worker's own
+// test Redis index, never FLUSHDB.
+func forgetRedisState(t *testing.T) {
 	t.Helper()
 
 	client, err := appfacades.Redis()
 	if err != nil {
-		t.Fatalf("forget settings cache: %v", err)
+		t.Fatalf("forget redis state: %v", err)
 	}
 	ctx := context.Background()
 	var keys []string
-	iter := client.Scan(ctx, 0, settingsCachePattern, 0).Iterator()
-	for iter.Next(ctx) {
-		keys = append(keys, iter.Val())
-	}
-	if err := iter.Err(); err != nil {
-		t.Fatalf("forget settings cache: scan: %v", err)
+	for _, pattern := range redisStatePatterns {
+		iter := client.Scan(ctx, 0, pattern, 0).Iterator()
+		for iter.Next(ctx) {
+			keys = append(keys, iter.Val())
+		}
+		if err := iter.Err(); err != nil {
+			t.Fatalf("forget redis state: scan %s: %v", pattern, err)
+		}
 	}
 	if len(keys) == 0 {
 		return
 	}
 	if err := client.Del(ctx, keys...).Err(); err != nil {
-		t.Fatalf("forget settings cache: delete: %v", err)
+		t.Fatalf("forget redis state: delete: %v", err)
 	}
 }
 
