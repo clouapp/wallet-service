@@ -42,8 +42,8 @@ type eventStore interface {
 	FindDueForDelivery(ctx context.Context, limit int, baseBackoff, maxBackoff time.Duration) ([]models.WebhookEvent, error)
 	MarkFailed(ctx context.Context, eventID, errMsg string) error
 	ClaimStaleForRedispatch(ctx context.Context, staleAfter time.Duration, limit int) ([]models.WebhookEvent, error)
-	FindForRedelivery(ctx context.Context, configID uuid.UUID, since, until time.Time, eventTypes []string, limit int) ([]uuid.UUID, error)
-	RequeueForRedelivery(ctx context.Context, configID uuid.UUID, ids []uuid.UUID, createdSince, busySince time.Time) ([]models.WebhookEvent, error)
+	FindForRedelivery(ctx context.Context, configID, accountID uuid.UUID, since, until time.Time, eventTypes []string, limit int) ([]uuid.UUID, error)
+	RequeueForRedelivery(ctx context.Context, configID, accountID uuid.UUID, ids []uuid.UUID, createdSince, busySince time.Time) ([]models.WebhookEvent, error)
 }
 
 // ---------------------------------------------------------------------------
