@@ -643,16 +643,17 @@ cache, the deposit scanner's watched addresses and its copy of the scan checkpoi
 Postgres): the app needs it reachable. `.env.dev.example` / `.env.example` carry the full lists,
 with the throttle variables.
 
-### RPC endpoints and failover (EVM, Solana)
+### RPC endpoints and failover (EVM, Solana, TRON, XRP)
 
 Each chain has an ordered list of RPC endpoints. Position 1 is the primary, `chains.rpc_url`
 (unchanged, so a chain without fallbacks behaves as before); positions 2 and after are its
 fallbacks, rows of `chain_rpc_endpoints` (migration 650: sealed like `rpc_url`, `enc:v1:` only by
 CHECK, an `enabled` flag, one row per position, deleted with the chain). The registry loads the
 enabled fallbacks with the active chains at boot; a failed read leaves every chain on its primary.
-EVM and Solana fail over through the list (they share `app/adapters/chain/rpc`). The Bitcoin family
-keeps its own list (next section); TRON and XRP have their own transports and no fallback yet: their
-list writes are refused.
+EVM and Solana fail over through the list with the shared JSON-RPC client (`app/adapters/chain/rpc`);
+TRON (the java-tron HTTP API) and XRP (rippled JSON-RPC) with their own clients over the same failover
+(`rpc.Endpoints`: order, cool-downs, network checks, health, logs and broadcast rule). The Bitcoin
+family keeps its own list (next section): its list writes are refused.
 
 - **Configure** (the processes load a changed list on restart; the platform API reloads its own at once):
   `go run . artisan chains:rpc-endpoints <chain>` lists position, host, enabled flag and recorded
@@ -671,13 +672,15 @@ list writes are refused.
   in health or returned: an endpoint is its host and a 12-hex fingerprint of its URL (HMAC-SHA256
   under `APP_KEY`, `chain.SetRPCFingerprintKey`).
 - **Every write checks the network.** Each endpoint a change adds or enables, and a new primary, must
-  answer `eth_chainId` equal to `network_id` (EVM) or `getGenesisHash` equal to its cluster's
-  (`models.SolanaGenesisHash`, Solana); another network or no answer refuses the change and nothing is
-  written. The checks of one change (like a `--probe`) run at once under one 20 s budget.
+  answer `eth_chainId` equal to `network_id` (EVM), `getGenesisHash` equal to its cluster's
+  (`models.SolanaGenesisHash`, Solana), block 0's id equal to its network's (`/wallet/getblockbynum`
+  `num` 0, `models.TronGenesisBlockID`, TRON) or `server_info`'s `network_id` equal to its network's
+  (mainnet 0, altnet 1, `models.XRPLNetworkID`; a server that reports none is refused, XRP), the last
+  two through the prober the adapter registers (`chain.SetEndpointProber`); another network or no
+  answer refuses the change and nothing is written. The checks of one change (like a `--probe`) run at once under one 20 s budget.
   `chains:set-rpc` and `PATCH .../rpc` check a new primary the same way; from artisan only, a primary
   record may also be pointed at the network `CHAIN_NETWORK_PROFILE` names for it (then run
-  `chains:align-network --apply`). Bitcoin-family, TRON and XRP primaries are written unchecked, as
-  before. An `env:NAME` must resolve in the process that runs the check. An EVM chain without
+  `chains:align-network --apply`). Bitcoin-family primaries are written unchecked, as before. An `env:NAME` must resolve in the process that runs the check. An EVM chain without
   `network_id` is checked against the chain id its profile names, else refused with how to set it.
   For an emergency switch to an endpoint the command's host cannot reach, `chains:set-rpc` and
   `chains:rpc-endpoints` take `--skip-network-check`: written unchecked, printed as a warning and
@@ -755,9 +758,29 @@ list writes are refused.
   `Transfer` asks the other ready endpoints by the block's hash: their logs are the answer, an empty
   answer from one agrees; with nobody else to ask the block is retried and believed empty from the
   third time the same hash is answered so, once the block is at least 5 minutes old (logged). Receipts keep their block number and hash check.
+- **TRON and XRP** (`app/adapters/chain/tron/tron_http.go`, `tron_broadcast.go`, `app/adapters/chain/xrp/rpc.go`,
+  `submit.go`): a TRON read moves on on a transport error, a non-2xx status (HTTP 429/403 is a rate
+  limit; 404/405 a path the endpoint does not serve, not counted against it) or a 2xx body that is not
+  JSON; an `Error` member is the answer. The API key goes to the primary only. A block scan reads its
+  block and its transaction infos from one endpoint (`rpc.PinEndpoint`). An XRP read moves on on a
+  transport error, a non-200 status, an unreadable body, a server that cannot answer (`noNetwork`,
+  `noCurrent`, `noClosed`, `tooBusy`, `amendmentBlocked`, `notSynced`, `internal`, `failedToForward`,
+  `notReady`), a rate limit (HTTP 429, `slowDown`) or a method or ledger the server does not serve
+  (`unknownCmd`, `lgrNotFound`, `notImpl`; not counted against it); `actNotFound`, `txnNotFound` and
+  every other result stay the answer. The XRP expiry proof reads its ledgers and its search from one
+  server. **Broadcasts**: TRON `DUP_TRANSACTION_ERROR` is a success; `SERVER_BUSY`, `NO_CONNECTION`
+  and `NOT_ENOUGH_EFFECTIVE_CONNECTION` (java-tron checks them before it reads the transaction) pass
+  the same bytes to the next endpoint; any other `result: false` or `Error` is a known failure. An XRP
+  submit `tes…`, `terQUEUED`, `tefALREADY` or `tec…` was sent (a `tec` is then recorded by the
+  validated ledger); a `tel…` (neither applied nor relayed) or a server that did not run the request
+  passes the bytes on; `tefPAST_SEQ`, `tefMAX_LEDGER` (they may follow an earlier application) and
+  `ter…` (held for a later ledger) are unknown outcomes; `tem…`, any other `tef…` and a request error
+  are known failures. On both, a timeout, a dropped connection, an HTTP 5xx or an unreadable answer is
+  an unknown outcome, and no endpoint taking the bytes is `chain.NotSent`.
 
-— guarded by `app/adapters/chain/rpc/failover_test.go`, `app/adapters/chain/evm/endpoints_test.go`,
-`app/adapters/chain/solana/endpoints_test.go`, `app/services/chainregistry/endpoint_verify_test.go`,
+— guarded by `app/adapters/chain/rpc/failover_test.go`, `endpoints_test.go`, `app/adapters/chain/evm/endpoints_test.go`,
+`app/adapters/chain/solana/endpoints_test.go`, `app/adapters/chain/tron/tron_failover_test.go`,
+`app/adapters/chain/xrp/failover_test.go`, `app/services/chainregistry/endpoint_verify_test.go`,
 `primary_verify_test.go`, `app/services/rpcendpoints/service_test.go`,
 `app/services/chains/rpc_endpoints_test.go`, `primary_verify_test.go`, `replace_rpc_test.go`,
 `app/console/commands/chains_rpc_endpoints_test.go`, `app/adapters/redis/rpchealth/store_test.go`,
@@ -798,20 +821,20 @@ The confirmation tracker stores the fee actually paid (native base units) in `tr
 
 A broadcast answer either decides the transfer or leaves its outcome unknown.
 - **Certainly not sent** (`chain.RequestNotSent`, the one definition the RPC failover and the classification share): a request that could not be built, a dial error (refused, no route, a connect timeout, a name that does not resolve), or a call marked `chain.NotSent` (the RPC client marks a broadcast that no endpoint took, e.g. the only fallback's identity check failed while the primary cooled down). A rejection (an answer about the transaction: a JSON-RPC error, whatever HTTP status it came with, since bitcoind before v28 answers every error with 500) and a rate limit also decide it (also when the caller's deadline cuts the backoff of an endpoint that answered only 429).
-- **Unknown** (`chain.ErrUnknownOutcome`, `chain.ClassifyBroadcast`): a timeout or dropped connection after the send, an HTTP 5xx without a JSON-RPC answer or with a generic upstream one (a gateway may have relayed the transaction), a 2xx body that cannot be read. EVM, Solana and the Bitcoin family (JSON-RPC, ElectrumX and Esplora REST) classify; XRP and TRON do not yet. `chain.KnownFailure` (safe to retry a read) is unchanged. An unknown EVM outcome raises the in-process nonce floor like an accepted one.
+- **Unknown** (`chain.ErrUnknownOutcome`, `chain.ClassifyBroadcast`): a timeout or dropped connection after the send, an HTTP 5xx without a JSON-RPC answer or with a generic upstream one (a gateway may have relayed the transaction), a 2xx body that cannot be read. EVM, Solana, the Bitcoin family (JSON-RPC, ElectrumX and Esplora REST), TRON and XRP classify (TRON and XRP answers: "RPC endpoints and failover"). `chain.KnownFailure` (safe to retry a read) is unchanged. An unknown EVM outcome raises the in-process nonce floor like an accepted one.
 
 The final withdrawal row is created under the hash of the signed bytes **before** they leave, under the withdrawal's idempotency key, and the withdrawal is linked to it (`withdrawals.transaction_id`) in the same database transaction (a row or link that cannot be recorded stops the withdrawal before anything is sent). A retry with the key after a crash past the send finds that transfer through `Request`'s idempotency check and replays it: it never signs another. After the send:
 - accepted or unknown: what the send answered (another hash; `broadcast_outcome: "unknown"` in `transactions.raw_payload`) and the `withdrawal.broadcasting` webhook are recorded in one transaction, retried twice, then logged at error with the row left for the tracker; the withdrawal goes `broadcast` and is never failed (and refunded) for a transfer that may land. `withdrawal.broadcast` (and the later withdrawal events) carry `broadcast_outcome: "unknown"` when it applies.
 - refused: the row is marked failed (`broadcast_refused`) and the withdrawal fails as before.
 - A signed transaction without a hash (no production adapter) is recorded after the send, as before.
 
-`raw_payload` also keeps, for EVM, the nonce the transfer spends (`sender_nonce`) and the head read before the send (`broadcast_head`); for XRP and Solana its last valid block (`last_ledger_sequence`: XRP LastLedgerSequence, Solana the `lastValidBlockHeight` `getLatestBlockhash` gave its blockhash in this process). An unknown-outcome gas_seed is recorded and awaited like a sent one (the plan goes on when it lands; a second seed would over-fund the child).
+`raw_payload` also keeps, for EVM, the nonce the transfer spends (`sender_nonce`) and the head read before the send (`broadcast_head`); for the Bitcoin family the outpoints it spends (`spent_inputs`, `txid:vout`); for XRP and Solana its last valid block (`last_ledger_sequence`: XRP LastLedgerSequence, Solana the `lastValidBlockHeight` `getLatestBlockhash` gave its blockhash in this process). An unknown-outcome gas_seed is recorded and awaited like a sent one (the plan goes on when it lands; a second seed would over-fund the child).
 
 The tracker settles every sent transfer by its hash (mined → confirmed or failed on chain). For a row with `broadcast_outcome: "unknown"` that no node knows by its hash, EVM `NonceSpend` gives a **positive proof**: from `max(required_confirmations, 12)` blocks under the head it walks back (newest first, which a node without archive state still has), then binary-searches the block where the sender's nonce count passed the nonce, and reads the sender's transaction with that nonce in it. Ours there is confirmed from that block (or failed on chain from its receipt, read by block; a node without a transaction index such as publicnode Sepolia still has it); another one there fails the withdrawal `not_landed` (and `withdrawal.failed` once). A nonce still free, one spent before the send, or a read that fails proves nothing: the row stays pending with a warning. A node without the state of those blocks ("missing trie node", "historical state … not available") is no endpoint failure (the call moves on); the row is then left for an hour (`nonce_proof_retry_at` in `raw_payload`) before the next try. XRP fails `expired` past its last ledger once the node searched every ledger up to it. Solana fails `expired` only for a row whose broadcast outcome was unknown, past its blockhash's last valid height (`getEpochInfo`, finalized), when no endpoint knows the signature and either two endpoints answering for that finalized slot or later say so, or one does twice ten minutes apart (`expiry_witnessed_at`): a backend behind the slot answers null without an error.
 
-Nothing settles a Bitcoin-family unknown outcome automatically. Every tracker pass warns (`outbound transaction still unsettled …`) about each withdrawal, sweep or gas_seed still pending or confirming `WITHDRAWAL_STALE_AFTER_HOURS` (default 6) after it was recorded, and `GET /health` counts them per chain under `confirmation_tracker`. `GET /health` counts once a minute at most, one count at a time, outside its lock, and serves the last counts when a count is in flight or fails. An operator settles one with `go run . artisan withdrawals:reconcile <withdrawal-id or outbound transaction id> [--apply]` (dry run by default): a withdrawal's transaction, or the one recorded under its key when it is not linked (linked with `--apply`), or a sweep, gas seed or orphan row by its own id; then the transaction on every endpoint, the nonce proof (EVM, any row with `sender_nonce`) and a provable expiry (any row, with the same proof); landed records the block (the tracker then counts confirmations), failed fails it with the proof, unknown says why and writes nothing.
+A Bitcoin-family row with `broadcast_outcome: "unknown"` and `spent_inputs` that the failover order does not know is searched on every provider, cooling down or not (`SearchTransactionBlock`: found in a block, it is confirmed from it), then its inputs are read from the first provider with a spend index (Esplora `/tx/:txid/outspend/:vout`; bitcoind, ElectrumX and the Tatum gateway have none): an input spent by itself in a block confirms it from that block; only every input spent by another transaction at least `required_confirmations` (at least 1) deep fails it `not_landed` (and `withdrawal.failed` once). Anything else (an input unspent, a spend in the mempool or not deep enough, ours still in the mempool, no provider with a spend index) proves nothing: the row stays pending and is asked again after 10 minutes (`spend_proof_retry_at`). A TRON unknown outcome has no automatic proof yet. Every tracker pass warns (`outbound transaction still unsettled …`) about each withdrawal, sweep or gas_seed still pending or confirming `WITHDRAWAL_STALE_AFTER_HOURS` (default 6) after it was recorded, and `GET /health` counts them per chain under `confirmation_tracker`. `GET /health` counts once a minute at most, one count at a time, outside its lock, and serves the last counts when a count is in flight or fails. An operator settles one with `go run . artisan withdrawals:reconcile <withdrawal-id or outbound transaction id> [--apply]` (dry run by default): a withdrawal's transaction, or the one recorded under its key when it is not linked (linked with `--apply`), or a sweep, gas seed or orphan row by its own id; then the transaction on every endpoint, the nonce proof (EVM, any row with `sender_nonce`), the inputs proof (Bitcoin family, any row with `spent_inputs`) and a provable expiry (any row, with the same proof); landed records the block (the tracker then counts confirmations), failed fails it with the proof, unknown says why and writes nothing.
 
-— guarded by `TestClassify_Broadcast_*` (`app/services/chain`), `TestFailover_Broadcast_ThatReachedNoNodeIsNeverAnUnknownOutcome`, `TestCall_AJSONRPCErrorCarriedByANon2xxStatusIsTheRPCError` (`app/adapters/chain/rpc`), `TestBroadcast_*` (`app/adapters/chain/bitcoin/broadcast_outcome_test.go`), `TestExecute_Withdrawal_*`, `TestExecute_Linked_AnUnknownGasSeedOutcomeIsAwaitedLikeASentOne` (`app/services/sweep`), `TestEVM_NonceSpend_*`, `TestEVM_SearchTransactionBlock_*`, `TestPending_Nonce_AnUnknownBroadcastOutcomeKeepsItsNonceTaken` (`app/adapters/chain/evm`), `TestSolana_LastValidBlock_*`, `TestSolana_TransactionExpired_*` (`app/adapters/chain/solana`), `TestRunConfirmationCheck_EVMUnknownOutcome*` (`app/services/deposit/evm_not_landed_test.go`), `stale_outbound_test.go`, `withdrawal_reconcile_test.go` (`app/services/deposit`) and `TestWithdrawals_Reconcile_*` (`app/console/commands`).
+— guarded by `TestClassify_Broadcast_*` (`app/services/chain`), `TestFailover_Broadcast_ThatReachedNoNodeIsNeverAnUnknownOutcome`, `TestCall_AJSONRPCErrorCarriedByANon2xxStatusIsTheRPCError` (`app/adapters/chain/rpc`), `TestBroadcast_*` (`app/adapters/chain/bitcoin/broadcast_outcome_test.go`), `TestBitcoin_*` (`app/adapters/chain/bitcoin/double_spend_test.go`), `TestTron_Broadcast_*`, `TestXRP_Broadcast_*`, `TestExecute_Withdrawal_*`, `TestExecute_Linked_AnUnknownGasSeedOutcomeIsAwaitedLikeASentOne` (`app/services/sweep`), `TestEVM_NonceSpend_*`, `TestEVM_SearchTransactionBlock_*`, `TestPending_Nonce_AnUnknownBroadcastOutcomeKeepsItsNonceTaken` (`app/adapters/chain/evm`), `TestSolana_LastValidBlock_*`, `TestSolana_TransactionExpired_*` (`app/adapters/chain/solana`), `TestRunConfirmationCheck_EVMUnknownOutcome*` (`app/services/deposit/evm_not_landed_test.go`), `bitcoin_unknown_outcome_test.go`, `stale_outbound_test.go`, `withdrawal_reconcile_test.go` (`app/services/deposit`) and `TestWithdrawals_Reconcile_*` (`app/console/commands`).
 
 ### Confirmation and finality
 
