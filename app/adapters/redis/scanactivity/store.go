@@ -27,6 +27,12 @@ const (
 	// recordTTL drops the record of a chain nothing has scanned or pushed to for a
 	// week, so a chain taken out of scanning leaves the health check and its alerts.
 	recordTTL = 7 * 24 * time.Hour
+	// AlertKeyPrefix + alert key marks a raised scan alert; the same key with
+	// reminderSuffix lives one reminder period, until the alert is logged again.
+	AlertKeyPrefix = "vault:scan-alert:"
+	reminderSuffix = ":remind"
+	// alertTTL drops a raised alert nothing has confirmed for a week.
+	alertTTL = 7 * 24 * time.Hour
 )
 
 // Store records and reads the scan activity. It is safe for concurrent use; the
@@ -37,6 +43,7 @@ type Store struct {
 
 var (
 	_ deposit.ScanActivityStore = (*Store)(nil)
+	_ deposit.ScanAlertState    = (*Store)(nil)
 	_ ingest.PushRecorder       = (*Store)(nil)
 )
 
@@ -116,6 +123,47 @@ func (s *Store) ReadActivity(ctx context.Context, chainIDs []string) (map[string
 		return activity, fmt.Errorf("decode scan activity: %w", errors.Join(failures...))
 	}
 	return activity, nil
+}
+
+// RaiseAlert marks the alert of key raised. It answers AlertRaised when it was not,
+// AlertReminded when it was and its reminder (remind long) ran out, AlertQuiet
+// otherwise. Two processes raising at once may both see it raised or reminded.
+func (s *Store) RaiseAlert(ctx context.Context, key string, remind time.Duration) (deposit.AlertTransition, error) {
+	if s == nil || s.client == nil {
+		return deposit.AlertRaised, nil
+	}
+	raised := AlertKeyPrefix + key
+	first, err := s.client.SetNX(ctx, raised, 1, alertTTL).Result()
+	if err != nil {
+		return deposit.AlertQuiet, fmt.Errorf("raise scan alert: %w", err)
+	}
+	if first {
+		if err := s.client.Set(ctx, raised+reminderSuffix, 1, remind).Err(); err != nil {
+			return deposit.AlertRaised, fmt.Errorf("raise scan alert: reminder: %w", err)
+		}
+		return deposit.AlertRaised, nil
+	}
+	due, err := s.client.SetNX(ctx, raised+reminderSuffix, 1, remind).Result()
+	if err != nil {
+		return deposit.AlertQuiet, fmt.Errorf("remind scan alert: %w", err)
+	}
+	if due {
+		return deposit.AlertReminded, nil
+	}
+	return deposit.AlertQuiet, nil
+}
+
+// ClearAlert drops the alert of key and reports whether it was raised.
+func (s *Store) ClearAlert(ctx context.Context, key string) (bool, error) {
+	if s == nil || s.client == nil {
+		return false, nil
+	}
+	raised := AlertKeyPrefix + key
+	removed, err := s.client.Del(ctx, raised, raised+reminderSuffix).Result()
+	if err != nil {
+		return false, fmt.Errorf("clear scan alert: %w", err)
+	}
+	return removed > 0, nil
 }
 
 // decodeScan reads one MGET value of a scan key; a missing key is nil.

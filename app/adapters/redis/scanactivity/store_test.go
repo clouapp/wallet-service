@@ -117,3 +117,39 @@ func TestRead_Activity_OfNoChainAsksNothing(t *testing.T) {
 		t.Fatalf("activity %+v, err %v", activity, err)
 	}
 }
+
+func TestAlert_State_RaisesRemindsAndClearsAcrossPasses(t *testing.T) {
+	client := testenv.TestRedis(t)
+	key := strings.TrimSuffix(testenv.TestRedisPrefix(t, client), ":") + "-scan-lag:eth"
+	t.Cleanup(func() {
+		_ = client.Del(context.Background(), AlertKeyPrefix+key, AlertKeyPrefix+key+reminderSuffix).Err()
+	})
+	store := New(client)
+	ctx := context.Background()
+
+	for i, want := range []deposit.AlertTransition{deposit.AlertRaised, deposit.AlertQuiet} {
+		got, err := store.RaiseAlert(ctx, key, time.Minute)
+		if err != nil || got != want {
+			t.Fatalf("pass %d: %v (err %v), want %v", i, got, err, want)
+		}
+	}
+	if err := client.Del(ctx, AlertKeyPrefix+key+reminderSuffix).Err(); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := store.RaiseAlert(ctx, key, time.Minute); err != nil || got != deposit.AlertReminded {
+		t.Fatalf("after the reminder expired: %v (err %v)", got, err)
+	}
+	if ttl, err := client.TTL(ctx, AlertKeyPrefix+key+reminderSuffix).Result(); err != nil || ttl <= 0 || ttl > time.Minute {
+		t.Fatalf("reminder ttl %s (err %v)", ttl, err)
+	}
+
+	if was, err := store.ClearAlert(ctx, key); err != nil || !was {
+		t.Fatalf("clear: %v (err %v), want it was raised", was, err)
+	}
+	if was, err := store.ClearAlert(ctx, key); err != nil || was {
+		t.Fatalf("second clear: %v (err %v), want nothing raised", was, err)
+	}
+	if got, err := store.RaiseAlert(ctx, key, time.Minute); err != nil || got != deposit.AlertRaised {
+		t.Fatalf("raised again after it cleared: %v (err %v)", got, err)
+	}
+}

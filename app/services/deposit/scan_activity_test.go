@@ -251,9 +251,13 @@ func TestRun_ConfirmationCheck_WarnsAboutAScanThatLagsOrStalledAndAboutPendingBl
 	activity := newMemoryActivity()
 	activity.scans["eth"] = ScanRecord{Head: 3000, Checkpoint: 2400, At: activityNow.Add(-15 * time.Second)}
 	activity.scans["btc"] = ScanRecord{Head: 900, Checkpoint: 900, At: activityNow.Add(-11 * time.Minute)}
-	activity.scans["sol"] = ScanRecord{Head: 700, Checkpoint: 300, At: activityNow.Add(-time.Minute)}
-	store := listedPending{entries: map[string][]pending.Entry{"eth": {{Block: 2101}, {Block: 2102}}}}
+	// sol trails by exactly the 500-block catch-up window and ended exactly 10 minutes
+	// ago: on the thresholds, not past them.
+	activity.scans["sol"] = ScanRecord{Head: 800, Checkpoint: 300, At: activityNow.Add(-DefaultScanStaleAfter)}
+	// tron keeps pending blocks but no scanner runs it any more: no record, no alert.
+	store := listedPending{entries: map[string][]pending.Entry{"eth": {{Block: 2101}, {Block: 2102}}, "tron": {{Block: 7}}}}
 	svc := activityService(activity, store, clock)
+	svc.registry.RegisterChain(mocks.NewMockChain("tron"))
 	svc.txRepo = &sweepConfirmMemory{}
 
 	if err := svc.RunConfirmationCheck(context.Background()); err != nil {
@@ -263,7 +267,7 @@ func TestRun_ConfirmationCheck_WarnsAboutAScanThatLagsOrStalledAndAboutPendingBl
 	records := logs()
 	lagging := warnings(records, scanLagMessage)
 	if len(lagging) != 1 || lagging["eth"] == nil {
-		t.Fatalf("lag warnings %v, want eth only (600 blocks behind, over the 500-block catch-up window; sol trails 400)", lagging)
+		t.Fatalf("lag warnings %v, want eth only (600 blocks behind, over the 500-block catch-up window; sol trails exactly 500)", lagging)
 	}
 	if lagging["eth"]["lag_blocks"] != float64(600) || lagging["eth"]["threshold_blocks"] != float64(DefaultScanCatchUpBlocks) {
 		t.Fatalf("lag warning %v", lagging["eth"])
@@ -274,7 +278,7 @@ func TestRun_ConfirmationCheck_WarnsAboutAScanThatLagsOrStalledAndAboutPendingBl
 	}
 	pendingWarned := warnings(records, pendingBlocksMessage)
 	if len(pendingWarned) != 1 || pendingWarned["eth"]["pending_blocks"] != float64(2) {
-		t.Fatalf("pending warnings %v, want eth with 2 blocks", pendingWarned)
+		t.Fatalf("pending warnings %v, want eth with 2 blocks and nothing for tron, which no scanner records", pendingWarned)
 	}
 }
 
@@ -283,8 +287,8 @@ func TestScan_AlertThresholds_AChainThresholdWinsOverTheGlobalOne(t *testing.T) 
 	clock := &testClock{now: activityNow}
 	activity := newMemoryActivity()
 	activity.scans["eth"] = ScanRecord{Head: 3000, Checkpoint: 2950, At: activityNow.Add(-3 * time.Minute)}
-	activity.scans["btc"] = ScanRecord{Head: 900, Checkpoint: 899, At: activityNow.Add(-50 * time.Minute)}
-	activity.scans["sol"] = ScanRecord{Head: 700, Checkpoint: 650, At: activityNow.Add(-3 * time.Minute)}
+	activity.scans["btc"] = ScanRecord{Head: 900, Checkpoint: 899, At: activityNow.Add(-time.Hour)}
+	activity.scans["sol"] = ScanRecord{Head: 700, Checkpoint: 600, At: activityNow.Add(-3 * time.Minute)}
 	svc := activityService(activity, nil, clock)
 	svc.txRepo = &sweepConfirmMemory{}
 	svc.SetScanAlertThresholds(ScanAlertThresholds{LagBlocks: 40, StaleAfter: 2 * time.Minute}, func(chainID string) ScanAlertThresholds {
@@ -303,9 +307,131 @@ func TestScan_AlertThresholds_AChainThresholdWinsOverTheGlobalOne(t *testing.T) 
 
 	records := logs()
 	if lagging := warnings(records, scanLagMessage); len(lagging) != 1 || lagging["eth"]["threshold_blocks"] != float64(40) {
-		t.Fatalf("lag warnings %v, want eth over the global 40 blocks and sol under its own 100", lagging)
+		t.Fatalf("lag warnings %v, want eth over the global 40 blocks and sol at exactly its own 100", lagging)
 	}
 	if stalled := warnings(records, scanStaleMessage); len(stalled) != 1 || stalled["eth"]["threshold_minutes"] != float64(2) {
-		t.Fatalf("stale warnings %v, want eth over the global 2 minutes, btc under its hour and sol under its 5 minutes", stalled)
+		t.Fatalf("stale warnings %v, want eth over the global 2 minutes, btc at exactly its hour and sol under its 5 minutes", stalled)
+	}
+}
+
+// memoryAlerts is a ScanAlertState in memory, on the test clock.
+type memoryAlerts struct {
+	clock    *testClock
+	raised   map[string]bool
+	remindAt map[string]time.Time
+}
+
+func newMemoryAlerts(clock *testClock) *memoryAlerts {
+	return &memoryAlerts{clock: clock, raised: map[string]bool{}, remindAt: map[string]time.Time{}}
+}
+
+func (m *memoryAlerts) RaiseAlert(_ context.Context, key string, remind time.Duration) (AlertTransition, error) {
+	now := m.clock.Now()
+	if !m.raised[key] {
+		m.raised[key], m.remindAt[key] = true, now.Add(remind)
+		return AlertRaised, nil
+	}
+	if now.Before(m.remindAt[key]) {
+		return AlertQuiet, nil
+	}
+	m.remindAt[key] = now.Add(remind)
+	return AlertReminded, nil
+}
+
+func (m *memoryAlerts) ClearAlert(_ context.Context, key string) (bool, error) {
+	was := m.raised[key]
+	delete(m.raised, key)
+	delete(m.remindAt, key)
+	return was, nil
+}
+
+// records returns the records of msg at level.
+func recordsOf(records []map[string]any, level, msg string) []map[string]any {
+	var found []map[string]any
+	for _, record := range records {
+		if record["msg"] == msg && record["level"] == level {
+			found = append(found, record)
+		}
+	}
+	return found
+}
+
+func TestScan_Alerts_WarnWhenRaisedRemindWhileTheyLastAndSayWhenTheyClear(t *testing.T) {
+	logs := captureLogs(t)
+	clock := &testClock{now: activityNow}
+	activity := newMemoryActivity()
+	activity.scans["eth"] = ScanRecord{Head: 3000, Checkpoint: 2400, At: activityNow.Add(-15 * time.Second)}
+	svc := activityService(activity, listedPending{entries: map[string][]pending.Entry{"eth": {{Block: 2401}}}}, clock)
+	svc.txRepo = &sweepConfirmMemory{}
+	svc.SetScanAlertState(newMemoryAlerts(clock))
+	pass := func() {
+		t.Helper()
+		if err := svc.RunConfirmationCheck(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scan := func(checkpoint uint64) {
+		activity.scans["eth"] = ScanRecord{Head: 3000, Checkpoint: checkpoint, At: clock.Now().Add(-15 * time.Second)}
+	}
+
+	pass()
+	clock.advance(time.Minute)
+	scan(2400)
+	pass()
+	if lag, pend := recordsOf(logs(), "WARN", scanLagMessage), recordsOf(logs(), "WARN", pendingBlocksMessage); len(lag) != 1 || len(pend) != 1 || lag[0]["reminder"] != false {
+		t.Fatalf("lag warnings %v, pending warnings %v: one each when raised, none the next pass", lag, pend)
+	}
+
+	clock.advance(scanAlertReminder)
+	scan(2400)
+	pass()
+	lag := recordsOf(logs(), "WARN", scanLagMessage)
+	if len(lag) != 2 || lag[1]["reminder"] != true {
+		t.Fatalf("lag warnings %v, want a reminder once the reminder period passed", lag)
+	}
+
+	clock.advance(time.Minute)
+	scan(3000)
+	svc.pending = listedPending{}
+	pass()
+	pass()
+	if cleared := recordsOf(logs(), "INFO", scanLagClearedMessage); len(cleared) != 1 || cleared[0]["chain"] != "eth" {
+		t.Fatalf("cleared %v, want one line when the lag clears", cleared)
+	}
+	if cleared := recordsOf(logs(), "INFO", pendingBlocksClearedMessage); len(cleared) != 1 {
+		t.Fatalf("cleared %v, want one line when the pending blocks are gone", cleared)
+	}
+	if lag := recordsOf(logs(), "WARN", scanLagMessage); len(lag) != 2 {
+		t.Fatalf("lag warnings %v after it cleared", lag)
+	}
+}
+
+// failingAlerts is a ScanAlertState whose store is down.
+type failingAlerts struct{}
+
+func (failingAlerts) RaiseAlert(context.Context, string, time.Duration) (AlertTransition, error) {
+	return AlertQuiet, errors.New("dial tcp 10.0.0.3:6379: connection refused")
+}
+
+func (failingAlerts) ClearAlert(context.Context, string) (bool, error) {
+	return false, errors.New("dial tcp 10.0.0.3:6379: connection refused")
+}
+
+func TestScan_Alerts_AnAlertStoreThatFailsStillWarnsEveryPass(t *testing.T) {
+	logs := captureLogs(t)
+	clock := &testClock{now: activityNow}
+	activity := newMemoryActivity()
+	activity.scans["eth"] = ScanRecord{Head: 3000, Checkpoint: 2400, At: activityNow}
+	svc := activityService(activity, nil, clock)
+	svc.txRepo = &sweepConfirmMemory{}
+	svc.SetScanAlertState(failingAlerts{})
+
+	for i := 0; i < 2; i++ {
+		if err := svc.RunConfirmationCheck(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if lag := recordsOf(logs(), "WARN", scanLagMessage); len(lag) != 2 {
+		t.Fatalf("lag warnings %v, want one per pass while the alert store is down", lag)
 	}
 }

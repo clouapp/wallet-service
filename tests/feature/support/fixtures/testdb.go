@@ -62,14 +62,15 @@ func TestDB(t *testing.T) {
 const settingsCachePattern = "*settings:*"
 
 // redisStatePatterns are the Redis keys the truncation must take along: the cached
-// settings groups, and the scan activity GET /health reports (each chain's last scan
-// cycle and provider push: app/adapters/redis/scanactivity, ScanKeyPrefix and
-// PushKeyPrefix, written out here because that package imports the services whose
+// settings groups, and the scan activity GET /health reports and its raised alerts
+// (app/adapters/redis/scanactivity: ScanKeyPrefix, PushKeyPrefix and AlertKeyPrefix,
+// written out here because that package imports the services whose
 // tests import this one; TestTestDB_ForgetsTheScanActivityARunLeft keeps them equal).
 var redisStatePatterns = []string{
 	settingsCachePattern,
 	"vault:scan-activity:*",
 	"vault:ingest-push:*",
+	"vault:scan-alert:*",
 }
 
 // forgetRedisState drops the Redis keys of redisStatePatterns along with the rows

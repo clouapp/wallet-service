@@ -77,6 +77,7 @@ type Service struct {
 	activityCache   healthSnapshot[ScanActivityHealth]
 	scanAlerts      ScanAlertThresholds
 	chainScanAlerts func(chainID string) ScanAlertThresholds
+	alertState      ScanAlertState
 	// reconcileWithdrawals and reconcileTransactions are the rows withdrawals:reconcile
 	// reads (withdrawal_reconcile.go).
 	reconcileWithdrawals  WithdrawalFinder

@@ -84,11 +84,17 @@ func TestTestDB_ForgetsTheScanActivityARunLeft(t *testing.T) {
 		if err := store.RecordPush(ctx, "sol", time.Now()); err != nil {
 			t.Fatal(err)
 		}
+		if _, err := store.RaiseAlert(ctx, "scan-lag:eth", time.Hour); err != nil {
+			t.Fatal(err)
+		}
 	})
 
 	fixtures.TestDB(t)
 	activity, err := store.ReadActivity(ctx, []string{"eth", "sol"})
 	if err != nil || len(activity) != 0 {
 		t.Fatalf("activity after the reset %+v (err %v), want none", activity, err)
+	}
+	if raised, err := store.ClearAlert(ctx, "scan-lag:eth"); err != nil || raised {
+		t.Fatalf("an alert raised before the reset is still raised (err %v)", err)
 	}
 }

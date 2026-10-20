@@ -196,6 +196,7 @@ func newDepositService(app foundation.Application) (*deposit.Service, error) {
 	// alerts, which never call a chain.
 	if activity := scanactivity.New(redisClient); activity != nil {
 		service.SetScanActivityStore(activity)
+		service.SetScanAlertState(activity)
 	}
 	service.SetScanAlertThresholds(scanAlertThresholds(facades.Config()))
 	service.SetBalanceRefresher(walletRefresher)
