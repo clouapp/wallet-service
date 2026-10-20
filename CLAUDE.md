@@ -333,32 +333,40 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   log_index), the unique deposit index (migration 430); `log_index` is the transfer's position in its
   transaction (`types.DetectedTransfer.LogIndex`), which the scanner and the provider push compute
   alike: `-1` (`types.NativeValuePosition`) for the native value of an EVM, TRON or XRP transaction
-  (an Alchemy internal transfer takes it too: two in one transaction record the first); the log index
-  of an EVM Transfer (Alchemy's `log.logIndex`) and the block-wide event index of a TRON one; the
-  output index (vout) on Bitcoin and Litecoin (the QuickNode filter function reports it); on Solana the
-  account index of a lamport credit and the account count plus the lowest changed token account index
-  of a token credit (`chain.SolanaLamportCredits`/`SolanaTokenCredits`, read from `getBlock` balances by
-  the scanner and from `accountData` by the Helius push). `models.Transaction.LogIndex` has no ORM
-  default, so position 0 is stored as 0; withdrawals, sweeps and gas seeds keep `-1`
-  (`models.TransactionLogIndexNone`). Both sources record through `depositrecord.Record`, which reads
-  the transaction's deposit rows and inserts only when none of them is the transfer: a row at the same
-  position; any row recorded from another block (the transaction was mined again after a
-  reorganization, where EVM and TRON positions differ: its transfers are already recorded); a row of
-  the other source (`source` `chain` vs `deposit_ingest`) with the same recipient, token contract and
-  amount at another position; a unique violation on insert. A row the scanner recorded before
-  positions existed is at `-1` whatever the transfer was; a positioned transfer of the same source and
-  the same recipient, token contract and amount claims it (`ClaimDepositPosition` moves it to the
-  position, keeping its id, so its delivered webhooks are not sent again), each old row claimed once.
-  No migration rewrote those rows: only the native value position can be read from a stored row, and
-  it already is `-1`; `scan:deposits <chain> --tx <hash>` moves an old row to its position and records
-  the transfers of that transaction the one-per-transaction rule left out. — guarded by
-  `app/services/depositrecord/record_test.go`, `app/services/deposit/transfer_positions_test.go`
+  (an Alchemy internal transfer takes it too); the block-wide log index of an EVM Transfer (Alchemy's
+  `log.logIndex`) and the block-wide event index of a TRON one; the output index (vout) on Bitcoin and
+  Litecoin (the QuickNode filter function reports it); on Solana the account index of a lamport credit
+  and 256 plus the lowest changed token account index of a token credit (`pkg/solanacredit`, read from
+  `getBlock` balances by the scanner and from `accountData` by the Helius push).
+  `models.Transaction.LogIndex` has no ORM default, so position 0 is stored as 0; withdrawals, sweeps
+  and gas seeds keep `-1` (`models.TransactionLogIndexNone`). Both sources record through
+  `depositrecord.Record`, which takes the transaction's advisory lock
+  (`LockTransactionDeposits`, in one database transaction) so the scanner and the push never decide on
+  one transaction at once, reads its deposit rows and inserts only when none of them is the transfer
+  (same recipient, token contract and amount): a row at the same position (another transfer there is
+  `position_taken`, logged at warning level: two contract-made native transfers of one EVM
+  transaction record the first); the transfer recorded from another block (the transaction was mined
+  again after a reorganization, where EVM and TRON positions differ); the transfer recorded by the
+  other source (`source` `chain` vs `deposit_ingest`) at a position where this source reports no such
+  transfer itself (each source passes the transfers it reports for the transaction, so a twin transfer
+  the other source left out is still recorded); a unique violation. A row the scanner recorded before
+  positions existed is at `-1` whatever the transfer was; a positioned transfer of the same source
+  claims it (`ClaimDepositPosition` moves it to the position, keeping its id, so its delivered
+  webhooks are not sent again), each old row claimed once. No migration rewrote those rows: only the
+  native value position can be read from a stored row, and it already is `-1`; `scan:deposits <chain>
+  --tx <hash>` moves an old row to its position and records the transfers of that transaction the
+  one-per-transaction rule left out. A pushed item whose position cannot be read (an Alchemy token
+  activity without its log index, a QuickNode output without its vout, a Helius transaction whose
+  balances cannot be placed) is skipped and logged, the rest of the push is kept, and the scanner
+  records it. — guarded by `app/services/depositrecord/record_test.go`,
+  `app/services/deposit/transfer_positions_test.go`
   (`TestScan_Block_RecordsATransactionThatPaysTwoWatchedAddressesAsTwoDeposits`,
-  `TestPush_And_Scan_RecordOneDepositForOneTransfer`,
+  `TestPush_And_Scan_RecordOneDepositForOneTransfer`, `TestRecord_ConcurrentScanAndPushOfOneTransferKeepOneRow`,
   `TestScan_Block_MovesTheOldRowOfATransactionToItsPositionAndRecordsWhatItLeftOut`, ...), the
   `transfer_positions_test.go` of the EVM, Bitcoin and Solana adapters,
-  `TestHelius_ParsePayload_FindsTheScannersCreditsAtTheScannersPositions` and
-  `TestCreate_Deposit_StoresPositionZero` (`tests/feature/repositories`).
+  `TestHelius_ParsePayload_FindsTheScannersCreditsAtTheScannersPositions`,
+  `TestCreate_Deposit_StoresPositionZero` and
+  `TestLock_TransactionDeposits_IsHeldUntilTheTransactionEnds` (`tests/feature/repositories`).
 
 ### 8. Database and migrations
 
@@ -876,11 +884,11 @@ fails the block, which is retried and then kept pending. Per successful transact
   owner and mint; an owner whose total of a mint the chain's token registry lists rose is credited that
   increase (base units, `uiTokenAmount.amount`), with the token row (symbol, mint as contract, the row's
   decimals; a mint reporting other decimals is logged). The sender is the owner whose holding of that
-  mint fell most (the fee payer when none fell, a mint). The log index is the number of account keys
-  plus the lowest index among the credited owner's token accounts of that mint whose balance changed
-  (an account the transaction lists without moving it is left out, as the Helius push leaves it out),
-  so two mints or two owners in one transaction never share a log index with each other or with a
-  lamport credit. Moving tokens between two accounts
+  mint fell most (the fee payer when none fell, a mint). The log index is 256 (the most account keys a
+  transaction can have) plus the lowest index among the credited owner's token accounts of that mint
+  whose balance changed (an account the transaction lists without moving it is left out, as the Helius
+  push leaves it out), so two mints or two owners in one transaction never share a log index with each
+  other or with a lamport credit. Moving tokens between two accounts
   of one owner credits nothing. The deposit's `to_address` is the owner (the wallet address), never the
   token account. A registered mint that is not a public key fails every scan of the chain, and a
   registered balance without an owner, with an index past the keys or an amount that is not a base-unit
@@ -889,15 +897,16 @@ fails the block, which is retried and then kept pending. Per successful transact
 Each credit to a watched address is its own deposit (see §7, "One deposit row per transfer"). The
 Helius push reads the same balances from `accountData` (every account key in key order, with
 `nativeBalanceChange` and the signed `rawTokenAmount` of each changed token account) and finds the same
-credits at the same positions; it skips a transaction with a `transactionError` and refuses one it
-cannot place (no `accountData`, a token account not among the accounts, an amount that is not a
-base-unit integer). A public devnet endpoint allows 6 `getBlock` calls per 10 s per IP
+credits at the same positions; it skips a transaction with a `transactionError`, and logs and skips one
+it cannot place (no `accountData`, a token account not among the accounts or listed twice, an amount
+that is not a base-unit integer). The parity is tested on a recorded `getBlock` transaction rewritten
+in the Helius shape, not yet on a recorded Helius webhook. A public devnet endpoint allows 6 `getBlock` calls per 10 s per IP
 (`x-ratelimit-method-limit: 6`, measured on 2026-10-18), about 0.6 slots per second against 2.5 produced:
 it can never keep up, whatever the pace (see "Deposit scan pacing"); scan `sol` with a keyed RPC. —
 guarded by `app/adapters/chain/solana/scan_spl_test.go` (devnet slots 512232469 and 512232636 recorded in
 `testdata/solana`, with the -32015 answer to a version-0 request), `scan_test.go`,
 `TestRegister_ActiveChains_SolanaScansTheRegisteredSPLTokens`,
-`TestSolana_Deposit_RecordsAnSPLCreditWithItsSymbolAndMint` and `app/services/chain/solana_credits_test.go`.
+`TestSolana_Deposit_RecordsAnSPLCreditWithItsSymbolAndMint` and `pkg/solanacredit/credits_test.go`.
 
 ### Deposit scan pacing
 

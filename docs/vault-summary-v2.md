@@ -371,10 +371,10 @@ completa menos alguns minutos e segue `next_cursor` até `null`.
 
 Uma transação on-chain pode gerar mais de um depósito (um pagamento em lote a dois endereços, duas
 transferências de token para o mesmo endereço, duas saídas Bitcoin): cada depósito tem o seu
-`transaction_id`, que é a chave de crédito, e os mesmos `tx_hash` com `log_index` diferentes. `log_index` é a
-posição da transferência na transação: `-1` para o valor nativo de uma transação EVM, TRON ou XRP, o índice do
-log `Transfer` (EVM e TRON), o índice da saída (`vout`, Bitcoin e Litecoin) ou a posição da conta creditada
-(Solana). Um depósito registado antes desta regra mantém `-1` até a transação ser varrida de novo, quando passa
+`transaction_id`, que é a chave de crédito, e os mesmos `tx_hash` com `log_index` diferentes. `log_index`
+distingue a transferência das outras da mesma transação: `-1` para o valor nativo de uma transação EVM, TRON
+ou XRP, o índice do log `Transfer` no bloco (EVM e TRON), o índice da saída (`vout`, Bitcoin e Litecoin) ou a
+posição da conta creditada (Solana). Um depósito registado antes desta regra mantém `-1` até a transação ser varrida de novo, quando passa
 a ter a sua posição sem mudar de `transaction_id`. Nunca deduplique por `tx_hash`.
 
 Cada item (também em `GET /api/v1/transactions/{id}` e `GET /api/v1/users/{external_id}/transactions`) traz,
