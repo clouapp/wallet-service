@@ -24,6 +24,9 @@ const (
 	NetworkBSCTestnet      = "bsc-testnet"
 	NetworkTronMainnet     = "tron-mainnet"
 	NetworkTronNile        = "tron-nile"
+	// NetworkTronShasta is TRON's Shasta testnet: no chain record is on it; it is
+	// named so an endpoint serving it is refused by name.
+	NetworkTronShasta      = "tron-shasta"
 	NetworkLitecoinMainnet = "litecoin-mainnet"
 	NetworkLitecoinTestnet = "litecoin-testnet"
 	// NetworkXRPLMainnet and NetworkXRPLTestnet are the XRP Ledger networks.
@@ -98,11 +101,12 @@ var solanaGenesisHashes = map[string]string{
 }
 
 // Block 0 ids of the TRON networks (/wallet/getblockbynum num 0, read on 2026-10-20
-// from api.trongrid.io and nile.trongrid.io): they tell which network a java-tron
-// HTTP endpoint serves, whatever its host says.
+// from api.trongrid.io, nile.trongrid.io and api.shasta.trongrid.io): they tell
+// which network a java-tron HTTP endpoint serves, whatever its host says.
 var tronGenesisBlockIDs = map[string]string{
 	NetworkTronMainnet: "00000000000000001ebf88508a03865c71d452e25f4d51194196a1d22b6653dc",
 	NetworkTronNile:    "0000000000000000d698d4192c56cb6be724a558448e2684802de4d6cd8690dc",
+	NetworkTronShasta:  "0000000000000000de1aa88295e1fcf982742f773e0419c5a9c134c994a9059e",
 }
 
 // network_id of the XRP Ledger networks, as server_info reports it (read on
@@ -123,6 +127,7 @@ var testnetNetworks = map[string]struct{}{
 	NetworkArbitrumSepolia: {},
 	NetworkBSCTestnet:      {},
 	NetworkTronNile:        {},
+	NetworkTronShasta:      {},
 	NetworkLitecoinTestnet: {},
 	NetworkXRPLTestnet:     {},
 }

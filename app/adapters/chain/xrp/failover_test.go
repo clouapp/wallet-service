@@ -243,9 +243,20 @@ func TestXRP_NetworkID_IsTheServersNetworkID(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "1", id)
 
-	silent := newRippledEndpoint(t, `null`, rippled(http.StatusOK, "{}"))
+	silent := newRippledEndpoint(t, `null`, rippled(http.StatusOK, rippledError("lgrNotFound")))
 	_, err = NetworkID(context.Background(), silent.server.URL)
-	require.Error(t, err, "a server that does not say its network is not taken for mainnet")
+	require.Error(t, err, "a server that does not say its network, nor holds mainnet's history, is not taken for mainnet")
+
+	fullHistory := newRippledEndpoint(t, `null`, rippled(http.StatusOK,
+		`{"result":{"status":"success","validated":true,"ledger_hash":"`+xrpMainnetFirstLedgerHash+`","ledger":{"ledger_index":"32570"}}}`))
+	id, err = NetworkID(context.Background(), fullHistory.server.URL)
+	require.NoError(t, err)
+	assert.Equal(t, models.XRPLNetworkID(models.NetworkXRPLMainnet), id, "mainnet's first full-history ledger proves mainnet")
+
+	otherHistory := newRippledEndpoint(t, `null`, rippled(http.StatusOK,
+		`{"result":{"status":"success","validated":true,"ledger_hash":"`+strings.Repeat("AB", 32)+`"}}`))
+	_, err = NetworkID(context.Background(), otherHistory.server.URL)
+	require.Error(t, err)
 }
 
 func TestXRP_ReplaceEndpoints_PointsLaterReadsAtTheNewList(t *testing.T) {

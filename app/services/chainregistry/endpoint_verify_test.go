@@ -160,6 +160,16 @@ func TestVerify_Endpoint_AsksTRONAndXRPThroughTheirAdaptersProber(t *testing.T) 
 	}
 }
 
+func TestVerify_Endpoint_NamesAShastaEndpointAndRefusesItForEveryRecord(t *testing.T) {
+	shasta := models.TronGenesisBlockID(models.NetworkTronShasta)
+	useProber(t, models.AdapterTypeTron, fakeProber{networks: map[string]string{"https://api.shasta.example": shasta}})
+	for _, record := range []string{models.NetworkTronNile, models.NetworkTronMainnet} {
+		served, err := VerifyEndpoint(context.Background(), models.AdapterTypeTron, EndpointTarget{Network: record}, "https://api.shasta.example")
+		require.ErrorIs(t, err, chain.ErrWrongNetwork, record)
+		assert.Equal(t, models.NetworkTronShasta, served)
+	}
+}
+
 func TestVerify_Endpoint_RefusesTRONWhenItsAdapterIsNotLinked(t *testing.T) {
 	useProber(t, models.AdapterTypeTron, nil)
 	_, err := VerifyEndpoint(context.Background(), models.AdapterTypeTron, EndpointTarget{Network: models.NetworkTronNile}, "https://same.example")

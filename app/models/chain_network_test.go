@@ -171,7 +171,7 @@ func TestSolana_GenesisHash_NamesEachClusterBothWays(t *testing.T) {
 }
 
 func TestTron_GenesisBlockID_NamesEachNetworkBothWays(t *testing.T) {
-	for _, network := range []string{NetworkTronMainnet, NetworkTronNile} {
+	for _, network := range []string{NetworkTronMainnet, NetworkTronNile, NetworkTronShasta} {
 		id := TronGenesisBlockID(network)
 		if len(id) != 64 || TronNetworkOfGenesis(strings.ToUpper(id)) != network {
 			t.Fatalf("%s: genesis block %q names %q", network, id, TronNetworkOfGenesis(id))

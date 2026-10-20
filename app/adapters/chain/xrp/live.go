@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/macrowallets/waas/app/adapters/chain/rpc"
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/addressing"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/amount"
@@ -110,9 +111,17 @@ func (a *Live) Endpoint() string {
 	return a.endpoints.Endpoint()
 }
 
+// Mainnet's first full-history ledger and its hash (read on 2026-10-20 from
+// xrplcluster.com and s1.ripple.com): a server that holds it is on mainnet.
+const (
+	xrpMainnetFirstLedger     = 32570
+	xrpMainnetFirstLedgerHash = "4109C6F2045FC7EFF4CDE8F9905D19C28820D86304080FF886B299F0206E42B5"
+)
+
 // NetworkID is the network_id (decimal) the rippled server rawURL reports in
 // server_info: it names the network (models.XRPLNetworkID). A server that does not
-// report one is an error, never taken for mainnet (0).
+// report one is on mainnet (0) only when it holds mainnet's first full-history
+// ledger (validated, with its hash); any other is an error, never taken for mainnet.
 func NetworkID(ctx context.Context, rawURL string) (string, error) {
 	return NewLive(Config{RPCURL: rawURL}).networkIDOf(ctx, rawURL)
 }
@@ -139,11 +148,48 @@ func (a *Live) networkIDOf(ctx context.Context, rawURL string) (string, error) {
 	if info.Status != "success" {
 		return "", fmt.Errorf("xrp server_info: %s", xrpErrorCode(info.xrpRPCError))
 	}
+	if info.Info.NetworkID == "" {
+		return a.mainnetByHistory(ctx, rawURL)
+	}
 	id, err := nonNegativeJSON(info.Info.NetworkID)
 	if err != nil {
 		return "", fmt.Errorf("xrp server_info network_id: %w", err)
 	}
 	return strconv.FormatUint(id, 10), nil
+}
+
+// mainnetByHistory is "0" when rawURL holds mainnet's first full-history ledger,
+// validated with its hash; else an error: the server's network is not known.
+func (a *Live) mainnetByHistory(ctx context.Context, rawURL string) (string, error) {
+	body, err := json.Marshal(xrpRPCRequest{Method: "ledger", Params: []any{map[string]any{
+		"ledger_index": xrpMainnetFirstLedger, "transactions": false, "expand": false,
+	}}})
+	if err != nil {
+		return "", err
+	}
+	result, _, err := a.exchange(ctx, rawURL, "ledger", body, xrpRPCMaxResponseBytes)
+	if err != nil {
+		return "", fmt.Errorf("xrp server_info reports no network_id and mainnet's history cannot be read: %w", httpclient.RedactURL(err, rawURL))
+	}
+	var ledger struct {
+		xrpRPCError
+		Validated  bool   `json:"validated"`
+		LedgerHash string `json:"ledger_hash"`
+		Ledger     struct {
+			LedgerHash string `json:"ledger_hash"`
+		} `json:"ledger"`
+	}
+	if decodeErr := decodeXRPResult("ledger", result, &ledger); decodeErr != nil {
+		return "", decodeErr
+	}
+	hash := ledger.LedgerHash
+	if hash == "" {
+		hash = ledger.Ledger.LedgerHash
+	}
+	if ledger.Status != "success" || !ledger.Validated || !strings.EqualFold(hash, xrpMainnetFirstLedgerHash) {
+		return "", fmt.Errorf("xrp server_info reports no network_id and the server does not hold mainnet's ledger %d", xrpMainnetFirstLedger)
+	}
+	return models.XRPLNetworkID(models.NetworkXRPLMainnet), nil
 }
 
 func (a *Live) ID() string                    { return a.cfg.ChainIDStr }
