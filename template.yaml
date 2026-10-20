@@ -141,7 +141,11 @@ Resources:
             Path: /health
             Method: GET
 
-  # --- Deposit Scanner (runs every 10s via EventBridge) ---
+  # --- Deposit Scanner (on demand only, no schedule) ---
+  # Deposit scanning is not scheduled here. EventBridge rates start at 1 minute,
+  # while the scan loops pace each chain in seconds (LOCAL_DEPOSIT_SCAN_INTERVAL_SECONDS)
+  # in the long-running worker service of docs/PRODUCTION_RUNTIME.md, which scans
+  # every chain. The function stays for one-off invocations with {"chain": "<id>"}.
   DepositScannerFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -158,35 +162,6 @@ Resources:
       Policies:
         - SQSSendMessagePolicy:
             QueueName: !GetAtt WebhookQueue.QueueName
-      Events:
-        ScheduleEth:
-          Type: Schedule
-          Properties:
-            Name: !Sub "vault-scan-eth-${Environment}"
-            Schedule: rate(15 seconds)
-            Input: '{"chain": "eth"}'
-            Enabled: true
-        SchedulePolygon:
-          Type: Schedule
-          Properties:
-            Name: !Sub "vault-scan-polygon-${Environment}"
-            Schedule: rate(5 seconds)
-            Input: '{"chain": "polygon"}'
-            Enabled: true
-        ScheduleSolana:
-          Type: Schedule
-          Properties:
-            Name: !Sub "vault-scan-sol-${Environment}"
-            Schedule: rate(5 seconds)
-            Input: '{"chain": "sol"}'
-            Enabled: true
-        ScheduleBitcoin:
-          Type: Schedule
-          Properties:
-            Name: !Sub "vault-scan-btc-${Environment}"
-            Schedule: rate(1 minute)
-            Input: '{"chain": "btc"}'
-            Enabled: true
 
   # --- Webhook Delivery Worker ---
   WebhookWorkerFunction:
@@ -219,8 +194,6 @@ Resources:
     Properties:
       FunctionName: !Sub "vault-confirmation-tracker-${Environment}"
       Handler: bootstrap
-      Runtime: provided.al2023
-      Architectures: [arm64]
       CodeUri: .
       MemorySize: 256
       Timeout: 60
@@ -252,8 +225,6 @@ Resources:
     Properties:
       FunctionName: !Sub "vault-webhook-reconciler-${Environment}"
       Handler: bootstrap
-      Runtime: provided.al2023
-      Architectures: [arm64]
       CodeUri: .
       MemorySize: 256
       Timeout: 300
@@ -273,32 +244,6 @@ Resources:
             Name: !Sub "vault-webhook-reconciler-${Environment}"
             Schedule: rate(1 day)
             Enabled: true
-
-  # --- Withdrawal Processor ---
-  WithdrawalWorkerFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: go1.x
-    Properties:
-      FunctionName: !Sub "vault-withdrawal-worker-${Environment}"
-      Handler: bootstrap
-      CodeUri: .
-      Timeout: 60
-      MemorySize: 512
-      Environment:
-        Variables:
-          LAMBDA_MODE: withdrawal_worker
-      Policies:
-        - SQSSendMessagePolicy:
-            QueueName: !GetAtt WebhookQueue.QueueName
-      Events:
-        SQSEvent:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt WithdrawalQueue.Arn
-            BatchSize: 1
-            FunctionResponseTypes:
-              - ReportBatchItemFailures
 
   # =========================================================================
   # SQS Queues
@@ -323,6 +268,9 @@ Resources:
       MessageRetentionPeriod: 1209600       # 14 days
 
   # --- Withdrawal Processing Queue ---
+  # No producer and no consumer: withdrawals are signed and broadcast inside the
+  # request, and main.go has no withdrawal mode. Kept with the names and settings
+  # template.dev.yaml deploys; see docs/PRODUCTION_RUNTIME.md (decision D8).
   WithdrawalQueue:
     Type: AWS::SQS::Queue
     Properties:

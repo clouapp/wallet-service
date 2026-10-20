@@ -83,7 +83,8 @@ func registerVault() {
 			"confirmation_interval_seconds": envInt("LOCAL_CONFIRMATION_INTERVAL_SECONDS", 30),
 			"delivery_interval_seconds":     envInt("LOCAL_WEBHOOK_DELIVERY_INTERVAL_SECONDS", 5),
 			// Comma-separated chain ids scanned for deposits locally (e.g. "sol"); empty
-			// leaves deposit detection to the deposit_scanner Lambda.
+			// scans no chain in this process (template.yaml schedules no deposit_scanner
+			// run; see docs/PRODUCTION_RUNTIME.md).
 			"deposit_scan_chains":           envString("LOCAL_DEPOSIT_SCAN_CHAINS", ""),
 			"deposit_scan_interval_seconds": envInt("LOCAL_DEPOSIT_SCAN_INTERVAL_SECONDS", 5),
 			// Wallet balance read model refresh of every registered chain; 0 turns it off.
