@@ -328,6 +328,37 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `app/services/deposit/failure_test.go`, `TestScan_Block_FailsTheBlockWhenGetLogsFailsOnEveryEVMChain`,
   `TestRegister_ActiveChains_EVMBlockWhoseLogsFailGoesPending` and
   `TestScan_Block_EVMBlockWhoseReceiptsCannotBeReadGoesPendingAndRecordsOnRetry`.
+- **One deposit row per transfer, with its own transaction id.** A transaction that pays two
+  watched addresses, or one address twice, is as many deposits. A deposit is (chain, tx_hash,
+  log_index), the unique deposit index (migration 430); `log_index` is the transfer's position in its
+  transaction (`types.DetectedTransfer.LogIndex`), which the scanner and the provider push compute
+  alike: `-1` (`types.NativeValuePosition`) for the native value of an EVM, TRON or XRP transaction
+  (an Alchemy internal transfer takes it too: two in one transaction record the first); the log index
+  of an EVM Transfer (Alchemy's `log.logIndex`) and the block-wide event index of a TRON one; the
+  output index (vout) on Bitcoin and Litecoin (the QuickNode filter function reports it); on Solana the
+  account index of a lamport credit and the account count plus the lowest changed token account index
+  of a token credit (`chain.SolanaLamportCredits`/`SolanaTokenCredits`, read from `getBlock` balances by
+  the scanner and from `accountData` by the Helius push). `models.Transaction.LogIndex` has no ORM
+  default, so position 0 is stored as 0; withdrawals, sweeps and gas seeds keep `-1`
+  (`models.TransactionLogIndexNone`). Both sources record through `depositrecord.Record`, which reads
+  the transaction's deposit rows and inserts only when none of them is the transfer: a row at the same
+  position; any row recorded from another block (the transaction was mined again after a
+  reorganization, where EVM and TRON positions differ: its transfers are already recorded); a row of
+  the other source (`source` `chain` vs `deposit_ingest`) with the same recipient, token contract and
+  amount at another position; a unique violation on insert. A row the scanner recorded before
+  positions existed is at `-1` whatever the transfer was; a positioned transfer of the same source and
+  the same recipient, token contract and amount claims it (`ClaimDepositPosition` moves it to the
+  position, keeping its id, so its delivered webhooks are not sent again), each old row claimed once.
+  No migration rewrote those rows: only the native value position can be read from a stored row, and
+  it already is `-1`; `scan:deposits <chain> --tx <hash>` moves an old row to its position and records
+  the transfers of that transaction the one-per-transaction rule left out. — guarded by
+  `app/services/depositrecord/record_test.go`, `app/services/deposit/transfer_positions_test.go`
+  (`TestScan_Block_RecordsATransactionThatPaysTwoWatchedAddressesAsTwoDeposits`,
+  `TestPush_And_Scan_RecordOneDepositForOneTransfer`,
+  `TestScan_Block_MovesTheOldRowOfATransactionToItsPositionAndRecordsWhatItLeftOut`, ...), the
+  `transfer_positions_test.go` of the EVM, Bitcoin and Solana adapters,
+  `TestHelius_ParsePayload_FindsTheScannersCreditsAtTheScannersPositions` and
+  `TestCreate_Deposit_StoresPositionZero` (`tests/feature/repositories`).
 
 ### 8. Database and migrations
 
@@ -825,7 +856,7 @@ The confirmation tracker (and the confirmation step of each scan cycle) confirms
 
 ### XRP deposits
 
-`ScanBlock` on `xrp`/`txrp` reads one validated ledger (rippled `ledger`, `transactions` and `expand` true; API v1 `metaData` and API v2 `tx_json`/`meta` shapes) and reports, in ledger order (`TransactionIndex`), every `Payment` with `meta.TransactionResult` `tesSUCCESS` that delivered XRP to another account: the amount is `meta.delivered_amount` in drops (a partial payment credits what arrived, never `Amount`), `From` is `Account`, `To` is `Destination`, and `DestinationTag` is carried to `transactions.destination_tag` and to the `deposit.*` webhooks (`destination_tag`, omitted without a tag and on other chains). Not deposits: `tec…` payments, issued-currency or MPT deliveries (an object `delivered_amount`; the token registry does not model XRPL issued currencies), payments an account makes to itself, and every other type, including `CheckCash`, `EscrowFinish`, `PaymentChannelClaim` and `AccountDelete`, which can also deliver XRP. A ledger that is not validated, not closed, not the one asked for, without its transactions list, with a transaction not expanded or without metadata, or a payment whose `delivered_amount` is missing or `unavailable`, is an error, never an empty ledger, so the engine retries it and then keeps it pending. An XRP withdrawal is a `Payment` from the base address to its destination, so it is a deposit only when that destination is itself a watched address (as on every chain). The head is the validated ledger, so with 1 required confirmation a deposit is confirmed on the cycle that records it (tip − ledger + 1). A scanner runs only where one is scheduled for the chain: the local workers scan the chains in `LOCAL_DEPOSIT_SCAN_CHAINS` (`xrp`/`txrp` must be listed), the SAM `deposit_scanner` schedules (`template.yaml`) list no XRP chain, and `artisan scan:deposits` scans on demand; the first cycle starts at the head, without history. A ledger closes every 3–5 s, so the default windows (`DEPOSIT_SCAN_BATCH_BLOCKS` 50, `DEPOSIT_SCAN_CATCH_UP_BLOCKS` 500, 8 ledgers fetched at a time) are about 3–4 minutes and 30–40 minutes of ledgers; a ledger the load-balanced public servers do not have yet answers `lgrNotFound` and is retried. — guarded by `TestLive_ScanBlock_*` (`app/adapters/chain/xrp/scan_test.go`, altnet ledgers recorded in `testdata/xrpl`) and `TestXRP_Deposit_*` (`app/services/deposit/xrp_deposit_test.go`).
+`ScanBlock` on `xrp`/`txrp` reads one validated ledger (rippled `ledger`, `transactions` and `expand` true; API v1 `metaData` and API v2 `tx_json`/`meta` shapes) and reports, in ledger order (`TransactionIndex`), every `Payment` with `meta.TransactionResult` `tesSUCCESS` that delivered XRP to another account, at the native value position (`-1`, one Payment per transaction): the amount is `meta.delivered_amount` in drops (a partial payment credits what arrived, never `Amount`), `From` is `Account`, `To` is `Destination`, and `DestinationTag` is carried to `transactions.destination_tag` and to the `deposit.*` webhooks (`destination_tag`, omitted without a tag and on other chains). Not deposits: `tec…` payments, issued-currency or MPT deliveries (an object `delivered_amount`; the token registry does not model XRPL issued currencies), payments an account makes to itself, and every other type, including `CheckCash`, `EscrowFinish`, `PaymentChannelClaim` and `AccountDelete`, which can also deliver XRP. A ledger that is not validated, not closed, not the one asked for, without its transactions list, with a transaction not expanded or without metadata, or a payment whose `delivered_amount` is missing or `unavailable`, is an error, never an empty ledger, so the engine retries it and then keeps it pending. An XRP withdrawal is a `Payment` from the base address to its destination, so it is a deposit only when that destination is itself a watched address (as on every chain). The head is the validated ledger, so with 1 required confirmation a deposit is confirmed on the cycle that records it (tip − ledger + 1). A scanner runs only where one is scheduled for the chain: the local workers scan the chains in `LOCAL_DEPOSIT_SCAN_CHAINS` (`xrp`/`txrp` must be listed), the SAM `deposit_scanner` schedules (`template.yaml`) list no XRP chain, and `artisan scan:deposits` scans on demand; the first cycle starts at the head, without history. A ledger closes every 3–5 s, so the default windows (`DEPOSIT_SCAN_BATCH_BLOCKS` 50, `DEPOSIT_SCAN_CATCH_UP_BLOCKS` 500, 8 ledgers fetched at a time) are about 3–4 minutes and 30–40 minutes of ledgers; a ledger the load-balanced public servers do not have yet answers `lgrNotFound` and is retried. — guarded by `TestLive_ScanBlock_*` (`app/adapters/chain/xrp/scan_test.go`, altnet ledgers recorded in `testdata/xrpl`) and `TestXRP_Deposit_*` (`app/services/deposit/xrp_deposit_test.go`).
 
 ### Solana deposits
 
@@ -839,29 +870,34 @@ v0 and v1 transactions read alike. A skipped slot (-32007, -32009) yields no tra
 fails the block, which is retried and then kept pending. Per successful transaction, in block order:
 
 - **SOL**: every account whose lamports rose, except the fee payer, is credited from the fee payer;
-  the log index is the account index. A transaction whose balances do not line up with its keys is
-  logged and skipped.
+  the log index (its position) is the account index. A transaction whose balances do not line up with
+  its keys is logged and skipped.
 - **SPL** (Token and Token-2022 accounts alike): `preTokenBalances`/`postTokenBalances` are netted per
   owner and mint; an owner whose total of a mint the chain's token registry lists rose is credited that
   increase (base units, `uiTokenAmount.amount`), with the token row (symbol, mint as contract, the row's
   decimals; a mint reporting other decimals is logged). The sender is the owner whose holding of that
   mint fell most (the fee payer when none fell, a mint). The log index is the number of account keys
-  plus the credited owner's lowest token account index, so two mints or two owners in one transaction
-  never share a log index with each other or with a lamport credit. Moving tokens between two accounts
+  plus the lowest index among the credited owner's token accounts of that mint whose balance changed
+  (an account the transaction lists without moving it is left out, as the Helius push leaves it out),
+  so two mints or two owners in one transaction never share a log index with each other or with a
+  lamport credit. Moving tokens between two accounts
   of one owner credits nothing. The deposit's `to_address` is the owner (the wallet address), never the
   token account. A registered mint that is not a public key fails every scan of the chain, and a
   registered balance without an owner, with an index past the keys or an amount that is not a base-unit
   integer fails the block, so it is retried instead of marked scanned. Unregistered mints are ignored.
 
-The scanner records one deposit per chain and transaction (`ScannerDepositLogIndex`, the unique deposit
-index): when one transaction pays watched addresses twice (two assets, or two addresses), only the first
-of those transfers in that order is recorded. A public devnet endpoint allows 6 `getBlock` calls per 10 s per IP
+Each credit to a watched address is its own deposit (see §7, "One deposit row per transfer"). The
+Helius push reads the same balances from `accountData` (every account key in key order, with
+`nativeBalanceChange` and the signed `rawTokenAmount` of each changed token account) and finds the same
+credits at the same positions; it skips a transaction with a `transactionError` and refuses one it
+cannot place (no `accountData`, a token account not among the accounts, an amount that is not a
+base-unit integer). A public devnet endpoint allows 6 `getBlock` calls per 10 s per IP
 (`x-ratelimit-method-limit: 6`, measured on 2026-10-18), about 0.6 slots per second against 2.5 produced:
 it can never keep up, whatever the pace (see "Deposit scan pacing"); scan `sol` with a keyed RPC. —
 guarded by `app/adapters/chain/solana/scan_spl_test.go` (devnet slots 512232469 and 512232636 recorded in
 `testdata/solana`, with the -32015 answer to a version-0 request), `scan_test.go`,
-`TestRegister_ActiveChains_SolanaScansTheRegisteredSPLTokens` and
-`TestSolana_Deposit_RecordsAnSPLCreditWithItsSymbolAndMint`.
+`TestRegister_ActiveChains_SolanaScansTheRegisteredSPLTokens`,
+`TestSolana_Deposit_RecordsAnSPLCreditWithItsSymbolAndMint` and `app/services/chain/solana_credits_test.go`.
 
 ### Deposit scan pacing
 
