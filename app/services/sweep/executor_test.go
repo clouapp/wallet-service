@@ -2,6 +2,7 @@ package sweep
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"math/big"
@@ -39,13 +40,24 @@ type fakeTxRepo struct {
 	// recordErr fails RecordBroadcast; recorded holds the raw payload it wrote per row.
 	recordErr error
 	recorded  map[uuid.UUID]string
+	// markFailErrs fails that many MarkFailed calls first.
+	markFailErrs int
 }
 
 func (f *fakeTxRepo) MarkFailed(_ context.Context, id uuid.UUID, reason string) error {
+	if f.markFailErrs > 0 {
+		f.markFailErrs--
+		return errors.New("mark transaction failed: connection refused")
+	}
 	if f.failed == nil {
 		f.failed = map[uuid.UUID]string{}
 	}
 	f.failed[id] = reason
+	for _, row := range f.created {
+		if row.ID == id {
+			row.Status = string(types.TxStatusFailed)
+		}
+	}
 	return nil
 }
 
@@ -1481,11 +1493,11 @@ func (c expiringChain) LastValidBlock(*types.SignedTx) (uint64, error) { return 
 
 func TestBroadcast_RawPayload_KeepsOnlyAKnownLastValidBlock(t *testing.T) {
 	signed := &types.SignedTx{RawBytes: []byte("signed"), TxHash: "sig"}
-	known, err := broadcastRawPayload(expiringChain{MockChain: mocks.NewMockChain("sol"), last: 500}, signed, 0, false)
+	known, err := broadcastRawPayload(expiringChain{MockChain: mocks.NewMockChain("sol"), last: 500}, signed, 0, "")
 	if err != nil || known != `{"`+chain.LastValidBlockPayloadKey+`":500}` {
 		t.Fatalf("payload %s, %v", known, err)
 	}
-	unknown, err := broadcastRawPayload(expiringChain{MockChain: mocks.NewMockChain("sol"), last: 0}, signed, 0, false)
+	unknown, err := broadcastRawPayload(expiringChain{MockChain: mocks.NewMockChain("sol"), last: 0}, signed, 0, "")
 	if err != nil || unknown != "{}" {
 		t.Fatalf("payload %s, %v; want no last valid block when it is not known", unknown, err)
 	}
@@ -1591,5 +1603,207 @@ func TestExecute_Withdrawal_AWithdrawalThatCannotBeLinkedStopsBeforeTheSend(t *t
 	}
 	if sent != 0 || len(txRepo.created) != 0 {
 		t.Fatalf("sent=%d rows=%d: the row and its link commit together, before anything is sent", sent, len(txRepo.created))
+	}
+}
+
+func payloadOf(t *testing.T, raw string) map[string]any {
+	t.Helper()
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		t.Fatalf("raw_payload %q: %v", raw, err)
+	}
+	return payload
+}
+
+// testSealer seals by tagging (tests only); a value without the tag does not open.
+type testSealer struct{ err error }
+
+const testSealTag = "enc:v1:test:"
+
+func (s testSealer) Seal(plaintext string) (string, error) {
+	if s.err != nil {
+		return "", s.err
+	}
+	return testSealTag + plaintext, nil
+}
+
+func (testSealer) Open(stored string) (string, error) {
+	plaintext, ok := strings.CutPrefix(stored, testSealTag)
+	if !ok {
+		return "", errors.New("not sealed")
+	}
+	return plaintext, nil
+}
+
+func TestExecute_Withdrawal_TheRowBeforeTheSendKeepsItsBytesSealedUntilTheSendIsAnswered(t *testing.T) {
+	var atSend map[string]any
+	var txRepo *fakeTxRepo
+	svc, txRepo, baseAddr, walletID := unknownOutcomeService(t, func(context.Context, *types.SignedTx) (string, error) {
+		atSend = payloadOf(t, txRepo.created[0].RawPayload)
+		return "0xsignedhash", nil
+	})
+	svc.sealer = testSealer{}
+	if _, err := svc.ExecutePlan(context.Background(), directWithdrawalPlan(walletID, baseAddr),
+		SigningCredentials{ShareA: []byte("fake-share-a")}, uuid.New(), "0xDEST", "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	if atSend[chain.BroadcastOutcomePayloadKey] != chain.BroadcastOutcomePending || atSend[chain.SignedTxPayloadKey] != testSealTag+hex.EncodeToString([]byte("signed")) {
+		t.Fatalf("payload before the send %v: never answered yet, with the signed bytes sealed for a retry", atSend)
+	}
+	after := payloadOf(t, txRepo.created[0].RawPayload)
+	if after[chain.BroadcastOutcomePayloadKey] != chain.BroadcastOutcomeAccepted || after[chain.SignedTxPayloadKey] != nil {
+		t.Fatalf("payload after the send %v: answered, the bytes dropped", after)
+	}
+
+	sealErr := errors.New("crypt unavailable")
+	svc2, txRepo2, baseAddr2, walletID2 := unknownOutcomeService(t, func(context.Context, *types.SignedTx) (string, error) {
+		t.Fatal("bytes that cannot be kept sealed are never sent")
+		return "", nil
+	})
+	svc2.sealer = testSealer{err: sealErr}
+	if _, err := svc2.ExecutePlan(context.Background(), directWithdrawalPlan(walletID2, baseAddr2),
+		SigningCredentials{ShareA: []byte("fake-share-a")}, uuid.New(), "0xDEST", "user-1"); !errors.Is(err, sealErr) || len(txRepo2.created) != 0 {
+		t.Fatalf("err %v, rows %d: a sealer that fails stops the withdrawal before anything is recorded or sent", err, len(txRepo2.created))
+	}
+}
+
+func TestExecute_Withdrawal_ARefusalMarkIsRetried(t *testing.T) {
+	refused := chain.ClassifyBroadcast(errors.New("insufficient funds for gas * price + value"))
+	svc, txRepo, baseAddr, walletID := unknownOutcomeService(t, func(context.Context, *types.SignedTx) (string, error) { return "", refused })
+	svc.sleep = func(context.Context, time.Duration) error { return nil }
+	txRepo.markFailErrs = len(persistRetryDelays)
+
+	if _, err := svc.ExecutePlan(context.Background(), directWithdrawalPlan(walletID, baseAddr),
+		SigningCredentials{ShareA: []byte("fake-share-a")}, uuid.New(), "0xDEST", "user-1"); err == nil {
+		t.Fatal("a refusal fails the withdrawal")
+	}
+	row := txRepo.created[0]
+	if row.Status != string(types.TxStatusFailed) || txRepo.failed[row.ID] != broadcastRefusedReason {
+		t.Fatalf("row %s failed=%v: the mark is retried until it lands", row.Status, txRepo.failed)
+	}
+	if payloadOf(t, row.RawPayload)[chain.SignedTxPayloadKey] != nil {
+		t.Fatal("the refused bytes are dropped with the mark")
+	}
+
+	svc2, txRepo2, baseAddr2, walletID2 := unknownOutcomeService(t, func(context.Context, *types.SignedTx) (string, error) { return "", refused })
+	svc2.sleep = func(context.Context, time.Duration) error { return nil }
+	txRepo2.markFailErrs = 100
+	if _, err := svc2.ExecutePlan(context.Background(), directWithdrawalPlan(walletID2, baseAddr2),
+		SigningCredentials{ShareA: []byte("fake-share-a")}, uuid.New(), "0xDEST", "user-1"); err == nil {
+		t.Fatal("a refusal fails the withdrawal")
+	}
+	if payload := payloadOf(t, txRepo2.created[0].RawPayload); payload[chain.BroadcastOutcomePayloadKey] != chain.BroadcastOutcomePending {
+		t.Fatalf("payload %v: a row that cannot be marked stays never-answered, so a same-key retry checks it instead of replaying it", payload)
+	}
+}
+
+// unansweredRow is a withdrawal row recorded before a send that was never answered;
+// bytes is its sealed signed_tx ("" keeps none).
+func unansweredRow(bytes string) *models.Transaction {
+	payload := map[string]any{chain.BroadcastOutcomePayloadKey: chain.BroadcastOutcomePending, chain.SenderNoncePayloadKey: 41, chain.BroadcastHeadPayloadKey: 900}
+	if bytes != "" {
+		payload[chain.SignedTxPayloadKey] = bytes
+	}
+	raw, _ := json.Marshal(payload)
+	key := "key-1"
+	return &models.Transaction{ID: uuid.New(), Chain: "eth", TxType: models.TxTypeWithdrawal, TxHash: "0xsignedhash",
+		FromAddress: "0xBASE", Status: string(types.TxStatusConfirming), IdempotencyKey: &key, RawPayload: string(raw)}
+}
+
+var sealedSignedBefore = testSealTag + hex.EncodeToString([]byte("signed-before"))
+
+func settleService(t *testing.T, block uint64, broadcast func(context.Context, *types.SignedTx) (string, error)) (*service, *fakeTxRepo, *mocks.MockChain, *[][]byte) {
+	t.Helper()
+	mockChain := sweepMockChain("eth", "eth")
+	mockChain.GetTransactionBlockVal = block
+	var sent [][]byte
+	mockChain.BroadcastTransactionFn = func(ctx context.Context, signed *types.SignedTx) (string, error) {
+		sent = append(sent, signed.RawBytes)
+		return broadcast(ctx, signed)
+	}
+	registry := chain.NewRegistry()
+	registry.RegisterChain(finalizingChain{MockChain: mockChain})
+	txRepo := &fakeTxRepo{}
+	return &service{registry: registry, txRepo: txRepo, sealer: testSealer{}, sleep: func(context.Context, time.Duration) error { return nil }}, txRepo, mockChain, &sent
+}
+
+func TestSettle_Unanswered_NeverSignsAgainAndFailsOnlyBytesThatCanNeverBeValid(t *testing.T) {
+	answer := func(hash string, err error) func(context.Context, *types.SignedTx) (string, error) {
+		return func(context.Context, *types.SignedTx) (string, error) { return hash, err }
+	}
+	refusal := func(message string) func(context.Context, *types.SignedTx) (string, error) {
+		return answer("", chain.ClassifyBroadcast(chain.Wrap(chain.KindOrProvider(0, message), errors.New(message))))
+	}
+	const (
+		sent       = "sent"
+		unknown    = "unknown"
+		unverified = "unverified"
+		invalid    = "invalid"
+	)
+	cases := []struct {
+		name      string
+		block     uint64
+		bytes     string
+		broadcast func(context.Context, *types.SignedTx) (string, error)
+		want      string
+		resent    bool
+	}{
+		{"an endpoint has it", 120, sealedSignedBefore, nil, sent, false},
+		{"the same bytes are accepted", 0, sealedSignedBefore, answer("0xsignedhash", nil), sent, true},
+		{"the node still holds the same bytes", 0, sealedSignedBefore, refusal("already known"), sent, true},
+		{"the same bytes get an unknown answer", 0, sealedSignedBefore, answer("", chain.ClassifyBroadcast(chain.FromProviderHTTP(502, "bad gateway"))), unknown, true},
+		{"the same bytes reach no node", 0, sealedSignedBefore, answer("", chain.NotSent(errors.New("dial tcp: connection refused"))), unverified, true},
+		{"the nonce was spent (by ours, a lagging read or another)", 0, sealedSignedBefore, refusal("nonce too low"), unknown, true},
+		{"another transaction holds the nonce in the pool", 0, sealedSignedBefore, refusal("replacement transaction underpriced"), unknown, true},
+		{"the pool refuses it for its own reasons", 0, sealedSignedBefore, refusal("txpool is full"), unknown, true},
+		{"the fee cap is below the base fee now", 0, sealedSignedBefore, refusal("max fee per gas less than block base fee"), unknown, true},
+		{"the balance moved (the original may have landed)", 0, sealedSignedBefore, refusal("insufficient funds for gas * price + value"), unknown, true},
+		{"a duplicate the node only remembers by its id (TRON's recent-id cache)", 0, sealedSignedBefore, refusal("tron broadcast refused: DUP_TRANSACTION_ERROR: dup transaction"), unknown, true},
+		{"an adapter's unknown outcome, whatever its text", 0, sealedSignedBefore, answer("", chain.UnknownOutcome(errors.New("already known to one endpoint, not verified"))), unknown, true},
+		{"the signature can never be valid", 0, sealedSignedBefore, refusal("invalid sender"), invalid, true},
+		{"the bytes do not decode", 0, sealedSignedBefore, refusal("rlp: expected input list for types.LegacyTx"), invalid, true},
+		{"the bytes were not kept", 0, "", answer("0xsignedhash", nil), unknown, false},
+		{"the kept bytes do not open", 0, hex.EncodeToString([]byte("signed-before")), answer("0xsignedhash", nil), unknown, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, txRepo, mockChain, resent := settleService(t, tc.block, func(ctx context.Context, signed *types.SignedTx) (string, error) {
+				return tc.broadcast(ctx, signed)
+			})
+			row := unansweredRow(tc.bytes)
+			txRepo.created = append(txRepo.created, row)
+
+			settled, err := svc.SettleUnanswered(context.Background(), row)
+
+			if mockChain.SignTransactionCalls != 0 {
+				t.Fatal("a send never answered is never signed again")
+			}
+			if tc.resent != (len(*resent) == 1) || (tc.resent && string((*resent)[0]) != "signed-before") {
+				t.Fatalf("re-sent %q: only the same bytes are sent again", *resent)
+			}
+			payload := payloadOf(t, row.RawPayload)
+			switch tc.want {
+			case unverified:
+				if !errors.Is(err, ErrSendUnverified) || payload[chain.BroadcastOutcomePayloadKey] != chain.BroadcastOutcomePending {
+					t.Fatalf("err %v, payload %v: nothing is decided while no node was reached", err, payload)
+				}
+			case invalid:
+				if !errors.Is(err, ErrSignedBytesInvalid) || txRepo.failed[row.ID] != broadcastRefusedReason || payload[chain.SignedTxPayloadKey] != nil {
+					t.Fatalf("err %v, failed %v, payload %v: bytes that can never be valid fail the row", err, txRepo.failed, payload)
+				}
+			default:
+				outcome := chain.BroadcastOutcomeAccepted
+				if tc.want == unknown {
+					outcome = chain.BroadcastOutcomeUnknown
+				}
+				if err != nil || settled == nil || txRepo.failed[row.ID] != "" {
+					t.Fatalf("err %v, settled %v, failed %v: the row is replayed as broadcast, never failed", err, settled, txRepo.failed)
+				}
+				if payload[chain.BroadcastOutcomePayloadKey] != outcome || payload[chain.SignedTxPayloadKey] != nil ||
+					payload[chain.SenderNoncePayloadKey] == nil || payload[chain.BroadcastHeadPayloadKey] == nil {
+					t.Fatalf("payload %v: outcome %s, the bytes dropped, the nonce proof's inputs kept", payload, outcome)
+				}
+			}
+		})
 	}
 }

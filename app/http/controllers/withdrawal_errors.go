@@ -8,6 +8,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/chainregistry"
+	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/withdraw"
 )
 
@@ -69,6 +70,9 @@ func mapWithdrawalExecuteError(ctx http.Context, err error) http.Response {
 		return responses.Error(ctx, http.StatusUnprocessableEntity, responses.CodeUnprocessable, withdraw.ErrInsufficientFunds.Error())
 	case errors.Is(err, withdraw.ErrConcurrentWithdraw):
 		return responses.Error(ctx, http.StatusConflict, responses.CodeConflict, withdraw.ErrConcurrentWithdraw.Error())
+	case errors.Is(err, sweep.ErrSendUnverified):
+		// An earlier try's transfer may be on its way: the client retries later.
+		return responses.Error(ctx, http.StatusConflict, responses.CodeConflict, sweep.ErrSendUnverified.Error())
 	case errors.Is(err, withdraw.ErrTooManyAttempts):
 		return responses.Error(ctx, http.StatusTooManyRequests, responses.CodeTooManyRequests, withdraw.ErrTooManyAttempts.Error())
 	default:
