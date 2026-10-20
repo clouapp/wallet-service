@@ -24,13 +24,14 @@ func (p directProvider) blockHash(ctx context.Context, height uint64) (string, e
 	}
 	hash, err := p.readBlockHash(ctx, height)
 	if err != nil {
-		return "", fmt.Errorf("btc block %d hash: %w", height, err)
+		return "", unsupportedWhenMethodNotFound(fmt.Errorf("btc block %d hash: %w", height, err))
 	}
 	return normalizeBTCHash(hash, "block hash")
 }
 
 // readBlockHash asks the endpoint for the hash at height: Esplora's GET
-// /block-height/:height or bitcoind's getblockhash.
+// /block-height/:height or bitcoind's getblockhash. Errors are the endpoint's as
+// they came: the genesis check (genesisHash) counts each against the provider.
 func (p directProvider) readBlockHash(ctx context.Context, height uint64) (string, error) {
 	if p.live.restAPI {
 		body, err := p.live.esploraGet(ctx, fmt.Sprintf("/block-height/%d", height))
@@ -41,7 +42,7 @@ func (p directProvider) readBlockHash(ctx context.Context, height uint64) (strin
 	}
 	var hash string
 	if err := p.live.rpc.Call(ctx, "getblockhash", &hash, height); err != nil {
-		return "", unsupportedWhenMethodNotFound(err)
+		return "", err
 	}
 	return hash, nil
 }
