@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -244,12 +245,12 @@ func startLocalWorkers(ctx context.Context) lifecycle.Workers {
 	}
 	var stream localworkers.DepositStream
 	if facades.Config().GetBool("vault.local_workers.xrp_stream_enabled") {
-		listener, err := xrpDepositStream()
+		listener, err := xrpDepositStream(cfg.DepositScanChains)
 		if err != nil {
-			slog.Error("local workers not started: the xrp deposit stream is enabled but not configured", "error", err)
-			return nil
+			slog.Error("xrp deposit stream not started: enabled but not configured; the other local workers run", "error", err)
+		} else {
+			stream, cfg.DepositStreamChain = listener, facades.Config().GetString("vault.local_workers.xrp_stream_chain")
 		}
-		stream, cfg.DepositStreamChain = listener, facades.Config().GetString("vault.local_workers.xrp_stream_chain")
 	}
 	loops, err := localworkers.Start(ctx, cfg, localworkers.Workers{
 		Checker:       deposits,
@@ -269,23 +270,30 @@ func startLocalWorkers(ctx context.Context) lifecycle.Workers {
 
 // xrpDepositStream is the real-time XRP deposit listener of
 // vault.local_workers.xrp_stream_chain over the WebSocket endpoint
-// xrp_stream_url (never logged). The chain must be an XRP chain of the registry.
-func xrpDepositStream() (*xrpstream.Service, error) {
+// xrp_stream_url (never logged). The chain must be an XRP chain of the registry
+// that the local workers also scan (the ledger scan stays the guarantee).
+func xrpDepositStream(scanChains []string) (*xrpstream.Service, error) {
 	chainID := facades.Config().GetString("vault.local_workers.xrp_stream_chain")
 	adapter, err := registry.Chain(chainID)
 	if err != nil {
 		return nil, err
 	}
-	if _, ok := adapter.(*xrpchain.Live); !ok {
+	live, ok := adapter.(*xrpchain.Live)
+	if !ok {
 		return nil, errors.New("LOCAL_XRP_STREAM_CHAIN " + chainID + " is not an XRP chain")
+	}
+	if !slices.Contains(scanChains, chainID) {
+		return nil, errors.New("LOCAL_XRP_STREAM_CHAIN " + chainID + " is not in LOCAL_DEPOSIT_SCAN_CHAINS")
 	}
 	url := strings.TrimSpace(facades.Config().GetString("vault.local_workers.xrp_stream_url"))
 	if url == "" {
 		return nil, errors.New("LOCAL_XRP_STREAM_URL is empty")
 	}
 	return xrpstream.NewService(xrpstream.Deps{
-		ChainID:        chainID,
-		Dialer:         xrpchain.NewStreamDialer(xrpchain.StreamConfig{ChainIDStr: chainID, NativeSymbol: adapter.NativeAsset(), URL: url}),
+		ChainID: chainID,
+		Dialer: xrpchain.NewStreamDialer(xrpchain.StreamConfig{
+			ChainIDStr: chainID, NativeSymbol: adapter.NativeAsset(), URL: url, IsTestnet: live.IsTestnet(),
+		}),
 		Addresses:      container.MustMake[*repositories.AddressRepository](),
 		Deposits:       deposits,
 		AddressRefresh: time.Duration(facades.Config().GetInt("vault.local_workers.xrp_stream_address_refresh_seconds")) * time.Second,
