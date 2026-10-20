@@ -84,6 +84,8 @@ type transactionStore interface {
 	FindConfirmedDepositsMissingEvent(ctx context.Context, eventType string, from, to time.Time, chainIDs []string, limit int) ([]models.Transaction, error)
 	FindConfirmedNativeDeposits(ctx context.Context, chainID string, since time.Time, afterID uuid.UUID, limit int) ([]models.Transaction, error)
 	SetBlockNumber(ctx context.Context, id uuid.UUID, block uint64) error
+	// SetBlock records the block number and hash of a deposit a reorganization moved.
+	SetBlock(ctx context.Context, id uuid.UUID, block uint64, blockHash string) error
 	SetFee(ctx context.Context, id uuid.UUID, fee string) error
 	RecordConfirmations(ctx context.Context, id uuid.UUID, confirmations int, status string, confirmedAt *time.Time) error
 	MarkFailed(ctx context.Context, id uuid.UUID, reason string) error

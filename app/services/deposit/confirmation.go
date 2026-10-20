@@ -131,11 +131,13 @@ func (s *Service) updateConfirmations(ctx context.Context, chainID string, adapt
 // currentBlock and confirms it by the finality policy it was recorded under (see
 // reachedConfirmation). The chain's finalized or solidified block is read at most
 // once per call, which is once per chain per tracker pass. A deposit sends
-// deposit.confirming as its count rises (confirmingProgress) and deposit.confirmed once.
+// deposit.confirming as its count rises (confirmingProgress) and deposit.confirmed once,
+// after its block has passed the reorganization check (depositBlockAllowsConfirmation).
 func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, currentBlock uint64, pending []models.Transaction) error {
 	confirmedWallets := newWalletSet()
 	defer func() { s.refreshBalances(ctx, confirmedWallets.ids) }()
 	finality := newFinalityHeights(adapter)
+	hashes := newCanonicalHashes(adapter)
 	for _, tx := range pending {
 		if tx.BlockNumber == 0 {
 			if !isOutboundTxType(tx.TxType) {
@@ -192,6 +194,9 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 		}
 
 		confirmedNow := newStatus == string(types.TxStatusConfirmed) && tx.Status != string(types.TxStatusConfirmed)
+		if confirmedNow && !s.depositBlockAllowsConfirmation(ctx, adapter, hashes, tx, currentBlock) {
+			continue
+		}
 		if confirmedNow && checksDepositReceipt(adapter, tx) && !s.depositReceiptAllowsConfirmation(ctx, adapter, tx) {
 			continue
 		}
@@ -414,12 +419,17 @@ func (s *Service) recordPayloadValue(ctx context.Context, tx models.Transaction,
 
 // lastValidBlockOf is the last valid block raw_payload keeps, 0 for none.
 func lastValidBlockOf(tx models.Transaction) uint64 {
+	return payloadUint64(tx, chain.LastValidBlockPayloadKey)
+}
+
+// payloadUint64 is the number raw_payload keeps under key, 0 for none.
+func payloadUint64(tx models.Transaction, key string) uint64 {
 	var payload map[string]json.RawMessage
-	var lastValid uint64
+	var value uint64
 	if json.Unmarshal([]byte(tx.RawPayload), &payload) == nil {
-		_ = json.Unmarshal(payload[chain.LastValidBlockPayloadKey], &lastValid)
+		_ = json.Unmarshal(payload[key], &value)
 	}
-	return lastValid
+	return value
 }
 
 // failOnChain records a transaction that failed on chain: the fee a validated

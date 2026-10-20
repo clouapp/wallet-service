@@ -158,8 +158,9 @@ func (s *Service) depositReceiptAllowsConfirmation(ctx context.Context, adapter 
 	return false
 }
 
-// failDeposit records a deposit whose transaction was mined and failed, so no
-// value reached the address: it publishes deposit.failed with failureCode, then
+// failDeposit records a deposit that moved no value to the address (its
+// transaction was mined and failed, or its block was reorganized away and no block
+// holds it any more): it publishes deposit.failed with failureCode, then
 // marks the row failed, last, so a failed publish leaves the row as it was and the
 // next pass (or run) tries again. The outbox keeps one deposit.failed per config
 // and deposit, so a retry never sends it twice. Without a deposit events publisher
@@ -175,7 +176,7 @@ func (s *Service) failDeposit(ctx context.Context, tx models.Transaction, failur
 	if err := s.txRepo.MarkFailed(ctx, tx.ID, failureCode); err != nil {
 		return fmt.Errorf("mark deposit %s failed: %w", tx.ID, err)
 	}
-	slog.Warn("deposit failed on chain: its transaction was mined without moving its value",
+	slog.Warn("deposit failed: no value reached the address",
 		"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "to", tx.ToAddress, "amount", tx.Amount, "failure_code", failureCode)
 	return nil
 }

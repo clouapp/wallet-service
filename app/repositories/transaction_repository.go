@@ -329,6 +329,12 @@ func (r *TransactionRepository) SetBlockNumber(ctx context.Context, id uuid.UUID
 	return r.updateColumns(ctx, id, map[string]any{"block_number": block}, "set transaction block number")
 }
 
+// SetBlock records the block a transaction is in, its number and its hash (a
+// deposit a reorganization moved to another block).
+func (r *TransactionRepository) SetBlock(ctx context.Context, id uuid.UUID, block uint64, blockHash string) error {
+	return r.updateColumns(ctx, id, map[string]any{"block_number": block, "block_hash": blockHash}, "set transaction block")
+}
+
 // MarkFailed sets the failed status and the reason (an on-chain result code or
 // "expired") in error_message, and releases the idempotency key so a retry of the
 // withdrawal with the same key can record its new transaction under it.

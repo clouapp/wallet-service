@@ -61,10 +61,11 @@ type AssetDecimals interface {
 // RequiredConfirmations), or the chain's own finality, "finalized_tag" (EVM) or
 // "solidified" (TRON), under which the deposit is confirmed once its block is final
 // and RequiredConfirmations is only the typical finality lag, for display.
-// FailureCode is set on deposit.failed only: the on-chain result of a transaction
-// that was mined and failed (onchain_out_of_gas, onchain_reverted), so it moved no
-// value. A deposit.failed whose ConfirmedAt is set had been confirmed (and
-// deposit.confirmed sent) before its failure was found.
+// FailureCode is set on deposit.failed only: why no value reached the address, the
+// on-chain result of a transaction that was mined and failed (onchain_out_of_gas,
+// onchain_reverted) or reorged_out, a block reorganized away whose transaction no
+// block holds any more. A deposit.failed whose ConfirmedAt is set had been
+// confirmed (and deposit.confirmed sent) before its failure was found.
 type Payload struct {
 	ID                    string  `json:"id"`
 	TransactionID         string  `json:"transaction_id"`
