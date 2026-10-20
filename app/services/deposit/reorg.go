@@ -61,13 +61,18 @@ func newReorgPass(adapter types.Chain) *reorgPass {
 	return &reorgPass{adapter: adapter, reader: reader, hashes: map[uint64]canonicalHash{}, blocks: map[uint64]scannedBlock{}}
 }
 
-// checks reports whether tx is a deposit whose recorded block can be compared with
-// the chain's: the adapter reads block hashes and the row has a block and its hash
-// (some ingest providers record none). A deposit the scanner recorded from a block
-// that was final when it was read (Solana scans finalized slots only) is not read
-// again; one the ingest recorded is.
+// checks reports whether tx is a deposit whose recorded block is compared with the
+// chain's: the adapter reads block hashes and the row has a block. A deposit the
+// scanner recorded from a block that was final when it was read (Solana scans
+// finalized slots only) is not read again; one the ingest recorded is, and one it
+// recorded without a hash (Alchemy native transfers, Helius) has its block read
+// first (depositBlockAllowsConfirmation). The scanner always records the hash: a
+// scanner row without one is not checked.
 func (p *reorgPass) checks(tx models.Transaction) bool {
-	if p.reader == nil || tx.TxType != models.TxTypeDeposit || tx.BlockNumber <= 0 || strings.TrimSpace(tx.BlockHash) == "" {
+	if p.reader == nil || tx.TxType != models.TxTypeDeposit || tx.BlockNumber <= 0 {
+		return false
+	}
+	if strings.TrimSpace(tx.BlockHash) == "" && tx.Source != models.TxSourceDepositIngest {
 		return false
 	}
 	_, finalScans := p.adapter.(solanaNetwork)
@@ -111,6 +116,17 @@ func (s *Service) depositBlockAllowsConfirmation(ctx context.Context, pass *reor
 		return true
 	}
 	if s.now().Before(payloadUnixTime(tx, reorgNextCheckAtPayloadKey)) {
+		return false
+	}
+	if strings.TrimSpace(tx.BlockHash) == "" {
+		// Nothing to compare yet: the recorded block must credit the deposit, which
+		// records its hash (and the deposit confirms after the check of a later
+		// pass); a block that does not is a relocation.
+		if err := s.moveDeposit(ctx, pass, tx, recordedBlock(tx)); err != nil {
+			slog.Warn("deposit recorded without a block hash: its block does not show it; locating its transaction",
+				"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "block", tx.BlockNumber, "error", err)
+			s.relocateDeposit(ctx, pass, tx)
+		}
 		return false
 	}
 	canonical, err := pass.hashAt(ctx, recordedBlock(tx))
@@ -229,36 +245,66 @@ func depositPayload(transfer types.DetectedTransfer) string {
 
 // moveDeposit records the block a reorganization moved a deposit's transaction to
 // (its height may be the old one: the competing block often includes the same
-// transaction). The block is read like the scanner reads it and must credit the
-// address the asset and amount the deposit recorded; its hash is the one the next
-// pass compares, and the deposit confirms from that block's depth (its stored
-// confirmation count goes down when the new block is younger). A block that does
-// not hold the deposit as recorded (endpoints that disagree, a transaction that now
-// credits another amount or address) changes nothing and is the error.
+// transaction), or the block of a deposit recorded without a hash. The block is
+// read like the scanner reads it and must credit the address the asset and amount
+// the deposit recorded; the deposit takes that block's hash, which the next pass
+// compares, and that transfer's position in it (a block-wide position, an EVM or
+// TRON log index, differs from one block to another), so a later scan or push of
+// the block finds it recorded (depositrecord). The rows of the transaction are read
+// and written under its deposit lock, the one the scanner and the push take, and a
+// transfer whose position another deposit of the transaction holds is not taken
+// (two like transfers of one transaction are two deposits). The deposit confirms
+// from that block's depth (its stored confirmation count goes down when the new
+// block is younger). A block that does not hold the deposit as recorded (endpoints
+// that disagree, a transaction that now credits another amount or address) changes
+// nothing and is the error.
 func (s *Service) moveDeposit(ctx context.Context, pass *reorgPass, tx models.Transaction, block uint64) error {
 	transfers, err := pass.transfersOf(ctx, block)
 	if err != nil {
 		return fmt.Errorf("block %d, which holds the transaction, was not read: %w", block, err)
 	}
-	hash := ""
-	for _, transfer := range transfers {
-		if creditsDeposit(transfer, tx) {
-			hash = strings.TrimSpace(transfer.BlockHash)
-			break
+	var moved types.DetectedTransfer
+	err = s.txRepo.Within(ctx, func(ctx context.Context) error {
+		if err := s.txRepo.LockTransactionDeposits(ctx, tx.Chain, tx.TxHash); err != nil {
+			return err
 		}
-	}
-	if hash == "" {
-		return fmt.Errorf("block %d does not credit the deposit as it was recorded", block)
-	}
-	if block == recordedBlock(tx) && sameBlockHash(hash, tx.BlockHash) {
-		return fmt.Errorf("block %d is reported with the recorded hash again: the endpoints disagree", block)
-	}
-	if err := s.txRepo.SetBlock(ctx, tx.ID, block, hash); err != nil {
-		return fmt.Errorf("record block %d: %w", block, err)
+		rows, err := s.txRepo.FindDepositsByChainAndTxHash(ctx, tx.Chain, tx.TxHash)
+		if err != nil {
+			return err
+		}
+		taken := make(map[int]bool, len(rows))
+		for _, row := range rows {
+			if row.ID != tx.ID {
+				taken[row.LogIndex] = true
+			} else if row.Status != tx.Status || row.BlockNumber != tx.BlockNumber || row.BlockHash != tx.BlockHash {
+				return fmt.Errorf("deposit %s changed since this pass read it: %w", tx.ID, models.ErrTransactionSettled)
+			}
+		}
+		found := false
+		for _, transfer := range transfers {
+			if creditsDeposit(transfer, tx) && !taken[transfer.LogIndex] {
+				moved, found = transfer, true
+				break
+			}
+		}
+		if !found || strings.TrimSpace(moved.BlockHash) == "" {
+			return fmt.Errorf("block %d does not credit the deposit as it was recorded", block)
+		}
+		if block == recordedBlock(tx) && sameBlockHash(moved.BlockHash, tx.BlockHash) {
+			return fmt.Errorf("block %d is reported with the recorded hash again: the endpoints disagree", block)
+		}
+		return s.txRepo.SetBlock(ctx, tx.ID, block, strings.TrimSpace(moved.BlockHash), moved.LogIndex)
+	})
+	if err != nil {
+		return err
 	}
 	s.clearReorgMark(ctx, tx)
-	slog.Warn("reorganized deposit moved to another block; it confirms from there",
-		"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "from_block", tx.BlockNumber, "to_block", block, "block_hash", hash)
+	message := "reorganized deposit moved to another block; it confirms from there"
+	if strings.TrimSpace(tx.BlockHash) == "" {
+		message = "deposit recorded without a block hash: its block credits it, its hash is recorded"
+	}
+	slog.Warn(message, "tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "from_block", tx.BlockNumber, "to_block", block,
+		"block_hash", moved.BlockHash, "from_position", tx.LogIndex, "to_position", moved.LogIndex)
 	return nil
 }
 

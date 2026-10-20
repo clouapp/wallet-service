@@ -669,25 +669,6 @@ func TestRunConfirmationCheck_ACanonicalHashThatCannotBeReadLeavesTheDepositUnco
 	}
 }
 
-func TestRunConfirmationCheck_ADepositWithoutARecordedBlockHashIsNotChecked(t *testing.T) {
-	f := newReorgFixture(t)
-	f.chain.mine(reorgDepositBlock, "a", reorgTransfer(reorgDepositTx, reorgDepositTo))
-	f.recordDeposit(t, reorgDepositBlock)
-	deposit := reorgDeposit(t, reorgDepositTx)
-	if _, err := facades.Orm().Query().Model(&models.Transaction{}).Where("id = ?", deposit.ID).Update("block_hash", ""); err != nil {
-		t.Fatal(err)
-	}
-
-	f.pass(t, reorgDepositBlock+reorgRequiredConfs)
-
-	if got := reorgDeposit(t, reorgDepositTx); got.Status != string(types.TxStatusConfirmed) {
-		t.Fatalf("status %s, want confirmed as before: there is no hash to compare", got.Status)
-	}
-	if reads, _ := f.chain.reads(); len(reads) != 0 {
-		t.Fatalf("hash reads %v, want none", reads)
-	}
-}
-
 func TestRunConfirmationCheck_AFinalSlotTheScannerRecordedIsNotReadAgain(t *testing.T) {
 	inner := newReorgChain()
 	f := newReorgFixtureOver(t, finalSlotChain{inner}, inner)

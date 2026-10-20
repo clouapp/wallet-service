@@ -61,7 +61,7 @@ func (s *sweepConfirmMemory) FindConfirmedDepositsMissingEvent(context.Context, 
 func (s *sweepConfirmMemory) FindConfirmedNativeDeposits(context.Context, string, time.Time, uuid.UUID, int) ([]models.Transaction, error) {
 	return nil, nil
 }
-func (s *sweepConfirmMemory) SetBlock(context.Context, uuid.UUID, uint64, string) error {
+func (s *sweepConfirmMemory) SetBlock(context.Context, uuid.UUID, uint64, string, int) error {
 	return nil
 }
 func (s *sweepConfirmMemory) MarkFailedFrom(context.Context, uuid.UUID, string, string) error {
