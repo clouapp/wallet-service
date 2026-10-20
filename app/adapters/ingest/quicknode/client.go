@@ -74,25 +74,33 @@ func (q *QuickNodeProvider) ProviderName() string {
 // CreateWebhook
 // ---------------------------------------------------------------------------
 
-type quicknodeDestination struct {
-	URL              string            `json:"url"`
-	Compression      string            `json:"compression"`
-	Headers          map[string]string `json:"headers"`
-	MaxRetry         int               `json:"max_retry"`
-	RetryIntervalSec int               `json:"retry_interval_sec"`
+// quicknodeDestinationAttributes is the webhook a stream posts to. The deliveries are
+// not compressed: the signature covers the uncompressed body.
+type quicknodeDestinationAttributes struct {
+	URL              string `json:"url"`
+	Compression      string `json:"compression"`
+	MaxRetry         int    `json:"max_retry"`
+	RetryIntervalSec int    `json:"retry_interval_sec"`
+	PostTimeoutSec   int    `json:"post_timeout_sec"`
 }
 
 type quicknodeCreateStreamReq struct {
-	Name           string               `json:"name"`
-	Network        string               `json:"network"`
-	Dataset        string               `json:"dataset"`
-	FilterFunction string               `json:"filter_function"`
-	Destination    quicknodeDestination `json:"destination"`
-	Status         string               `json:"status"`
+	Name                  string                         `json:"name"`
+	Network               string                         `json:"network"`
+	Dataset               string                         `json:"dataset"`
+	FilterFunction        string                         `json:"filter_function"`
+	Destination           string                         `json:"destination"`
+	DestinationAttributes quicknodeDestinationAttributes `json:"destination_attributes"`
+	Status                string                         `json:"status"`
 }
 
+// quicknodeCreateStreamResp is the created stream: its id, and the security token
+// QuickNode signs the stream's deliveries with.
 type quicknodeCreateStreamResp struct {
-	ID string `json:"id"`
+	ID                    string `json:"id"`
+	DestinationAttributes struct {
+		SecurityToken string `json:"security_token"`
+	} `json:"destination_attributes"`
 }
 
 func (q *QuickNodeProvider) CreateWebhook(ctx context.Context, cfg providers.ProviderConfig) (*providers.ProviderWebhook, error) {
@@ -119,12 +127,13 @@ func (q *QuickNodeProvider) CreateWebhook(ctx context.Context, cfg providers.Pro
 		Network:        network,
 		Dataset:        "block",
 		FilterFunction: filterB64,
-		Destination: quicknodeDestination{
+		Destination:    "webhook",
+		DestinationAttributes: quicknodeDestinationAttributes{
 			URL:              cfg.WebhookURL,
 			Compression:      "none",
-			Headers:          map[string]string{"Content-Type": "application/json"},
 			MaxRetry:         3,
 			RetryIntervalSec: 1,
+			PostTimeoutSec:   10,
 		},
 		Status: "active",
 	}
@@ -153,9 +162,12 @@ func (q *QuickNodeProvider) CreateWebhook(ctx context.Context, cfg providers.Pro
 		return nil, fmt.Errorf("quicknode: create stream: empty id in response")
 	}
 
+	// The signing secret is the token QuickNode generated, never cfg.AuthSecret: a
+	// secret QuickNode does not sign with would refuse every delivery. A stream
+	// without one is returned with an empty secret, so its creator can delete it.
 	return &providers.ProviderWebhook{
 		ProviderWebhookID: result.ID,
-		SigningSecret:     cfg.AuthSecret,
+		SigningSecret:     strings.TrimSpace(result.DestinationAttributes.SecurityToken),
 	}, nil
 }
 
@@ -238,8 +250,14 @@ func (q *QuickNodeProvider) DeleteWebhook(ctx context.Context, webhookID string)
 }
 
 // ---------------------------------------------------------------------------
-// VerifyInbound — HMAC-SHA256 over raw body, hex digest (same pattern as Alchemy)
+// VerifyInbound — HMAC-SHA256 of nonce + timestamp + body, keyed with the stream's
+// security token, hex (QuickNode Streams' scheme)
 // ---------------------------------------------------------------------------
+
+const (
+	quicknodeNonceHeader     = "X-QN-Nonce"
+	quicknodeTimestampHeader = "X-QN-Timestamp"
+)
 
 func (q *QuickNodeProvider) VerifyInbound(headers providers.Header, body []byte, secret string) (bool, error) {
 	if err := providers.GateInboundCredential(context.Background(), q.keyAtUse); err != nil {
@@ -248,13 +266,18 @@ func (q *QuickNodeProvider) VerifyInbound(headers providers.Header, body []byte,
 	if err := providers.RejectBlankSigningSecret(secret); err != nil {
 		return false, err
 	}
-	hdr := q.SignatureHeader()
-	sig := headers.Get(hdr)
-	if sig == "" {
-		return false, fmt.Errorf("quicknode: missing %s header", hdr)
+	signatureHeader := q.SignatureHeader()
+	sig := headers.Get(signatureHeader)
+	nonce := headers.Get(quicknodeNonceHeader)
+	timestamp := headers.Get(quicknodeTimestampHeader)
+	for name, value := range map[string]string{signatureHeader: sig, quicknodeNonceHeader: nonce, quicknodeTimestampHeader: timestamp} {
+		if value == "" {
+			return false, fmt.Errorf("quicknode: missing %s header", name)
+		}
 	}
 
 	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(nonce + timestamp))
 	mac.Write(body)
 	expected := hex.EncodeToString(mac.Sum(nil))
 

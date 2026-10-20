@@ -33,7 +33,7 @@ func TestCreate_Webhook_SendsMethodPathAuthAndBody(t *testing.T) {
 		token = r.Header.Get("x-api-key")
 		raw, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"stream-1"}`))
+		_, _ = w.Write([]byte(`{"id":"stream-1","destination":"webhook","destination_attributes":{"url":"https://hooks.example/quicknode","security_token":"qn-token-1"}}`))
 	}))
 	t.Cleanup(srv.Close)
 
@@ -45,12 +45,11 @@ func TestCreate_Webhook_SendsMethodPathAuthAndBody(t *testing.T) {
 		Network:    "bitcoin-mainnet",
 		WebhookURL: "https://hooks.example/quicknode",
 		Addresses:  []string{"bc1qexample"},
-		AuthSecret: "signing-secret",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.Equal(t, "stream-1", got.ProviderWebhookID)
-	assert.Equal(t, "signing-secret", got.SigningSecret)
+	assert.Equal(t, "qn-token-1", got.SigningSecret, "the stream's security token signs its deliveries")
 	assert.Equal(t, http.MethodPost, method)
 	assert.Equal(t, "/streams/rest/v1/streams", path)
 	assert.Equal(t, apiKey, token)
@@ -61,10 +60,28 @@ func TestCreate_Webhook_SendsMethodPathAuthAndBody(t *testing.T) {
 	assert.Equal(t, "bitcoin-mainnet", body.Network)
 	assert.Equal(t, "block", body.Dataset)
 	assert.Equal(t, "active", body.Status)
-	assert.Equal(t, "https://hooks.example/quicknode", body.Destination.URL)
+	assert.Equal(t, "webhook", body.Destination)
+	assert.Equal(t, "https://hooks.example/quicknode", body.DestinationAttributes.URL)
+	assert.Equal(t, "none", body.DestinationAttributes.Compression, "the signature covers the uncompressed body")
 	filter, decErr := base64.StdEncoding.DecodeString(body.FilterFunction)
 	require.NoError(t, decErr)
 	assert.Contains(t, string(filter), "bc1qexample")
+}
+
+func TestCreate_Webhook_ReturnsNoSecretWhenTheStreamHasNoSecurityToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"id":"stream-1","destination_attributes":{"url":"https://hooks.example/quicknode"}}`))
+	}))
+	t.Cleanup(srv.Close)
+	provider := NewQuickNodeProvider("test-key")
+	provider.client = pointAt(t, srv)
+
+	got, err := provider.CreateWebhook(context.Background(), providers.ProviderConfig{
+		WebhookURL: "https://hooks.example/quicknode", AuthSecret: "a-secret-quicknode-never-saw",
+	})
+	require.NoError(t, err, "the stream exists: its id is returned so it can be deleted")
+	assert.Equal(t, "stream-1", got.ProviderWebhookID)
+	assert.Empty(t, got.SigningSecret, "a secret QuickNode does not sign with would refuse every delivery")
 }
 
 func TestCreate_Webhook_MapsHTTPErrorsWithoutTheKeyOrHost(t *testing.T) {

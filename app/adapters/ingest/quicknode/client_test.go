@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"net/http"
 	"testing"
 	"time"
 
@@ -14,10 +15,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func computeQuickNodeSignature(body []byte, secret string) string {
+// computeQuickNodeSignature signs a delivery as QuickNode Streams does: HMAC-SHA256,
+// keyed with the stream's security token, of nonce + timestamp + body, in hex.
+func computeQuickNodeSignature(nonce, timestamp string, body []byte, secret string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(nonce + timestamp))
 	mac.Write(body)
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// signedHeaders are the headers of one signed delivery.
+func signedHeaders(signatureHeader, nonce, timestamp string, body []byte, secret string) providers.Header {
+	h := providers.Header{}
+	h.Set("X-QN-Nonce", nonce)
+	h.Set("X-QN-Timestamp", timestamp)
+	h.Set(signatureHeader, computeQuickNodeSignature(nonce, timestamp, body, secret))
+	return h
 }
 
 // ---------------------------------------------------------------------------
@@ -157,26 +170,42 @@ func TestBuild_FilterFunction_ReportsEachPaidOutputWithItsVout(t *testing.T) {
 func TestQuick_NodeVerifyInbound_ValidSignature(t *testing.T) {
 	p := NewQuickNodeProvider("api-key")
 	body := []byte(`[{"txid":"x"}]`)
-	secret := "qn_webhook_secret"
-	sig := computeQuickNodeSignature(body, secret)
+	secret := "qn_security_token"
 
-	h := providers.Header{}
-	h.Set("X-QN-Signature", sig)
-
-	ok, err := p.VerifyInbound(h, body, secret)
+	ok, err := p.VerifyInbound(signedHeaders("X-QN-Signature", "nonce-1", "1760961600", body, secret), body, secret)
 	require.NoError(t, err)
 	assert.True(t, ok)
+}
+
+func TestQuick_NodeVerifyInbound_TheNonceAndTimestampAreSigned(t *testing.T) {
+	p := NewQuickNodeProvider("api-key")
+	body := []byte(`[{"txid":"x"}]`)
+	secret := "qn_security_token"
+	headers := signedHeaders("X-QN-Signature", "nonce-1", "1760961600", body, secret)
+
+	headers.Set("X-QN-Timestamp", "1760961601")
+	ok, err := p.VerifyInbound(headers, body, secret)
+	require.NoError(t, err)
+	assert.False(t, ok, "a replayed body under another timestamp is refused")
+
+	bodyOnly := providers.Header{}
+	bodyOnly.Set("X-QN-Nonce", "nonce-1")
+	bodyOnly.Set("X-QN-Timestamp", "1760961600")
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	bodyOnly.Set("X-QN-Signature", hex.EncodeToString(mac.Sum(nil)))
+	ok, err = p.VerifyInbound(bodyOnly, body, secret)
+	require.NoError(t, err)
+	assert.False(t, ok, "a signature of the body alone is not QuickNode's")
 }
 
 func TestQuick_NodeVerifyInbound_InvalidSignature(t *testing.T) {
 	p := NewQuickNodeProvider("api-key")
 	body := []byte(`[{"txid":"x"}]`)
-	secret := "qn_webhook_secret"
+	secret := "qn_security_token"
+	headers := signedHeaders("X-QN-Signature", "nonce-1", "1760961600", body, "another-token")
 
-	h := providers.Header{}
-	h.Set("X-QN-Signature", "deadbeef1234567890abcdef1234567890abcdef1234567890abcdef12345678")
-
-	ok, err := p.VerifyInbound(h, body, secret)
+	ok, err := p.VerifyInbound(headers, body, secret)
 	require.NoError(t, err)
 	assert.False(t, ok)
 }
@@ -184,11 +213,19 @@ func TestQuick_NodeVerifyInbound_InvalidSignature(t *testing.T) {
 func TestQuick_NodeVerifyInbound_MissingHeader(t *testing.T) {
 	p := NewQuickNodeProvider("api-key")
 	body := []byte(`[]`)
+	full := signedHeaders("X-QN-Signature", "nonce-1", "1760961600", body, "secret")
+	for _, header := range []string{"X-QN-Signature", "X-QN-Nonce", "X-QN-Timestamp"} {
+		h := providers.Header{}
+		for name, values := range full {
+			h[name] = values
+		}
+		delete(h, http.CanonicalHeaderKey(header))
 
-	ok, err := p.VerifyInbound(providers.Header{}, body, "secret")
-	assert.False(t, ok)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "missing")
+		ok, err := p.VerifyInbound(h, body, "secret")
+		assert.False(t, ok, header)
+		require.Error(t, err, header)
+		assert.Contains(t, err.Error(), "missing", header)
+	}
 }
 
 func TestQuick_NodeVerifyInbound_CustomSignatureHeader(t *testing.T) {
@@ -196,12 +233,8 @@ func TestQuick_NodeVerifyInbound_CustomSignatureHeader(t *testing.T) {
 	p.SetSignatureHeader("X-Custom-Sig")
 	body := []byte(`{}`)
 	secret := "s"
-	sig := computeQuickNodeSignature(body, secret)
 
-	h := providers.Header{}
-	h.Set("X-Custom-Sig", sig)
-
-	ok, err := p.VerifyInbound(h, body, secret)
+	ok, err := p.VerifyInbound(signedHeaders("X-Custom-Sig", "n", "1", body, secret), body, secret)
 	require.NoError(t, err)
 	assert.True(t, ok)
 }
