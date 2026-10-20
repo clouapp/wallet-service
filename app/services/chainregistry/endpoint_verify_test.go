@@ -85,10 +85,85 @@ func TestVerify_Endpoint_ComparesTheSolanaGenesis(t *testing.T) {
 }
 
 func TestVerify_Endpoint_RefusesToGuessForAnAdapterWithoutAnIdentityCall(t *testing.T) {
-	for _, adapterType := range []string{models.AdapterTypeBitcoin, models.AdapterTypeTron, models.AdapterTypeXRP} {
-		_, err := VerifyEndpoint(context.Background(), adapterType, EndpointTarget{}, "https://example.invalid")
-		assert.ErrorIs(t, err, ErrEndpointIdentityUnsupported, adapterType)
+	_, err := VerifyEndpoint(context.Background(), models.AdapterTypeBitcoin, EndpointTarget{}, "https://example.invalid")
+	assert.ErrorIs(t, err, ErrEndpointIdentityUnsupported)
+}
+
+// fakeProber answers each URL's network and head as the test decides.
+type fakeProber struct {
+	networks map[string]string
+	head     uint64
+}
+
+func (p fakeProber) Network(_ context.Context, rawURL string) (string, error) {
+	network, ok := p.networks[rawURL]
+	if !ok {
+		return "", errors.New("connection refused")
 	}
+	return network, nil
+}
+
+func (p fakeProber) Head(context.Context, string) (uint64, error) { return p.head, nil }
+
+func useProber(t *testing.T, adapterType string, prober chain.EndpointProber) {
+	t.Helper()
+	previous := chain.EndpointProberOf(adapterType)
+	chain.SetEndpointProber(adapterType, prober)
+	t.Cleanup(func() { chain.SetEndpointProber(adapterType, previous) })
+}
+
+func TestVerify_Endpoint_AsksTRONAndXRPThroughTheirAdaptersProber(t *testing.T) {
+	cases := []struct {
+		adapterType, network, other string
+	}{
+		{models.AdapterTypeTron, models.NetworkTronNile, models.NetworkTronMainnet},
+		{models.AdapterTypeXRP, models.NetworkXRPLTestnet, models.NetworkXRPLMainnet},
+	}
+	identity := func(adapterType, network string) string {
+		if adapterType == models.AdapterTypeTron {
+			return models.TronGenesisBlockID(network)
+		}
+		return models.XRPLNetworkID(network)
+	}
+	for _, tc := range cases {
+		t.Run(tc.adapterType, func(t *testing.T) {
+			ctx := context.Background()
+			useProber(t, tc.adapterType, fakeProber{head: 77, networks: map[string]string{
+				"https://same.example":  identity(tc.adapterType, tc.network),
+				"https://other.example": identity(tc.adapterType, tc.other),
+				"https://odd.example":   "42",
+			}})
+			target := EndpointTarget{Network: tc.network}
+
+			served, err := VerifyEndpoint(ctx, tc.adapterType, target, "https://same.example")
+			require.NoError(t, err)
+			assert.Equal(t, tc.network, served)
+
+			served, err = VerifyEndpoint(ctx, tc.adapterType, target, "https://other.example")
+			require.ErrorIs(t, err, chain.ErrWrongNetwork)
+			assert.Equal(t, tc.other, served)
+
+			_, err = VerifyEndpoint(ctx, tc.adapterType, target, "https://odd.example")
+			require.ErrorIs(t, err, chain.ErrWrongNetwork)
+
+			_, err = VerifyEndpoint(ctx, tc.adapterType, target, "https://down.example")
+			require.ErrorIs(t, err, ErrEndpointUnverified)
+			assert.NotErrorIs(t, err, chain.ErrWrongNetwork)
+
+			_, err = VerifyEndpoint(ctx, tc.adapterType, EndpointTarget{Network: "unknown"}, "https://same.example")
+			require.ErrorIs(t, err, ErrEndpointUnverified, "a network without a known identity cannot be verified")
+
+			probe := ProbeEndpoint(ctx, tc.adapterType, target, "https://same.example")
+			require.NoError(t, probe.Err)
+			assert.Equal(t, uint64(77), probe.Head)
+		})
+	}
+}
+
+func TestVerify_Endpoint_RefusesTRONWhenItsAdapterIsNotLinked(t *testing.T) {
+	useProber(t, models.AdapterTypeTron, nil)
+	_, err := VerifyEndpoint(context.Background(), models.AdapterTypeTron, EndpointTarget{Network: models.NetworkTronNile}, "https://same.example")
+	require.ErrorIs(t, err, ErrEndpointUnverified)
 }
 
 func TestProbe_Endpoint_ReadsTheNetworkAndTheHead(t *testing.T) {

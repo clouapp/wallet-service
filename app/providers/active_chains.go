@@ -85,11 +85,11 @@ func (c chainCatalog) FindActive(ctx context.Context) ([]models.Chain, error) {
 }
 
 // openChainFallbacks opens the sealed fallback URLs of ch, with their stored
-// positions, for the adapter types that fail over (EVM, Solana), on network (the
-// one the chain resolves to). One that does not open is skipped and logged with
-// the chain and position only; another adapter type keeps its own failover. A
-// chain with nothing to check a fallback against (an EVM chain without
-// network_id, a Solana cluster without a known genesis) gets none.
+// positions, for the adapter types that fail over (EVM, Solana, TRON, XRP), on
+// network (the one the chain resolves to). One that does not open is skipped and
+// logged with the chain and position only; another adapter type keeps its own
+// failover. A chain with nothing to check a fallback against (an EVM chain without
+// network_id, a network without a known genesis or network_id) gets none.
 func openChainFallbacks(ch models.Chain, network string) []chainpkg.RPCFallback {
 	if len(ch.RPCFallbacks) == 0 {
 		return nil
@@ -100,6 +100,8 @@ func openChainFallbacks(ch models.Chain, network string) []chainpkg.RPCFallback 
 	}
 	checkable := ch.AdapterType == models.AdapterTypeEVM && ch.NetworkID != nil && *ch.NetworkID > 0
 	checkable = checkable || (ch.AdapterType == models.AdapterTypeSolana && models.SolanaGenesisHash(network) != "")
+	checkable = checkable || (ch.AdapterType == models.AdapterTypeTron && models.TronGenesisBlockID(network) != "")
+	checkable = checkable || (ch.AdapterType == models.AdapterTypeXRP && models.XRPLNetworkID(network) != "")
 	if !checkable {
 		slog.Warn("chain rpc fallbacks ignored: no network to check them against (set network_id)", "chain", ch.ID)
 		return nil
@@ -232,6 +234,9 @@ func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByC
 				ChainName:             ch.Name,
 				NativeSymbol:          ch.NativeSymbol,
 				RPCURL:                rpcURL,
+				RPCFallbacks:          fallbacks,
+				NetworkID:             models.XRPLNetworkID(network),
+				RPCHealth:             chainRPCHealth(),
 				IsTestnet:             ch.IsTestnet,
 				Confirmations:         uint64(ch.RequiredConfirmations),
 				GasReadinessThreshold: resolveGasReadinessThreshold(&ch),
@@ -243,6 +248,9 @@ func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByC
 				ChainName:             ch.Name,
 				NativeSymbol:          ch.NativeSymbol,
 				RPCURL:                rpcURL,
+				RPCFallbacks:          fallbacks,
+				GenesisBlockID:        models.TronGenesisBlockID(network),
+				RPCHealth:             chainRPCHealth(),
 				APIKey:                facades.Config().GetString("vault.tron.api_key"),
 				IsTestnet:             ch.IsTestnet,
 				Confirmations:         uint64(ch.RequiredConfirmations),
