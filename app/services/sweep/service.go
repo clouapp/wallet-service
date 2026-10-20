@@ -42,7 +42,7 @@ type Service interface {
 	PlanForWithdrawal(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int, toAddress string, callerAccountID uuid.UUID) (*Plan, error)
 	PlanForWithdrawalTo(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int, to Destination, callerAccountID uuid.UUID) (*Plan, error)
 	ExecutePlan(ctx context.Context, plan *Plan, creds SigningCredentials, withdrawalTxID uuid.UUID, toAddress string, externalUserID string) (*Result, error)
-	SettleUnanswered(ctx context.Context, tx *models.Transaction) (SendSettlement, error)
+	SettleUnanswered(ctx context.Context, tx *models.Transaction) (*models.Transaction, error)
 	ConsolidateAll(ctx context.Context, walletID uuid.UUID, asset string, passphrase string, callerAccountID uuid.UUID) (*Result, error)
 	RefreshGasStatus(ctx context.Context, walletID uuid.UUID) (*GasStatus, error)
 	LoadLimits(ctx context.Context, accountID uuid.UUID) (*Limits, error)
@@ -146,6 +146,16 @@ type service struct {
 	sleep func(ctx context.Context, d time.Duration) error
 	// withdrawalLinks points a withdrawal at its transaction; nil links nothing.
 	withdrawalLinks withdrawalLinker
+	// sealer seals the signed bytes a withdrawal row keeps until its send is
+	// answered; nil keeps none.
+	sealer Sealer
+}
+
+// Sealer seals a value for storage (enc:v1:) and opens a sealed one. The plaintext
+// is never written into an error.
+type Sealer interface {
+	Seal(plaintext string) (string, error)
+	Open(stored string) (string, error)
 }
 
 // withdrawalLinker sets withdrawals.transaction_id inside the caller's database
@@ -172,6 +182,9 @@ type Deps struct {
 	TokenPricer  TokenPricer
 	// WithdrawalLinks links a withdrawal to its transaction before the send.
 	WithdrawalLinks withdrawalLinker
+	// Sealer seals the signed bytes a withdrawal row keeps until its send is
+	// answered (settings.CryptSealer); nil keeps none.
+	Sealer Sealer
 }
 
 // NewService wires the sweep service from Deps. All concrete methods are
@@ -192,6 +205,7 @@ func NewService(deps Deps) Service {
 		gasDefaults:     cloneGasDefaults(deps.GasDefaults),
 		withdrawalLinks: deps.WithdrawalLinks,
 		tokenPricer:     deps.TokenPricer,
+		sealer:          deps.Sealer,
 	}
 }
 

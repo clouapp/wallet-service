@@ -66,7 +66,7 @@ type transactionStore interface {
 type sweepRunner interface {
 	PlanForWithdrawalTo(ctx context.Context, walletID uuid.UUID, asset string, amount *big.Int, to sweep.Destination, callerAccountID uuid.UUID) (*sweep.Plan, error)
 	ExecutePlan(ctx context.Context, plan *sweep.Plan, creds sweep.SigningCredentials, withdrawalTxID uuid.UUID, toAddress string, externalUserID string) (*sweep.Result, error)
-	SettleUnanswered(ctx context.Context, tx *models.Transaction) (sweep.SendSettlement, error)
+	SettleUnanswered(ctx context.Context, tx *models.Transaction) (*models.Transaction, error)
 }
 
 type Service struct {
@@ -336,25 +336,22 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 
 // replayable is the transaction a retry with its key replays: existing, or, for a
 // row recorded before a send that was never answered (a crash between the two, a
-// refusal whose mark failed), what sweep.SettleUnanswered finds first: the transfer
-// on its way, or nil when the send provably never happened (the row is failed and
-// the withdrawal is signed again). A row that cannot be verified yet is
-// sweep.ErrSendUnverified: neither replayed nor signed again.
+// refusal whose mark failed), what sweep.SettleUnanswered settles it to: the
+// transfer on its way, or an unknown outcome the tracker proves. It is never signed
+// again. A row that cannot be verified yet is sweep.ErrSendUnverified, and bytes that
+// can never be valid are sweep.ErrSignedBytesInvalid (the withdrawal fails).
 func (s *Service) replayable(ctx context.Context, existing *models.Transaction) (*models.Transaction, error) {
 	if !awaitsSendAnswer(existing) {
 		return existing, nil
 	}
-	settlement, err := s.sweep.SettleUnanswered(ctx, existing)
+	settled, err := s.sweep.SettleUnanswered(ctx, existing)
 	if err != nil {
 		return nil, err
 	}
-	if !settlement.Sent {
-		return nil, nil
+	if settled == nil {
+		return existing, nil
 	}
-	if settlement.Transaction != nil {
-		return settlement.Transaction, nil
-	}
-	return existing, nil
+	return settled, nil
 }
 
 // awaitsSendAnswer reports a row recorded before its send whose send was never

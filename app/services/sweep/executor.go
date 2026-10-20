@@ -2,6 +2,8 @@ package sweep
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -486,9 +488,9 @@ func (s *service) broadcastWithdrawal(
 		return nil, err
 	}
 	head := s.broadcastHead(ctx, adapter, plan.Chain)
-	rawPayload, err := broadcastRawPayload(adapter, signed, head, chain.BroadcastOutcomePending)
+	rawPayload, err := s.pendingPayload(adapter, signed, head)
 	if err != nil {
-		return nil, fmt.Errorf("record last valid block: %w", err)
+		return nil, err
 	}
 	tx := withdrawalRow(adapter, wallet, plan, source, toAddress, externalUserID, txID, signed.TxHash, rawPayload)
 	if token != nil {
@@ -572,6 +574,34 @@ func (s *service) recordBeforeSend(ctx context.Context, tx *models.Transaction, 
 		}
 		return nil
 	})
+}
+
+// pendingPayload is the raw_payload of a withdrawal row recorded before its send:
+// the pending outcome and, sealed, the signed bytes a same-key retry sends again if
+// the send is never answered (none without a sealer). Bytes that cannot be sealed
+// stop the withdrawal before anything is recorded or sent.
+func (s *service) pendingPayload(adapter types.Chain, signed *types.SignedTx, head uint64) (string, error) {
+	raw, err := broadcastRawPayload(adapter, signed, head, chain.BroadcastOutcomePending)
+	if err != nil {
+		return "", fmt.Errorf("record last valid block: %w", err)
+	}
+	if s.sealer == nil || signed == nil || len(signed.RawBytes) == 0 {
+		return raw, nil
+	}
+	sealed, err := s.sealer.Seal(hex.EncodeToString(signed.RawBytes))
+	if err != nil {
+		return "", fmt.Errorf("seal the signed withdrawal: %w", err)
+	}
+	payload := map[string]any{}
+	if decodeErr := json.Unmarshal([]byte(raw), &payload); decodeErr != nil {
+		return "", fmt.Errorf("record the signed withdrawal: %w", decodeErr)
+	}
+	payload[chain.SignedTxPayloadKey] = sealed
+	withBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("record the signed withdrawal: %w", err)
+	}
+	return string(withBytes), nil
 }
 
 // broadcastRefusedReason is the error_message of a withdrawal row recorded before

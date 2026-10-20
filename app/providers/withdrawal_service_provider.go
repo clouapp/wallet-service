@@ -160,6 +160,7 @@ func newSweepService(app foundation.Application) (sweep.Service, error) {
 		GasDefaults:     nil,
 		TokenPricer:     prices,
 		WithdrawalLinks: withdrawalRows,
+		Sealer:          settings.CryptSealer{},
 	}), nil
 }
 

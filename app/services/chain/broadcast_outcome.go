@@ -40,12 +40,6 @@ const (
 	NonceProofRetryAtPayloadKey = "nonce_proof_retry_at"
 )
 
-// MinedNonceReader is an adapter that reads how many transactions of a sender are
-// mined (EVM eth_getTransactionCount at latest).
-type MinedNonceReader interface {
-	MinedNonce(ctx context.Context, from string) (uint64, error)
-}
-
 // SenderNonceReader is an adapter whose signed transactions spend a sender nonce
 // (EVM).
 type SenderNonceReader interface {

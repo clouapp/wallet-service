@@ -30,23 +30,6 @@ func (a *EVMLive) SenderNonce(signed *types.SignedTx) (uint64, error) {
 	return tx.Nonce(), nil
 }
 
-// MinedNonce is how many transactions of from are mined (eth_getTransactionCount at
-// latest): a nonce below it is spent.
-func (a *EVMLive) MinedNonce(ctx context.Context, from string) (uint64, error) {
-	var count string
-	if err := a.rpc.Call(ctx, "eth_getTransactionCount", &count, from, "latest"); err != nil {
-		return 0, err
-	}
-	mined, err := parseHexQuantity(count, "nonce count")
-	if err != nil {
-		return 0, err
-	}
-	if !mined.IsUint64() {
-		return 0, fmt.Errorf("evm mined nonce of %s: %s does not fit", from, count)
-	}
-	return mined.Uint64(), nil
-}
-
 // NonceSpend finds, by positive proof, the transaction that spent nonce of from
 // (chain.NonceSpendReader). The search starts at the block max(confirmations, 12)
 // under the head and walks back, doubling its step, to a block where the nonce was

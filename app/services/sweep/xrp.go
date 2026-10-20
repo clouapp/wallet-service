@@ -2,7 +2,6 @@ package sweep
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -73,9 +72,6 @@ func broadcastRawPayload(adapter types.Chain, signed *types.SignedTx, head uint6
 	}
 	if outcome != "" {
 		payload[chain.BroadcastOutcomePayloadKey] = outcome
-	}
-	if outcome == chain.BroadcastOutcomePending && signed != nil {
-		payload[chain.SignedTxPayloadKey] = hex.EncodeToString(signed.RawBytes)
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {

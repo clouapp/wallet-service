@@ -22,8 +22,8 @@ func (*sweepServiceStub) PlanForWithdrawalTo(context.Context, uuid.UUID, string,
 	return nil, nil
 }
 
-func (*sweepServiceStub) SettleUnanswered(context.Context, *models.Transaction) (sweepsvc.SendSettlement, error) {
-	return sweepsvc.SendSettlement{}, nil
+func (*sweepServiceStub) SettleUnanswered(context.Context, *models.Transaction) (*models.Transaction, error) {
+	return nil, nil
 }
 func (*sweepServiceStub) ExecutePlan(context.Context, *sweepsvc.Plan, sweepsvc.SigningCredentials, uuid.UUID, string, string) (*sweepsvc.Result, error) {
 	return nil, nil

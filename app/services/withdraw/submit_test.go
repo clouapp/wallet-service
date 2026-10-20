@@ -3,6 +3,7 @@ package withdraw
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -69,16 +70,16 @@ func (e *submitEvents) PublishFailed(_ context.Context, _ *models.Withdrawal, co
 // planSweep plans a withdrawal and executes it the way the test says.
 type planSweep struct {
 	mockSweepSvc
-	// settlement and settleErr answer SettleUnanswered; settled counts the calls.
-	settlement sweep.SendSettlement
-	settleErr  error
-	settled    int
-	strategy   sweep.Strategy
-	shortfall  error
-	planErr    error
-	result     *sweep.Result
-	planned    uuid.UUID
-	plannedTo  sweep.Destination
+	// settleErr answers SettleUnanswered (the row as given otherwise); settled counts
+	// the calls.
+	settleErr error
+	settled   int
+	strategy  sweep.Strategy
+	shortfall error
+	planErr   error
+	result    *sweep.Result
+	planned   uuid.UUID
+	plannedTo sweep.Destination
 }
 
 func (p *planSweep) PlanForWithdrawalTo(_ context.Context, walletID uuid.UUID, asset string, amount *big.Int, to sweep.Destination, callerAccountID uuid.UUID) (*sweep.Plan, error) {
@@ -90,12 +91,12 @@ func (p *planSweep) PlanForWithdrawalTo(_ context.Context, walletID uuid.UUID, a
 	return &sweep.Plan{WalletID: walletID, Asset: asset, Amount: amount, Strategy: p.strategy, Shortfall: p.shortfall}, nil
 }
 
-func (p *planSweep) SettleUnanswered(_ context.Context, tx *models.Transaction) (sweep.SendSettlement, error) {
+func (p *planSweep) SettleUnanswered(_ context.Context, tx *models.Transaction) (*models.Transaction, error) {
 	p.settled++
-	if p.settlement.Transaction == nil {
-		p.settlement.Transaction = tx
+	if p.settleErr != nil {
+		return nil, p.settleErr
 	}
-	return p.settlement, p.settleErr
+	return tx, nil
 }
 
 func (p *planSweep) ExecutePlan(context.Context, *sweep.Plan, sweep.SigningCredentials, uuid.UUID, string, string) (*sweep.Result, error) {
@@ -590,17 +591,15 @@ func TestSubmit_SameKey_ASecondSubmitWaitsForTheFirstsOutcome(t *testing.T) {
 	}
 }
 
-func TestSubmit_Retry_OfASendNeverAnsweredIsSettledBeforeItIsReplayed(t *testing.T) {
+func TestSubmit_Retry_OfASendNeverAnsweredIsSettledAndNeverSignedAgain(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		settlement sweep.SendSettlement
-		settleErr  error
-		resigned   bool
-		failed     bool
+		name      string
+		settleErr error
+		failed    bool
 	}{
-		{"the transfer is on its way", sweep.SendSettlement{Sent: true}, nil, false, false},
-		{"the send never happened", sweep.SendSettlement{}, nil, true, false},
-		{"nothing can be verified yet", sweep.SendSettlement{}, sweep.ErrSendUnverified, false, false},
+		{"the transfer is on its way or its outcome unknown", nil, false},
+		{"nothing can be verified yet", sweep.ErrSendUnverified, false},
+		{"its bytes can never be valid", fmt.Errorf("%w: invalid sender", sweep.ErrSignedBytesInvalid), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			wallet := sealedCreateWallet(t, "eth", nil)
@@ -608,13 +607,12 @@ func TestSubmit_Retry_OfASendNeverAnsweredIsSettledBeforeItIsReplayed(t *testing
 			rows := newSubmitRows()
 			rows.byID = map[uuid.UUID]*models.Withdrawal{existingID: {ID: existingID, WalletID: wallet.ID, Status: models.WithdrawalStatusBroadcasting}}
 			fresh := &models.Transaction{ID: uuid.New(), TxHash: "NEW"}
-			runner := &planSweep{strategy: sweep.StrategyDirectFromBase, result: &sweep.Result{FinalWithdrawTx: fresh},
-				settlement: tc.settlement, settleErr: tc.settleErr}
+			runner := &planSweep{strategy: sweep.StrategyDirectFromBase, result: &sweep.Result{FinalWithdrawTx: fresh}, settleErr: tc.settleErr}
 			executed := &countingRunner{planSweep: runner}
 			svc := newSubmitService(t, wallet, runner, rows, &submitEvents{})
 			svc.sweep = executed
 			unanswered := &models.Transaction{ID: uuid.New(), TxHash: "OLD", Status: string(types.TxStatusConfirming),
-				RawPayload: `{"broadcast_outcome":"pending","signed_tx":"aa"}`}
+				RawPayload: `{"broadcast_outcome":"pending","signed_tx":"enc:v1:aa"}`}
 			txs := newMemTransactions()
 			txs.byKey = map[string]*models.Transaction{existingID.String(): unanswered}
 			svc.transactionRepo = txs
@@ -625,24 +623,22 @@ func TestSubmit_Retry_OfASendNeverAnsweredIsSettledBeforeItIsReplayed(t *testing
 			if runner.settled != 1 {
 				t.Fatalf("settled %d times: a row whose send was never answered is checked before any replay", runner.settled)
 			}
-			if executed.executions != map[bool]int{true: 1, false: 0}[tc.resigned] {
-				t.Fatalf("executions %d: signed again only when the send provably never happened", executed.executions)
+			if executed.executions != 0 {
+				t.Fatalf("executions %d: a retry never signs a second payment", executed.executions)
 			}
-			if tc.settleErr != nil {
+			switch {
+			case tc.failed:
+				if !errors.Is(err, sweep.ErrSignedBytesInvalid) || len(rows.failed) != 1 {
+					t.Fatalf("err %v failed %v: bytes that can never be valid fail the withdrawal", err, rows.failed)
+				}
+			case tc.settleErr != nil:
 				if !errors.Is(err, sweep.ErrSendUnverified) || len(rows.failed) != 0 {
 					t.Fatalf("err %v failed %v: unverified is neither replayed nor failed", err, rows.failed)
 				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			want := "OLD"
-			if tc.resigned {
-				want = "NEW"
-			}
-			if result.Withdrawal.TxHash != want {
-				t.Fatalf("withdrawal carries %s, want %s", result.Withdrawal.TxHash, want)
+			default:
+				if err != nil || result.Withdrawal.TxHash != "OLD" || len(rows.failed) != 0 {
+					t.Fatalf("result %+v err %v failed %v: the row is replayed as broadcast", result, err, rows.failed)
+				}
 			}
 		})
 	}

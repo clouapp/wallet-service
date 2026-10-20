@@ -14,130 +14,156 @@ import (
 	"github.com/macrowallets/waas/pkg/types"
 )
 
-// ErrSendUnverified is a withdrawal row whose send was never answered and that
-// cannot be settled now (the same bytes reached no node, or nothing proves what a
-// refusal means): it is neither replayed as broadcast nor signed again. A later retry
-// checks it again; withdrawals:reconcile settles it.
+// ErrSendUnverified is a withdrawal row whose send was never answered and whose
+// same bytes reached no node now: it is neither replayed as broadcast nor signed
+// again. A later retry checks it again; withdrawals:reconcile settles it.
 var ErrSendUnverified = errors.New("the withdrawal's send could not be verified yet")
 
-// SendSettlement is what SettleUnanswered found. Sent is true when the transfer is
-// on its way (an endpoint has it, or the same bytes were taken or got an unknown
-// answer): the row is to be replayed. Otherwise the send never happened: the row is
-// failed and its key released, so the withdrawal may be signed again.
-type SendSettlement struct {
-	Sent        bool
-	Transaction *models.Transaction
+// ErrSignedBytesInvalid is a withdrawal row whose signed bytes a node refused for a
+// reason no time can change (a signature or sender that does not verify, another
+// chain id, bytes that do not decode, gas below the intrinsic cost, data too
+// large): they were never valid, so they were never sent. The row is failed.
+var ErrSignedBytesInvalid = errors.New("the withdrawal's signed bytes can never be valid")
+
+// Refusals that prove signed bytes can never be valid, whenever they are sent
+// (geth, Nethermind and Erigon EVM answers, Solana, TRON, the Bitcoin family, XRP).
+// Every other refusal (nonce too low, underpriced, a full pool, a fee cap under the
+// base fee, insufficient funds) can follow the original's own landing or depends on
+// the moment, and proves nothing.
+var neverValidPhrases = []string{
+	"invalid sender", "invalid signature", "invalid chain id", "chain id mismatch",
+	"intrinsic gas too low", "oversized data", "transaction type not supported", "rlp:",
+	"signature verification failure", "signature error", "mandatory-script-verify-flag-failed", "tembad_signature",
+}
+
+// Answers of a node that already holds these exact bytes, for an adapter that
+// returns them as a refusal.
+var alreadyHeldPhrases = []string{
+	"already known", "known transaction", "already imported", "already in mempool", "already been processed",
+	"txn-already-in-mempool", "txn-already-known", "transaction already in block chain", "dup_transaction", "tefalready",
 }
 
 // SettleUnanswered settles a withdrawal row recorded before its send whose send was
 // never answered (broadcast_outcome pending: a crash between the insert and the
-// answer, or a refusal whose mark failed), before a retry with its key replays it:
+// answer, or a refusal whose mark failed), before a retry with its key replays it.
+// It never signs: a second signature could pay the withdrawal twice.
 //
 //  1. its hash on every endpoint: found (mined, or failed on chain) is sent;
-//  2. the same signed bytes, kept in raw_payload, sent again (never a new
-//     signature): taken (or already known) or an unknown answer is sent; reaching no
-//     node is ErrSendUnverified;
-//  3. a refusal is proof the send never happened only when the sender's nonce is
-//     still free (EVM: nothing mined it; a node that held the bytes would have
-//     answered "already known"): the row is failed. A spent nonce is an unknown
-//     outcome, settled by the tracker's nonce proof; elsewhere the refusal proves
-//     nothing and is ErrSendUnverified.
-func (s *service) SettleUnanswered(ctx context.Context, tx *models.Transaction) (SendSettlement, error) {
+//  2. the same signed bytes, kept sealed in raw_payload, sent again: accepted, or
+//     already held by the node, is sent; an unknown answer is unknown; reaching no
+//     node is ErrSendUnverified and changes nothing;
+//  3. any refusal is an unknown outcome: the original may be in another pool or
+//     mined already, and the tracker's positive proofs (EVM nonce spend, XRP and
+//     Solana expiry) settle it. Only a refusal proving the bytes can never be valid
+//     (neverValidPhrases) fails the row, as ErrSignedBytesInvalid.
+//
+// A row whose bytes were not kept, or do not open, is an unknown outcome too. The
+// row returned (sent or unknown) is replayed as broadcast; the bytes are dropped
+// from it.
+func (s *service) SettleUnanswered(ctx context.Context, tx *models.Transaction) (*models.Transaction, error) {
 	if tx == nil {
-		return SendSettlement{}, fmt.Errorf("settle unanswered withdrawal: transaction is required")
+		return nil, fmt.Errorf("settle unanswered withdrawal: transaction is required")
 	}
 	adapter, err := s.registry.Chain(tx.Chain)
 	if err != nil {
-		return SendSettlement{}, fmt.Errorf("%w: %w", ErrSendUnverified, err)
+		return nil, fmt.Errorf("%w: %w", ErrSendUnverified, err)
 	}
 	block, err := searchBlock(ctx, adapter, tx.TxHash)
 	var onChain *chain.TransactionFailedError
 	switch {
 	case errors.As(err, &onChain) || (err == nil && block > 0):
-		return s.recordAnswer(ctx, tx, chain.BroadcastOutcomeAccepted)
+		return s.recordAnswer(ctx, tx, chain.BroadcastOutcomeAccepted), nil
 	case err != nil:
-		return SendSettlement{}, fmt.Errorf("%w: search %s: %v", ErrSendUnverified, tx.TxHash, chain.ClientText(err))
+		return nil, fmt.Errorf("%w: search %s: %w", ErrSendUnverified, tx.TxHash, err)
 	}
-	payload := map[string]any{}
-	_ = json.Unmarshal([]byte(tx.RawPayload), &payload)
-	signedHex, _ := payload[chain.SignedTxPayloadKey].(string)
-	raw, decodeErr := hex.DecodeString(strings.TrimSpace(signedHex))
-	if decodeErr != nil || len(raw) == 0 {
-		return SendSettlement{}, fmt.Errorf("%w: the signed bytes of %s were not kept", ErrSendUnverified, tx.TxHash)
+	raw, ok := s.keptSignedBytes(tx)
+	if !ok {
+		slog.Warn("withdrawal send never answered and its signed bytes cannot be sent again; recorded as an unknown outcome",
+			"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain)
+		return s.recordAnswer(ctx, tx, chain.BroadcastOutcomeUnknown), nil
 	}
 
 	_, sendErr := adapter.BroadcastTransaction(ctx, &types.SignedTx{ChainID: tx.Chain, RawBytes: raw, TxHash: tx.TxHash})
 	switch {
-	case sendErr == nil:
-		return s.recordAnswer(ctx, tx, chain.BroadcastOutcomeAccepted)
+	case sendErr == nil || answerHas(sendErr, alreadyHeldPhrases):
+		return s.recordAnswer(ctx, tx, chain.BroadcastOutcomeAccepted), nil
 	case errors.Is(sendErr, chain.ErrUnknownOutcome):
-		return s.recordAnswer(ctx, tx, chain.BroadcastOutcomeUnknown)
+		return s.recordAnswer(ctx, tx, chain.BroadcastOutcomeUnknown), nil
 	case chain.RequestNotSent(sendErr) || errors.Is(sendErr, chain.ErrRateLimited):
-		return SendSettlement{}, fmt.Errorf("%w: the same bytes reached no node: %v", ErrSendUnverified, chain.ClientText(sendErr))
+		return nil, fmt.Errorf("%w: the same bytes reached no node: %w", ErrSendUnverified, sendErr)
+	case answerHas(sendErr, neverValidPhrases):
+		return nil, s.failNeverValid(ctx, tx, sendErr)
 	}
-	spent, proven := minedNonceSpent(ctx, adapter, tx, payload)
-	switch {
-	case !proven:
-		return SendSettlement{}, fmt.Errorf("%w: the same bytes were refused (%v) and nothing proves they were never taken",
-			ErrSendUnverified, chain.ClientText(sendErr))
-	case spent:
-		return s.recordAnswer(ctx, tx, chain.BroadcastOutcomeUnknown)
+	slog.Warn("withdrawal send never answered and its same bytes were refused; recorded as an unknown outcome for the tracker's proofs",
+		"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "refusal", chain.ClientText(sendErr))
+	return s.recordAnswer(ctx, tx, chain.BroadcastOutcomeUnknown), nil
+}
+
+// keptSignedBytes opens the signed bytes the row keeps.
+func (s *service) keptSignedBytes(tx *models.Transaction) ([]byte, bool) {
+	payload := map[string]any{}
+	_ = json.Unmarshal([]byte(tx.RawPayload), &payload)
+	stored, _ := payload[chain.SignedTxPayloadKey].(string)
+	if s.sealer == nil || strings.TrimSpace(stored) == "" {
+		return nil, false
 	}
-	refused := withoutSignedBytes(payload, chain.BroadcastOutcomeRefused)
-	if err := s.retryWrite(ctx, tx, "mark never-sent withdrawal", func(txCtx context.Context) error {
+	opened, err := s.sealer.Open(stored)
+	if err != nil {
+		return nil, false
+	}
+	raw, err := hex.DecodeString(strings.TrimSpace(opened))
+	return raw, err == nil && len(raw) > 0
+}
+
+// failNeverValid fails a row whose bytes can never be valid and drops them.
+func (s *service) failNeverValid(ctx context.Context, tx *models.Transaction, refusal error) error {
+	refused := withoutSignedBytes(tx.RawPayload, chain.BroadcastOutcomeRefused)
+	if err := s.retryWrite(ctx, tx, "mark never-valid withdrawal", func(txCtx context.Context) error {
 		if err := s.txRepo.MarkFailed(txCtx, tx.ID, broadcastRefusedReason); err != nil {
 			return err
 		}
 		return s.txRepo.RecordBroadcast(txCtx, tx.ID, tx.TxHash, refused)
 	}); err != nil {
-		return SendSettlement{}, fmt.Errorf("%w: %w", ErrSendUnverified, err)
+		return fmt.Errorf("%w: %w", ErrSendUnverified, err)
 	}
-	slog.Warn("withdrawal never sent: the same bytes were refused with the sender nonce free; the withdrawal may be signed again",
-		"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "refusal", chain.ClientText(sendErr))
+	slog.Warn("withdrawal signed bytes can never be valid; the row is failed", "tx_id", tx.ID, "tx_hash", tx.TxHash,
+		"chain", tx.Chain, "refusal", chain.ClientText(refusal))
 	tx.Status, tx.RawPayload = string(types.TxStatusFailed), refused
-	return SendSettlement{Transaction: tx}, nil
+	return fmt.Errorf("%w: %s", ErrSignedBytesInvalid, chain.ClientText(refusal))
 }
 
-// recordAnswer keeps outcome on the row (the signed bytes dropped): it is sent.
-func (s *service) recordAnswer(ctx context.Context, tx *models.Transaction, outcome string) (SendSettlement, error) {
-	payload := map[string]any{}
-	_ = json.Unmarshal([]byte(tx.RawPayload), &payload)
-	answered := withoutSignedBytes(payload, outcome)
+// recordAnswer keeps outcome on the row (the signed bytes dropped). A write that
+// fails is logged: the row is replayed all the same, and the next retry records it.
+func (s *service) recordAnswer(ctx context.Context, tx *models.Transaction, outcome string) *models.Transaction {
+	answered := withoutSignedBytes(tx.RawPayload, outcome)
 	if err := s.retryWrite(ctx, tx, "record withdrawal answer", func(txCtx context.Context) error {
 		return s.txRepo.RecordBroadcast(txCtx, tx.ID, tx.TxHash, answered)
 	}); err != nil {
-		// The transfer is on its way: replay it; the next retry records it again.
 		slog.Error("withdrawal send settled but its answer could not be recorded", "tx_id", tx.ID, "tx_hash", tx.TxHash, "error", err)
-	} else {
-		tx.RawPayload = answered
+		return tx
 	}
-	return SendSettlement{Sent: true, Transaction: tx}, nil
+	tx.RawPayload = answered
+	return tx
 }
 
-// minedNonceSpent reads, for a chain that counts mined nonces (EVM), whether the
-// row's sender nonce is spent; proven is false elsewhere or when it cannot be read.
-func minedNonceSpent(ctx context.Context, adapter types.Chain, tx *models.Transaction, payload map[string]any) (spent, proven bool) {
-	reader, ok := adapter.(chain.MinedNonceReader)
-	nonce, hasNonce := payload[chain.SenderNoncePayloadKey].(float64)
-	if !ok || !hasNonce || strings.TrimSpace(tx.FromAddress) == "" {
-		return false, false
-	}
-	mined, err := reader.MinedNonce(ctx, tx.FromAddress)
-	if err != nil {
-		slog.Warn("read the sender's mined nonce", "tx_id", tx.ID, "chain", tx.Chain, "error", err)
-		return false, false
-	}
-	return mined > uint64(nonce), true
-}
-
-// withoutSignedBytes is payload with outcome and without the signed bytes.
-func withoutSignedBytes(payload map[string]any, outcome string) string {
-	kept := make(map[string]any, len(payload))
-	for key, value := range payload {
-		if key != chain.SignedTxPayloadKey {
-			kept[key] = value
+// answerHas reports a node answer whose text (the error or its provider cause)
+// holds one of phrases.
+func answerHas(err error, phrases []string) bool {
+	text := strings.ToLower(err.Error() + " " + chain.CauseText(err))
+	for _, phrase := range phrases {
+		if strings.Contains(text, phrase) {
+			return true
 		}
 	}
+	return false
+}
+
+// withoutSignedBytes is rawPayload with outcome and without the signed bytes; every
+// other key (the sender nonce and the head the tracker's proof reads) is kept.
+func withoutSignedBytes(rawPayload, outcome string) string {
+	kept := map[string]any{}
+	_ = json.Unmarshal([]byte(rawPayload), &kept)
+	delete(kept, chain.SignedTxPayloadKey)
 	kept[chain.BroadcastOutcomePayloadKey] = outcome
 	raw, _ := json.Marshal(kept)
 	return string(raw)
