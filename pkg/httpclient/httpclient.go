@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"time"
 )
@@ -82,11 +83,45 @@ func NewClient(timeout time.Duration) *Client {
 // response instead of being followed, so the request's headers never go to the
 // Location it names.
 func NewClientWithoutRedirects(timeout time.Duration) *Client {
-	raw := New(timeout)
+	return withoutRedirects(New(timeout))
+}
+
+func withoutRedirects(raw *http.Client) *Client {
 	raw.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
 	return Wrap(raw)
+}
+
+// DialFunc opens the connection of a request to address, the host:port of its URL.
+type DialFunc func(ctx context.Context, network, address string) (net.Conn, error)
+
+// DirectTransport is a pool of connections that are all opened by one DialFunc and
+// never through a proxy (HTTP_PROXY and HTTPS_PROXY are not read), so the dial
+// function sees the destination itself: egress.Guard.DialContext checks it there.
+type DirectTransport struct {
+	raw *http.Transport
+}
+
+// NewDirectTransport builds a health-checked transport (see New) whose connections
+// dial opens.
+func NewDirectTransport(dial DialFunc) *DirectTransport {
+	if dial == nil {
+		panic("httpclient: dial is required")
+	}
+	transport := newTransport(pingAfterIdleRead, pingTimeout)
+	transport.Proxy = nil
+	transport.DialContext = dial
+	return &DirectTransport{raw: transport}
+}
+
+// ClientWithoutRedirects is NewClientWithoutRedirects over this transport: every
+// client it returns shares its connections.
+func (t *DirectTransport) ClientWithoutRedirects(timeout time.Duration) *Client {
+	if timeout <= 0 {
+		panic(fmt.Sprintf("httpclient: timeout must be positive, got %s", timeout))
+	}
+	return withoutRedirects(&http.Client{Timeout: timeout, Transport: t.raw})
 }
 
 // Wrap adapts an existing client, including one from httptest.Server.Client.
