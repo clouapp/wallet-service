@@ -10,6 +10,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/pkg/types"
@@ -43,6 +44,16 @@ func newDepositSvc(registry *chain.Registry, webhookSvc *webhook.Service) *Servi
 		Transactions: repositories.NewTransactionRepository(nil),
 		Checkpoints:  repositories.NewDepositScanCheckpointRepository(nil),
 		Cache:        memcache.New(),
+	})
+}
+
+// newIngestSvc is the production provider push service on the test database.
+func newIngestSvc(registry *chain.Registry) *ingest.Service {
+	return ingest.NewService(ingest.Deps{
+		Registry:     registry,
+		Webhook:      newWebhookSvc(),
+		AddressRepo:  repositories.NewAddressRepository(nil),
+		Transactions: repositories.NewTransactionRepository(nil),
 	})
 }
 

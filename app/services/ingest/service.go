@@ -11,6 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/chainregistry"
+	"github.com/macrowallets/waas/app/services/depositrecord"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/withdraw"
@@ -26,9 +27,8 @@ type addressReader interface {
 
 // transactionStore is the deposit row ingest writes after it attributes a transfer.
 type transactionStore interface {
-	CountByChainTxHashAndLogIndex(ctx context.Context, chainID, txHash string, logIndex int, txType string) (int64, error)
+	depositrecord.Store
 	CountInternalTransfers(ctx context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error)
-	Create(ctx context.Context, tx *models.Transaction) error
 }
 
 // AddressSet is the watched-address set. The provider supplies it; this package
@@ -134,14 +134,6 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		return fmt.Errorf("lookup address: %w", err)
 	}
 
-	exists, err := s.txRepo.CountByChainTxHashAndLogIndex(ctx, chainID, transfer.TxHash, transfer.LogIndex, models.TxTypeDeposit)
-	if err != nil {
-		return err
-	}
-	if exists > 0 {
-		return nil
-	}
-
 	internal, err := s.txRepo.CountInternalTransfers(ctx, chainID, transfer.TxHash, addr.WalletID)
 	if err != nil {
 		return fmt.Errorf("check internal transfer: %w", err)
@@ -212,10 +204,18 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		BlockNumber:    int64(transfer.BlockNumber),
 		BlockHash:      transfer.BlockHash,
 		LogIndex:       transfer.LogIndex,
+		Direction:      models.TxDirectionInbound,
+		Source:         models.TxSourceDepositIngest,
+		RawPayload:     "{}",
 	}
 
-	if err := s.txRepo.Create(ctx, tx); err != nil {
-		return fmt.Errorf("insert tx: %w", err)
+	outcome, err := depositrecord.Record(ctx, s.txRepo, tx)
+	if err != nil {
+		return fmt.Errorf("record deposit: %w", err)
+	}
+	if outcome != depositrecord.Created {
+		depositrecord.LogSkipped(outcome, tx)
+		return nil
 	}
 
 	s.publishDepositPending(ctx, *tx)

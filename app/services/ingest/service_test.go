@@ -358,11 +358,17 @@ func (f *ingestTxRepo) FindByWallet(walletID uuid.UUID, txType, status string, l
 func (f *ingestTxRepo) FindByChainAndTxHash(chainID, txHash string) (*models.Transaction, error) {
 	return nil, nil
 }
-func (f *ingestTxRepo) CountByChainAndTxHash(chainID, txHash, txType string) (int64, error) {
-	return 0, nil
+func (f *ingestTxRepo) FindDepositsByChainAndTxHash(_ context.Context, chainID, txHash string) ([]models.Transaction, error) {
+	var found []models.Transaction
+	for _, tx := range f.created {
+		if tx.Chain == chainID && tx.TxHash == txHash {
+			found = append(found, *tx)
+		}
+	}
+	return found, nil
 }
-func (f *ingestTxRepo) CountByChainTxHashAndLogIndex(_ context.Context, chainID, txHash string, logIndex int, txType string) (int64, error) {
-	return 0, nil
+func (f *ingestTxRepo) ClaimDepositPosition(context.Context, uuid.UUID, int) (bool, error) {
+	return false, nil
 }
 func (f *ingestTxRepo) CountInternalTransfers(_ context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error) {
 	if owner, ok := f.internalHashes[txHash]; ok && owner == walletID {

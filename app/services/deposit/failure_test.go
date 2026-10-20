@@ -677,7 +677,7 @@ func TestUnique_Deposit_IndexRejectsASecondRowForTheSameTransaction(t *testing.T
 	newDeposit := func(txType string) *models.Transaction {
 		return &models.Transaction{
 			ID: uuid.New(), WalletID: wallet.ID, ExternalUserID: "user", Chain: scanTestChain, TxType: txType,
-			TxHash: "0xsame", LogIndex: models.ScannerDepositLogIndex, ToAddress: "to", Amount: "1", Asset: scanTestChain,
+			TxHash: "0xsame", LogIndex: types.NativeValuePosition, ToAddress: "to", Amount: "1", Asset: scanTestChain,
 			Status: "pending", Direction: models.TxDirectionInbound, Source: models.TxSourceChain, RawPayload: "{}",
 		}
 	}

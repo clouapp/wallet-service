@@ -314,6 +314,7 @@ func InsertTransaction(t *testing.T, walletID uuid.UUID, addrID *uuid.UUID, chai
 		Source:         models.TxSourceChain,
 		RawPayload:     emptyJSONObject,
 		TxHash:         txHash,
+		LogIndex:       models.TransactionLogIndexNone,
 		ToAddress:      "0xtoaddr",
 		Amount:         amount,
 		Asset:          asset,
