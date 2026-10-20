@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -172,7 +173,7 @@ func TestQuick_NodeVerifyInbound_ValidSignature(t *testing.T) {
 	body := []byte(`[{"txid":"x"}]`)
 	secret := "qn_security_token"
 
-	ok, err := p.VerifyInbound(signedHeaders("X-QN-Signature", "nonce-1", "1760961600", body, secret), body, secret)
+	ok, err := p.VerifyInbound(signedHeaders("X-QN-Signature", "nonce-1", now(), body, secret), body, secret)
 	require.NoError(t, err)
 	assert.True(t, ok)
 }
@@ -181,16 +182,16 @@ func TestQuick_NodeVerifyInbound_TheNonceAndTimestampAreSigned(t *testing.T) {
 	p := NewQuickNodeProvider("api-key")
 	body := []byte(`[{"txid":"x"}]`)
 	secret := "qn_security_token"
-	headers := signedHeaders("X-QN-Signature", "nonce-1", "1760961600", body, secret)
+	headers := signedHeaders("X-QN-Signature", "nonce-1", now(), body, secret)
 
-	headers.Set("X-QN-Timestamp", "1760961601")
+	headers.Set("X-QN-Timestamp", later())
 	ok, err := p.VerifyInbound(headers, body, secret)
 	require.NoError(t, err)
 	assert.False(t, ok, "a replayed body under another timestamp is refused")
 
 	bodyOnly := providers.Header{}
 	bodyOnly.Set("X-QN-Nonce", "nonce-1")
-	bodyOnly.Set("X-QN-Timestamp", "1760961600")
+	bodyOnly.Set("X-QN-Timestamp", now())
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(body)
 	bodyOnly.Set("X-QN-Signature", hex.EncodeToString(mac.Sum(nil)))
@@ -203,7 +204,7 @@ func TestQuick_NodeVerifyInbound_InvalidSignature(t *testing.T) {
 	p := NewQuickNodeProvider("api-key")
 	body := []byte(`[{"txid":"x"}]`)
 	secret := "qn_security_token"
-	headers := signedHeaders("X-QN-Signature", "nonce-1", "1760961600", body, "another-token")
+	headers := signedHeaders("X-QN-Signature", "nonce-1", now(), body, "another-token")
 
 	ok, err := p.VerifyInbound(headers, body, secret)
 	require.NoError(t, err)
@@ -213,7 +214,7 @@ func TestQuick_NodeVerifyInbound_InvalidSignature(t *testing.T) {
 func TestQuick_NodeVerifyInbound_MissingHeader(t *testing.T) {
 	p := NewQuickNodeProvider("api-key")
 	body := []byte(`[]`)
-	full := signedHeaders("X-QN-Signature", "nonce-1", "1760961600", body, "secret")
+	full := signedHeaders("X-QN-Signature", "nonce-1", now(), body, "secret")
 	for _, header := range []string{"X-QN-Signature", "X-QN-Nonce", "X-QN-Timestamp"} {
 		h := providers.Header{}
 		for name, values := range full {
@@ -234,7 +235,28 @@ func TestQuick_NodeVerifyInbound_CustomSignatureHeader(t *testing.T) {
 	body := []byte(`{}`)
 	secret := "s"
 
-	ok, err := p.VerifyInbound(signedHeaders("X-Custom-Sig", "n", "1", body, secret), body, secret)
+	ok, err := p.VerifyInbound(signedHeaders("X-Custom-Sig", "n", now(), body, secret), body, secret)
 	require.NoError(t, err)
 	assert.True(t, ok)
+}
+
+// now and later are delivery timestamps inside the replay window.
+func now() string   { return strconv.FormatInt(time.Now().Unix(), 10) }
+func later() string { return strconv.FormatInt(time.Now().Unix()+1, 10) }
+
+func TestQuick_NodeVerifyInbound_RefusesADeliveryOutsideTheReplayWindow(t *testing.T) {
+	p := NewQuickNodeProvider("api-key")
+	body := []byte(`[{"txid":"x"}]`)
+	secret := "qn_security_token"
+	for name, timestamp := range map[string]string{
+		"ten minutes old":   strconv.FormatInt(time.Now().Add(-10*time.Minute).Unix(), 10),
+		"ten minutes ahead": strconv.FormatInt(time.Now().Add(10*time.Minute).Unix(), 10),
+		"not a time":        "yesterday",
+	} {
+		t.Run(name, func(t *testing.T) {
+			ok, err := p.VerifyInbound(signedHeaders("X-QN-Signature", "nonce-1", timestamp, body, secret), body, secret)
+			assert.False(t, ok, "a signed delivery replayed later is refused")
+			assert.Error(t, err)
+		})
+	}
 }

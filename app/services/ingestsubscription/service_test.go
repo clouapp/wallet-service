@@ -25,6 +25,9 @@ const (
 type memoryStore struct {
 	rows      []models.WebhookSubscription
 	createErr error
+	// onCreate runs before an insert, as another run inserting first or a request
+	// whose context ends would.
+	onCreate func(*memoryStore)
 }
 
 func (m *memoryStore) FindByProviderAndChain(_ context.Context, provider, chainID string) (*models.WebhookSubscription, error) {
@@ -50,6 +53,9 @@ func (m *memoryStore) FindAll(context.Context) ([]models.WebhookSubscription, er
 }
 
 func (m *memoryStore) Create(_ context.Context, sub *models.WebhookSubscription) error {
+	if m.onCreate != nil {
+		m.onCreate(m)
+	}
 	if m.createErr != nil {
 		return m.createErr
 	}
@@ -63,6 +69,8 @@ type fakeCreator struct {
 	createErr error
 	deleted   []string
 	deleteErr error
+	// deleteCtxErr is the state of the context each delete ran with.
+	deleteCtxErr []error
 }
 
 func (f *fakeCreator) CreateWebhook(_ context.Context, cfg providers.ProviderConfig) (*providers.ProviderWebhook, error) {
@@ -73,9 +81,26 @@ func (f *fakeCreator) CreateWebhook(_ context.Context, cfg providers.ProviderCon
 	return f.webhook, nil
 }
 
-func (f *fakeCreator) DeleteWebhook(_ context.Context, webhookID string) error {
+func (f *fakeCreator) DeleteWebhook(ctx context.Context, webhookID string) error {
 	f.deleted = append(f.deleted, webhookID)
+	f.deleteCtxErr = append(f.deleteCtxErr, ctx.Err())
 	return f.deleteErr
+}
+
+// activatingCreator creates its webhooks paused, as QuickNode streams are.
+type activatingCreator struct {
+	*fakeCreator
+	activated   []string
+	activateErr error
+	order       *[]string
+}
+
+func (a *activatingCreator) ActivateWebhook(_ context.Context, webhookID string) error {
+	a.activated = append(a.activated, webhookID)
+	if a.order != nil {
+		*a.order = append(*a.order, "activate")
+	}
+	return a.activateErr
 }
 
 type fakeSync struct {
@@ -363,4 +388,132 @@ func TestList_Subscriptions_ShowsTheHostAndNeverTheSecret(t *testing.T) {
 		Host: "wallets.example.com", Status: "active", SyncStatus: "synced", LastSyncedAt: &synced,
 	}, listed[0])
 	assert.False(t, strings.Contains(fmt.Sprintf("%+v", listed), testSecret))
+}
+
+func newQuickNodeFixture(t *testing.T) (*fixture, *activatingCreator) {
+	t.Helper()
+	activating := &activatingCreator{fakeCreator: &fakeCreator{webhook: &providers.ProviderWebhook{ProviderWebhookID: "stream-1", SigningSecret: testSecret}}}
+	f := newFixture(t, func(d *Deps) {
+		d.Creators[providers.ProviderQuickNode] = activating
+		inner := d.ChainNetwork
+		d.ChainNetwork = func(ctx context.Context, chainID string) (string, error) {
+			if chainID == "btc" {
+				return models.NetworkBitcoinMainnet, nil
+			}
+			return inner(ctx, chainID)
+		}
+	})
+	f.keys[providers.ProviderQuickNode] = "qn-key"
+	return f, activating
+}
+
+func TestSubscribe_ActivatesAPausedWebhookOnceItsRowIsStored(t *testing.T) {
+	f, activating := newQuickNodeFixture(t)
+	var order []string
+	activating.order = &order
+	f.store.onCreate = func(*memoryStore) { order = append(order, "store") }
+
+	plan, err := subscribe(f, "quicknode", "btc", true)
+
+	require.NoError(t, err)
+	assert.True(t, plan.Applied)
+	assert.Equal(t, []string{"stream-1"}, activating.activated)
+	assert.Equal(t, []string{"store", "activate"}, order, "a stream pushes only once its secret can verify it")
+	assert.Equal(t, []string{"btc"}, f.sync.chains)
+}
+
+func TestSubscribe_ReportsAFailedActivationAndActivatesOnTheNextRun(t *testing.T) {
+	f, activating := newQuickNodeFixture(t)
+	activating.activateErr = errors.New("quicknode: 503")
+
+	plan, err := subscribe(f, "quicknode", "btc", true)
+	require.ErrorIs(t, err, ErrActivationFailed)
+	assert.True(t, plan.Applied, "the row stays: the next run activates it")
+	assert.Contains(t, err.Error(), "stream-1")
+
+	activating.activateErr = nil
+	plan, err = subscribe(f, "quicknode", "btc", true)
+	require.NoError(t, err)
+	require.NotNil(t, plan.Existing)
+	assert.Equal(t, []string{"stream-1", "stream-1"}, activating.activated)
+	assert.Len(t, activating.configs, 1, "no second stream")
+
+	_, err = subscribe(f, "quicknode", "btc", false)
+	require.NoError(t, err)
+	assert.Len(t, activating.activated, 2, "a dry run activates nothing")
+}
+
+func TestSubscribe_TakesALostRaceForTheExistingSubscription(t *testing.T) {
+	f := newFixture(t, nil)
+	winner := models.WebhookSubscription{ID: uuid.New(), ChainID: "teth", Provider: "alchemy", ProviderWebhookID: "wh_winner", Status: models.WebhookSubscriptionActive}
+	f.store.onCreate = func(m *memoryStore) {
+		m.rows = append(m.rows, winner)
+		m.createErr = errors.New(`ERROR: duplicate key value violates unique constraint "webhook_subscriptions_active_chain_provider_unique" (SQLSTATE 23505)`)
+	}
+
+	plan, err := subscribe(f, "alchemy", "teth", true)
+
+	require.NoError(t, err)
+	require.NotNil(t, plan.Existing)
+	assert.Equal(t, winner.ID, plan.Existing.ID)
+	assert.False(t, plan.Applied)
+	assert.Equal(t, []string{"wh_123"}, f.creator.deleted, "the losing run's webhook is deleted")
+	assert.Empty(t, f.sync.chains)
+}
+
+func TestSubscribe_ASubscriptionThatNoLongerPushesIsNotTheExistingOne(t *testing.T) {
+	f := newFixture(t, nil)
+	f.store.rows = append(f.store.rows, models.WebhookSubscription{ID: uuid.New(), ChainID: "teth", Provider: "alchemy", ProviderWebhookID: "wh_old", Status: "disabled"})
+
+	plan, err := subscribe(f, "alchemy", "teth", true)
+
+	require.NoError(t, err)
+	assert.Nil(t, plan.Existing)
+	assert.True(t, plan.Applied)
+	assert.Len(t, f.creator.configs, 1)
+}
+
+func TestSubscribe_DeletesTheWebhookWithAContextThatOutlivesTheRequest(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f := newFixture(t, nil)
+	f.store.onCreate = func(m *memoryStore) {
+		cancel() // the operator interrupted the run while the row was written
+		m.createErr = errors.New("context canceled")
+	}
+
+	_, err := f.svc.Subscribe(ctx, Request{Provider: "alchemy", ChainID: "teth", Apply: true})
+
+	require.Error(t, err)
+	require.Equal(t, []string{"wh_123"}, f.creator.deleted)
+	assert.NoError(t, f.creator.deleteCtxErr[0], "the delete is not cancelled with the request")
+}
+
+func TestSubscribe_SendsAnEmptyAddressListRatherThanNone(t *testing.T) {
+	f := newFixture(t, func(d *Deps) { d.Addresses = fixedAddresses(nil) })
+
+	_, err := subscribe(f, "alchemy", "teth", true)
+
+	require.NoError(t, err)
+	require.Len(t, f.creator.configs, 1)
+	assert.NotNil(t, f.creator.configs[0].Addresses, "Alchemy refuses addresses: null")
+	assert.Empty(t, f.creator.configs[0].Addresses)
+}
+
+func TestSubscribe_RefusesABaseURLThatIsNotAPublicHost(t *testing.T) {
+	for _, base := range []string{
+		"https://localhost", "https://api.localhost", "https://127.0.0.1", "https://10.0.0.5", "https://172.16.4.1",
+		"https://192.168.1.10", "https://169.254.169.254", "https://[::1]", "https://[fd00::1]", "https://[fe80::1]",
+		"https://0.0.0.0", "https://100.64.0.1", "https://wallets.example.com:99999", "https://wallets.example.com:http",
+		"https://wallets.example.com#x", "https://wallets.example.com#", "https://wallets.example.com?",
+	} {
+		f := newFixture(t, func(d *Deps) { d.BaseURL = base })
+		_, err := subscribe(f, "alchemy", "teth", false)
+		assert.ErrorIs(t, err, ErrInvalidBaseURL, base)
+	}
+
+	f := newFixture(t, func(d *Deps) { d.BaseURL = "https://wallets.example.com:8443" })
+	plan, err := subscribe(f, "alchemy", "teth", false)
+	require.NoError(t, err)
+	assert.Equal(t, "https://wallets.example.com:8443/v1/webhooks/ingest/alchemy/teth", plan.WebhookURL)
 }

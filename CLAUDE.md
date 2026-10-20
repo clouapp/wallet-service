@@ -984,32 +984,47 @@ go run . artisan ingest:subscribe alchemy teth --apply    # create the webhook, 
 go run . artisan ingest:subscriptions                     # provider, chain, status, last sync, webhook host
 ```
 
-- `ingest:subscribe` needs `WEBHOOK_INGEST_BASE_URL` (`vault.webhooks.ingest_base_url`: the public https
-  origin, a path prefix allowed, no credentials, query or fragment) and the provider's API key
-  (`ALCHEMY_AUTH_TOKEN`, `HELIUS_API_KEY`, `QUICKNODE_API_KEY` as `vault.webhooks.*`, or the
-  `provider_<name>` platform setting). Each missing one is named and the command exits 1, dry run or not.
+- `ingest:subscribe` needs `WEBHOOK_INGEST_BASE_URL` (`vault.webhooks.ingest_base_url`: a public https
+  origin, a path prefix allowed; no credentials, query or fragment, a valid port, and never localhost or
+  a loopback, private, link-local (the cloud metadata address), unspecified, multicast or shared
+  (100.64.0.0/10) IP) and the provider's API key (`ALCHEMY_AUTH_TOKEN`, `HELIUS_API_KEY`,
+  `QUICKNODE_API_KEY` as `vault.webhooks.*`, or the `provider_<name>` platform setting). Each missing
+  one is named and the command exits 1, dry run or not.
 - The chain's network (`models.Chain.ResolveNetwork` with its RPC URL) must be one the provider pushes
   (`providers.SubscriptionNetwork`): Alchemy Ethereum, Polygon, Base, Arbitrum and BSC, mainnet and
   testnet (`ETH_SEPOLIA`, `MATIC_AMOY`, ...); Helius Solana mainnet and devnet; QuickNode Bitcoin mainnet
-  and testnet4 (`bitcoin-testnet4`, the Streams slug as read from the docs on 2026-10-20, not yet tried
-  against the API).
-- A subscription of the provider on the chain already there is left as it is (exit 0); another
-  provider's active subscription on the chain is refused (the address sync serves one per chain).
-- `--apply` creates the webhook with the chain's watched addresses, then stores the row with the
-  signing secret sealed (`settings.Seal`, `enc:v1:`): Alchemy's `signing_key`, the Helius
-  `authHeader` it generates, the QuickNode stream's `security_token`. A webhook whose row cannot be
-  stored (no secret, sealing or the insert failed) is deleted; when the delete fails too, the error names
-  the provider webhook to delete by hand. The address sync (`webhooksync.SyncChainAddresses`) runs once
-  the row exists; when it fails the row stays (the `webhook_reconciler` syncs it again) and the command
-  exits 1.
-- The ingest signature check (`middleware.ProviderSignature`) and the address sync open the secret with
-  `settings.OpenStored` (sealed, or the bare envelope of an older row). QuickNode deliveries are checked
-  as Streams signs them: HMAC-SHA256 keyed with the security token over `X-QN-Nonce` +
-  `X-QN-Timestamp` + body, hex in `X-QN-Signature`; streams are created uncompressed.
+  and testnet4 (`bitcoin-mainnet`, `bitcoin-testnet4`, in the Streams OpenAPI network enum).
+- Only an active subscription counts. One of the provider on the chain is left as it is (exit 0; with
+  `--apply` a paused one is activated); another provider's active subscription on the chain is refused
+  (the address sync serves one per chain). Migration 670 makes the database refuse a second active row
+  per (chain, provider) (`webhook_subscriptions_active_chain_provider_unique`): a run that loses that
+  race deletes its own webhook and reports the stored one.
+- `--apply` creates the webhook with the chain's watched addresses (`[]` when there are none), then
+  stores the row with the signing secret sealed (`ingest.SigningSecrets`, `settings.Seal`, `enc:v1:`):
+  Alchemy's `signing_key`, the Helius `authHeader` it generates, the QuickNode stream's `security_token`
+  (generated and sent, the answer's value preferred). A QuickNode stream is created `paused` with every
+  field `CreateStreamDto` requires (`region` `usa_east`, `dataset_batch_size` 1, `elastic_batch_enabled`
+  false, `headers` `{}`, a random name suffix) and activated (`POST /streams/{id}/activate`) once its
+  row is stored; a failed activation exits 1 and the next run activates it. A stream whose create answer
+  cannot be read is found by its name and deleted. A webhook whose row cannot be stored (no secret,
+  sealing or the insert failed) is deleted, with a context detached from the request; when the delete
+  fails too, the error names the provider webhook to delete by hand. The address sync
+  (`webhooksync.SyncChainAddresses`) runs once the row exists; when it fails the row stays (the
+  `webhook_reconciler` syncs it again) and the command exits 1.
+- The ingest signature check (`middleware.ProviderSignature`, wired with
+  `ingest.SigningSecrets.Open` in `bootstrap/app.go`; without an opener every callback is refused) and the
+  address sync open the secret with `settings.OpenStored` (sealed, or the bare envelope of an older row),
+  never as plaintext; the inbound lookup takes the active subscription of the provider and chain.
+  QuickNode deliveries are checked as Streams signs them: HMAC-SHA256 keyed with the security token over
+  `X-QN-Nonce` + `X-QN-Timestamp` + body, hex in `X-QN-Signature`, refused when the timestamp is more
+  than 5 minutes from now; streams are created uncompressed.
 - `ingest:subscriptions` prints no signing secret and the webhook URL by its host only.
 - No real provider call runs in the tests. — guarded by `app/services/ingestsubscription/service_test.go`,
+  `app/services/ingest/signing_secrets_test.go`, `app/http/middleware/provider_signature_secret_test.go`,
+  `TestWebhook_Provider_SealsAndOpensSigningSecretsWithTheApplicationKey`,
   `app/console/commands/ingest_subscribe_test.go`, `app/services/ingest/providers/networks_test.go`,
-  `app/adapters/ingest/quicknode` (`TestCreate_Webhook_*`, `TestQuick_NodeVerifyInbound_*`) and
+  `app/adapters/ingest/quicknode` (`TestCreate_Webhook_*`, `TestActivate_Webhook_*`,
+  `TestQuick_NodeVerifyInbound_*`), `tests/migrations/unique_active_subscription_test.go` and
   `TestFind_All_ListsEverySubscriptionByChainAndProvider` (`tests/feature/repositories`).
 
 ### Deposit scan pacing

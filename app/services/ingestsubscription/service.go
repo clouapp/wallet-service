@@ -8,7 +8,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
+	"github.com/macrowallets/waas/pkg/pgerr"
 )
 
 var (
@@ -34,7 +37,14 @@ var (
 	ErrNoSigningSecret = errors.New("ingestsubscription: the provider returned no signing secret")
 	// ErrAddressSyncFailed is a stored subscription whose address sync failed.
 	ErrAddressSyncFailed = errors.New("ingestsubscription: subscription stored, address sync failed")
+	// ErrActivationFailed is a stored subscription whose webhook, created paused, was
+	// not activated; the next ingest:subscribe --apply activates it.
+	ErrActivationFailed = errors.New("ingestsubscription: subscription stored, webhook not activated")
 )
+
+// undoTimeout bounds the delete of a webhook whose row could not be stored; it runs
+// with a context detached from the request, which may be what ended.
+const undoTimeout = 30 * time.Second
 
 // ingestRoute is the path of the inbound webhook route under the base URL.
 const ingestRoute = "/v1/webhooks/ingest/"
@@ -52,6 +62,12 @@ const baseURLSetting = "WEBHOOK_INGEST_BASE_URL (vault.webhooks.ingest_base_url)
 type Creator interface {
 	CreateWebhook(ctx context.Context, cfg providers.ProviderConfig) (*providers.ProviderWebhook, error)
 	DeleteWebhook(ctx context.Context, webhookID string) error
+}
+
+// activator is a provider whose webhook is created paused (QuickNode) and activated
+// once its subscription is stored, so it never pushes what nothing verifies.
+type activator interface {
+	ActivateWebhook(ctx context.Context, webhookID string) error
 }
 
 // subscriptionStore is the webhook_subscriptions rows this service reads and writes.
@@ -172,13 +188,22 @@ func (s *Service) Subscribe(ctx context.Context, req Request) (Plan, error) {
 	}
 
 	existing, err := s.existing(ctx, plan.Provider, plan.ChainID)
-	if err != nil || existing != nil {
-		plan.Existing = existing
+	if err != nil {
 		return plan, err
+	}
+	if existing != nil {
+		plan.Existing = existing
+		if req.Apply {
+			return plan, s.activate(ctx, creator, existing.ProviderWebhookID)
+		}
+		return plan, nil
 	}
 	addresses, err := s.deps.Addresses.PluckActiveAddresses(ctx, plan.ChainID)
 	if err != nil {
 		return plan, fmt.Errorf("load the %s addresses: %w", plan.ChainID, err)
+	}
+	if addresses == nil {
+		addresses = []string{}
 	}
 	plan.Addresses = len(addresses)
 	if !req.Apply {
@@ -187,15 +212,28 @@ func (s *Service) Subscribe(ctx context.Context, req Request) (Plan, error) {
 	return s.create(ctx, creator, plan, addresses)
 }
 
+// activate starts the webhook of a provider that creates its webhooks paused; for
+// the others there is nothing to do.
+func (s *Service) activate(ctx context.Context, creator Creator, webhookID string) error {
+	paused, ok := creator.(activator)
+	if !ok {
+		return nil
+	}
+	if err := paused.ActivateWebhook(ctx, webhookID); err != nil {
+		return fmt.Errorf("%w: provider webhook %s: %w", ErrActivationFailed, webhookID, err)
+	}
+	return nil
+}
+
 // existing is the subscription of the provider on the chain, nil when there is none;
 // another provider's active subscription on the chain is ErrChainSubscribed.
 func (s *Service) existing(ctx context.Context, provider, chainID string) (*Listed, error) {
 	sub, err := s.deps.Subscriptions.FindByProviderAndChain(ctx, provider, chainID)
-	if err == nil {
+	if err == nil && sub.Status == models.WebhookSubscriptionActive {
 		listed := listed(*sub)
 		return &listed, nil
 	}
-	if !errors.Is(err, models.ErrRepositoryNotFound) {
+	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		return nil, fmt.Errorf("find the %s subscription of %s: %w", provider, chainID, err)
 	}
 	active, err := s.deps.Subscriptions.FindByChainID(ctx, chainID)
@@ -222,10 +260,23 @@ func (s *Service) create(ctx context.Context, creator Creator, plan Plan, addres
 	if err == nil {
 		err = s.deps.Subscriptions.Create(ctx, row)
 	}
+	if pgerr.IsUniqueViolation(err) {
+		// Another run stored the subscription first (the unique index of active
+		// subscriptions): this run's webhook goes, the stored one stays.
+		undoErr := s.undo(ctx, creator, webhook.ProviderWebhookID, err)
+		if existing, findErr := s.existing(ctx, plan.Provider, plan.ChainID); findErr == nil && existing != nil {
+			plan.Existing = existing
+			return plan, nil
+		}
+		return plan, undoErr
+	}
 	if err != nil {
 		return plan, s.undo(ctx, creator, webhook.ProviderWebhookID, err)
 	}
 	plan.Applied, plan.SubscriptionID, plan.ProviderWebhookID = true, row.ID, row.ProviderWebhookID
+	if err := s.activate(ctx, creator, row.ProviderWebhookID); err != nil {
+		return plan, err
+	}
 	if err := s.deps.Sync.SyncChainAddresses(ctx, plan.ChainID); err != nil {
 		return plan, fmt.Errorf("%w: %w", ErrAddressSyncFailed, err)
 	}
@@ -260,7 +311,9 @@ func (s *Service) undo(ctx context.Context, creator Creator, webhookID string, c
 	if webhookID == "" {
 		return fmt.Errorf("store the subscription: %w", cause)
 	}
-	if err := creator.DeleteWebhook(ctx, webhookID); err != nil {
+	detached, cancel := context.WithTimeout(context.WithoutCancel(ctx), undoTimeout)
+	defer cancel()
+	if err := creator.DeleteWebhook(detached, webhookID); err != nil {
 		return fmt.Errorf("store the subscription: %w; the provider webhook %s was not deleted, delete it in the provider's dashboard: %w", cause, webhookID, err)
 	}
 	return fmt.Errorf("store the subscription: %w; the provider webhook %s was deleted", cause, webhookID)
@@ -290,12 +343,47 @@ func listed(sub models.WebhookSubscription) Listed {
 	}
 }
 
-// webhookURL is the ingest route of provider and chain under base, which must be
-// an https origin, with an optional path prefix.
+// webhookURL is the ingest route of provider and chain under base, which must be a
+// public https origin (publicHost), with an optional path prefix.
 func webhookURL(base, provider, chainID string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(base))
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+	if err != nil || parsed.Scheme != "https" || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery ||
+		parsed.Fragment != "" || strings.Contains(base, "#") || !publicHost(parsed) {
 		return "", ErrInvalidBaseURL
 	}
 	return strings.TrimRight(parsed.String(), "/") + ingestRoute + url.PathEscape(provider) + "/" + url.PathEscape(chainID), nil
 }
+
+// publicHost reports whether the URL names a host a provider can post to: a name or
+// a public IP, with a valid port when one is given; never localhost, a private,
+// loopback, link-local (the cloud metadata address included), unspecified or shared
+// address.
+func publicHost(parsed *url.URL) bool {
+	host := strings.ToLower(parsed.Hostname())
+	if host == "" || host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return false
+	}
+	if port := parsed.Port(); port != "" {
+		number, err := strconv.Atoi(port)
+		if err != nil || number < 1 || number > 65535 {
+			return false
+		}
+	} else if strings.HasSuffix(parsed.Host, ":") {
+		return false
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return true
+	}
+	return !internalAddress(ip)
+}
+
+// internalAddress reports an IP a provider on the internet cannot reach: loopback,
+// private, link-local (the cloud metadata address), unspecified, multicast or shared.
+func internalAddress(ip netip.Addr) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified() || ip.IsMulticast() || sharedAddressSpace.Contains(ip.Unmap())
+}
+
+// sharedAddressSpace is 100.64.0.0/10 (carrier-grade NAT), reachable only inside a network.
+var sharedAddressSpace = netip.MustParsePrefix("100.64.0.0/10")

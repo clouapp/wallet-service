@@ -3,12 +3,15 @@ package quicknode
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -74,21 +77,28 @@ func (q *QuickNodeProvider) ProviderName() string {
 // CreateWebhook
 // ---------------------------------------------------------------------------
 
-// quicknodeDestinationAttributes is the webhook a stream posts to. The deliveries are
-// not compressed: the signature covers the uncompressed body.
+// quicknodeDestinationAttributes is the webhook a stream posts to (WebhookAttributes:
+// every field is required). The deliveries are not compressed: the signature covers
+// the uncompressed body. SecurityToken is the key the stream signs them with.
 type quicknodeDestinationAttributes struct {
-	URL              string `json:"url"`
-	Compression      string `json:"compression"`
-	MaxRetry         int    `json:"max_retry"`
-	RetryIntervalSec int    `json:"retry_interval_sec"`
-	PostTimeoutSec   int    `json:"post_timeout_sec"`
+	URL              string            `json:"url"`
+	SecurityToken    string            `json:"security_token"`
+	Compression      string            `json:"compression"`
+	Headers          map[string]string `json:"headers"`
+	MaxRetry         int               `json:"max_retry"`
+	RetryIntervalSec int               `json:"retry_interval_sec"`
+	PostTimeoutSec   int               `json:"post_timeout_sec"`
 }
 
+// quicknodeCreateStreamReq is CreateStreamDto with every required field.
 type quicknodeCreateStreamReq struct {
 	Name                  string                         `json:"name"`
 	Network               string                         `json:"network"`
 	Dataset               string                         `json:"dataset"`
 	FilterFunction        string                         `json:"filter_function"`
+	Region                string                         `json:"region"`
+	DatasetBatchSize      int                            `json:"dataset_batch_size"`
+	ElasticBatchEnabled   bool                           `json:"elastic_batch_enabled"`
 	Destination           string                         `json:"destination"`
 	DestinationAttributes quicknodeDestinationAttributes `json:"destination_attributes"`
 	Status                string                         `json:"status"`
@@ -103,6 +113,17 @@ type quicknodeCreateStreamResp struct {
 	} `json:"destination_attributes"`
 }
 
+const (
+	quicknodeRegion       = "usa_east"
+	quicknodeStatusPaused = "paused"
+	quicknodeTokenBytes   = 32
+	quicknodeListPageSize = 100
+)
+
+// CreateWebhook creates the stream paused, with a security token of its own, so it
+// pushes only once its subscription is stored (ActivateWebhook). The signing secret is
+// the token the answer carries, else the one sent. A created stream whose answer
+// cannot be read is found by its name and deleted.
 func (q *QuickNodeProvider) CreateWebhook(ctx context.Context, cfg providers.ProviderConfig) (*providers.ProviderWebhook, error) {
 	headers, headerErr := q.apiHeaders(ctx)
 	if headerErr != nil {
@@ -121,21 +142,34 @@ func (q *QuickNodeProvider) CreateWebhook(ctx context.Context, cfg providers.Pro
 	if err != nil {
 		return nil, err
 	}
+	token, err := randomHex(quicknodeTokenBytes)
+	if err != nil {
+		return nil, fmt.Errorf("quicknode: generate the security token: %w", err)
+	}
+	name, err := streamDisplayName(cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	payload := quicknodeCreateStreamReq{
-		Name:           streamDisplayName(cfg),
-		Network:        network,
-		Dataset:        "block",
-		FilterFunction: filterB64,
-		Destination:    "webhook",
+		Name:                name,
+		Network:             network,
+		Dataset:             "block",
+		FilterFunction:      filterB64,
+		Region:              quicknodeRegion,
+		DatasetBatchSize:    1,
+		ElasticBatchEnabled: false,
+		Destination:         "webhook",
 		DestinationAttributes: quicknodeDestinationAttributes{
 			URL:              cfg.WebhookURL,
+			SecurityToken:    token,
 			Compression:      "none",
+			Headers:          map[string]string{},
 			MaxRetry:         3,
 			RetryIntervalSec: 1,
 			PostTimeoutSec:   10,
 		},
-		Status: "active",
+		Status: quicknodeStatusPaused,
 	}
 
 	body, err := json.Marshal(payload)
@@ -155,28 +189,108 @@ func (q *QuickNodeProvider) CreateWebhook(ctx context.Context, cfg providers.Pro
 	}
 
 	var result quicknodeCreateStreamResp
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("quicknode: decode create response: %w", err)
+	if err := json.Unmarshal(respBody, &result); err != nil || strings.TrimSpace(result.ID) == "" {
+		return nil, q.deleteUnread(ctx, name)
 	}
-	if strings.TrimSpace(result.ID) == "" {
-		return nil, fmt.Errorf("quicknode: create stream: empty id in response")
+	secret := strings.TrimSpace(result.DestinationAttributes.SecurityToken)
+	if secret == "" {
+		secret = token
 	}
-
-	// The signing secret is the token QuickNode generated, never cfg.AuthSecret: a
-	// secret QuickNode does not sign with would refuse every delivery. A stream
-	// without one is returned with an empty secret, so its creator can delete it.
-	return &providers.ProviderWebhook{
-		ProviderWebhookID: result.ID,
-		SigningSecret:     strings.TrimSpace(result.DestinationAttributes.SecurityToken),
-	}, nil
+	return &providers.ProviderWebhook{ProviderWebhookID: result.ID, SigningSecret: secret}, nil
 }
 
-func streamDisplayName(cfg providers.ProviderConfig) string {
-	chain := strings.TrimSpace(cfg.ChainID)
-	if chain == "" {
-		return "BTC Deposit Monitor"
+// deleteUnread deletes the stream named name, created by a call whose answer could
+// not be read; it fails either way, naming the stream when it was not found.
+func (q *QuickNodeProvider) deleteUnread(ctx context.Context, name string) error {
+	id, err := q.findStream(ctx, name)
+	if err != nil || id == "" {
+		return fmt.Errorf("quicknode: the create answer could not be read and stream %q was not found; delete it in the QuickNode dashboard", name)
 	}
-	return strings.ToUpper(chain) + " Deposit Monitor"
+	if err := q.DeleteWebhook(ctx, id); err != nil {
+		return fmt.Errorf("quicknode: the create answer could not be read and stream %q (%s) was not deleted: %w", name, id, err)
+	}
+	return fmt.Errorf("quicknode: the create answer could not be read; stream %q was deleted", name)
+}
+
+// findStream returns the id of the stream named name, "" when no listed stream has it.
+func (q *QuickNodeProvider) findStream(ctx context.Context, name string) (string, error) {
+	headers, err := q.apiHeaders(ctx)
+	if err != nil {
+		return "", err
+	}
+	u := fmt.Sprintf("%s/streams?limit=%d&offset=0", quicknodeAPIBase, quicknodeListPageSize)
+	status, respBody, err := exchange(ctx, q.client, httpclient.MethodGet, u, headers, nil)
+	if err != nil {
+		return "", err
+	}
+	if status != httpclient.StatusOK {
+		return "", chain.FromProviderHTTP(status, string(respBody))
+	}
+	type stream struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	var page struct {
+		Data []stream `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &page); err != nil {
+		var list []stream
+		if json.Unmarshal(respBody, &list) != nil {
+			return "", fmt.Errorf("quicknode: decode stream list: %w", err)
+		}
+		page.Data = list
+	}
+	for _, listed := range page.Data {
+		if listed.Name == name {
+			return listed.ID, nil
+		}
+	}
+	return "", nil
+}
+
+// ActivateWebhook starts a stream created paused.
+func (q *QuickNodeProvider) ActivateWebhook(ctx context.Context, webhookID string) error {
+	headers, err := q.apiHeaders(ctx)
+	if err != nil {
+		return fmt.Errorf("quicknode: empty API key")
+	}
+	id := strings.TrimSpace(webhookID)
+	if id == "" {
+		return fmt.Errorf("quicknode: empty webhook id")
+	}
+	status, respBody, err := exchange(ctx, q.client, httpclient.MethodPost, quicknodeAPIBase+"/streams/"+url.PathEscape(id)+"/activate", headers, []byte("{}"))
+	if err != nil {
+		if httpclient.IsBuild(err) {
+			return fmt.Errorf("quicknode: build activate request: %w", err)
+		}
+		return chain.Unavailable(fmt.Errorf("quicknode: activate stream: %w", err))
+	}
+	if status != httpclient.StatusOK && status != httpclient.StatusCreated && status != httpclient.StatusNoContent {
+		return chain.FromProviderHTTP(status, string(respBody))
+	}
+	return nil
+}
+
+// streamDisplayName names the stream after its chain, with a random suffix so a stream
+// whose create answer is lost can be found.
+func streamDisplayName(cfg providers.ProviderConfig) (string, error) {
+	chainID := strings.TrimSpace(cfg.ChainID)
+	if chainID == "" {
+		chainID = "btc"
+	}
+	suffix, err := randomHex(4)
+	if err != nil {
+		return "", fmt.Errorf("quicknode: name the stream: %w", err)
+	}
+	return strings.ToUpper(chainID) + " Deposit Monitor " + suffix, nil
+}
+
+func randomHex(n int) (string, error) {
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -257,7 +371,27 @@ func (q *QuickNodeProvider) DeleteWebhook(ctx context.Context, webhookID string)
 const (
 	quicknodeNonceHeader     = "X-QN-Nonce"
 	quicknodeTimestampHeader = "X-QN-Timestamp"
+	// quicknodeReplayWindow is how far a delivery's signed timestamp may be from now:
+	// a captured delivery sent again later is refused.
+	quicknodeReplayWindow = 5 * time.Minute
 )
+
+// withinReplayWindow refuses a signed timestamp (Unix seconds, or milliseconds)
+// further than quicknodeReplayWindow from now.
+func withinReplayWindow(timestamp string, now time.Time) error {
+	value, err := strconv.ParseInt(strings.TrimSpace(timestamp), 10, 64)
+	if err != nil {
+		return fmt.Errorf("quicknode: %s is not a Unix time", quicknodeTimestampHeader)
+	}
+	signed := time.Unix(value, 0)
+	if value > 1_000_000_000_000 {
+		signed = time.UnixMilli(value)
+	}
+	if skew := now.Sub(signed); skew > quicknodeReplayWindow || skew < -quicknodeReplayWindow {
+		return fmt.Errorf("quicknode: delivery signed %s from now, outside the %s replay window", skew.Round(time.Second), quicknodeReplayWindow)
+	}
+	return nil
+}
 
 func (q *QuickNodeProvider) VerifyInbound(headers providers.Header, body []byte, secret string) (bool, error) {
 	if err := providers.GateInboundCredential(context.Background(), q.keyAtUse); err != nil {
@@ -274,6 +408,9 @@ func (q *QuickNodeProvider) VerifyInbound(headers providers.Header, body []byte,
 		if value == "" {
 			return false, fmt.Errorf("quicknode: missing %s header", name)
 		}
+	}
+	if err := withinReplayWindow(timestamp, time.Now()); err != nil {
+		return false, err
 	}
 
 	mac := hmac.New(sha256.New, []byte(secret))

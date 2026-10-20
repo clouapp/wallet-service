@@ -112,3 +112,17 @@ func (s *WebhookSubscriptionRepositoryTestSuite) TestFind_All_ListsEverySubscrip
 	s.Require().Len(all, 3, "inactive subscriptions are listed too")
 	s.Equal([]uuid.UUID{alchemy.ID, quicknode.ID, helius.ID}, []uuid.UUID{all[0].ID, all[1].ID, all[2].ID})
 }
+
+func (s *WebhookSubscriptionRepositoryTestSuite) TestFind_ByProviderAndChain_ReturnsTheActiveOneAmongSeveral() {
+	ctx := context.Background()
+	disabled := s.subscription("alchemy", "eth", "disabled")
+	active := s.subscription("alchemy", "eth", "active")
+	later := s.subscription("alchemy", "eth", "disabled")
+	for _, sub := range []*models.WebhookSubscription{disabled, active, later} {
+		s.Require().NoError(s.repo.Create(ctx, sub))
+	}
+
+	found, err := s.repo.FindByProviderAndChain(ctx, "alchemy", "eth")
+	s.Require().NoError(err)
+	s.Equal(active.ID, found.ID, "the inbound check verifies with the active subscription's secret")
+}

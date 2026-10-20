@@ -47,6 +47,9 @@ func (p *WebhookServiceProvider) Register(app foundation.Application) {
 		}
 		return walletrecords.NewWebhooks(store), nil
 	})
+	app.Singleton((*ingest.SigningSecrets)(nil), func(foundation.Application) (any, error) {
+		return ingest.NewSigningSecrets(facades.LateCrypt()), nil
+	})
 	app.Singleton((*ingest.Subscriptions)(nil), func(app foundation.Application) (any, error) {
 		store, err := resolve[*repositories.WebhookSubscriptionRepository](app)
 		if err != nil {
@@ -131,6 +134,10 @@ func newWebhookSyncService(app foundation.Application) (*webhooksync.Service, er
 	if err != nil {
 		return nil, err
 	}
+	secrets, err := resolve[*ingest.SigningSecrets](app)
+	if err != nil {
+		return nil, err
+	}
 	byName := catalog.Lookup()
 	syncers := make(map[string]webhooksync.AddressSyncer, len(byName))
 	for name, provider := range byName {
@@ -141,7 +148,7 @@ func newWebhookSyncService(app foundation.Application) (*webhooksync.Service, er
 		Addresses:     addresses,
 		Providers:     syncers,
 		ProviderKey:   ingestProviderKey(accountSettings),
-		OpenSecret:    openSigningSecret,
+		OpenSecret:    secrets.Open,
 	}), nil
 }
 
@@ -173,6 +180,10 @@ func newIngestSubscriptionService(app foundation.Application) (*ingestsubscripti
 	if err != nil {
 		return nil, err
 	}
+	secrets, err := resolve[*ingest.SigningSecrets](app)
+	if err != nil {
+		return nil, err
+	}
 	creators := make(map[string]ingestsubscription.Creator, len(catalog.Lookup()))
 	for name, provider := range catalog.Lookup() {
 		creators[name] = provider
@@ -185,9 +196,7 @@ func newIngestSubscriptionService(app foundation.Application) (*ingestsubscripti
 		ProviderKey:   ingestProviderKey(accountSettings),
 		ChainNetwork:  chainNetwork(chainRows),
 		BaseURL:       facades.Config().GetString("vault.webhooks.ingest_base_url"),
-		Seal: func(plaintext string) (string, error) {
-			return settings.Seal(facades.LateCrypt(), plaintext)
-		},
+		Seal:          secrets.Seal,
 	}), nil
 }
 
@@ -250,10 +259,4 @@ func ingestEnvConfigKey(provider string) string {
 	default:
 		return ""
 	}
-}
-
-// openSigningSecret opens a stored subscription signing secret: sealed (enc:v1:), or
-// the bare Crypt envelope of a row written before the seal.
-func openSigningSecret(stored string) (string, error) {
-	return settings.OpenStored(facades.LateCrypt(), stored)
 }
