@@ -372,6 +372,7 @@ func (f *ingestTxRepo) ClaimDepositPosition(context.Context, uuid.UUID, int) (bo
 	return false, nil
 }
 func (f *ingestTxRepo) LockTransactionDeposits(context.Context, string, string) error { return nil }
+func (f *ingestTxRepo) FillDepositBlockHash(context.Context, uuid.UUID, string) error { return nil }
 func (f *ingestTxRepo) Within(ctx context.Context, fn func(context.Context) error) error {
 	return fn(ctx)
 }
