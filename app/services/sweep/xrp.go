@@ -49,8 +49,9 @@ type lastValidBlocker interface {
 
 // broadcastRawPayload is the raw_payload of a broadcast transaction: "{}", the last
 // valid block of a transaction that expires (XRP), the sender nonce it spends and
-// the head read before the send (EVM, head > 0), and, when the broadcast answer did
-// not say whether the network took it, the unknown outcome.
+// the head read before the send (EVM, head > 0), the outpoints it spends (Bitcoin
+// family), and, when the broadcast answer did not say whether the network took it,
+// the unknown outcome.
 func broadcastRawPayload(adapter types.Chain, signed *types.SignedTx, head uint64, unknownOutcome bool) (string, error) {
 	payload := map[string]any{}
 	if blocker, ok := adapter.(lastValidBlocker); ok {
@@ -65,6 +66,11 @@ func broadcastRawPayload(adapter types.Chain, signed *types.SignedTx, head uint6
 	if reader, ok := adapter.(chain.SenderNonceReader); ok {
 		if nonce, err := reader.SenderNonce(signed); err == nil {
 			payload[chain.SenderNoncePayloadKey] = nonce
+		}
+	}
+	if reader, ok := adapter.(chain.SpentInputsReader); ok {
+		if inputs, err := reader.SpentInputs(signed); err == nil && len(inputs) > 0 {
+			payload[chain.SpentInputsPayloadKey] = inputs
 		}
 	}
 	if head > 0 {

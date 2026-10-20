@@ -154,7 +154,7 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 				continue
 			}
 			if block == 0 {
-				spend, settled := s.settleByNonceSpend(ctx, adapter, tx)
+				spend, settled := s.settleUnknownOutcome(ctx, adapter, tx)
 				switch {
 				case settled && !spend.Ours:
 					if s.failOnChain(ctx, adapter, tx, models.WithdrawalFailureNotLanded, 0) {
@@ -263,6 +263,49 @@ func onChainFailureCode(result string) string {
 	return code
 }
 
+// settleUnknownOutcome settles, by positive proof, a transfer whose broadcast outcome
+// was unknown and that the node does not know by its hash: the transaction that
+// spent what it spends, its sender nonce (EVM, settleByNonceSpend) or its inputs
+// (Bitcoin family, settleByInputsSpend), is ours in a block, or another one and ours
+// can never land.
+func (s *Service) settleUnknownOutcome(ctx context.Context, adapter types.Chain, tx models.Transaction) (chain.NonceSpend, bool) {
+	if reader, ok := adapter.(chain.InputsSpendReader); ok {
+		return s.settleByInputsSpend(ctx, adapter, reader, tx)
+	}
+	return s.settleByNonceSpend(ctx, adapter, tx)
+}
+
+// settleByInputsSpend settles a Bitcoin-family transfer whose broadcast outcome was
+// unknown, in the shape of a nonce spend: found in a block on any provider
+// (chain.TransactionSearcher) or with its inputs spent by itself in a block, it is
+// ours in that block; every input spent by another transaction at the confirmation
+// depth means another one spent them and ours can never land. Only rows recorded
+// with broadcast_outcome unknown and spent_inputs are read; a row nothing proved
+// (its inputs unspent, a spend not deep enough, ours still in the mempool, a provider
+// that cannot say) stays pending for withdrawals:reconcile and is not asked again for
+// spendProofRetryAfter (kept in raw_payload).
+func (s *Service) settleByInputsSpend(ctx context.Context, adapter types.Chain, reader chain.InputsSpendReader, tx models.Transaction) (chain.NonceSpend, bool) {
+	inputs, ok := unknownOutcomeInputs(tx)
+	if !ok || s.now().Before(payloadUnixTime(tx, chain.SpendProofRetryAtPayloadKey)) {
+		return chain.NonceSpend{}, false
+	}
+	if block, err := searchTransactionBlock(ctx, adapter, tx.TxHash); err == nil && block > 0 {
+		return chain.NonceSpend{Spent: true, Ours: true, Block: block}, true
+	}
+	spend, err := reader.InputsSpend(ctx, tx.TxHash, inputs)
+	switch {
+	case err != nil:
+		slog.Warn("cannot read who spent the inputs of an unknown-outcome transfer; it stays pending (withdrawals:reconcile)",
+			"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "error", err)
+	case spend.Conflicted:
+		return chain.NonceSpend{Spent: true, Block: spend.Block}, true
+	case spend.Ours && spend.Block > 0:
+		return chain.NonceSpend{Spent: true, Ours: true, Block: spend.Block}, true
+	}
+	s.recordPayloadValue(ctx, tx, chain.SpendProofRetryAtPayloadKey, s.now().Add(spendProofRetryAfter).Unix())
+	return chain.NonceSpend{}, false
+}
+
 // settleByNonceSpend settles, by positive proof, a transfer whose broadcast outcome
 // was unknown and that the node does not know by its hash (EVM): the transaction
 // that spent its sender nonce (kept in raw_payload with the head at the send) is
@@ -298,6 +341,10 @@ func (s *Service) settleByNonceSpend(ctx context.Context, adapter types.Chain, t
 // state to prove before it tries again.
 const nonceProofRetryAfter = time.Hour
 
+// spendProofRetryAfter is how long the tracker leaves a Bitcoin-family row its
+// inputs proved nothing about before it asks the providers again.
+const spendProofRetryAfter = 10 * time.Minute
+
 // nonceProof is what raw_payload keeps for settleByNonceSpend.
 type nonceProof struct {
 	nonce, head uint64
@@ -320,6 +367,26 @@ func unknownOutcomeProof(tx models.Transaction) (nonceProof, bool) {
 		return nonceProof{}, false
 	}
 	return proof, true
+}
+
+// unknownOutcomeInputs reads the inputs of a Bitcoin-family row whose broadcast
+// outcome was unknown.
+func unknownOutcomeInputs(tx models.Transaction) ([]string, bool) {
+	if !isUnknownOutcome(tx) {
+		return nil, false
+	}
+	return spentInputsOf(tx)
+}
+
+// spentInputsOf reads the inputs raw_payload keeps (Bitcoin family).
+func spentInputsOf(tx models.Transaction) ([]string, bool) {
+	var payload struct {
+		Inputs []string `json:"spent_inputs"`
+	}
+	if err := json.Unmarshal([]byte(tx.RawPayload), &payload); err != nil || len(payload.Inputs) == 0 {
+		return nil, false
+	}
+	return payload.Inputs, true
 }
 
 // expiryWitnessGap is how long apart one endpoint alone must be seen not to know a
