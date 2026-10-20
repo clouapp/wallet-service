@@ -180,6 +180,7 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 				slog.Error("persist block number", "tx_id", tx.ID, "error", err)
 				continue
 			}
+			tx.RawPayload = s.forgetSignedBytes(ctx, tx)
 		}
 		confs := confirmationsAt(currentBlock, tx.BlockNumber)
 
@@ -412,6 +413,33 @@ func (s *Service) recordPayloadValue(ctx context.Context, tx models.Transaction,
 	}
 }
 
+// forgetSignedBytes drops the signed bytes a withdrawal row recorded before its send
+// keeps (sealed, for a same-key retry) once the chain settled it: in a block, or
+// failed on chain. Its send was taken, so a pending outcome becomes accepted. It
+// returns the payload the row now holds; a row without bytes is not written.
+func (s *Service) forgetSignedBytes(ctx context.Context, tx models.Transaction) string {
+	payload := map[string]any{}
+	if json.Unmarshal([]byte(tx.RawPayload), &payload) != nil {
+		return tx.RawPayload
+	}
+	if _, kept := payload[chain.SignedTxPayloadKey]; !kept {
+		return tx.RawPayload
+	}
+	delete(payload, chain.SignedTxPayloadKey)
+	if payload[chain.BroadcastOutcomePayloadKey] == chain.BroadcastOutcomePending {
+		payload[chain.BroadcastOutcomePayloadKey] = chain.BroadcastOutcomeAccepted
+	}
+	raw, err := json.Marshal(payload)
+	if err == nil {
+		err = s.txRepo.SetRawPayload(ctx, tx.ID, string(raw))
+	}
+	if err != nil {
+		slog.Error("drop the signed bytes of a settled transaction", "tx_id", tx.ID, "error", err)
+		return tx.RawPayload
+	}
+	return string(raw)
+}
+
 // lastValidBlockOf is the last valid block raw_payload keeps, 0 for none.
 func lastValidBlockOf(tx models.Transaction) uint64 {
 	var payload map[string]json.RawMessage
@@ -459,6 +487,7 @@ func (s *Service) failOnChain(ctx context.Context, adapter types.Chain, tx model
 		slog.Error("mark transaction failed", "tx_id", tx.ID, "error", err)
 		return false
 	}
+	s.forgetSignedBytes(ctx, tx)
 	slog.Warn("transaction failed on chain", "tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "failure_code", failureCode)
 	return true
 }
