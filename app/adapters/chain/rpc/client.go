@@ -28,7 +28,7 @@ const (
 // fallbacks). With a list, a call moves to the next endpoint when one cannot serve
 // it (failover.go); with one endpoint every call behaves as it always did.
 type RPCClient struct {
-	endpoints        atomic.Pointer[endpointSet] // replaced without logging a URL
+	failover
 	client           *httpclient.Client
 	requestID        atomic.Uint64
 	username         string
@@ -37,12 +37,6 @@ type RPCClient struct {
 	retry            rateLimitRetry
 	maxResponseBytes int
 
-	chainID    string
-	identity   IdentityReader
-	network    string
-	health     chain.RPCHealthSink
-	now        func() time.Time
-	onFallback atomic.Bool
 	// secondOpinions turns the endpoint a null or a skipped slot asks next.
 	secondOpinions atomic.Uint64
 }
@@ -104,14 +98,20 @@ func NewRPCClient(deps RPCClientDeps) *RPCClient {
 		password: deps.Password,
 		client:   httpclient.NewClient(rpcHTTPTimeout),
 		retry:    defaultRateLimitRetry(),
-		chainID:  strings.TrimSpace(deps.ChainID),
-		identity: deps.Identity,
-		network:  strings.TrimSpace(deps.Network),
-		health:   deps.Health,
-		now:      time.Now,
 	}
-	client.endpoints.Store(newEndpointSet(nil, deps.URL, deps.Fallbacks))
+	client.init(deps.URL, deps.Fallbacks, deps.ChainID, client.identityThrough(deps.Identity), deps.Network, deps.Health)
 	return client
+}
+
+// identityThrough asks read about one endpoint through a caller that reaches it
+// alone; nil checks no network.
+func (c *RPCClient) identityThrough(read IdentityReader) func(ctx context.Context, rawURL string) (string, error) {
+	if read == nil {
+		return nil
+	}
+	return func(ctx context.Context, rawURL string) (string, error) {
+		return read(ctx, endpointCaller{client: c, url: rawURL})
+	}
 }
 
 // WithMaxResponseBytes raises or lowers the size of the largest answer accepted.
@@ -151,11 +151,7 @@ func (c *RPCClient) Endpoint() string {
 	if c == nil {
 		return ""
 	}
-	set := c.endpoints.Load()
-	if set == nil || len(set.members) == 0 {
-		return ""
-	}
-	return set.members[0].url
+	return c.primaryURL()
 }
 
 // Fallbacks are the endpoints tried after the primary, in order, with their
@@ -164,15 +160,7 @@ func (c *RPCClient) Fallbacks() []chain.RPCFallback {
 	if c == nil {
 		return nil
 	}
-	set := c.endpoints.Load()
-	if set == nil || len(set.members) < 2 {
-		return nil
-	}
-	fallbacks := make([]chain.RPCFallback, 0, len(set.members)-1)
-	for i, member := range set.members[1:] {
-		fallbacks = append(fallbacks, chain.RPCFallback{URL: member.url, Position: set.positions[i+1]})
-	}
-	return fallbacks
+	return c.fallbacks()
 }
 
 // ReplaceEndpoint points later calls at endpoint as the primary and keeps the
@@ -192,11 +180,10 @@ func (c *RPCClient) ReplaceEndpoint(endpoint string) {
 // ReplaceEndpoints installs primary and fallbacks, in order. An endpoint already
 // in the list keeps its health; an empty primary is ignored. No URL is logged.
 func (c *RPCClient) ReplaceEndpoints(primary string, fallbacks []chain.RPCFallback) {
-	if c == nil || strings.TrimSpace(primary) == "" {
+	if c == nil {
 		return
 	}
-	c.endpoints.Store(newEndpointSet(c.endpoints.Load(), primary, fallbacks))
-	c.onFallback.Store(false)
+	c.replace(primary, fallbacks)
 }
 
 // Call executes a JSON-RPC method and unmarshals result into `out`. A rate-limited
