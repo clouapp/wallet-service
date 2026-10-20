@@ -8,7 +8,7 @@ the stack `waas-dev`:
 |---|---|---|
 | Webhook queue | `vault-webhooks-dev` | visibility 60 s, retention 1 day, 10 receives, then the DLQ |
 | Webhook DLQ | `vault-webhooks-dlq-dev` | retention 14 days |
-| Webhook DLQ alarm | CloudWatch alarm `vault-webhooks-dlq-not-empty-dev` | in alarm while a message is visible in the webhook DLQ (`ApproximateNumberOfMessagesVisible` > 0, 5-minute maximum); notifies the SNS topic of the `AlarmTopicArn` parameter, none by default |
+| Webhook DLQ alarm | CloudWatch alarm `vault-webhooks-dlq-not-empty-dev` | in alarm while a message is visible in the webhook DLQ (`ApproximateNumberOfMessagesVisible` > 0, 5-minute maximum; missing data keeps the state, since a DLQ nobody touches stops reporting after six hours); notifies the SNS topic of the `AlarmTopicArn` parameter, none by default |
 | Withdrawal queue | `vault-withdrawals-dev` | visibility 120 s, retention 1 day, 3 receives, then the DLQ |
 | Withdrawal DLQ | `vault-withdrawals-dlq-dev` | retention 14 days |
 | Master key | `alias/waas-dev-master` | symmetric, yearly rotation, **kept** when the stack is deleted |
