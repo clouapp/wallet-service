@@ -1986,7 +1986,7 @@
         },
         "/health": {
             "get": {
-                "description": "Returns service status and version, how many deposit blocks per chain wait for a retry, and how many outbound transfers per chain are still unsettled after WITHDRAWAL_STALE_AFTER_HOURS (settle them with artisan withdrawals:reconcile)",
+                "description": "Returns service status and version, how many deposit blocks per chain wait for a retry, how far each chain's deposit detection got (lag_blocks and last_scanned_at of the last completed scan cycle, last_push_at of the last inbound provider webhook; read from what the scanner and the ingest recorded, never from the chain), and how many outbound transfers per chain are still unsettled after WITHDRAWAL_STALE_AFTER_HOURS (settle them with artisan withdrawals:reconcile)",
                 "produces": [
                     "application/json"
                 ],
@@ -8165,6 +8165,15 @@
         "health.DepositScanner": {
             "type": "object",
             "properties": {
+                "chains": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/health.ScannedChain"
+                    }
+                },
+                "chains_error": {
+                    "type": "string"
+                },
                 "error": {
                     "type": "string"
                 },
@@ -8200,6 +8209,23 @@
                 "version": {
                     "type": "string",
                     "example": "0.1.0"
+                }
+            }
+        },
+        "health.ScannedChain": {
+            "type": "object",
+            "properties": {
+                "lag_blocks": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "last_push_at": {
+                    "type": "string",
+                    "example": "2026-10-20T09:29:12Z"
+                },
+                "last_scanned_at": {
+                    "type": "string",
+                    "example": "2026-10-20T09:30:00Z"
                 }
             }
         },

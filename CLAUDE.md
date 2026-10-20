@@ -354,6 +354,14 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `app/services/deposit/checkpoint_guard_test.go`, `checkpoint_operator_test.go`,
   `app/services/chainregistry/align_checkpoints_test.go` and
   `app/console/commands/scan_deposits_test.go`.
+- Each completed scan cycle (one that found nothing new, and the first one, included) records the
+  head it read, the checkpoint it left and when it ended (`vault:scan-activity:<chain>`), and the
+  inbound ingest records when a provider webhook of a known chain arrived (`vault:ingest-push:<chain>`),
+  both in Redis with a 7-day TTL, after the work is saved: a record that fails is logged and never
+  fails the scan or the webhook. A failed cycle and a checkpoint far ahead of the head record
+  nothing, so the scan time ages. `GET /health` and the tracker's alerts read these records only,
+  never a chain. — guarded by `app/services/deposit/scan_activity_test.go`,
+  `app/services/ingest/push_test.go` and `app/adapters/redis/scanactivity/store_test.go`.
 - One scanner per chain: a `ScanLatestBlocks` cycle holds `vault:lock:deposit_scan:<chain>`
   (`cacheguard.Acquire`, TTL 2 min, above the 60 s `deposit_scanner` Lambda timeout). A held
   lock skips the cycle; a lock store that is down or missing fails it. The lock has no owner
@@ -418,8 +426,10 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   truncates every table but `migrations` before and after the test, and also deletes the settings
   cache keys (`*settings:*`, in the worker's Redis index) because the settings service caches
   groups under `settings:platform:<group>` and `settings:account:<uuid>:<group>`, which would
-  outlive the truncated rows and leak a value into the next test. A test that changes the schema
-  uses `fixtures.TestDBFreshSchema(t)`. — guarded by `tests/feature/support/fixtures/reset_test.go`.
+  outlive the truncated rows and leak a value into the next test, and the scan activity keys
+  (`vault:scan-activity:*`, `vault:ingest-push:*`), which would add a chain to the next test's
+  `GET /health`. A test that changes the schema uses `fixtures.TestDBFreshSchema(t)`. — guarded by
+  `tests/feature/support/fixtures/reset_test.go`.
 
 ### 10. Settings
 
@@ -620,7 +630,7 @@ make test-integration TEST_FLAGS='-run TestWalletRepository'
 ```
 
 - Unit vs integration is decided per package from its test imports (`go list`), no build tags: a package is integration when its tests import `tests/feature/support/testenv`, `tests/feature/support/testutil`, `tests` or `bootstrap`.
-- `fixtures.TestDB(t)` (`tests/feature/support/fixtures`) migrates the schema fresh once per test binary (a worker clone already is), then truncates every table but `migrations` before and after each test and deletes the settings cache keys (`*settings:*`) that survive the rows. Tests that run migrations up/down use `fixtures.TestDBFreshSchema(t)` (fresh schema before and after). HTTP suites embed `support.HTTPSuite`; unreachable endpoints use `testutil.ClosedLocalURL`.
+- `fixtures.TestDB(t)` (`tests/feature/support/fixtures`) migrates the schema fresh once per test binary (a worker clone already is), then truncates every table but `migrations` before and after each test and deletes the settings cache keys (`*settings:*`) and the scan activity keys that survive the rows. Tests that run migrations up/down use `fixtures.TestDBFreshSchema(t)` (fresh schema before and after). HTTP suites embed `support.HTTPSuite`; unreachable endpoints use `testutil.ClosedLocalURL`.
 - `go run ./tests/feature/support/testdb prepare | drop-clones` are the template/cleanup steps `make test-integration` runs; both refuse names outside `vault_unit_test*`.
 - Running `go test ./app/repositories` directly still works on `vault_unit_test` itself (no clone; take the lock with `flock ~/.local/state/macro-e2e/locks/vault_unit_test.lock …` when another run may be active).
 - `TEST_TIMEOUT` (default 30m) is a safety net per `go test` invocation.
@@ -681,11 +691,13 @@ SOLANA_RPC_URL=https://api.devnet.solana.com
 BTC_RPC_URL=https://blockstream.info/testnet/api
 API_KEY_SECRET=dev-secret-key-not-for-production
 WITHDRAWAL_STALE_AFTER_HOURS=6   # outbound transfers unsettled this long are warned about and counted by /health
+DEPOSIT_SCAN_ALERT_LAG_BLOCKS=0  # tracker warns when a scan trails the head by more (0: the chain's catch-up window)
+DEPOSIT_SCAN_ALERT_STALE_MINUTES=10  # tracker warns when a scanned chain has no completed cycle for longer
 ```
 
 Redis is the cache driver (rate limits, locks including the per-chain deposit scan lock, settings
 cache, the deposit scanner's watched addresses and its copy of the scan checkpoint, which lives in
-Postgres): the app needs it reachable. `.env.dev.example` / `.env.example` carry the full lists,
+Postgres, and the scan activity `GET /health` reports): the app needs it reachable. `.env.dev.example` / `.env.example` carry the full lists,
 with the throttle variables.
 
 ### RPC endpoints and failover (EVM, Solana)
@@ -837,7 +849,7 @@ One node answer is read up to a per-chain limit and refused past it with an expl
 
 ### Paid fees
 
-The confirmation tracker stores the fee actually paid (native base units) in `transactions.fee` when a withdrawal, sweep or gas_seed confirms: EVM gasUsed × effectiveGasPrice + L1 fee, BTC/LTC inputs − outputs, Solana `meta.fee`, TRON `fee` (energy + bandwidth burned), XRP `Fee` (drops) of the transaction in a validated ledger. An XRP transaction is confirmed only when validated with `meta.TransactionResult` `tesSUCCESS`. XRP: a validated `tec…` result marks the transaction and its withdrawal `failed` with `onchain_<result in lowercase>` (e.g. `onchain_tecno_dst_insuf_xrp`), stores the fee it still burned, and sends `withdrawal.failed` once; a payment past its `LastLedgerSequence` (kept in `transactions.raw_payload`) that the node searched every ledger for (`tx` `min_ledger`/`max_ledger` → `searched_all`, inside `complete_ledgers`) is failed with `expired`, no fee. EVM: the block of an outbound row is read from its receipt (`eth_getTransactionReceipt`); a receipt with status `0x0` (mined out of gas or reverted: fee paid, value not moved) marks the row (withdrawal, sweep or gas_seed), and a withdrawal's `withdrawals` row, `failed` with `onchain_out_of_gas` (gasUsed reached the gas limit) or `onchain_reverted`, stores the fee it burned, and sends `withdrawal.failed` once; a failed sweep sends no `sweep.confirmed`. Only rows still at block 0 are read this way: a row whose block was recorded before this check (2026-10-18) is not re-read. TRON and Solana report an on-chain failure as an error (the row stays pending, never confirmed); other chains never mark an on-chain failure. A native EVM transfer mined with status `0x0` is never a deposit: the scanner drops it and the tracker fails a deposit whose receipt failed (see "EVM native gas"). Older rows: `go run . artisan transactions:backfill-fees [--chain a,b] [--apply]` (dry run by default, idempotent, reads only).
+The confirmation tracker stores the fee actually paid (native base units) in `transactions.fee` when a withdrawal, sweep or gas_seed confirms: EVM gasUsed × effectiveGasPrice + L1 fee, BTC/LTC inputs − outputs, Solana `meta.fee` (and the account rent it paid, in `raw_payload`: see "Deposit detection observability"), TRON `fee` (energy + bandwidth burned), XRP `Fee` (drops) of the transaction in a validated ledger. An XRP transaction is confirmed only when validated with `meta.TransactionResult` `tesSUCCESS`. XRP: a validated `tec…` result marks the transaction and its withdrawal `failed` with `onchain_<result in lowercase>` (e.g. `onchain_tecno_dst_insuf_xrp`), stores the fee it still burned, and sends `withdrawal.failed` once; a payment past its `LastLedgerSequence` (kept in `transactions.raw_payload`) that the node searched every ledger for (`tx` `min_ledger`/`max_ledger` → `searched_all`, inside `complete_ledgers`) is failed with `expired`, no fee. EVM: the block of an outbound row is read from its receipt (`eth_getTransactionReceipt`); a receipt with status `0x0` (mined out of gas or reverted: fee paid, value not moved) marks the row (withdrawal, sweep or gas_seed), and a withdrawal's `withdrawals` row, `failed` with `onchain_out_of_gas` (gasUsed reached the gas limit) or `onchain_reverted`, stores the fee it burned, and sends `withdrawal.failed` once; a failed sweep sends no `sweep.confirmed`. Only rows still at block 0 are read this way: a row whose block was recorded before this check (2026-10-18) is not re-read. TRON and Solana report an on-chain failure as an error (the row stays pending, never confirmed); other chains never mark an on-chain failure. A native EVM transfer mined with status `0x0` is never a deposit: the scanner drops it and the tracker fails a deposit whose receipt failed (see "EVM native gas"). Older rows: `go run . artisan transactions:backfill-fees [--chain a,b] [--apply]` (dry run by default, idempotent, reads only; on Solana it also fills the account rent).
 
 ### Broadcast outcomes
 
@@ -925,6 +937,80 @@ workers scan `sol`/`tsol`, `base`/`tbase`, `arbitrum`/`tarbitrum`, `bsc`/`tbsc` 
 of their own, so a slow chain never holds up `eth`, `polygon` and `btc`. — guarded by
 `app/services/deposit/scan_override_test.go`, `config/vault_test.go`,
 `app/providers/deposit_scan_overrides_test.go` and `TestStart_Scans_FastChainsInLoopsOfTheirOwn`.
+
+### Deposit detection observability
+
+- **`GET /health`** (public): `deposit_scanner.chains` has one entry per chain a scan cycle or a
+  provider push touched in the last 7 days: `lag_blocks` (head − checkpoint at the end of its last
+  completed scan cycle, 0 when the checkpoint is ahead of a lagging node) and `last_scanned_at` (when
+  that cycle ended), both absent for a chain only pushed to, and `last_push_at` (the last inbound
+  provider webhook received), absent when none. Times are UTC, to the second; no address or id;
+  `chains_error` says when the store cannot be read and no earlier reading exists, and
+  `deposit_scanner.status` does not depend on it. Every reading of the check (pending counts and scan
+  activity, reused 15 s; stale outbound counts, 1 min) goes through one single-flight snapshot
+  (`healthSnapshot`): `deposit.Service.Health` takes the three at once; a reading runs apart from the
+  request (`context.WithoutCancel`), is bounded to 2 s also when the store's client ignores its
+  context (the framework's go-redis client has `ContextTimeoutEnabled` off and waits for its 3 s
+  socket timeout: `pkg/deadline`), and after a failed reading the checks are answered from it for
+  10 s without reading again (pending counts as they failed, so `pending_store_unavailable` stays on
+  the wire; the other two from the last good reading). — guarded by
+  `app/services/deposit/health_snapshot_test.go` and `tests/feature/health` (a Redis that accepts and
+  never answers: about 2 s for the first check, immediate during the backoff).
+- **Alerts** (structured warnings; the repository has no metrics abstraction): every tracker pass
+  (`confirmation_tracker`, and the local confirmation loop) checks the chains a scanner records
+  (those with scan activity) and warns `deposit scan lag above the alert threshold` for one whose
+  last cycle left the checkpoint more than `DEPOSIT_SCAN_ALERT_LAG_BLOCKS` behind the head (default 0:
+  the chain's catch-up window, a lag the next cycle cannot close), `deposit scan has not completed a
+  cycle within the alert threshold` when that cycle ended more than `DEPOSIT_SCAN_ALERT_STALE_MINUTES`
+  ago (default 10: the scanner stopped, or every cycle fails), and `deposit blocks pending a retry`
+  when it has pending blocks (every registered chain's when the scan activity cannot be read). A
+  value equal to its threshold is no alert. An alert is logged when raised, again every 30 minutes
+  while it lasts (`reminder: true`), and once at info level when it clears: the raised alerts live in
+  Redis (`vault:scan-alert:<key>`, SET NX, a reminder key with a 30-minute TTL); a store that fails
+  never hides an alert, which is then logged on every pass. `DEPOSIT_SCAN_ALERT_LAG_BLOCKS_<CHAIN>` and
+  `DEPOSIT_SCAN_ALERT_STALE_MINUTES_<CHAIN>` set one chain apart (`vault.deposit_scan.chains.<chain>`;
+  0 keeps the global value). On Lambda the `confirmation_tracker` function reads them (template
+  parameters `DepositScanAlertLagBlocks`, `DepositScanAlertStaleMinutes`). A chain taken out of
+  scanning stops alerting when its record expires (7 days) or is deleted. — guarded by
+  `app/services/deposit/scan_activity_test.go`, `app/adapters/redis/scanactivity/store_test.go`,
+  `app/providers/deposit_scan_overrides_test.go`, `config/vault_test.go` and
+  `TestConfirmation_Tracker_ReadsTheScanAlertThresholds` (`tests/architecture`).
+- **Webhook DLQ alarm**: `template.yaml` and `template.dev.yaml` declare `vault-webhooks-dlq-not-empty-<env>`,
+  a CloudWatch alarm on `ApproximateNumberOfMessagesVisible` > 0 of the webhook dead-letter queue
+  (5-minute maximum), notifying the SNS topic of the `AlarmTopicArn` parameter (empty by default: the
+  alarm only changes state). Missing data is ignored (the alarm keeps its state): SQS reports a queue's
+  metrics only while it is active, up to six hours after it last held messages or was accessed, so a
+  DLQ whose messages nobody touches goes quiet with the messages still there. — guarded by
+  `TestWebhook_DeadLetterQueue_RaisesAnAlarmInEveryTemplate` (`tests/architecture`).
+- **Solana account rent**: an SPL transfer that opens the recipient's associated token account costs
+  its sender the account's rent beside `meta.fee`. The Solana adapter is a `chain.AccountRentReader`
+  (the rent of the token accounts the transaction created: in `postTokenBalances` and not in
+  `preTokenBalances`, by how much their lamports rose); the tracker records it on every outbound
+  transfer it confirms in `transactions.raw_payload` (`account_rent`, a decimal string, `"0"` when
+  none), and `transactions:backfill-fees` records it on older confirmed rows. `transactions.fee` keeps
+  `meta.fee`. — guarded by `app/adapters/chain/solana/tx_fee_test.go` and
+  `app/services/deposit/account_rent_test.go`.
+- **Balance audit**: `go run . artisan deposits:audit-balances <chain> [--account=<id>] [--after=<address id>]
+  [--limit=100] [--max-reads=500] [--spacing-ms=250] [--dust=<base units>] [--asset=SYM,...]
+  [--show-addresses]` reads, per address of the chain (by id, inactive ones included), the native
+  balance and every token the chain lists, at most `--max-reads` reads spaced `--spacing-ms` apart (an
+  address whole or not at all), and compares each with what the recorded transactions explain:
+  confirmed deposits, sweeps and gas seeds in, minus confirmed withdrawals, sweeps and gas seeds out,
+  minus (native) the fees and the account rent the address's outbound rows paid. A difference within
+  dust (`--dust`, else the adapter's `DustThreshold`, else 0) is ok; an asset with rows in flight is
+  not judged; a native balance with outbound rows confirmed, or mined and failed, without a fee, or (on
+  a chain that records it) confirmed without an account rent (both: `transactions:backfill-fees`), a
+  balance that cannot be read and a token the chain does not list are unverified. Each mismatch is
+  logged at warning level by address id, and the output names addresses by id unless
+  `--show-addresses`. It exits 1 on a mismatch, 2 when nothing differs but a balance is unverified
+  (a failure may name its status: `bootstrap.exitOnFailures`), and prints the `--after` to resume
+  with. Balances are read at the head while the ledger stops at the scan checkpoint, so a deposit in
+  blocks the scanner had not reached, or (Bitcoin family) an unconfirmed UTXO, reads as a mismatch
+  until a run after the scanner caught up (the adapters read the head only). Read-only (it writes,
+  signs and sends nothing) and not scheduled: run it from the host's scheduler to make it daily. —
+  guarded by `app/services/balanceaudit/audit_test.go`,
+  `app/console/commands/deposits_audit_balances_test.go`, `bootstrap/artisan_exit_test.go` and
+  `TestAddress_Ledger_*`, `TestAddress_Fees_*`, `TestList_ForBalanceAudit_*` (`tests/feature/repositories`).
 
 ### Testnet tokens
 

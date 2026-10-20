@@ -202,6 +202,9 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 				tx.Fee = got
 			}
 		}
+		if confirmedNow && isOutboundTxType(tx.TxType) {
+			tx = s.recordAccountRent(ctx, adapter, tx)
+		}
 		if tx.TxType == models.TxTypeSweep && confirmedNow {
 			if err := s.persistSweepConfirmed(ctx, tx, confs, newStatus, confirmedAt, fee); err != nil {
 				slog.Error("confirm sweep", "tx_id", tx.ID, "error", err)
@@ -588,20 +591,25 @@ func (s *Service) publishWithdrawalConfirmed(ctx context.Context, tx models.Tran
 	}
 }
 
-// RunConfirmationCheck walks all registered chains that have pending deposits and
-// refreshes confirmation counts using free block-height APIs when configured, then
-// repairs the withdrawal confirmations and the deposit.confirmed events that were lost.
+// RunConfirmationCheck warns about the deposit scans that lag, stalled or keep
+// pending blocks (warnScanHealth), walks all registered chains that have pending
+// deposits and refreshes confirmation counts using free block-height APIs when
+// configured, then repairs the withdrawal confirmations and the deposit.confirmed
+// events that were lost.
 func (s *Service) RunConfirmationCheck(ctx context.Context) error {
+	s.warnScanHealth(ctx)
 	s.runConfirmationCheck(ctx, allTxTypes)
 	s.backfillWithdrawalConfirmations(ctx)
 	s.backfillDepositEvents(ctx)
 	return nil
 }
 
-// RunWithdrawalConfirmationCheck is the local-mode tracker: it only advances outbound
-// withdrawal transactions, so deposits, sweeps and gas seeds keep waiting for the
-// real confirmation_tracker and no deposit webhook is emitted from a dev machine.
+// RunWithdrawalConfirmationCheck is the local-mode tracker: it warns about the deposit
+// scans like the real one, but only advances outbound withdrawal transactions, so
+// deposits, sweeps and gas seeds keep waiting for the real confirmation_tracker and
+// no deposit webhook is emitted from a dev machine.
 func (s *Service) RunWithdrawalConfirmationCheck(ctx context.Context) error {
+	s.warnScanHealth(ctx)
 	s.runConfirmationCheck(ctx, models.TxTypeWithdrawal)
 	s.backfillWithdrawalConfirmations(ctx)
 	return nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit/pending"
@@ -28,7 +29,7 @@ func healthService(store pending.Store) *Service {
 	registry := chain.NewRegistry()
 	registry.RegisterChain(mocks.NewMockChain("eth"))
 	registry.RegisterChain(mocks.NewMockChain("btc"))
-	return &Service{registry: registry, pending: store}
+	return &Service{registry: registry, pending: store, now: time.Now}
 }
 
 func TestPendingHealth_Counts_BlocksPerChainAndTheirTotal(t *testing.T) {
