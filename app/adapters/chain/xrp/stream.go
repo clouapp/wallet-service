@@ -305,7 +305,11 @@ func (s *streamSession) request(ctx context.Context, command map[string]any, res
 }
 
 // write sends message within streamWriteTimeout (or ctx's deadline, if sooner); ctx
-// ending first ends the write.
+// ending first ends the write and the connection, which a failed write leaves
+// unusable anyway. The websocket connection's own write deadline is a plain field
+// it reads on every frame, so the cancellation, which runs on another goroutine,
+// closes the network connection instead: that is safe across goroutines and, unlike
+// a network deadline the next frame would reset, certain to end the write.
 func (s *streamSession) write(ctx context.Context, message any) error {
 	deadline := time.Now().Add(streamWriteTimeout)
 	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
@@ -314,7 +318,7 @@ func (s *streamSession) write(ctx context.Context, message any) error {
 	if err := s.conn.SetWriteDeadline(deadline); err != nil {
 		return err
 	}
-	stop := context.AfterFunc(ctx, func() { _ = s.conn.SetWriteDeadline(time.Now()) })
+	stop := context.AfterFunc(ctx, func() { _ = s.conn.NetConn().Close() })
 	defer stop()
 	if err := s.conn.WriteJSON(message); err != nil {
 		if ctx.Err() != nil {

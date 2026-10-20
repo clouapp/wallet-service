@@ -431,6 +431,34 @@ func TestStream_ACancelledContextEndsARequestAtOnce(t *testing.T) {
 	}
 }
 
+func TestStream_ACancelledContextEndsAWriteThePeerDoesNotRead(t *testing.T) {
+	hold := make(chan struct{})
+	f := newFakeXRPLSocket(t, func(request map[string]any) []any {
+		if request["command"] == "ping" {
+			<-hold
+		}
+		return nil
+	})
+	t.Cleanup(func() { close(hold) })
+	session := dialFake(t, f, time.Minute).(*streamSession)
+	if err := session.write(context.Background(), map[string]any{"command": "ping"}); err != nil {
+		t.Fatal(err)
+	}
+	f.awaitRequest(t, "ping")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	time.AfterFunc(200*time.Millisecond, cancel)
+
+	started := time.Now()
+	// Far more than the socket buffers hold, with the peer no longer reading: the
+	// write blocks until something ends it.
+	err := session.write(ctx, map[string]any{"command": "subscribe", "accounts": strings.Repeat("r", 64<<20)})
+
+	if err == nil || time.Since(started) > streamWriteTimeout/2 {
+		t.Fatalf("err %v after %s, want the cancellation well before the write timeout", err, time.Since(started))
+	}
+}
+
 func TestStream_DialRefusesAnotherSchemeAndNeverReportsTheURL(t *testing.T) {
 	if _, err := NewStreamDialer(StreamConfig{URL: "https://s.altnet.rippletest.net:51234"}).Dial(context.Background()); err == nil {
 		t.Fatal("an http URL was dialed as a WebSocket")
