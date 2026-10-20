@@ -1250,6 +1250,30 @@ func TestFailover_MissingHistoricalState_MovesOnWithoutCountingAFailure(t *testi
 	assert.False(t, MissingState(errors.New("connection refused")))
 }
 
+func TestFailover_MissingState_OnACurrentReadIsAnEndpointFailure(t *testing.T) {
+	for _, tag := range []any{"latest", "pending", nil} {
+		broken := newFakeNode(t, answers(rpcFailure(-32000, "missing trie node 7c2f… (path ) state 0x… is not available")))
+		healthy := newFakeNode(t, answers(result(`"0x2a"`)))
+		client, _, _ := failoverClient(broken.URL(), healthy.URL())
+		params := []any{"0x1111111111111111111111111111111111111111"}
+		if tag != nil {
+			params = append(params, tag)
+		}
+
+		var count string
+		require.NoError(t, client.Call(context.Background(), "eth_getTransactionCount", &count, params...))
+		assert.Equal(t, 1, healthOf(client)[0].ConsecutiveFailures,
+			"tag %v: a node missing the state of the current block is broken, not short of history", tag)
+	}
+	for _, past := range []any{"0x10", map[string]any{"blockHash": "0xabc"}, map[string]any{"blockNumber": "0x10"}} {
+		pruned := newFakeNode(t, answers(rpcFailure(-32000, "missing trie node")))
+		archive := newFakeNode(t, answers(result(`"0x2a"`)))
+		client, _, _ := failoverClient(pruned.URL(), archive.URL())
+		require.NoError(t, client.Call(context.Background(), "eth_getTransactionCount", nil, "0xabc", past))
+		assert.Zero(t, healthOf(client)[0].ConsecutiveFailures, "block %v: a past block's state is history", past)
+	}
+}
+
 func TestFailover_SolanaHistoryAnswers_MoveOnWithoutCountingAFailure(t *testing.T) {
 	for _, failure := range []func(string) (int, string){
 		answers(rpcFailure(-32001, "Block 512 cleaned up, does not exist on node. First available block: 900")),

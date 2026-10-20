@@ -64,8 +64,9 @@ var (
 		"rate limit", "rate-limit", "ratelimit", "too many requests", "request limit", "requests limit",
 		"daily limit", "quota", "capacity limit", "throttl",
 	}
-	// noStatePhrases are a node without the state of an old block (no archive): the
-	// call moves on, the node stays healthy for every other call.
+	// noStatePhrases are a node without the state of a block. For a past block (no
+	// archive) the call moves on and the node stays healthy; for a current read the
+	// node is broken and counts a failure (exchange).
 	noStatePhrases = []string{
 		"missing trie node", "historical state", "state is not available", "state not available", "pruned",
 	}
@@ -176,6 +177,24 @@ func shapeKey(method string, params []interface{}) string {
 func shapeRefused(err error) bool {
 	var rpcErr *rpcError
 	return errors.As(err, &rpcErr) && rpcErr != nil && rpcErr.Code == jsonRPCInvalidParams
+}
+
+// historicalRead reports a call that names a past block: its last parameter is an
+// explicit block number ("0x10") or an EIP-1898 block object. "latest", "pending",
+// "safe", "finalized", "earliest" and no block at all are current reads.
+func historicalRead(params []interface{}) bool {
+	if len(params) == 0 {
+		return false
+	}
+	switch block := params[len(params)-1].(type) {
+	case string:
+		return strings.HasPrefix(block, "0x") && len(block) <= len("0x")+16
+	case map[string]interface{}:
+		_, byHash := block["blockHash"]
+		_, byNumber := block["blockNumber"]
+		return byHash || byNumber
+	}
+	return false
 }
 
 // MissingState reports a node's answer that it has no state for the block asked
