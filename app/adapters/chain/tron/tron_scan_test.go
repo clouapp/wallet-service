@@ -73,7 +73,7 @@ func TestTronScanBlockTRXAndTRC20Deposits(t *testing.T) {
 	for i, amount := range wantTRX {
 		got := transfers[i]
 		if got.Asset != models.NativeTRX || got.Token != nil || got.Amount.Int64() != amount ||
-			got.From != sender || got.To != recipient ||
+			got.LogIndex != types.NativeValuePosition || got.From != sender || got.To != recipient ||
 			got.BlockNumber != tronBlockWithUSDT || !got.Timestamp.Equal(blockTime) ||
 			got.BlockHash != "00000000044380c7b08869904009d6ab7d940984fcf998e8bce36814d865db23" {
 			t.Fatalf("TRX transfer %d = %+v", i, got)
@@ -223,5 +223,36 @@ func TestTronGetTransactionBlock(t *testing.T) {
 	}
 	if err := adapter.AwaitTransactionIncluded(context.Background(), tronUSDTDepositTxID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A TRC-20 Transfer's position counts every log of the block before it, those of a
+// failed call too: the block's logs are numbered as the node lists them, so a scan that
+// skipped them would number the same transfer differently.
+func TestTronScanBlockNumbersATokenTransferAfterTheLogsOfAFailedCall(t *testing.T) {
+	node := newFakeTronNode(t)
+	loadTronBlockFixtures(node, t)
+	adapter := newTronTestAdapter(t, node)
+	node.infos[tronBlockWithUSDT] = mutateTronFixture(t, node.infos[tronBlockWithUSDT], func(v any) {
+		failed := v.([]any)[0].(map[string]any)
+		failed["result"] = "FAILED"
+		if receipt, ok := failed["receipt"].(map[string]any); ok {
+			receipt["result"] = "REVERT"
+		} else {
+			failed["receipt"] = map[string]any{"result": "REVERT"}
+		}
+		failed["log"] = []any{
+			map[string]any{"address": "a614f803b6fd780986a42c78ec9c7f77e6ded13c", "topics": []any{tronTransferEventTopic}, "data": ""},
+			map[string]any{"address": "a614f803b6fd780986a42c78ec9c7f77e6ded13c", "topics": []any{tronTransferEventTopic}, "data": ""},
+		}
+	})
+
+	transfers, err := adapter.ScanBlock(context.Background(), tronBlockWithUSDT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	usdt := transfers[len(transfers)-1]
+	if usdt.Token == nil || usdt.TxHash != tronUSDTDepositTxID || usdt.LogIndex != 2 {
+		t.Fatalf("USDT transfer %+v, want log index 2 after the failed call's two logs", usdt)
 	}
 }

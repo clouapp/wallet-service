@@ -62,6 +62,9 @@ func (m *mockSweepSvc) PlanForWithdrawal(context.Context, uuid.UUID, string, *bi
 func (m *mockSweepSvc) PlanForWithdrawalTo(context.Context, uuid.UUID, string, *big.Int, sweep.Destination, uuid.UUID) (*sweep.Plan, error) {
 	return nil, sweep.ErrUnsupportedChain
 }
+func (m *mockSweepSvc) SettleUnanswered(context.Context, *models.Transaction) (*models.Transaction, error) {
+	panic("mockSweepSvc.SettleUnanswered must not be called in these tests")
+}
 func (m *mockSweepSvc) ExecutePlan(context.Context, *sweep.Plan, sweep.SigningCredentials, uuid.UUID, string, string) (*sweep.Result, error) {
 	panic("mockSweepSvc.ExecutePlan must not be called in these tests")
 }

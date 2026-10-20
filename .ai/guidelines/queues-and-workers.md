@@ -88,8 +88,12 @@ Outbound webhooks are delivered **at least once**, never exactly once.
   minutes. It runs from the `confirmation_tracker` Lambda (every minute) and from the
   local workers when a queue is configured, never where the local outbox delivers.
 - **A client can ask for a redelivery** (`POST /api/v1/webhooks/{webhookId}/redeliver`):
-  at most 500 events of the last 7 days per request; an event already pending and queued
-  in the last minute is left alone.
+  at most 500 events of the last 7 days per request, only those about a wallet of the
+  caller's account; an event already pending and queued in the last minute is left alone.
+- **A delivery is signed when it is sent, never before.** `X-Vault-Timestamp` and the
+  `t` of `X-Vault-Signature-V2` are the second of the POST, so a retry, a re-dispatch and a
+  redelivery each carry a fresh one. Do not put a signature or a timestamp in the outbox row
+  or the queue message: a receiver that refuses an old `t` would refuse every retry.
 
 ## Tests
 

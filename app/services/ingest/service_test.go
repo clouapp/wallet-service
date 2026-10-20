@@ -66,7 +66,7 @@ func TestInbound_Transfer_DetectedTransferMapping(t *testing.T) {
 		Amount:      in.Amount,
 		Asset:       in.Asset,
 		Token:       in.Token,
-		LogIndex:    uint(in.LogIndex),
+		LogIndex:    in.LogIndex,
 		Timestamp:   in.Timestamp,
 	}
 
@@ -78,7 +78,7 @@ func TestInbound_Transfer_DetectedTransferMapping(t *testing.T) {
 	assert.Equal(t, 0, in.Amount.Cmp(dt.Amount))
 	assert.Equal(t, in.Asset, dt.Asset)
 	assert.Equal(t, in.Token, dt.Token)
-	assert.Equal(t, uint(in.LogIndex), dt.LogIndex)
+	assert.Equal(t, in.LogIndex, dt.LogIndex)
 	assert.True(t, in.Timestamp.Equal(dt.Timestamp))
 }
 
@@ -157,7 +157,7 @@ func TestProcess_Transfers_NativeHumanUsesChainDecimals(t *testing.T) {
 		Asset:         "BTC",
 		LogIndex:      -1,
 	}
-	err := svc.processTransfer(t.Context(), models.ChainBTC, mockChain, transfer)
+	err := svc.ProcessTransfers(t.Context(), models.ChainBTC, []providers.InboundTransfer{transfer})
 	require.NoError(t, err)
 	require.Len(t, txs.created, 1)
 	assert.Equal(t, "50000000", txs.created[0].Amount)
@@ -166,8 +166,9 @@ func TestProcess_Transfers_NativeHumanUsesChainDecimals(t *testing.T) {
 	mockChain.NativeDecimalsVal = 0
 	skipped := &ingestTxRepo{}
 	svc.txRepo = skipped
-	err = svc.processTransfer(t.Context(), models.ChainBTC, mockChain, transfer)
+	_, err = svc.depositRow(t.Context(), models.ChainBTC, mockChain, transfer)
 	assert.Error(t, err)
+	require.NoError(t, svc.ProcessTransfers(t.Context(), models.ChainBTC, []providers.InboundTransfer{transfer}))
 	assert.Empty(t, skipped.created)
 }
 
@@ -358,11 +359,22 @@ func (f *ingestTxRepo) FindByWallet(walletID uuid.UUID, txType, status string, l
 func (f *ingestTxRepo) FindByChainAndTxHash(chainID, txHash string) (*models.Transaction, error) {
 	return nil, nil
 }
-func (f *ingestTxRepo) CountByChainAndTxHash(chainID, txHash, txType string) (int64, error) {
-	return 0, nil
+func (f *ingestTxRepo) FindDepositsByChainAndTxHash(_ context.Context, chainID, txHash string) ([]models.Transaction, error) {
+	var found []models.Transaction
+	for _, tx := range f.created {
+		if tx.Chain == chainID && tx.TxHash == txHash {
+			found = append(found, *tx)
+		}
+	}
+	return found, nil
 }
-func (f *ingestTxRepo) CountByChainTxHashAndLogIndex(_ context.Context, chainID, txHash string, logIndex int, txType string) (int64, error) {
-	return 0, nil
+func (f *ingestTxRepo) ClaimDepositPosition(context.Context, uuid.UUID, int) (bool, error) {
+	return false, nil
+}
+func (f *ingestTxRepo) LockTransactionDeposits(context.Context, string, string) error { return nil }
+func (f *ingestTxRepo) FillDepositBlockHash(context.Context, uuid.UUID, string) error { return nil }
+func (f *ingestTxRepo) Within(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
 }
 func (f *ingestTxRepo) CountInternalTransfers(_ context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error) {
 	if owner, ok := f.internalHashes[txHash]; ok && owner == walletID {
@@ -436,9 +448,9 @@ func (f *ingestWebhookEventRepo) MarkFailed(_ context.Context, eventID, errMsg s
 func (f *ingestWebhookEventRepo) ClaimStaleForRedispatch(context.Context, time.Duration, int) ([]models.WebhookEvent, error) {
 	return nil, nil
 }
-func (f *ingestWebhookEventRepo) FindForRedelivery(context.Context, uuid.UUID, time.Time, time.Time, []string, int) ([]uuid.UUID, error) {
+func (f *ingestWebhookEventRepo) FindForRedelivery(context.Context, uuid.UUID, uuid.UUID, time.Time, time.Time, []string, int) ([]uuid.UUID, error) {
 	return nil, nil
 }
-func (f *ingestWebhookEventRepo) RequeueForRedelivery(context.Context, uuid.UUID, []uuid.UUID, time.Time, time.Time) ([]models.WebhookEvent, error) {
+func (f *ingestWebhookEventRepo) RequeueForRedelivery(context.Context, uuid.UUID, uuid.UUID, []uuid.UUID, time.Time, time.Time) ([]models.WebhookEvent, error) {
 	return nil, nil
 }

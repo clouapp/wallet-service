@@ -1,8 +1,9 @@
 # Macro Wallets — Backend (WaaS)
 
 Multi-chain Wallet-as-a-Service API: module `github.com/macrowallets/waas`, Go 1.25,
-[Goravel](https://goravel.dev) v1.17 (Gin HTTP driver, Postgres, Redis), AWS Lambda in
-production. The front end (`macro-wallets-front`, port 2001) is a separate repository.
+[Goravel](https://goravel.dev) v1.17 (Gin HTTP driver, Postgres, Redis), on AWS (the
+production runtime is proposed in [`docs/PRODUCTION_RUNTIME.md`](docs/PRODUCTION_RUNTIME.md)).
+The front end (`macro-wallets-front`, port 2001) is a separate repository.
 
 This file holds the **invariants of the system**: the things that must stay true whatever
 the code looks like, each with the test that guards it. The **shape of the code** (layers,
@@ -23,6 +24,12 @@ today and has a fix tracked elsewhere. Do not read either as permission.
   on a host without Lambda, see `.ai/guidelines/queues-and-workers.md`).
   Deploy (SAM `template.yaml`, EventBridge, the Lambda modes) is out of scope for any
   reorganization: `main.go` only has to keep compiling. — guarded by `go build ./...`.
+- Every `LAMBDA_MODE` that `template.yaml` sets is a case of that switch (an unknown one falls
+  to the local server, which in Lambda never serves an invocation), and every schedule in
+  `template.yaml` and `template.dev.yaml` is one EventBridge accepts: a rate of at least one
+  minute, or a six-field cron. `template.yaml` schedules no deposit scan
+  (`docs/PRODUCTION_RUNTIME.md`). — guarded by `TestTemplate_LambdaModes_AreHandledByMain` and
+  `TestTemplate_Schedules_AreValidEventBridgeExpressions` (`tests/architecture`).
 - Goravel is assembled in `bootstrap/app.go` (`foundation.Setup()…Create()`): migrations,
   providers, seeders (`WithSeeders(seeders.All)`, from `database/seeders`), jobs, commands,
   rules, config, the global middleware chain, routing and the Gate callback. There is no
@@ -198,7 +205,16 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   rest; it is not the MPC share envelope. One write format, `settings.Seal` (`enc:v1:` +
   the Crypt envelope); `settings.OpenStored` also opens the bare envelope that older
   `chains.rpc_url` rows hold. — guarded by `app/services/settings/seal_legacy_test.go`.
-  **KNOWN VIOLATION** S11: `webhook_configs.secret` is plain text.
+- `webhook_configs.secret` is sealed the same way (`enc:v1:`; migration 540 sealed the rows
+  that were stored in the clear, and its `Down` opens them again). `WebhookConfigRepository`
+  seals on write and opens on every read, failing closed on a value without the marker;
+  only delivery reads it, to sign. No response, queue message or log carries it: the
+  secret is given by the client on create (and to claim a legacy webhook) and never
+  returned. — guarded by `TestWebhook_Secret_IsSealedAtRestAndSignaturesUseThePlaintext`,
+  `TestWebhook_Config_WithAPlaintextSecretIsRefusedOnRead` (`app/services/webhook`),
+  `TestSeal_Webhook_ConfigSecrets*` and `TestAppendix_B330_*` (`tests/migrations`),
+  `TestCreate_Webhook_Success` and `TestList_Webhooks_*` (`tests/feature/api/external/webhooks`)
+  and `TestEnqueue_Event_QueuePayloadCarriesNoSecret`.
 
 ### 7. Queues and workers
 
@@ -212,6 +228,22 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   configured, so a message is never drained twice. — guarded by
   `TestStart_Skips_OutboxWhenAQueueDelivers` (`app/services/localworkers`) and
   `TestOne_Consumer_PerQueue` (`tests/architecture`).
+- Every webhook delivery is signed when it is posted (`webhook.postSignedWebhook`, the one path
+  of the queue worker, the poller, the local outbox, a re-dispatch, a redelivery and
+  `webhook.test`), under the config's secret: `X-Vault-Timestamp` is the unix second of that
+  send, `X-Vault-Signature-V2` is `t=<that second>,v1=<hex HMAC-SHA256 of "<t>.<raw body>">`,
+  and the legacy `X-Vault-Signature` (hex HMAC-SHA256 of the body alone) is still sent while
+  receivers move to V2. The time is read from `webhook.Deps.Now` (`time.Now` when nil).
+  Nothing stores or queues a signature or a timestamp, so every retry, re-dispatch and
+  redelivery carries the time of its own send and a receiver can refuse a delivery whose `t` is
+  too far from its clock (a replay). The delivery client never follows a redirect
+  (`httpclient.NewClientWithoutRedirects`), so the signed headers reach only the config's URL,
+  and only a 2xx answer marks an event delivered: a 3xx is a failed attempt like a 4xx or a 5xx.
+  A delivery refused before the POST (no timestamped signature) is a build error and not an
+  attempt. — guarded by `TestDeliver_Signature_*`, `TestDeliver_Redirect_IsAFailedAttemptNotADelivery`,
+  `TestRedeliver_Signature_AnOldEventIsSignedWithTheTimeOfTheResend`, `TestSendTest_*`
+  (`app/services/webhook`), `TestPost_*` (`app/adapters/webhook/delivery`) and
+  `TestNewClientWithoutRedirects_*` (`pkg/httpclient`). Receiver side: `docs/vault-summary-v2.md`.
 - Webhook delivery is at least once. An event is a `webhook_events` row (one per config, type
   and subject: the partial unique index of migration 260) written before the queue send, and
   receivers deduplicate on `X-Vault-Delivery-Id` (the row id), which every resend keeps. Three
@@ -238,9 +270,16 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   - **On request.** `POST /api/v1/webhooks/{webhookId}/redeliver` (`webhooks.write`) requeues
     `event_ids`, or the events created from `since` to `until` of `types`, of one webhook the
     token's account owns: only events of the last 7 days, at most 500 per request, an event
-    pending and queued in the last minute left alone. — guarded by
-    `tests/feature/api/external/webhooks` (`TestRedeliver_Webhook_*`) and `TestRedeliver_*`
-    (`app/services/webhook`).
+    pending and queued in the last minute left alone. Only events about a wallet of that
+    account are requeued (the wallet of the event's transaction, or `data.wallet_id` of its
+    payload for an event without one; an event whose wallet cannot be told is left alone): a
+    legacy webhook received every account's events before it was claimed, and its new owner
+    never gets another account's events sent again. Migration 660 indexes what this reads
+    (`webhook_events (webhook_config_id, created_at)`, `wallets (account_id)`). — guarded by
+    `tests/feature/api/external/webhooks` (`TestRedeliver_Webhook_*`, among them
+    `TestRedeliver_Webhook_AClaimedLegacyWebhook*`), `TestRedeliver_*` (`app/services/webhook`)
+    `TestWebhookEventRepository_*Redelivery_*AccountsWallets` (`tests/feature/repositories`) and
+    `TestRedelivery_Indexes_CoverTheConfigWindowAndTheAccountWallets` (`tests/migrations`).
 - Deposit events: `deposit.pending`, `deposit.confirmed` and `deposit.failed` are sent once per
   deposit, with the transaction id as subject (the key the backfill looks up).
   `deposit.confirming` reports progress and may arrive several times, with increasing
@@ -315,10 +354,20 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `app/services/deposit/checkpoint_guard_test.go`, `checkpoint_operator_test.go`,
   `app/services/chainregistry/align_checkpoints_test.go` and
   `app/console/commands/scan_deposits_test.go`.
+- Each completed scan cycle (one that found nothing new, and the first one, included) records the
+  head it read, the checkpoint it left and when it ended (`vault:scan-activity:<chain>`), and the
+  inbound ingest records when a provider webhook of a known chain arrived (`vault:ingest-push:<chain>`),
+  both in Redis with a 7-day TTL, after the work is saved: a record that fails is logged and never
+  fails the scan or the webhook. A failed cycle and a checkpoint far ahead of the head record
+  nothing, so the scan time ages. `GET /health` and the tracker's alerts read these records only,
+  never a chain. — guarded by `app/services/deposit/scan_activity_test.go`,
+  `app/services/ingest/push_test.go` and `app/adapters/redis/scanactivity/store_test.go`.
 - One scanner per chain: a `ScanLatestBlocks` cycle holds `vault:lock:deposit_scan:<chain>`
   (`cacheguard.Acquire`, TTL 2 min, above the 60 s `deposit_scanner` Lambda timeout). A held
-  lock skips the cycle; a lock store that is down or missing fails it. `scan:deposits
-  --block|--tx|--pending|--retry-pending` take no lock and never move the checkpoint;
+  lock skips the cycle; a lock store that is down or missing fails it. The lock has no owner
+  token and no renewal, and a local scan cycle has no deadline: a cycle longer than the TTL
+  loses it, so a deployment runs one scanning process (`docs/PRODUCTION_RUNTIME.md` §5).
+  `scan:deposits --block|--tx|--pending|--retry-pending` take no lock and never move the checkpoint;
   `--set-checkpoint --apply` takes it and refuses while a scan holds it. —
   guarded by `app/services/deposit/scan_lock_test.go`.
 - A block is never marked scanned while its deposits are not all read and recorded: it is
@@ -328,6 +377,52 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `app/services/deposit/failure_test.go`, `TestScan_Block_FailsTheBlockWhenGetLogsFailsOnEveryEVMChain`,
   `TestRegister_ActiveChains_EVMBlockWhoseLogsFailGoesPending` and
   `TestScan_Block_EVMBlockWhoseReceiptsCannotBeReadGoesPendingAndRecordsOnRetry`.
+- **One deposit row per transfer, with its own transaction id.** A transaction that pays two
+  watched addresses, or one address twice, is as many deposits. A deposit is (chain, tx_hash,
+  log_index), the unique deposit index (migration 430); `log_index` is the transfer's position in its
+  transaction (`types.DetectedTransfer.LogIndex`), which the scanner and the provider push compute
+  alike: `-1` (`types.NativeValuePosition`) for the native value of an EVM, TRON or XRP transaction;
+  below it, an Alchemy internal transfer (native value a contract call sends, which the scanner never
+  reports), from its `typeTraceAddress` (`-2 - fnv32a(call_0_1) mod 2^30`; one without it is skipped);
+  the block-wide log index of an EVM Transfer (Alchemy's `log.logIndex`; a `removed` log is skipped) and
+  the block-wide event index of a TRON one, the logs of failed calls counted; the output index (vout) on Bitcoin and
+  Litecoin (the QuickNode filter function reports it); on Solana the account index of a lamport credit
+  and 256 plus the lowest changed token account index of a token credit (`pkg/solanacredit`, read from
+  `getBlock` balances by the scanner and from `accountData` by the Helius push).
+  `models.Transaction.LogIndex` has no ORM default, so position 0 is stored as 0; withdrawals, sweeps
+  and gas seeds keep `-1` (`models.TransactionLogIndexNone`). Both sources record through
+  `depositrecord.Record`, which takes the transaction's advisory lock
+  (`LockTransactionDeposits`, in one database transaction; a hex hash keyed and looked up in any case)
+  so the scanner and the push never decide on one transaction at once, reads its deposit rows and
+  inserts only when none of them is the transfer (same recipient, token contract and amount): a row at
+  the same position (another transfer there is `position_taken`, logged at warning level); the transfer
+  recorded from another block (the transaction was mined again after a reorganization, where EVM and
+  TRON positions differ); the transfer recorded, by either source, at a position where the recording
+  source reports no such transfer itself (`other_source`, or `other_position` for its own row: a
+  deposit the reorganization check moved to the new block with the old block's log index). Each source
+  passes the transfers it reports for the transaction, so a twin transfer at its own position is still
+  recorded; a unique violation counts as recorded. A row of the transfer at the same height without a
+  block hash (Alchemy sends none for a transfer without a log, Helius none at all) gets the hash of the
+  source that has it. The scanner records a block's positioned transfers before its native values.
+  The push fails (5xx, the provider delivers again) when the database could not look up or record a
+  transfer. A row the scanner recorded before
+  positions existed is at `-1` whatever the transfer was; a positioned transfer of the same source
+  claims it (`ClaimDepositPosition` moves it to the position, keeping its id, so its delivered
+  webhooks are not sent again), each old row claimed once. No migration rewrote those rows: only the
+  native value position can be read from a stored row, and it already is `-1`; `scan:deposits <chain>
+  --tx <hash>` moves an old row to its position and records the transfers of that transaction the
+  one-per-transaction rule left out. A pushed item whose position cannot be read (an Alchemy token
+  activity without its log index, a QuickNode output without its vout, a Helius transaction whose
+  balances cannot be placed) is skipped and logged, the rest of the push is kept, and the scanner
+  records it. — guarded by `app/services/depositrecord/record_test.go`,
+  `app/services/deposit/transfer_positions_test.go`
+  (`TestScan_Block_RecordsATransactionThatPaysTwoWatchedAddressesAsTwoDeposits`,
+  `TestPush_And_Scan_RecordOneDepositForOneTransfer`, `TestRecord_ConcurrentScanAndPushOfOneTransferKeepOneRow`,
+  `TestScan_Block_MovesTheOldRowOfATransactionToItsPositionAndRecordsWhatItLeftOut`, ...), the
+  `transfer_positions_test.go` of the EVM, Bitcoin and Solana adapters,
+  `TestHelius_ParsePayload_FindsTheScannersCreditsAtTheScannersPositions`,
+  `TestCreate_Deposit_StoresPositionZero` and
+  `TestLock_TransactionDeposits_IsHeldUntilTheTransactionEnds` (`tests/feature/repositories`).
 
 ### 8. Database and migrations
 
@@ -377,8 +472,10 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   truncates every table but `migrations` before and after the test, and also deletes the settings
   cache keys (`*settings:*`, in the worker's Redis index) because the settings service caches
   groups under `settings:platform:<group>` and `settings:account:<uuid>:<group>`, which would
-  outlive the truncated rows and leak a value into the next test. A test that changes the schema
-  uses `fixtures.TestDBFreshSchema(t)`. — guarded by `tests/feature/support/fixtures/reset_test.go`.
+  outlive the truncated rows and leak a value into the next test, and the scan activity keys
+  (`vault:scan-activity:*`, `vault:ingest-push:*`), which would add a chain to the next test's
+  `GET /health`. A test that changes the schema uses `fixtures.TestDBFreshSchema(t)`. — guarded by
+  `tests/feature/support/fixtures/reset_test.go`.
 
 ### 10. Settings
 
@@ -544,13 +641,17 @@ Single Go binary, multiple Lambda modes via `LAMBDA_MODE` env:
 |------|---------|
 | **local** (default) | Goravel HTTP server |
 | `api` | API Gateway (Lambda) |
-| `deposit_scanner` | EventBridge cron |
+| `deposit_scanner` | on demand: `template.yaml` schedules no scan (the local workers scan) |
 | `confirmation_tracker` | EventBridge cron |
 | `webhook_reconciler` | EventBridge cron |
 | `webhook_worker` | SQS queue |
+| `webhook_poller` | long-running process: long-polls the webhook queue in place of `webhook_worker` |
 
 Locally, it runs as a standard Goravel HTTP server (`facades.Route().Run()`).
-In production, the same binary is deployed to Lambda with `LAMBDA_MODE` selecting the handler.
+`template.yaml` is the Lambda layout of the same binary, with `LAMBDA_MODE` selecting the
+handler; as it stands it does not run the service (`docs/PRODUCTION_RUNTIME.md` §1, which also
+proposes the production runtime: a long-running service for the API, the local workers and
+the poller).
 
 Local mode shuts down gracefully (`pkg/lifecycle`): SIGTERM/SIGINT stops the HTTP server (in-flight requests drain) and the local scanner/refresher loops within `SHUTDOWN_TIMEOUT_SECONDS` (default 15, keep it below the 20 s grace of `macro-e2e api`); exit 0 when clean, 2 when the deadline expires, 1 on a second signal.
 
@@ -575,7 +676,7 @@ make test-integration TEST_FLAGS='-run TestWalletRepository'
 ```
 
 - Unit vs integration is decided per package from its test imports (`go list`), no build tags: a package is integration when its tests import `tests/feature/support/testenv`, `tests/feature/support/testutil`, `tests` or `bootstrap`.
-- `fixtures.TestDB(t)` (`tests/feature/support/fixtures`) migrates the schema fresh once per test binary (a worker clone already is), then truncates every table but `migrations` before and after each test and deletes the settings cache keys (`*settings:*`) that survive the rows. Tests that run migrations up/down use `fixtures.TestDBFreshSchema(t)` (fresh schema before and after). HTTP suites embed `support.HTTPSuite`; unreachable endpoints use `testutil.ClosedLocalURL`.
+- `fixtures.TestDB(t)` (`tests/feature/support/fixtures`) migrates the schema fresh once per test binary (a worker clone already is), then truncates every table but `migrations` before and after each test and deletes the settings cache keys (`*settings:*`) and the scan activity keys that survive the rows. Tests that run migrations up/down use `fixtures.TestDBFreshSchema(t)` (fresh schema before and after). HTTP suites embed `support.HTTPSuite`; unreachable endpoints use `testutil.ClosedLocalURL`.
 - `go run ./tests/feature/support/testdb prepare | drop-clones` are the template/cleanup steps `make test-integration` runs; both refuse names outside `vault_unit_test*`.
 - Running `go test ./app/repositories` directly still works on `vault_unit_test` itself (no clone; take the lock with `flock ~/.local/state/macro-e2e/locks/vault_unit_test.lock …` when another run may be active).
 - `TEST_TIMEOUT` (default 30m) is a safety net per `go test` invocation.
@@ -636,23 +737,26 @@ SOLANA_RPC_URL=https://api.devnet.solana.com
 BTC_RPC_URL=https://blockstream.info/testnet/api
 API_KEY_SECRET=dev-secret-key-not-for-production
 WITHDRAWAL_STALE_AFTER_HOURS=6   # outbound transfers unsettled this long are warned about and counted by /health
+DEPOSIT_SCAN_ALERT_LAG_BLOCKS=0  # tracker warns when a scan trails the head by more (0: the chain's catch-up window)
+DEPOSIT_SCAN_ALERT_STALE_MINUTES=10  # tracker warns when a scanned chain has no completed cycle for longer
 ```
 
 Redis is the cache driver (rate limits, locks including the per-chain deposit scan lock, settings
 cache, the deposit scanner's watched addresses and its copy of the scan checkpoint, which lives in
-Postgres): the app needs it reachable. `.env.dev.example` / `.env.example` carry the full lists,
+Postgres, and the scan activity `GET /health` reports): the app needs it reachable. `.env.dev.example` / `.env.example` carry the full lists,
 with the throttle variables.
 
-### RPC endpoints and failover (EVM, Solana)
+### RPC endpoints and failover (EVM, Solana, TRON, XRP)
 
 Each chain has an ordered list of RPC endpoints. Position 1 is the primary, `chains.rpc_url`
 (unchanged, so a chain without fallbacks behaves as before); positions 2 and after are its
 fallbacks, rows of `chain_rpc_endpoints` (migration 650: sealed like `rpc_url`, `enc:v1:` only by
 CHECK, an `enabled` flag, one row per position, deleted with the chain). The registry loads the
 enabled fallbacks with the active chains at boot; a failed read leaves every chain on its primary.
-EVM and Solana fail over through the list (they share `app/adapters/chain/rpc`). The Bitcoin family
-keeps its own list (next section); TRON and XRP have their own transports and no fallback yet: their
-list writes are refused.
+EVM and Solana fail over through the list with the shared JSON-RPC client (`app/adapters/chain/rpc`);
+TRON (the java-tron HTTP API) and XRP (rippled JSON-RPC) with their own clients over the same failover
+(`rpc.Endpoints`: order, cool-downs, network checks, health, logs and broadcast rule). The Bitcoin
+family keeps its own list (next section): its list writes are refused.
 
 - **Configure** (the processes load a changed list on restart; the platform API reloads its own at once):
   `go run . artisan chains:rpc-endpoints <chain>` lists position, host, enabled flag and recorded
@@ -671,13 +775,17 @@ list writes are refused.
   in health or returned: an endpoint is its host and a 12-hex fingerprint of its URL (HMAC-SHA256
   under `APP_KEY`, `chain.SetRPCFingerprintKey`).
 - **Every write checks the network.** Each endpoint a change adds or enables, and a new primary, must
-  answer `eth_chainId` equal to `network_id` (EVM) or `getGenesisHash` equal to its cluster's
-  (`models.SolanaGenesisHash`, Solana); another network or no answer refuses the change and nothing is
-  written. The checks of one change (like a `--probe`) run at once under one 20 s budget.
+  answer `eth_chainId` equal to `network_id` (EVM), `getGenesisHash` equal to its cluster's
+  (`models.SolanaGenesisHash`, Solana), block 0's id equal to its network's (`/wallet/getblockbynum`
+  `num` 0, `models.TronGenesisBlockID`, TRON; a Shasta endpoint is named and refused for every record)
+  or `server_info`'s `network_id` equal to its network's (mainnet 0, altnet 1, `models.XRPLNetworkID`;
+  a server that reports none counts as mainnet only when it holds mainnet's ledger 32570, validated
+  with its hash, and is refused otherwise, XRP), the last two through the prober the adapter
+  registers (`chain.SetEndpointProber`); another network or no answer refuses the change and nothing
+  is written. The checks of one change (like a `--probe`) run at once under one 20 s budget.
   `chains:set-rpc` and `PATCH .../rpc` check a new primary the same way; from artisan only, a primary
   record may also be pointed at the network `CHAIN_NETWORK_PROFILE` names for it (then run
-  `chains:align-network --apply`). Bitcoin-family, TRON and XRP primaries are written unchecked, as
-  before. An `env:NAME` must resolve in the process that runs the check. An EVM chain without
+  `chains:align-network --apply`). Bitcoin-family primaries are written unchecked, as before. An `env:NAME` must resolve in the process that runs the check. An EVM chain without
   `network_id` is checked against the chain id its profile names, else refused with how to set it.
   For an emergency switch to an endpoint the command's host cannot reach, `chains:set-rpc` and
   `chains:rpc-endpoints` take `--skip-network-check`: written unchecked, printed as a warning and
@@ -755,9 +863,33 @@ list writes are refused.
   `Transfer` asks the other ready endpoints by the block's hash: their logs are the answer, an empty
   answer from one agrees; with nobody else to ask the block is retried and believed empty from the
   third time the same hash is answered so, once the block is at least 5 minutes old (logged). Receipts keep their block number and hash check.
+- **TRON and XRP** (`app/adapters/chain/tron/tron_http.go`, `tron_broadcast.go`, `app/adapters/chain/xrp/rpc.go`,
+  `submit.go`): a TRON read moves on on a transport error, a non-2xx status (HTTP 429/403 is a rate
+  limit; 404/405 a path the endpoint does not serve, not counted against it) or a 2xx body that is not
+  JSON; an `Error` member is the answer. The API key goes to the primary only. A block scan reads its
+  block and its transaction infos from one endpoint (`rpc.PinEndpoint`). An XRP read moves on on a
+  transport error, a non-200 status, an unreadable body, a server that cannot answer (`noNetwork`,
+  `noCurrent`, `noClosed`, `tooBusy`, `amendmentBlocked`, `notSynced`, `internal`, `failedToForward`,
+  `notReady`), a rate limit (HTTP 429, `slowDown`) or a method or ledger the server does not serve
+  (`unknownCmd`, `lgrNotFound`, `notImpl`; not counted against it); `actNotFound`, `txnNotFound` and
+  every other result stay the answer. The XRP expiry proof reads its ledgers and its search from one
+  server. **Broadcasts**: TRON `DUP_TRANSACTION_ERROR` is a success only when `/wallet/gettransactionbyid`
+  finds the transaction on an endpoint of the network (`rpc.Endpoints.Any`; java-tron's recent-id cache
+  also answers it after a push it refused), else an unknown outcome; `SERVER_BUSY`, `NO_CONNECTION` and
+  `NOT_ENOUGH_EFFECTIVE_CONNECTION` with "Effective connection:…" (checked before the push) pass the
+  same bytes to the next endpoint; `NOT_ENOUGH_EFFECTIVE_CONNECTION` with any other message ("P2P
+  broadcast failed.", after the push reached no peer) and `OTHER_ERROR` are unknown outcomes; any
+  other `result: false` or `Error` is a known failure. An XRP
+  submit `tes…`, `terQUEUED`, `tefALREADY` or `tec…` was sent (a `tec` is then recorded by the
+  validated ledger); a `tel…` (neither applied nor relayed) or a server that did not run the request
+  passes the bytes on; `tefPAST_SEQ`, `tefMAX_LEDGER` (they may follow an earlier application) and
+  `ter…` (held for a later ledger) are unknown outcomes; `tem…`, any other `tef…` and a request error
+  are known failures. On both, a timeout, a dropped connection, an HTTP 5xx or an unreadable answer is
+  an unknown outcome, and no endpoint taking the bytes is `chain.NotSent`.
 
-— guarded by `app/adapters/chain/rpc/failover_test.go`, `app/adapters/chain/evm/endpoints_test.go`,
-`app/adapters/chain/solana/endpoints_test.go`, `app/services/chainregistry/endpoint_verify_test.go`,
+— guarded by `app/adapters/chain/rpc/failover_test.go`, `endpoints_test.go`, `app/adapters/chain/evm/endpoints_test.go`,
+`app/adapters/chain/solana/endpoints_test.go`, `app/adapters/chain/tron/tron_failover_test.go`,
+`app/adapters/chain/xrp/failover_test.go`, `app/services/chainregistry/endpoint_verify_test.go`,
 `primary_verify_test.go`, `app/services/rpcendpoints/service_test.go`,
 `app/services/chains/rpc_endpoints_test.go`, `primary_verify_test.go`, `replace_rpc_test.go`,
 `app/console/commands/chains_rpc_endpoints_test.go`, `app/adapters/redis/rpchealth/store_test.go`,
@@ -792,26 +924,26 @@ One node answer is read up to a per-chain limit and refused past it with an expl
 
 ### Paid fees
 
-The confirmation tracker stores the fee actually paid (native base units) in `transactions.fee` when a withdrawal, sweep or gas_seed confirms: EVM gasUsed × effectiveGasPrice + L1 fee, BTC/LTC inputs − outputs, Solana `meta.fee`, TRON `fee` (energy + bandwidth burned), XRP `Fee` (drops) of the transaction in a validated ledger. An XRP transaction is confirmed only when validated with `meta.TransactionResult` `tesSUCCESS`. XRP: a validated `tec…` result marks the transaction and its withdrawal `failed` with `onchain_<result in lowercase>` (e.g. `onchain_tecno_dst_insuf_xrp`), stores the fee it still burned, and sends `withdrawal.failed` once; a payment past its `LastLedgerSequence` (kept in `transactions.raw_payload`) that the node searched every ledger for (`tx` `min_ledger`/`max_ledger` → `searched_all`, inside `complete_ledgers`) is failed with `expired`, no fee. EVM: the block of an outbound row is read from its receipt (`eth_getTransactionReceipt`); a receipt with status `0x0` (mined out of gas or reverted: fee paid, value not moved) marks the row (withdrawal, sweep or gas_seed), and a withdrawal's `withdrawals` row, `failed` with `onchain_out_of_gas` (gasUsed reached the gas limit) or `onchain_reverted`, stores the fee it burned, and sends `withdrawal.failed` once; a failed sweep sends no `sweep.confirmed`. Only rows still at block 0 are read this way: a row whose block was recorded before this check (2026-10-18) is not re-read. TRON and Solana report an on-chain failure as an error (the row stays pending, never confirmed); other chains never mark an on-chain failure. A native EVM transfer mined with status `0x0` is never a deposit: the scanner drops it and the tracker fails a deposit whose receipt failed (see "EVM native gas"). Older rows: `go run . artisan transactions:backfill-fees [--chain a,b] [--apply]` (dry run by default, idempotent, reads only).
+The confirmation tracker stores the fee actually paid (native base units) in `transactions.fee` when a withdrawal, sweep or gas_seed confirms: EVM gasUsed × effectiveGasPrice + L1 fee, BTC/LTC inputs − outputs, Solana `meta.fee` (and the account rent it paid, in `raw_payload`: see "Deposit detection observability"), TRON `fee` (energy + bandwidth burned), XRP `Fee` (drops) of the transaction in a validated ledger. An XRP transaction is confirmed only when validated with `meta.TransactionResult` `tesSUCCESS`. XRP: a validated `tec…` result marks the transaction and its withdrawal `failed` with `onchain_<result in lowercase>` (e.g. `onchain_tecno_dst_insuf_xrp`), stores the fee it still burned, and sends `withdrawal.failed` once; a payment past its `LastLedgerSequence` (kept in `transactions.raw_payload`) that the node searched every ledger for (`tx` `min_ledger`/`max_ledger` → `searched_all`, inside `complete_ledgers`) is failed with `expired`, no fee. EVM: the block of an outbound row is read from its receipt (`eth_getTransactionReceipt`); a receipt with status `0x0` (mined out of gas or reverted: fee paid, value not moved) marks the row (withdrawal, sweep or gas_seed), and a withdrawal's `withdrawals` row, `failed` with `onchain_out_of_gas` (gasUsed reached the gas limit) or `onchain_reverted`, stores the fee it burned, and sends `withdrawal.failed` once; a failed sweep sends no `sweep.confirmed`. Only rows still at block 0 are read this way: a row whose block was recorded before this check (2026-10-18) is not re-read. TRON and Solana report an on-chain failure as an error (the row stays pending, never confirmed); other chains never mark an on-chain failure. A native EVM transfer mined with status `0x0` is never a deposit: the scanner drops it and the tracker fails a deposit whose receipt failed (see "EVM native gas"). Older rows: `go run . artisan transactions:backfill-fees [--chain a,b] [--apply]` (dry run by default, idempotent, reads only; on Solana it also fills the account rent).
 
 ### Broadcast outcomes
 
 A broadcast answer either decides the transfer or leaves its outcome unknown.
 - **Certainly not sent** (`chain.RequestNotSent`, the one definition the RPC failover and the classification share): a request that could not be built, a dial error (refused, no route, a connect timeout, a name that does not resolve), or a call marked `chain.NotSent` (the RPC client marks a broadcast that no endpoint took, e.g. the only fallback's identity check failed while the primary cooled down). A rejection (an answer about the transaction: a JSON-RPC error, whatever HTTP status it came with, since bitcoind before v28 answers every error with 500) and a rate limit also decide it (also when the caller's deadline cuts the backoff of an endpoint that answered only 429).
-- **Unknown** (`chain.ErrUnknownOutcome`, `chain.ClassifyBroadcast`): a timeout or dropped connection after the send, an HTTP 5xx without a JSON-RPC answer or with a generic upstream one (a gateway may have relayed the transaction), a 2xx body that cannot be read. EVM, Solana and the Bitcoin family (JSON-RPC, ElectrumX and Esplora REST) classify; XRP and TRON do not yet. `chain.KnownFailure` (safe to retry a read) is unchanged. An unknown EVM outcome raises the in-process nonce floor like an accepted one.
+- **Unknown** (`chain.ErrUnknownOutcome`, `chain.ClassifyBroadcast`): a timeout or dropped connection after the send, an HTTP 5xx without a JSON-RPC answer or with a generic upstream one (a gateway may have relayed the transaction), a 2xx body that cannot be read. EVM, Solana, the Bitcoin family (JSON-RPC, ElectrumX and Esplora REST), TRON and XRP classify (TRON and XRP answers: "RPC endpoints and failover"). `chain.KnownFailure` (safe to retry a read) is unchanged. An unknown EVM outcome raises the in-process nonce floor like an accepted one.
 
-The final withdrawal row is created under the hash of the signed bytes **before** they leave, under the withdrawal's idempotency key, and the withdrawal is linked to it (`withdrawals.transaction_id`) in the same database transaction (a row or link that cannot be recorded stops the withdrawal before anything is sent). A retry with the key after a crash past the send finds that transfer through `Request`'s idempotency check and replays it: it never signs another. After the send:
+The final withdrawal row is created under the hash of the signed bytes **before** they leave, under the withdrawal's idempotency key, and the withdrawal is linked to it (`withdrawals.transaction_id`) in the same database transaction (a row or link that cannot be recorded stops the withdrawal before anything is sent). The row carries `broadcast_outcome: "pending"` and the signed bytes (`signed_tx`, hex sealed `enc:v1:` with the process cipher; bytes that cannot be sealed stop the withdrawal before anything is recorded) until the send is answered; the answer is always recorded (`accepted`, `unknown`, or `refused` with the row failed) and the bytes dropped, and the tracker drops them too when it settles such a row (in a block, or failed on chain). Submits of one idempotency key are serialized: a cache lock under the submit's owner token (a release never frees another holder's lock), renewed every 20 s while the submit runs and lapsing 1 min after its holder died; a second submit waits up to 25 s, then gets 409. A retry with the key finds the transfer through `Request`'s idempotency check: an answered row is replayed; a pending one (a crash between insert and answer, or a refusal whose mark failed) is first settled by `sweep.SettleUnanswered`, which **never signs again** (a second signature could pay twice): its hash on every endpoint (found: accepted), then the same signed bytes sent again — accepted or "already known" (the original still in the pool) is accepted; an unknown answer, and **any refusal** (nonce too low, underpriced, a full pool, a fee cap under the base fee, insufficient funds: the original may be in another pool or mined already), is an unknown outcome the tracker's positive proofs settle; reaching no node is `sweep.ErrSendUnverified` (409, nothing changed). Only a refusal proving the bytes can never be valid (invalid sender or signature, another chain id, bytes that do not decode, gas below the intrinsic cost, oversized data) fails the row and the withdrawal (`sweep.ErrSignedBytesInvalid`). A row whose bytes were not kept is an unknown outcome. The RPC client takes "already known" from any endpoint, the primary included, as a success with the signed hash. After the send:
 - accepted or unknown: what the send answered (another hash; `broadcast_outcome: "unknown"` in `transactions.raw_payload`) and the `withdrawal.broadcasting` webhook are recorded in one transaction, retried twice, then logged at error with the row left for the tracker; the withdrawal goes `broadcast` and is never failed (and refunded) for a transfer that may land. `withdrawal.broadcast` (and the later withdrawal events) carry `broadcast_outcome: "unknown"` when it applies.
-- refused: the row is marked failed (`broadcast_refused`) and the withdrawal fails as before.
+- refused: the row is marked failed (`broadcast_refused`, retried like the other recordings) and the withdrawal fails as before.
 - A signed transaction without a hash (no production adapter) is recorded after the send, as before.
 
-`raw_payload` also keeps, for EVM, the nonce the transfer spends (`sender_nonce`) and the head read before the send (`broadcast_head`); for XRP and Solana its last valid block (`last_ledger_sequence`: XRP LastLedgerSequence, Solana the `lastValidBlockHeight` `getLatestBlockhash` gave its blockhash in this process). An unknown-outcome gas_seed is recorded and awaited like a sent one (the plan goes on when it lands; a second seed would over-fund the child).
+`raw_payload` also keeps, for EVM, the nonce the transfer spends (`sender_nonce`) and the head read before the send (`broadcast_head`); for the Bitcoin family the outpoints it spends (`spent_inputs`, `txid:vout`); for XRP and Solana its last valid block (`last_ledger_sequence`: XRP LastLedgerSequence, Solana the `lastValidBlockHeight` `getLatestBlockhash` gave its blockhash in this process). An unknown-outcome gas_seed is recorded and awaited like a sent one (the plan goes on when it lands; a second seed would over-fund the child).
 
-The tracker settles every sent transfer by its hash (mined → confirmed or failed on chain). For a row with `broadcast_outcome: "unknown"` that no node knows by its hash, EVM `NonceSpend` gives a **positive proof**: from `max(required_confirmations, 12)` blocks under the head it walks back (newest first, which a node without archive state still has), then binary-searches the block where the sender's nonce count passed the nonce, and reads the sender's transaction with that nonce in it. Ours there is confirmed from that block (or failed on chain from its receipt, read by block; a node without a transaction index such as publicnode Sepolia still has it); another one there fails the withdrawal `not_landed` (and `withdrawal.failed` once). A nonce still free, one spent before the send, or a read that fails proves nothing: the row stays pending with a warning. A node without the state of those blocks ("missing trie node", "historical state … not available") is no endpoint failure (the call moves on); the row is then left for an hour (`nonce_proof_retry_at` in `raw_payload`) before the next try. XRP fails `expired` past its last ledger once the node searched every ledger up to it. Solana fails `expired` only for a row whose broadcast outcome was unknown, past its blockhash's last valid height (`getEpochInfo`, finalized), when no endpoint knows the signature and either two endpoints answering for that finalized slot or later say so, or one does twice ten minutes apart (`expiry_witnessed_at`): a backend behind the slot answers null without an error.
+The tracker settles every sent transfer by its hash (mined → confirmed or failed on chain). For a row with `broadcast_outcome: "unknown"` that no node knows by its hash, EVM `NonceSpend` gives a **positive proof**: from `max(required_confirmations, 12)` blocks under the head it walks back (newest first, which a node without archive state still has), then binary-searches the block where the sender's nonce count passed the nonce, and reads the sender's transaction with that nonce in it. Ours there is confirmed from that block (or failed on chain from its receipt, read by block; a node without a transaction index such as publicnode Sepolia still has it); another one there fails the withdrawal `not_landed` (and `withdrawal.failed` once). A nonce still free, one spent before the send, or a read that fails proves nothing: the row stays pending with a warning. A node without the state of those blocks ("missing trie node", "historical state … not available") is no endpoint failure for a read of a past block (an explicit block number, `earliest` or an EIP-1898 block object, found where each read names its block: `eth_getBlockByNumber`'s first parameter, an `eth_getLogs` filter's `blockHash`, `fromBlock` or `toBlock`, every other read's last parameter; a latest or pending read answered so counts a failure); the row is then left for an hour (`nonce_proof_retry_at` in `raw_payload`) before the next try. XRP fails `expired` past its last ledger once the node searched every ledger up to it. Solana fails `expired` only for a row whose broadcast outcome was unknown, past its blockhash's last valid height (`getEpochInfo`, finalized), when no endpoint knows the signature and either two endpoints answering for that finalized slot or later say so, or one does twice ten minutes apart (`expiry_witnessed_at`): a backend behind the slot answers null without an error.
 
-Nothing settles a Bitcoin-family unknown outcome automatically. Every tracker pass warns (`outbound transaction still unsettled …`) about each withdrawal, sweep or gas_seed still pending or confirming `WITHDRAWAL_STALE_AFTER_HOURS` (default 6) after it was recorded, and `GET /health` counts them per chain under `confirmation_tracker`. `GET /health` counts once a minute at most, one count at a time, outside its lock, and serves the last counts when a count is in flight or fails. An operator settles one with `go run . artisan withdrawals:reconcile <withdrawal-id or outbound transaction id> [--apply]` (dry run by default): a withdrawal's transaction, or the one recorded under its key when it is not linked (linked with `--apply`), or a sweep, gas seed or orphan row by its own id; then the transaction on every endpoint, the nonce proof (EVM, any row with `sender_nonce`) and a provable expiry (any row, with the same proof); landed records the block (the tracker then counts confirmations), failed fails it with the proof, unknown says why and writes nothing.
+A Bitcoin-family row with `broadcast_outcome: "unknown"` and `spent_inputs` that the failover order does not know is searched on every provider, cooling down or not (`SearchTransactionBlock`: found in a block, it is confirmed from it), then its inputs are read from the first provider with a spend index (Esplora `/tx/:txid/outspend/:vout` and `/tx/:txid`; bitcoind, ElectrumX and the Tatum gateway have none): an input spent by itself, or by a transaction paying the row's destination exactly its amount that is none of our other outbound rows (a malleated or re-signed copy, kept as `landed_as`; another withdrawal, sweep or gas seed of ours is a conflict, so a second withdrawal is never taken for the first one landing), in a block confirms it from that block; only every input spent by other transactions paying someone else, each at least 6 blocks deep (`UTXO_DOUBLE_SPEND_DEPTH`, or `required_confirmations` when more), fails it `not_landed` (and `withdrawal.failed` once); a conflicting transaction whose outputs cannot be read proves nothing. Anything else (an input unspent, a spend in the mempool or not deep enough, ours still in the mempool, no provider with a spend index) proves nothing: the row stays pending and is asked again after 10 minutes (`spend_proof_retry_at`). A TRON unknown outcome has no automatic proof yet. Every tracker pass warns (`outbound transaction still unsettled …`) about each withdrawal, sweep or gas_seed still pending or confirming `WITHDRAWAL_STALE_AFTER_HOURS` (default 6) after it was recorded, and `GET /health` counts them per chain under `confirmation_tracker`. `GET /health` counts once a minute at most, one count at a time, outside its lock, and serves the last counts when a count is in flight or fails. An operator settles one with `go run . artisan withdrawals:reconcile <withdrawal-id or outbound transaction id> [--apply]` (dry run by default): a withdrawal's transaction, or the one recorded under its key when it is not linked (linked with `--apply`), or a sweep, gas seed or orphan row by its own id; then the transaction on every endpoint, the nonce proof (EVM, any row with `sender_nonce`), the inputs proof (Bitcoin family, any row with `spent_inputs`) and a provable expiry (any row, with the same proof); landed records the block (the tracker then counts confirmations), failed fails it with the proof, unknown says why and writes nothing.
 
-— guarded by `TestClassify_Broadcast_*` (`app/services/chain`), `TestFailover_Broadcast_ThatReachedNoNodeIsNeverAnUnknownOutcome`, `TestCall_AJSONRPCErrorCarriedByANon2xxStatusIsTheRPCError` (`app/adapters/chain/rpc`), `TestBroadcast_*` (`app/adapters/chain/bitcoin/broadcast_outcome_test.go`), `TestExecute_Withdrawal_*`, `TestExecute_Linked_AnUnknownGasSeedOutcomeIsAwaitedLikeASentOne` (`app/services/sweep`), `TestEVM_NonceSpend_*`, `TestEVM_SearchTransactionBlock_*`, `TestPending_Nonce_AnUnknownBroadcastOutcomeKeepsItsNonceTaken` (`app/adapters/chain/evm`), `TestSolana_LastValidBlock_*`, `TestSolana_TransactionExpired_*` (`app/adapters/chain/solana`), `TestRunConfirmationCheck_EVMUnknownOutcome*` (`app/services/deposit/evm_not_landed_test.go`), `stale_outbound_test.go`, `withdrawal_reconcile_test.go` (`app/services/deposit`) and `TestWithdrawals_Reconcile_*` (`app/console/commands`).
+— guarded by `TestClassify_Broadcast_*` (`app/services/chain`), `TestFailover_Broadcast_ThatReachedNoNodeIsNeverAnUnknownOutcome`, `TestCall_AJSONRPCErrorCarriedByANon2xxStatusIsTheRPCError` (`app/adapters/chain/rpc`), `TestBroadcast_*` (`app/adapters/chain/bitcoin/broadcast_outcome_test.go`), `TestBitcoin_*` (`app/adapters/chain/bitcoin/double_spend_test.go`), `TestTron_Broadcast_*`, `TestXRP_Broadcast_*`, `TestExecute_Withdrawal_*`, `TestExecute_Linked_AnUnknownGasSeedOutcomeIsAwaitedLikeASentOne` (`app/services/sweep`), `TestEVM_NonceSpend_*`, `TestEVM_SearchTransactionBlock_*`, `TestPending_Nonce_AnUnknownBroadcastOutcomeKeepsItsNonceTaken` (`app/adapters/chain/evm`), `TestSolana_LastValidBlock_*`, `TestSolana_TransactionExpired_*` (`app/adapters/chain/solana`), `TestRunConfirmationCheck_EVMUnknownOutcome*` (`app/services/deposit/evm_not_landed_test.go`), `bitcoin_unknown_outcome_test.go`, `stale_outbound_test.go`, `withdrawal_reconcile_test.go` (`app/services/deposit`) and `TestWithdrawals_Reconcile_*` (`app/console/commands`).
 
 ### Confirmation and finality
 
@@ -825,7 +957,7 @@ The confirmation tracker (and the confirmation step of each scan cycle) confirms
 
 ### XRP deposits
 
-`ScanBlock` on `xrp`/`txrp` reads one validated ledger (rippled `ledger`, `transactions` and `expand` true; API v1 `metaData` and API v2 `tx_json`/`meta` shapes) and reports, in ledger order (`TransactionIndex`), every `Payment` with `meta.TransactionResult` `tesSUCCESS` that delivered XRP to another account: the amount is `meta.delivered_amount` in drops (a partial payment credits what arrived, never `Amount`), `From` is `Account`, `To` is `Destination`, and `DestinationTag` is carried to `transactions.destination_tag` and to the `deposit.*` webhooks (`destination_tag`, omitted without a tag and on other chains). Not deposits: `tec…` payments, issued-currency or MPT deliveries (an object `delivered_amount`; the token registry does not model XRPL issued currencies), payments an account makes to itself, and every other type, including `CheckCash`, `EscrowFinish`, `PaymentChannelClaim` and `AccountDelete`, which can also deliver XRP. A ledger that is not validated, not closed, not the one asked for, without its transactions list, with a transaction not expanded or without metadata, or a payment whose `delivered_amount` is missing or `unavailable`, is an error, never an empty ledger, so the engine retries it and then keeps it pending. An XRP withdrawal is a `Payment` from the base address to its destination, so it is a deposit only when that destination is itself a watched address (as on every chain). The head is the validated ledger, so with 1 required confirmation a deposit is confirmed on the cycle that records it (tip − ledger + 1). A scanner runs only where one is scheduled for the chain: the local workers scan the chains in `LOCAL_DEPOSIT_SCAN_CHAINS` (`xrp`/`txrp` must be listed), the SAM `deposit_scanner` schedules (`template.yaml`) list no XRP chain, and `artisan scan:deposits` scans on demand; the first cycle starts at the head, without history. A ledger closes every 3–5 s, so the default windows (`DEPOSIT_SCAN_BATCH_BLOCKS` 50, `DEPOSIT_SCAN_CATCH_UP_BLOCKS` 500, 8 ledgers fetched at a time) are about 3–4 minutes and 30–40 minutes of ledgers; a ledger the load-balanced public servers do not have yet answers `lgrNotFound` and is retried. — guarded by `TestLive_ScanBlock_*` (`app/adapters/chain/xrp/scan_test.go`, altnet ledgers recorded in `testdata/xrpl`) and `TestXRP_Deposit_*` (`app/services/deposit/xrp_deposit_test.go`).
+`ScanBlock` on `xrp`/`txrp` reads one validated ledger (rippled `ledger`, `transactions` and `expand` true; API v1 `metaData` and API v2 `tx_json`/`meta` shapes) and reports, in ledger order (`TransactionIndex`), every `Payment` with `meta.TransactionResult` `tesSUCCESS` that delivered XRP to another account, at the native value position (`-1`, one Payment per transaction): the amount is `meta.delivered_amount` in drops (a partial payment credits what arrived, never `Amount`), `From` is `Account`, `To` is `Destination`, and `DestinationTag` is carried to `transactions.destination_tag` and to the `deposit.*` webhooks (`destination_tag`, omitted without a tag and on other chains). Not deposits: `tec…` payments, issued-currency or MPT deliveries (an object `delivered_amount`; the token registry does not model XRPL issued currencies), payments an account makes to itself, and every other type, including `CheckCash`, `EscrowFinish`, `PaymentChannelClaim` and `AccountDelete`, which can also deliver XRP. A ledger that is not validated, not closed, not the one asked for, without its transactions list, with a transaction not expanded or without metadata, or a payment whose `delivered_amount` is missing or `unavailable`, is an error, never an empty ledger, so the engine retries it and then keeps it pending. An XRP withdrawal is a `Payment` from the base address to its destination, so it is a deposit only when that destination is itself a watched address (as on every chain). The head is the validated ledger, so with 1 required confirmation a deposit is confirmed on the cycle that records it (tip − ledger + 1). A scanner runs only where one is scheduled for the chain: the local workers scan the chains in `LOCAL_DEPOSIT_SCAN_CHAINS` (`xrp`/`txrp` must be listed), `template.yaml` schedules no `deposit_scanner` run for any chain, and `artisan scan:deposits` scans on demand; the first cycle starts at the head, without history. A ledger closes every 3–5 s, so the default windows (`DEPOSIT_SCAN_BATCH_BLOCKS` 50, `DEPOSIT_SCAN_CATCH_UP_BLOCKS` 500, 8 ledgers fetched at a time) are about 3–4 minutes and 30–40 minutes of ledgers; a ledger the load-balanced public servers do not have yet answers `lgrNotFound` and is retried. — guarded by `TestLive_ScanBlock_*` (`app/adapters/chain/xrp/scan_test.go`, altnet ledgers recorded in `testdata/xrpl`) and `TestXRP_Deposit_*` (`app/services/deposit/xrp_deposit_test.go`).
 
 **Real-time XRP deposits** (`app/services/xrpstream`, off by default). The local workers can also run one long-lived XRPL WebSocket subscription (rippled or Clio) for one XRP chain, so a deposit is recorded and confirmed when its ledger is validated instead of on the next scan cycle:
 
@@ -858,29 +990,35 @@ v0 and v1 transactions read alike. A skipped slot (-32007, -32009) yields no tra
 fails the block, which is retried and then kept pending. Per successful transaction, in block order:
 
 - **SOL**: every account whose lamports rose, except the fee payer, is credited from the fee payer;
-  the log index is the account index. A transaction whose balances do not line up with its keys is
-  logged and skipped.
+  the log index (its position) is the account index. A transaction whose balances do not line up with
+  its keys is logged and skipped.
 - **SPL** (Token and Token-2022 accounts alike): `preTokenBalances`/`postTokenBalances` are netted per
   owner and mint; an owner whose total of a mint the chain's token registry lists rose is credited that
   increase (base units, `uiTokenAmount.amount`), with the token row (symbol, mint as contract, the row's
   decimals; a mint reporting other decimals is logged). The sender is the owner whose holding of that
-  mint fell most (the fee payer when none fell, a mint). The log index is the number of account keys
-  plus the credited owner's lowest token account index, so two mints or two owners in one transaction
-  never share a log index with each other or with a lamport credit. Moving tokens between two accounts
+  mint fell most (the fee payer when none fell, a mint). The log index is 256 (the most account keys a
+  transaction can have) plus the lowest index among the credited owner's token accounts of that mint
+  whose balance changed (an account the transaction lists without moving it is left out, as the Helius
+  push leaves it out), so two mints or two owners in one transaction never share a log index with each
+  other or with a lamport credit. Moving tokens between two accounts
   of one owner credits nothing. The deposit's `to_address` is the owner (the wallet address), never the
   token account. A registered mint that is not a public key fails every scan of the chain, and a
   registered balance without an owner, with an index past the keys or an amount that is not a base-unit
   integer fails the block, so it is retried instead of marked scanned. Unregistered mints are ignored.
 
-The scanner records one deposit per chain and transaction (`ScannerDepositLogIndex`, the unique deposit
-index): when one transaction pays watched addresses twice (two assets, or two addresses), only the first
-of those transfers in that order is recorded. A public devnet endpoint allows 6 `getBlock` calls per 10 s per IP
+Each credit to a watched address is its own deposit (see §7, "One deposit row per transfer"). The
+Helius push reads the same balances from `accountData` (every account key in key order, with
+`nativeBalanceChange` and the signed `rawTokenAmount` of each changed token account) and finds the same
+credits at the same positions; it skips a transaction with a `transactionError`, and logs and skips one
+it cannot place (no `accountData`, a token account not among the accounts or listed twice, an amount
+that is not a base-unit integer). The parity is tested on a recorded `getBlock` transaction rewritten
+in the Helius shape, not yet on a recorded Helius webhook. A public devnet endpoint allows 6 `getBlock` calls per 10 s per IP
 (`x-ratelimit-method-limit: 6`, measured on 2026-10-18), about 0.6 slots per second against 2.5 produced:
 it can never keep up, whatever the pace (see "Deposit scan pacing"); scan `sol` with a keyed RPC. —
 guarded by `app/adapters/chain/solana/scan_spl_test.go` (devnet slots 512232469 and 512232636 recorded in
 `testdata/solana`, with the -32015 answer to a version-0 request), `scan_test.go`,
-`TestRegister_ActiveChains_SolanaScansTheRegisteredSPLTokens` and
-`TestSolana_Deposit_RecordsAnSPLCreditWithItsSymbolAndMint`.
+`TestRegister_ActiveChains_SolanaScansTheRegisteredSPLTokens`,
+`TestSolana_Deposit_RecordsAnSPLCreditWithItsSymbolAndMint` and `pkg/solanacredit/credits_test.go`.
 
 ### Deposit scan pacing
 
@@ -899,6 +1037,80 @@ workers scan `sol`/`tsol`, `base`/`tbase`, `arbitrum`/`tarbitrum`, `bsc`/`tbsc` 
 of their own, so a slow chain never holds up `eth`, `polygon` and `btc`. — guarded by
 `app/services/deposit/scan_override_test.go`, `config/vault_test.go`,
 `app/providers/deposit_scan_overrides_test.go` and `TestStart_Scans_FastChainsInLoopsOfTheirOwn`.
+
+### Deposit detection observability
+
+- **`GET /health`** (public): `deposit_scanner.chains` has one entry per chain a scan cycle or a
+  provider push touched in the last 7 days: `lag_blocks` (head − checkpoint at the end of its last
+  completed scan cycle, 0 when the checkpoint is ahead of a lagging node) and `last_scanned_at` (when
+  that cycle ended), both absent for a chain only pushed to, and `last_push_at` (the last inbound
+  provider webhook received), absent when none. Times are UTC, to the second; no address or id;
+  `chains_error` says when the store cannot be read and no earlier reading exists, and
+  `deposit_scanner.status` does not depend on it. Every reading of the check (pending counts and scan
+  activity, reused 15 s; stale outbound counts, 1 min) goes through one single-flight snapshot
+  (`healthSnapshot`): `deposit.Service.Health` takes the three at once; a reading runs apart from the
+  request (`context.WithoutCancel`), is bounded to 2 s also when the store's client ignores its
+  context (the framework's go-redis client has `ContextTimeoutEnabled` off and waits for its 3 s
+  socket timeout: `pkg/deadline`), and after a failed reading the checks are answered from it for
+  10 s without reading again (pending counts as they failed, so `pending_store_unavailable` stays on
+  the wire; the other two from the last good reading). — guarded by
+  `app/services/deposit/health_snapshot_test.go` and `tests/feature/health` (a Redis that accepts and
+  never answers: about 2 s for the first check, immediate during the backoff).
+- **Alerts** (structured warnings; the repository has no metrics abstraction): every tracker pass
+  (`confirmation_tracker`, and the local confirmation loop) checks the chains a scanner records
+  (those with scan activity) and warns `deposit scan lag above the alert threshold` for one whose
+  last cycle left the checkpoint more than `DEPOSIT_SCAN_ALERT_LAG_BLOCKS` behind the head (default 0:
+  the chain's catch-up window, a lag the next cycle cannot close), `deposit scan has not completed a
+  cycle within the alert threshold` when that cycle ended more than `DEPOSIT_SCAN_ALERT_STALE_MINUTES`
+  ago (default 10: the scanner stopped, or every cycle fails), and `deposit blocks pending a retry`
+  when it has pending blocks (every registered chain's when the scan activity cannot be read). A
+  value equal to its threshold is no alert. An alert is logged when raised, again every 30 minutes
+  while it lasts (`reminder: true`), and once at info level when it clears: the raised alerts live in
+  Redis (`vault:scan-alert:<key>`, SET NX, a reminder key with a 30-minute TTL); a store that fails
+  never hides an alert, which is then logged on every pass. `DEPOSIT_SCAN_ALERT_LAG_BLOCKS_<CHAIN>` and
+  `DEPOSIT_SCAN_ALERT_STALE_MINUTES_<CHAIN>` set one chain apart (`vault.deposit_scan.chains.<chain>`;
+  0 keeps the global value). On Lambda the `confirmation_tracker` function reads them (template
+  parameters `DepositScanAlertLagBlocks`, `DepositScanAlertStaleMinutes`). A chain taken out of
+  scanning stops alerting when its record expires (7 days) or is deleted. — guarded by
+  `app/services/deposit/scan_activity_test.go`, `app/adapters/redis/scanactivity/store_test.go`,
+  `app/providers/deposit_scan_overrides_test.go`, `config/vault_test.go` and
+  `TestConfirmation_Tracker_ReadsTheScanAlertThresholds` (`tests/architecture`).
+- **Webhook DLQ alarm**: `template.yaml` and `template.dev.yaml` declare `vault-webhooks-dlq-not-empty-<env>`,
+  a CloudWatch alarm on `ApproximateNumberOfMessagesVisible` > 0 of the webhook dead-letter queue
+  (5-minute maximum), notifying the SNS topic of the `AlarmTopicArn` parameter (empty by default: the
+  alarm only changes state). Missing data is ignored (the alarm keeps its state): SQS reports a queue's
+  metrics only while it is active, up to six hours after it last held messages or was accessed, so a
+  DLQ whose messages nobody touches goes quiet with the messages still there. — guarded by
+  `TestWebhook_DeadLetterQueue_RaisesAnAlarmInEveryTemplate` (`tests/architecture`).
+- **Solana account rent**: an SPL transfer that opens the recipient's associated token account costs
+  its sender the account's rent beside `meta.fee`. The Solana adapter is a `chain.AccountRentReader`
+  (the rent of the token accounts the transaction created: in `postTokenBalances` and not in
+  `preTokenBalances`, by how much their lamports rose); the tracker records it on every outbound
+  transfer it confirms in `transactions.raw_payload` (`account_rent`, a decimal string, `"0"` when
+  none), and `transactions:backfill-fees` records it on older confirmed rows. `transactions.fee` keeps
+  `meta.fee`. — guarded by `app/adapters/chain/solana/tx_fee_test.go` and
+  `app/services/deposit/account_rent_test.go`.
+- **Balance audit**: `go run . artisan deposits:audit-balances <chain> [--account=<id>] [--after=<address id>]
+  [--limit=100] [--max-reads=500] [--spacing-ms=250] [--dust=<base units>] [--asset=SYM,...]
+  [--show-addresses]` reads, per address of the chain (by id, inactive ones included), the native
+  balance and every token the chain lists, at most `--max-reads` reads spaced `--spacing-ms` apart (an
+  address whole or not at all), and compares each with what the recorded transactions explain:
+  confirmed deposits, sweeps and gas seeds in, minus confirmed withdrawals, sweeps and gas seeds out,
+  minus (native) the fees and the account rent the address's outbound rows paid. A difference within
+  dust (`--dust`, else the adapter's `DustThreshold`, else 0) is ok; an asset with rows in flight is
+  not judged; a native balance with outbound rows confirmed, or mined and failed, without a fee, or (on
+  a chain that records it) confirmed without an account rent (both: `transactions:backfill-fees`), a
+  balance that cannot be read and a token the chain does not list are unverified. Each mismatch is
+  logged at warning level by address id, and the output names addresses by id unless
+  `--show-addresses`. It exits 1 on a mismatch, 2 when nothing differs but a balance is unverified
+  (a failure may name its status: `bootstrap.exitOnFailures`), and prints the `--after` to resume
+  with. Balances are read at the head while the ledger stops at the scan checkpoint, so a deposit in
+  blocks the scanner had not reached, or (Bitcoin family) an unconfirmed UTXO, reads as a mismatch
+  until a run after the scanner caught up (the adapters read the head only). Read-only (it writes,
+  signs and sends nothing) and not scheduled: run it from the host's scheduler to make it daily. —
+  guarded by `app/services/balanceaudit/audit_test.go`,
+  `app/console/commands/deposits_audit_balances_test.go`, `bootstrap/artisan_exit_test.go` and
+  `TestAddress_Ledger_*`, `TestAddress_Fees_*`, `TestList_ForBalanceAudit_*` (`tests/feature/repositories`).
 
 ### Testnet tokens
 
@@ -950,5 +1162,9 @@ A TRC-20 sweep's gas_seed gives the child what it lacks to pay the estimated ban
 ## Deploy
 
 ```bash
-make deploy ENV=prod    # AWS Lambda via SAM
+make deploy ENV=dev     # template.dev.yaml: queues, KMS key, the host's IAM user (docs/AWS_DEV_STACK.md)
+make deploy ENV=prod    # template.yaml via SAM; validate (sam validate --lint) runs first
 ```
+
+`template.yaml` does not run the service as it stands; the production runtime, its options and
+the decisions still open are in `docs/PRODUCTION_RUNTIME.md`.

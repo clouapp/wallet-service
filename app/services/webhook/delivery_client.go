@@ -7,15 +7,21 @@ import (
 	"github.com/macrowallets/waas/pkg/httpclient"
 )
 
-// SignedDelivery is one outbound POST. Signature is already the hex HMAC-SHA256
-// of Body. The signing secret is not part of this value and is not sent.
+// SignedDelivery is one outbound POST, signed by the service when it is sent.
+// Signature is the hex HMAC-SHA256 of Body alone (X-Vault-Signature, kept while
+// receivers move to the timestamped scheme). SignatureV2 is the X-Vault-Signature-V2
+// value, "t=<Timestamp>,v1=<hex HMAC-SHA256 of "<Timestamp>.<Body>">", and Timestamp
+// (unix seconds) is also sent as X-Vault-Timestamp. The signing secret is not part
+// of this value and is not sent.
 type SignedDelivery struct {
-	URL        string
-	Body       []byte
-	Signature  string
-	EventType  string
-	DeliveryID string
-	Timeout    time.Duration
+	URL         string
+	Body        []byte
+	Signature   string
+	SignatureV2 string
+	Timestamp   int64
+	EventType   string
+	DeliveryID  string
+	Timeout     time.Duration
 }
 
 // DeliveryClient posts a signed webhook. The delivery adapter registers the live client.

@@ -103,3 +103,40 @@ func TestRead_ThenCount_GivesTheLeftoverZeroKeyItsWindow(t *testing.T) {
 	assert.EqualValues(t, 1, total)
 	assert.True(t, cache.putAfterRecreate)
 }
+
+func TestAcquireHold_ReleaseLeavesALockAnotherHolderTook(t *testing.T) {
+	cache := memcache.New()
+	hold, got, err := cacheguard.AcquireHold(cache, "lock:key", time.Minute)
+	require.NoError(t, err)
+	require.True(t, got)
+
+	_, again, err := cacheguard.AcquireHold(cache, "lock:key", time.Minute)
+	require.NoError(t, err)
+	assert.False(t, again, "a held key is contention")
+
+	// The hold lapsed and another holder took the key: releasing must not free it.
+	require.NoError(t, cache.Put("lock:key", "another-holder", time.Minute))
+	hold.Release()
+	assert.Equal(t, "another-holder", cache.GetString("lock:key"))
+}
+
+func TestAcquireHold_IsRenewedWhileHeldAndFreedOnRelease(t *testing.T) {
+	cache := memcache.New()
+	hold, got, err := cacheguard.AcquireHold(cache, "lock:key", 150*time.Millisecond)
+	require.NoError(t, err)
+	require.True(t, got)
+
+	time.Sleep(450 * time.Millisecond)
+	assert.True(t, cache.Has("lock:key"), "a holder still running keeps its lock past the ttl")
+
+	hold.Release()
+	assert.False(t, cache.Has("lock:key"))
+	hold.Release() // a second release is a no-op
+}
+
+func TestAcquireHold_ReportsAnOutageInsteadOfContention(t *testing.T) {
+	_, got, err := cacheguard.AcquireHold(memcache.Down{Cache: memcache.New()}, "lock:key", time.Minute)
+
+	assert.False(t, got)
+	require.ErrorIs(t, err, cacheguard.ErrUnavailable)
+}

@@ -38,10 +38,9 @@ const (
 	TxTypeGasSeed       = "gas_seed"
 )
 
-// ScannerDepositLogIndex is the log index of a block-scanner deposit, which is keyed
-// by chain and transaction alone; the unique deposit index covers (chain, tx_hash,
-// log_index), so one scanner row per transaction is enforced by the database.
-const ScannerDepositLogIndex = -1
+// TransactionLogIndexNone is the log_index of a row that is not a deposit (a
+// withdrawal, a sweep, a gas seed): only deposits are told apart by their position.
+const TransactionLogIndexNone = -1
 
 type Transaction struct {
 	orm.Model
@@ -52,9 +51,12 @@ type Transaction struct {
 	Chain          string     `gorm:"type:varchar(50);not null;index"`
 	TxType         string     `gorm:"type:transaction_type;not null;index"`
 	TxHash         string     `gorm:"type:varchar(255);index"`
-	LogIndex       int        `gorm:"type:int;default:-1"`
-	FromAddress    string     `gorm:"type:varchar(255)"`
-	ToAddress      string     `gorm:"type:varchar(255);not null"`
+	// LogIndex is a deposit's position in its transaction (types.DetectedTransfer):
+	// the unique deposit index is (chain, tx_hash, log_index). It is always written as
+	// set, 0 included; a deposit recorded before positions existed holds -1.
+	LogIndex    int    `gorm:"type:int"`
+	FromAddress string `gorm:"type:varchar(255)"`
+	ToAddress   string `gorm:"type:varchar(255);not null"`
 	// DestinationTag is the XRP Ledger destination tag the payment carried; nil means none.
 	DestinationTag      *uint32    `gorm:"type:bigint"`
 	Amount              string     `gorm:"type:varchar(100);not null"`

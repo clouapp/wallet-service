@@ -46,7 +46,7 @@ func (c *TransactionsBackfillFees) Signature() string {
 }
 
 func (c *TransactionsBackfillFees) Description() string {
-	return "Read from the chain the fee paid by confirmed outbound transactions with an empty fee; dry run unless --apply"
+	return "Read from the chain the fee paid by confirmed outbound transactions with an empty fee, and on Solana the account rent they paid beside it; dry run unless --apply"
 }
 
 func (c *TransactionsBackfillFees) Extend() command.Extend {
@@ -94,11 +94,15 @@ func backfillChainIDs(registered []string, selected string) []string {
 
 func printFeeBackfillRows(ctx console.Context, report deposit.FeeBackfillReport) {
 	for _, row := range report.Rows {
+		what, value := "fee", row.Fee
+		if row.Rent {
+			what, value = "account rent", row.AccountRent
+		}
 		if row.Err != nil {
-			ctx.Warning(fmt.Sprintf("%s %s %s: fee not read: %v", row.Chain, row.TxType, row.TxHash, row.Err))
+			ctx.Warning(redactedLine(fmt.Sprintf("%s %s %s: %s not read: %v", row.Chain, row.TxType, row.TxHash, what, row.Err)))
 			continue
 		}
-		ctx.Info(fmt.Sprintf("%s %s %s: fee %s", row.Chain, row.TxType, row.TxHash, row.Fee))
+		ctx.Info(fmt.Sprintf("%s %s %s: %s %s", row.Chain, row.TxType, row.TxHash, what, value))
 	}
 	for _, id := range report.Unsupported {
 		ctx.Warning(id + ": adapter cannot read paid fees, skipped")
@@ -110,5 +114,5 @@ func printFeeBackfillSummary(ctx console.Context, report deposit.FeeBackfillRepo
 		ctx.Info(fmt.Sprintf("dry run: %d rows found, nothing written (pass --apply)", len(report.Rows)))
 		return
 	}
-	ctx.Info(fmt.Sprintf("wrote %d of %d fees", report.Written, len(report.Rows)))
+	ctx.Info(fmt.Sprintf("wrote %d of %d fees and account rents", report.Written, len(report.Rows)))
 }

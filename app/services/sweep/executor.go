@@ -2,6 +2,8 @@ package sweep
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -274,7 +276,7 @@ func (s *service) broadcastGasSeed(
 	}
 	tx := sweepLegTransaction(wallet, plan, leg, uuid.New(), opts, unsigned, hash, nil, true, adapter)
 	if unknown {
-		if tx.RawPayload, err = broadcastRawPayload(adapter, signed, head, true); err != nil {
+		if tx.RawPayload, err = broadcastRawPayload(adapter, signed, head, chain.BroadcastOutcomeUnknown); err != nil {
 			return fmt.Errorf("record gas_seed payload: %w", err)
 		}
 	}
@@ -430,6 +432,7 @@ func sweepLegTransaction(
 		Chain:               plan.Chain,
 		TxType:              txType,
 		TxHash:              hash,
+		LogIndex:            models.TransactionLogIndexNone,
 		FromAddress:         fromAddr,
 		ToAddress:           toAddr,
 		Amount:              amount,
@@ -486,9 +489,9 @@ func (s *service) broadcastWithdrawal(
 		return nil, err
 	}
 	head := s.broadcastHead(ctx, adapter, plan.Chain)
-	rawPayload, err := broadcastRawPayload(adapter, signed, head, false)
+	rawPayload, err := s.pendingPayload(adapter, signed, head)
 	if err != nil {
-		return nil, fmt.Errorf("record last valid block: %w", err)
+		return nil, err
 	}
 	tx := withdrawalRow(adapter, wallet, plan, source, toAddress, externalUserID, txID, signed.TxHash, rawPayload)
 	if token != nil {
@@ -505,17 +508,19 @@ func (s *service) broadcastWithdrawal(
 	unknown := err != nil && tracked && errors.Is(err, chain.ErrUnknownOutcome)
 	if err != nil && !unknown {
 		if tracked {
-			s.markNotSent(ctx, tx, err)
+			s.markNotSent(ctx, adapter, signed, head, tx, err)
 		}
 		return nil, fmt.Errorf("broadcast: %w", err)
 	}
+	outcome := chain.BroadcastOutcomeAccepted
 	if unknown {
+		outcome = chain.BroadcastOutcomeUnknown
 		hash = signed.TxHash
 		slog.Warn("withdrawal broadcast outcome unknown; recorded and tracked by its signed hash",
 			"tx_id", txID, "tx_hash", hash, "chain", plan.Chain, "error", chain.ClientText(err))
-		if tx.RawPayload, err = broadcastRawPayload(adapter, signed, head, true); err != nil {
-			return nil, fmt.Errorf("record last valid block: %w", err)
-		}
+	}
+	if tx.RawPayload, err = broadcastRawPayload(adapter, signed, head, outcome); err != nil {
+		return nil, fmt.Errorf("record last valid block: %w", err)
 	}
 	if strings.TrimSpace(hash) == "" {
 		hash = signed.TxHash
@@ -526,12 +531,8 @@ func (s *service) broadcastWithdrawal(
 			return s.txRepo.Create(txCtx, tx)
 		})
 	}
-	update := unknown || !strings.EqualFold(hash, tx.TxHash)
 	tx.TxHash = hash
 	if err := s.persistWithRetry(ctx, tx, "record withdrawal broadcast", func(txCtx context.Context) error {
-		if !update {
-			return nil
-		}
 		return s.txRepo.RecordBroadcast(txCtx, tx.ID, tx.TxHash, tx.RawPayload)
 	}); err != nil {
 		// The bytes may be on their way: the row recorded before the send stays, and
@@ -576,18 +577,59 @@ func (s *service) recordBeforeSend(ctx context.Context, tx *models.Transaction, 
 	})
 }
 
+// pendingPayload is the raw_payload of a withdrawal row recorded before its send:
+// the pending outcome and, sealed, the signed bytes a same-key retry sends again if
+// the send is never answered (none without a sealer). Bytes that cannot be sealed
+// stop the withdrawal before anything is recorded or sent.
+func (s *service) pendingPayload(adapter types.Chain, signed *types.SignedTx, head uint64) (string, error) {
+	raw, err := broadcastRawPayload(adapter, signed, head, chain.BroadcastOutcomePending)
+	if err != nil {
+		return "", fmt.Errorf("record last valid block: %w", err)
+	}
+	if s.sealer == nil || signed == nil || len(signed.RawBytes) == 0 {
+		return raw, nil
+	}
+	sealed, err := s.sealer.Seal(hex.EncodeToString(signed.RawBytes))
+	if err != nil {
+		return "", fmt.Errorf("seal the signed withdrawal: %w", err)
+	}
+	payload := map[string]any{}
+	if decodeErr := json.Unmarshal([]byte(raw), &payload); decodeErr != nil {
+		return "", fmt.Errorf("record the signed withdrawal: %w", decodeErr)
+	}
+	payload[chain.SignedTxPayloadKey] = sealed
+	withBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("record the signed withdrawal: %w", err)
+	}
+	return string(withBytes), nil
+}
+
 // broadcastRefusedReason is the error_message of a withdrawal row recorded before
 // its send and then refused by the network (nothing left).
 const broadcastRefusedReason = "broadcast_refused"
 
-// markNotSent marks a row recorded before a send that was refused. A row that
-// cannot be marked stays pending (the tracker finds nothing for its hash); it is
-// logged so an operator can settle it.
-func (s *service) markNotSent(ctx context.Context, tx *models.Transaction, cause error) {
-	if err := s.txRepo.MarkFailed(ctx, tx.ID, broadcastRefusedReason); err != nil {
-		slog.Error("withdrawal broadcast refused but its row could not be marked failed",
-			"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "broadcast_error", chain.ClientText(cause), "error", err)
+// markNotSent marks a row recorded before a send that was refused (failed, its key
+// released, the refused bytes dropped from raw_payload), retried like the recording
+// of an answered send. A row that still cannot be marked keeps its pending outcome:
+// a retry with its key then checks it (SettleUnanswered) and never replays it as
+// broadcast. That is logged at error level.
+func (s *service) markNotSent(ctx context.Context, adapter types.Chain, signed *types.SignedTx, head uint64, tx *models.Transaction, cause error) {
+	refused, payloadErr := broadcastRawPayload(adapter, signed, head, chain.BroadcastOutcomeRefused)
+	if payloadErr != nil {
+		refused = `{"` + chain.BroadcastOutcomePayloadKey + `":"` + chain.BroadcastOutcomeRefused + `"}`
 	}
+	if err := s.retryWrite(ctx, tx, "mark refused withdrawal", func(txCtx context.Context) error {
+		if err := s.txRepo.MarkFailed(txCtx, tx.ID, broadcastRefusedReason); err != nil {
+			return err
+		}
+		return s.txRepo.RecordBroadcast(txCtx, tx.ID, tx.TxHash, refused)
+	}); err != nil {
+		slog.Error("withdrawal broadcast refused but its row could not be marked failed; a retry with its key checks it again",
+			"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "broadcast_error", chain.ClientText(cause), "error", err)
+		return
+	}
+	tx.RawPayload, tx.Status = refused, string(types.TxStatusFailed)
 }
 
 // persistRetryDelays are the waits before each new try of the recording that
@@ -598,21 +640,33 @@ var persistRetryDelays = []time.Duration{200 * time.Millisecond, 600 * time.Mill
 // database transaction, retried after persistRetryDelays, and sends the webhook
 // once it commits. A failed webhook insert rolls write back.
 func (s *service) persistWithRetry(ctx context.Context, tx *models.Transaction, what string, write func(context.Context) error) error {
+	var send func(context.Context)
+	err := s.retryWrite(ctx, tx, what, func(txCtx context.Context) error {
+		if writeErr := write(txCtx); writeErr != nil {
+			return writeErr
+		}
+		staged, stageErr := s.stageWithdrawalBroadcasting(txCtx, tx)
+		send = staged
+		return stageErr
+	})
+	if err == nil && send != nil {
+		send(ctx)
+	}
+	return err
+}
+
+// retryWrite runs write in one database transaction, retried after
+// persistRetryDelays.
+func (s *service) retryWrite(ctx context.Context, tx *models.Transaction, what string, write func(context.Context) error) error {
 	var err error
 	for attempt := 0; ; attempt++ {
-		var send func(context.Context)
 		err = s.txRepo.Within(ctx, func(txCtx context.Context) error {
 			if writeErr := write(txCtx); writeErr != nil {
 				return fmt.Errorf("%s: %w", what, writeErr)
 			}
-			staged, stageErr := s.stageWithdrawalBroadcasting(txCtx, tx)
-			send = staged
-			return stageErr
+			return nil
 		})
 		if err == nil {
-			if send != nil {
-				send(ctx)
-			}
 			return nil
 		}
 		if attempt == len(persistRetryDelays) || ctx.Err() != nil {
@@ -667,6 +721,7 @@ func withdrawalRow(adapter types.Chain, wallet *models.Wallet, plan *Plan, sourc
 		Chain:          plan.Chain,
 		TxType:         models.TxTypeWithdrawal,
 		TxHash:         txHash,
+		LogIndex:       models.TransactionLogIndexNone,
 		FromAddress:    source.Address,
 		ToAddress:      toAddress,
 		DestinationTag: copyTag(plan.DestinationTag),

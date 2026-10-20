@@ -43,6 +43,10 @@ type BitcoinConfig struct {
 	// TatumDataAPIURL is the Tatum Data API base a keyed Tatum fallback reads UTXOs
 	// from; empty means DefaultTatumDataAPIURL.
 	TatumDataAPIURL string
+	// DoubleSpendDepth is how deep every conflicting spend of a transfer's inputs must
+	// be before it proves the transfer can never land (InputsSpend); 0 is 6. The
+	// chain's confirmations apply when they are more.
+	DoubleSpendDepth uint64
 }
 
 // BitcoinFallback is a secondary provider: an Esplora or bitcoind JSON-RPC URL, an
@@ -372,7 +376,8 @@ func (a *BitcoinLive) scanBlockRPC(ctx context.Context, blockNum uint64) ([]type
 	blockTime := time.Unix(block.Time, 0)
 	var transfers []types.DetectedTransfer
 	for _, tx := range block.Tx {
-		for _, vout := range tx.Vout {
+		// The output index is the transfer's position (vout): outputs are listed in order.
+		for index, vout := range tx.Vout {
 			if !vout.Value.IsPositive() {
 				continue
 			}
@@ -389,7 +394,7 @@ func (a *BitcoinLive) scanBlockRPC(ctx context.Context, blockNum uint64) ([]type
 			}
 			transfers = append(transfers, types.DetectedTransfer{
 				TxHash: tx.Txid, BlockNumber: blockNum, BlockHash: hash,
-				To: addr, Amount: s, Asset: a.cfg.NativeSymbol, Timestamp: blockTime,
+				To: addr, Amount: s, Asset: a.cfg.NativeSymbol, LogIndex: index, Timestamp: blockTime,
 			})
 		}
 	}

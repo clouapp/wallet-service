@@ -252,8 +252,9 @@ func (entry xrpLedgerEntry) deposit(ledgerIndex uint64, ledgerHash string, close
 		To:          entry.fields.Destination,
 		Amount:      drops,
 		Asset:       asset,
-		LogIndex:    uint(entry.index),
-		Timestamp:   closeTime,
+		// A transaction is one Payment: what it delivers is its native value.
+		LogIndex:  types.NativeValuePosition,
+		Timestamp: closeTime,
 	}
 	if tag := entry.fields.DestinationTag; tag != nil {
 		value := *tag

@@ -142,18 +142,93 @@ func (r *TransactionRepository) CountByChainAndTxHash(ctx context.Context, chain
 	return count, nil
 }
 
-// CountByChainTxHashAndLogIndex counts rows for a chain, hash, log index, and type.
-func (r *TransactionRepository) CountByChainTxHashAndLogIndex(ctx context.Context, chainID, txHash string, logIndex int, txType string) (int64, error) {
-	count, err := r.Query(ctx).Model(&models.Transaction{}).
-		Where("chain", chainID).
-		Where("tx_hash", txHash).
-		Where("log_index", logIndex).
-		Where("tx_type", txType).
-		Count()
-	if err != nil {
-		return 0, fmt.Errorf("count transactions by log index: %w", err)
+// LockTransactionDeposits takes the advisory lock of one chain transaction's
+// deposits, held until the database transaction of ctx ends (Within): the deposit
+// recorders of the scanner and the push decide on a transaction one at a time. Called
+// outside a transaction, the lock ends with the statement.
+func (r *TransactionRepository) LockTransactionDeposits(ctx context.Context, chainID, txHash string) error {
+	key := "deposits/" + chainID + "/" + txHashForms(txHash)[0]
+	if _, err := r.Query(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key); err != nil {
+		return fmt.Errorf("lock transaction deposits: %w", err)
 	}
-	return count, nil
+	return nil
+}
+
+// txHashForms are the spellings of one transaction hash: a hex hash (0x-prefixed, or
+// 32 bytes without a prefix) in lower and upper case, the lower first, as hex
+// compares without case (deposit.sameTxHash); any other hash (a base58 signature) as
+// it is.
+func txHashForms(txHash string) []string {
+	body := strings.TrimPrefix(strings.TrimPrefix(txHash, "0x"), "0X")
+	isHex := body != "" && strings.Trim(strings.ToLower(body), "0123456789abcdef") == ""
+	if !isHex || (body == txHash && len(body) != 64) {
+		return []string{txHash}
+	}
+	lower := strings.ToLower(txHash)
+	if lower == strings.ToUpper(txHash) {
+		return []string{lower}
+	}
+	upper := strings.ToUpper(txHash)
+	if strings.HasPrefix(lower, "0x") {
+		upper = "0x" + strings.ToUpper(body)
+	}
+	return []string{lower, upper, txHash}
+}
+
+// FindDepositsByChainAndTxHash returns the deposit rows of one transaction, ordered by
+// position (log_index); a hex hash matches in either case (txHashForms).
+func (r *TransactionRepository) FindDepositsByChainAndTxHash(ctx context.Context, chainID, txHash string) ([]models.Transaction, error) {
+	var deposits []models.Transaction
+	forms := txHashForms(txHash)
+	spellings := make([]any, len(forms))
+	for i, form := range forms {
+		spellings[i] = form
+	}
+	err := r.Query(ctx).
+		Where("chain", chainID).
+		WhereIn("tx_hash", spellings).
+		Where("tx_type", models.TxTypeDeposit).
+		Order("log_index").
+		Find(&deposits)
+	if err != nil {
+		return nil, fmt.Errorf("list deposits of transaction: %w", err)
+	}
+	return deposits, nil
+}
+
+// FillDepositBlockHash writes blockHash on deposit id when the row holds none (a
+// provider push that sent no block hash); a hash that is there is kept.
+func (r *TransactionRepository) FillDepositBlockHash(ctx context.Context, id uuid.UUID, blockHash string) error {
+	if id == uuid.Nil {
+		return fmt.Errorf("transaction id is required")
+	}
+	if _, err := r.Query(ctx).Model(&models.Transaction{}).
+		Where("id", id).
+		Where("tx_type", models.TxTypeDeposit).
+		Where("block_hash", "").
+		Update("block_hash", blockHash); err != nil {
+		return fmt.Errorf("fill deposit block hash: %w", err)
+	}
+	return nil
+}
+
+// ClaimDepositPosition moves a deposit recorded before positions existed (log_index
+// types.NativeValuePosition) to position and reports false when the row is not such
+// a deposit any more. A position another deposit of the transaction holds is a
+// unique violation.
+func (r *TransactionRepository) ClaimDepositPosition(ctx context.Context, id uuid.UUID, position int) (bool, error) {
+	if id == uuid.Nil {
+		return false, fmt.Errorf("transaction id is required")
+	}
+	result, err := r.Query(ctx).Model(&models.Transaction{}).
+		Where("id", id).
+		Where("tx_type", models.TxTypeDeposit).
+		Where("log_index", types.NativeValuePosition).
+		Update("log_index", position)
+	if err != nil {
+		return false, fmt.Errorf("claim deposit position: %w", err)
+	}
+	return result.RowsAffected == 1, nil
 }
 
 // internalTransferTxTypes move funds between addresses of one wallet: a sweep

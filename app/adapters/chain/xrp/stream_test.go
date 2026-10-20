@@ -15,6 +15,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/xrpstream"
+	"github.com/macrowallets/waas/pkg/types"
 )
 
 const (
@@ -239,7 +240,7 @@ func TestStream_NextReadsAValidatedPaymentInBothAPIVersions(t *testing.T) {
 		}
 		got := event.Deposits[0]
 		if got.TxHash != taggedPaymentHash || got.From != taggedSender || got.To != taggedRecipient || got.Amount.String() != "1000000" ||
-			got.Asset != models.NativeXRP || got.BlockNumber != ledgerTaggedPayment || got.BlockHash != taggedLedgerHash || got.LogIndex != 7 ||
+			got.Asset != models.NativeXRP || got.BlockNumber != ledgerTaggedPayment || got.BlockHash != taggedLedgerHash || got.LogIndex != types.NativeValuePosition ||
 			got.DestinationTag == nil || *got.DestinationTag != 777001 {
 			t.Fatalf("%s: deposit %+v", name, got)
 		}

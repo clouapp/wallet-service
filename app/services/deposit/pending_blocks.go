@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/macrowallets/waas/app/services/chain"
@@ -180,6 +181,9 @@ func (s *Service) PendingCounts(ctx context.Context) (map[string]int, error) {
 // pendingHealthTimeout bounds the health check's read of the pending store.
 const pendingHealthTimeout = 2 * time.Second
 
+// pendingHealthCacheFor is how long the health check reuses its pending counts.
+const pendingHealthCacheFor = 15 * time.Second
+
 // PendingHealth is the pending-block counts the health check reports. Err
 // is set when the store, or a chain's list, could not be read; Counts keeps
 // what could.
@@ -189,19 +193,56 @@ type PendingHealth struct {
 	Err    error
 }
 
-// PendingHealth reads PendingCounts with a short deadline and sums them. It
-// never fails: pending blocks are recovered by the reprocessor, so they are
-// reported, not treated as the API being down.
-func (s *Service) PendingHealth(parent context.Context) PendingHealth {
-	ctx, cancel := context.WithTimeout(parent, pendingHealthTimeout)
-	defer cancel()
-	counts, err := s.PendingCounts(ctx)
-	health := PendingHealth{Counts: counts, Err: err}
-	for _, count := range counts {
-		health.Total += count
-	}
-	if err != nil {
-		slog.Error("deposit scanner pending counts", "error_type", fmt.Sprintf("%T", err))
-	}
-	return health
+var errPendingHealthBusy = errors.New("pending deposit blocks are being counted")
+
+// PendingHealth reads PendingCounts and sums them. It never fails: pending blocks are
+// recovered by the reprocessor, so they are reported, not treated as the API being
+// down. The counts are reused for pendingHealthCacheFor and read one at a time,
+// bounded by healthReadBudget (healthSnapshot); a reading that fails is reported as
+// it is, with what it could count, and answers the checks of the next
+// healthFailureBackoff.
+func (s *Service) PendingHealth(ctx context.Context) PendingHealth {
+	return s.pendingCache.get(ctx, s.now(), pendingHealthCacheFor, healthRead[PendingHealth]{
+		Read: func(ctx context.Context) (PendingHealth, error) {
+			counts, err := s.PendingCounts(ctx)
+			health := PendingHealth{Counts: counts, Err: err}
+			for _, count := range counts {
+				health.Total += count
+			}
+			return health, err
+		},
+		Unavailable: func(err error) PendingHealth { return PendingHealth{Err: err} },
+		KeepFailure: true,
+		Failure:     "deposit scanner pending counts",
+		Busy:        errPendingHealthBusy,
+	})
+}
+
+// HealthReadings are the readings GET /health reports.
+type HealthReadings struct {
+	Pending  PendingHealth
+	Stale    StaleOutboundHealth
+	Activity ScanActivityHealth
+}
+
+// Health takes the readings of GET /health at once, so a store that does not answer
+// costs the check one reading budget, not one per reading.
+func (s *Service) Health(ctx context.Context) HealthReadings {
+	var readings HealthReadings
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		readings.Pending = s.PendingHealth(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		readings.Stale = s.StaleOutboundHealth(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		readings.Activity = s.ScanActivityHealth(ctx)
+	}()
+	wg.Wait()
+	return readings
 }
