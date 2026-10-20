@@ -28,7 +28,7 @@ func NewWebhookController(webhooks *webhook.Service) *WebhookController {
 // Store godoc
 //
 //	@Summary		Create a webhook
-//	@Description	Registers an account-level webhook endpoint. Deliveries are POSTed as JSON and signed with HMAC-SHA256 of the raw body in `X-Vault-Signature` (hex, keyed by `secret`); `X-Vault-Event` carries the event type and `X-Vault-Delivery-Id` the event id. Supported events include deposit.confirmed, withdrawal.broadcast, withdrawal.confirmed and withdrawal.failed. Withdrawal events are only delivered for wallets of the token's account.
+//	@Description	Registers an account-level webhook endpoint. Deliveries are POSTed as JSON and signed with `secret` when each attempt is sent: `X-Vault-Signature-V2` is `t=<unix seconds>,v1=<hex HMAC-SHA256 of '<t>.<raw body>'>`, so a receiver refuses a `t` too far from its clock (5 minutes recommended) and with it a replayed delivery; `X-Vault-Timestamp` repeats `t`; the legacy `X-Vault-Signature` (hex HMAC-SHA256 of the raw body alone) is still sent while receivers move to V2. `X-Vault-Event` carries the event type and `X-Vault-Delivery-Id` the event id. Only a 2xx answer counts as delivered: a redirect is not followed and is retried like a 4xx or a 5xx. Supported events include deposit.confirmed, withdrawal.broadcast, withdrawal.confirmed and withdrawal.failed. Withdrawal events are only delivered for wallets of the token's account.
 //	@Tags			Webhooks
 //	@Accept			json
 //	@Produce		json
@@ -135,7 +135,7 @@ func (c *WebhookController) Update(ctx http.Context) http.Response {
 // Redeliver godoc
 //
 //	@Summary		Redeliver webhook events
-//	@Description	Queues again events of one of the account's webhooks, whatever their delivery status: the events named in `event_ids` (at most 500), or every event created from `since` (RFC 3339, at most 7 days ago) up to `until` (default now), optionally only of `types`. Only events created in the last 7 days are redelivered, at most 500 per request (a larger window is refused: narrow `since`, `until` or `types`), and an event already pending that was queued in the last minute is left alone. A requeued event is delivered again with the same `X-Vault-Delivery-Id`, so receivers deduplicate on it. A legacy webhook is claimed with PATCH before it can be redelivered.
+//	@Description	Queues again events of one of the account's webhooks, whatever their delivery status: the events named in `event_ids` (at most 500), or every event created from `since` (RFC 3339, at most 7 days ago) up to `until` (default now), optionally only of `types`. Only events created in the last 7 days are redelivered, at most 500 per request (a larger window is refused: narrow `since`, `until` or `types`), and an event already pending that was queued in the last minute is left alone. Only events about a wallet of the token's account are requeued: a legacy webhook received the events of every account before it was claimed, and those of other accounts are not sent again. A requeued event is delivered again with the same `X-Vault-Delivery-Id`, so receivers deduplicate on it, and is signed again when it is sent, with a fresh `X-Vault-Timestamp`. A legacy webhook is claimed with PATCH before it can be redelivered.
 //	@Tags			Webhooks
 //	@Accept			json
 //	@Produce		json

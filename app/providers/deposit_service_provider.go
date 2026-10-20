@@ -17,6 +17,7 @@ import (
 	solanatip "github.com/macrowallets/waas/app/adapters/blockheight/solana"
 	"github.com/macrowallets/waas/app/adapters/redis/addressset"
 	redispending "github.com/macrowallets/waas/app/adapters/redis/pending"
+	"github.com/macrowallets/waas/app/adapters/redis/scanactivity"
 	"github.com/macrowallets/waas/app/adapters/redis/scanner"
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/repositories"
@@ -191,6 +192,13 @@ func newDepositService(app foundation.Application) (*deposit.Service, error) {
 	if pendingDeposits := buildPendingDepositStore(redisClient, facades.Config().GetString("vault.deposit_scan.pending_dir")); pendingDeposits != nil {
 		service.SetPendingStore(pendingDeposits)
 	}
+	// Each completed scan cycle is recorded in Redis for GET /health and the tracker's
+	// alerts, which never call a chain.
+	if activity := scanactivity.New(redisClient); activity != nil {
+		service.SetScanActivityStore(activity)
+		service.SetScanAlertState(activity)
+	}
+	service.SetScanAlertThresholds(scanAlertThresholds(facades.Config()))
 	service.SetBalanceRefresher(walletRefresher)
 	return service, nil
 }
@@ -214,8 +222,27 @@ func chainScanOverrides(cfg configIntReader) func(chainID string) deposit.ChainS
 	}
 }
 
+// scanAlertThresholds reads the tracker's deposit scan alert thresholds:
+// vault.deposit_scan.alert_lag_blocks and alert_stale_minutes, and each chain's own
+// under vault.deposit_scan.chains.<chain>. A value of 0 or less keeps the next level.
+func scanAlertThresholds(cfg configIntReader) (deposit.ScanAlertThresholds, func(chainID string) deposit.ScanAlertThresholds) {
+	read := func(prefix string) deposit.ScanAlertThresholds {
+		var thresholds deposit.ScanAlertThresholds
+		if blocks := cfg.GetInt(prefix + "alert_lag_blocks"); blocks > 0 {
+			thresholds.LagBlocks = uint64(blocks)
+		}
+		if minutes := cfg.GetInt(prefix + "alert_stale_minutes"); minutes > 0 {
+			thresholds.StaleAfter = time.Duration(minutes) * time.Minute
+		}
+		return thresholds
+	}
+	return read("vault.deposit_scan."), func(chainID string) deposit.ScanAlertThresholds {
+		return read("vault.deposit_scan.chains." + chainID + ".")
+	}
+}
+
 // newIngestService records the deposits a chain-data provider pushes to the
-// inbound webhook routes.
+// inbound webhook routes, and notes when each chain's provider last pushed.
 func newIngestService(app foundation.Application) (*ingest.Service, error) {
 	registry, err := resolve[*chainpkg.Registry](app)
 	if err != nil {
@@ -249,6 +276,9 @@ func newIngestService(app foundation.Application) (*ingest.Service, error) {
 		Transactions: transactions,
 	})
 	service.SetDepositEvents(depositEvents)
+	if pushes := scanactivity.New(redisClient); pushes != nil {
+		service.SetPushRecorder(pushes)
+	}
 	return service, nil
 }
 

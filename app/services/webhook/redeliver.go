@@ -79,9 +79,13 @@ func (s RedeliverySelection) until(now time.Time) time.Time {
 // budget and is sent to the webhook queue, or left to the local outbox when no queue
 // is configured. A queue send that fails leaves the row pending for the outbox
 // re-dispatch. Events of another webhook, older than RedeliveryWindow, or already
-// pending and queued moments ago are left alone. The webhook must belong to the
-// account (a legacy webhook is claimed first) and be active. It returns how many
-// events were requeued.
+// pending and queued moments ago are left alone. So is an event that is not about a
+// wallet of the account: a legacy webhook received the events of every account
+// before it was claimed, and its new owner may only ask for its own again (an event
+// whose wallet cannot be told is left alone too). The webhook must belong to the
+// account (a legacy webhook is claimed first) and be active. Each delivery is signed
+// when it is sent, so a redelivered event carries a fresh X-Vault-Timestamp. It
+// returns how many events were requeued.
 func (s *Service) Redeliver(ctx context.Context, accountID, configID uuid.UUID, selection RedeliverySelection) (int, error) {
 	cfg, err := s.redeliverableConfig(ctx, accountID, configID)
 	if err != nil {
@@ -94,7 +98,7 @@ func (s *Service) Redeliver(ctx context.Context, accountID, configID uuid.UUID, 
 
 	ids := selection.EventIDs
 	if !selection.byID() {
-		ids, err = s.webhookEventRepo.FindForRedelivery(ctx, cfg.ID, selection.Since, selection.until(now), selection.Types, MaxRedeliveryEvents+1)
+		ids, err = s.webhookEventRepo.FindForRedelivery(ctx, cfg.ID, accountID, selection.Since, selection.until(now), selection.Types, MaxRedeliveryEvents+1)
 		if err != nil {
 			return 0, fmt.Errorf("select webhook events to redeliver: %w", err)
 		}
@@ -106,7 +110,7 @@ func (s *Service) Redeliver(ctx context.Context, accountID, configID uuid.UUID, 
 		return 0, nil
 	}
 
-	events, err := s.webhookEventRepo.RequeueForRedelivery(ctx, cfg.ID, distinctIDs(ids), now.Add(-RedeliveryWindow), now.Add(-redeliveryCooldown))
+	events, err := s.webhookEventRepo.RequeueForRedelivery(ctx, cfg.ID, accountID, distinctIDs(ids), now.Add(-RedeliveryWindow), now.Add(-redeliveryCooldown))
 	if err != nil {
 		return 0, fmt.Errorf("requeue webhook events: %w", err)
 	}

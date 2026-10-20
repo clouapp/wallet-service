@@ -242,6 +242,92 @@ go tool cover -html=coverage.out
 | `POST` | `/api/v1/webhooks` | Registrar webhook endpoint da conta do token |
 | `GET` | `/api/v1/webhooks` | Listar webhooks da conta do token |
 | `PATCH` | `/api/v1/webhooks/:webhookId` | Alterar eventos / `is_active` / reivindicar config legada |
+| `POST` | `/api/v1/webhooks/:webhookId/redeliver` | Reenviar eventos dos últimos 7 dias, só os de wallets da conta do token |
+
+---
+
+## Assinatura das entregas de webhook
+
+Toda entrega de webhook (eventos `deposit.*`, `withdrawal.*`, `sweep.*`, `wallet.gas_status.changed` e o
+`webhook.test` do painel) é um `POST` com corpo JSON e os headers abaixo. A chave do HMAC é o `secret`
+informado ao registrar o webhook; ele nunca é devolvido pela API nem enviado nas entregas.
+
+| Header | Conteúdo |
+|---|---|
+| `X-Vault-Signature-V2` | `t=<segundos unix>,v1=<hex do HMAC-SHA256 de "<t>.<corpo bruto>">` |
+| `X-Vault-Timestamp` | o mesmo `t` (segundos unix) |
+| `X-Vault-Signature` | legado: hex do HMAC-SHA256 do corpo bruto, sem timestamp; enviado durante a transição |
+| `X-Vault-Event` | tipo do evento |
+| `X-Vault-Delivery-Id` | id da entrega; o mesmo em toda reentrega |
+
+Cada tentativa é assinada no momento do envio: uma retentativa, um reenvio do outbox e um pedido de
+reenvio (`POST /api/v1/webhooks/{webhookId}/redeliver`) trazem um `t` novo e uma assinatura nova, com o
+mesmo `X-Vault-Delivery-Id`. Só uma resposta 2xx conta como entregue: um redirecionamento (3xx) não é
+seguido, para que os headers assinados não vão a outra URL, e conta como falha, como um 4xx ou 5xx. A assinatura legada cobre apenas o corpo, de modo que uma entrega capturada
+continua válida para sempre; a V2 cobre também o instante do envio e permite recusar uma repetição.
+
+Para verificar uma entrega:
+
+1. Ler o corpo bruto, exatamente como chegou, antes de qualquer parse JSON.
+2. Separar `X-Vault-Signature-V2` nas vírgulas: `t` é o timestamp (exatamente um, só dígitos; recusar o
+   header com dois) e cada `v1` é uma assinatura candidata (pode haver mais de uma; basta uma coincidir).
+3. Calcular o hex de `HMAC-SHA256(secret, t + "." + corpo)` e compará-lo em tempo constante com cada `v1`.
+4. Recusar (401) quando nenhum `v1` coincide ou quando `|agora - t|` passa da tolerância; recomendamos
+   5 minutos. Quando `X-Vault-Signature-V2` está presente, não recorrer à assinatura legada.
+5. Deduplicar por `X-Vault-Delivery-Id`: uma reentrega legítima dentro da janela traz o mesmo id.
+
+Exemplo com `secret` `whsec_example`, `t` `1760950000` e o corpo
+`{"id":"5b0c4c1e-0000-4000-8000-000000000001","type":"webhook.test"}`:
+
+```
+X-Vault-Timestamp: 1760950000
+X-Vault-Signature-V2: t=1760950000,v1=b992741a9a5db088608c3ae42174ecba53233aa8a11298699d75ea7c3ec29a8e
+X-Vault-Signature: 74afff9997fc16d8758aabf679d5e10bc6810a36a9755b6986b7ecc5d48b74c2
+```
+
+```bash
+printf '%s' '1760950000.{"id":"5b0c4c1e-0000-4000-8000-000000000001","type":"webhook.test"}' \
+  | openssl dgst -sha256 -hmac whsec_example
+```
+
+```php
+function verifyVaultSignatureV2(string $rawBody, string $header, string $secret, int $toleranceSeconds = 300): bool
+{
+    $timestamps = [];
+    $signatures = [];
+    foreach (explode(',', $header) as $part) {
+        [$key, $value] = array_pad(explode('=', trim($part), 2), 2, '');
+        if ($key === 't') {
+            $timestamps[] = $value;
+        } elseif ($key === 'v1' && $value !== '') {
+            $signatures[] = $value;
+        }
+    }
+    // Exactly one t, made of digits only: a header with two is refused, never read by its first or last.
+    if (count($timestamps) !== 1 || ! ctype_digit($timestamps[0]) || strlen($timestamps[0]) > 11 || $signatures === []) {
+        return false;
+    }
+    $timestamp = $timestamps[0];
+
+    $expected = hash_hmac('sha256', $timestamp . '.' . $rawBody, $secret);
+    $matches = false;
+    foreach ($signatures as $signature) {
+        if (hash_equals($expected, $signature)) {
+            $matches = true;
+        }
+    }
+
+    return $matches && abs(time() - (int) $timestamp) <= $toleranceSeconds;
+}
+```
+
+Transição:
+
+1. O receptor passa a verificar `X-Vault-Signature-V2` quando presente e continua aceitando apenas
+   `X-Vault-Signature` quando ele vier sozinho.
+2. O Macro Wallets passa a enviar os dois headers em toda entrega (a partir desta versão).
+3. Quando nenhuma entrega chegar mais sem `X-Vault-Signature-V2`, o receptor deixa de aceitar a assinatura
+   legada. O envio de `X-Vault-Signature` só será retirado depois disso, numa versão anunciada.
 
 ---
 
@@ -411,8 +497,9 @@ do ativo não são conhecidos (o item não deve ser creditado).
 
 ## Webhooks de saque
 
-Assinatura e entrega iguais às de `deposit.confirmed`: corpo JSON assinado com HMAC-SHA256 do corpo bruto
-no header `X-Vault-Signature` (hex), mais `X-Vault-Event`, `X-Vault-Delivery-Id` e `X-Vault-Timestamp`.
+Assinatura e entrega iguais às de `deposit.confirmed` (ver "Assinatura das entregas de webhook"):
+`X-Vault-Signature-V2` com o timestamp e o corpo, `X-Vault-Timestamp`, a assinatura legada `X-Vault-Signature`,
+`X-Vault-Event` e `X-Vault-Delivery-Id`.
 Cada config só recebe eventos de wallets da própria conta (configs legadas sem dono recebem tudo).
 
 | Evento | Quando |

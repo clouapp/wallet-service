@@ -15,6 +15,18 @@ const (
 	// the row is tracked by the hash of its signed bytes like any sent transfer.
 	BroadcastOutcomePayloadKey = "broadcast_outcome"
 	BroadcastOutcomeUnknown    = "unknown"
+	// BroadcastOutcomePending is a row recorded before its send whose send was never
+	// answered (a crash between the two, a refusal whose mark failed): a retry with
+	// its key checks it (sweep.SettleUnanswered) instead of replaying it.
+	BroadcastOutcomePending = "pending"
+	// BroadcastOutcomeAccepted is a send a node took.
+	BroadcastOutcomeAccepted = "accepted"
+	// BroadcastOutcomeRefused is a send the network refused (the row is failed).
+	BroadcastOutcomeRefused = "refused"
+	// SignedTxPayloadKey is the signed bytes (hex) of a row whose send is pending: a
+	// retry re-sends these same bytes, never a new signature. They are dropped once
+	// the send is answered.
+	SignedTxPayloadKey = "signed_tx"
 	// SenderNoncePayloadKey is the nonce the signed transaction spends (EVM).
 	SenderNoncePayloadKey = "sender_nonce"
 	// BroadcastHeadPayloadKey is the chain head read just before the send (EVM): no

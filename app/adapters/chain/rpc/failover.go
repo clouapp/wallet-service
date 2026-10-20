@@ -41,7 +41,9 @@ const (
 
 // Methods whose answer is a signed transaction handed to the network. They move to
 // the next endpoint only when the previous one certainly did not accept the bytes
-// (notAccepted); a refusal "already known" from a later endpoint is a success.
+// (notAccepted); a refusal "already known" from any endpoint is a success: that
+// node holds these exact bytes (an earlier attempt, or a retry of bytes still in
+// its pool).
 var broadcastMethods = map[string]bool{
 	"eth_sendRawTransaction": true,
 	"sendTransaction":        true,
@@ -400,7 +402,7 @@ func (c *RPCClient) call(ctx context.Context, set *endpointSet, method string, o
 			}
 			c.served(set, cand, primaryLost)
 			pin.hold(cand.ep)
-			if broadcast && i > 0 && alreadyKnown(err) {
+			if broadcast && alreadyKnown(err) {
 				return &alreadyKnownError{cause: scrub(cand.ep.url, err)}
 			}
 			return scrub(cand.ep.url, err)
@@ -834,10 +836,10 @@ func isJSONNull(result json.RawMessage) bool {
 	return bytes.Equal(bytes.TrimSpace(result), []byte("null"))
 }
 
-// ErrBroadcastAlreadyKnown is a broadcast that a later endpoint refused because the
-// network already holds these exact bytes, after an earlier endpoint certainly did
-// not accept them. The transaction was broadcast; its hash is the one computed
-// locally from the signed bytes.
+// ErrBroadcastAlreadyKnown is a broadcast that an endpoint refused because it
+// already holds these exact bytes (an earlier attempt, or a retry of bytes still in
+// its pool). The transaction was broadcast; its hash is the one computed locally
+// from the signed bytes.
 var ErrBroadcastAlreadyKnown = errors.New("transaction already known to the network")
 
 type alreadyKnownError struct {

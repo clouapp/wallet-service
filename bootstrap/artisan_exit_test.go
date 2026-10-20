@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/goravel/framework/contracts/console"
@@ -47,5 +48,24 @@ func TestExitOnFailure_KeepsTheCommandIdentity(t *testing.T) {
 
 	if wrapped.Signature() != "stub:run" || wrapped.Description() != "stub" || wrapped.Extend().Category != "stub" {
 		t.Fatalf("wrapper changed the command: %s / %s / %+v", wrapped.Signature(), wrapped.Description(), wrapped.Extend())
+	}
+}
+
+// codedError is a failure that names its exit status, as commands.exitStatus does.
+type codedError struct{ code int }
+
+func (e codedError) Error() string { return "unverified" }
+func (e codedError) ExitCode() int { return e.code }
+
+func TestExitOnFailure_ExitsWithTheStatusAFailureNames(t *testing.T) {
+	var codes []int
+	exit := func(code int) { codes = append(codes, code) }
+	for _, err := range []error{codedError{code: 2}, fmt.Errorf("wrapped: %w", codedError{code: 3}), codedError{code: 0}} {
+		if got := exitOnFailure(stubCommand{err: err}, exit).Handle(nil); got != nil {
+			t.Fatal(got)
+		}
+	}
+	if len(codes) != 3 || codes[0] != 2 || codes[1] != 3 || codes[2] != 1 {
+		t.Fatalf("exit codes = %v, want [2 3 1]: a status below 2 is still a failure", codes)
 	}
 }

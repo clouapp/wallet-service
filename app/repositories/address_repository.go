@@ -96,6 +96,27 @@ func (r *AddressRepository) FindByChainAndAddressAndAccount(ctx context.Context,
 	return &addr, nil
 }
 
+// ListForBalanceAudit lists the addresses of chainID, inactive ones included, by id
+// after afterID (uuid.Nil: from the first), at most limit; with accountID, only those
+// of its wallets.
+func (r *AddressRepository) ListForBalanceAudit(ctx context.Context, chainID string, accountID *uuid.UUID, afterID uuid.UUID, limit int) ([]models.Address, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("list addresses for a balance audit: limit is required")
+	}
+	query := r.Query(ctx).Where("chain = ?", chainID)
+	if accountID != nil {
+		query = query.Where("wallet_id IN (SELECT id FROM wallets WHERE account_id = ?)", *accountID)
+	}
+	if afterID != uuid.Nil {
+		query = query.Where("id > ?", afterID)
+	}
+	var addrs []models.Address
+	if err := query.Order("id").Limit(limit).Find(&addrs); err != nil {
+		return nil, fmt.Errorf("list addresses for a balance audit: %w", err)
+	}
+	return addrs, nil
+}
+
 // FindByID returns the address, or ErrRepositoryNotFound.
 func (r *AddressRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.Address, error) {
 	var addr models.Address

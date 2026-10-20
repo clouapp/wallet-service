@@ -180,6 +180,7 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 				slog.Error("persist block number", "tx_id", tx.ID, "error", err)
 				continue
 			}
+			tx.RawPayload = s.forgetSignedBytes(ctx, tx)
 		}
 		confs := confirmationsAt(currentBlock, tx.BlockNumber)
 
@@ -201,6 +202,9 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 				fee = got
 				tx.Fee = got
 			}
+		}
+		if confirmedNow && isOutboundTxType(tx.TxType) {
+			tx = s.recordAccountRent(ctx, adapter, tx)
 		}
 		if tx.TxType == models.TxTypeSweep && confirmedNow {
 			if err := s.persistSweepConfirmed(ctx, tx, confs, newStatus, confirmedAt, fee); err != nil {
@@ -500,6 +504,33 @@ func (s *Service) recordPayloadValue(ctx context.Context, tx models.Transaction,
 	}
 }
 
+// forgetSignedBytes drops the signed bytes a withdrawal row recorded before its send
+// keeps (sealed, for a same-key retry) once the chain settled it: in a block, or
+// failed on chain. Its send was taken, so a pending outcome becomes accepted. It
+// returns the payload the row now holds; a row without bytes is not written.
+func (s *Service) forgetSignedBytes(ctx context.Context, tx models.Transaction) string {
+	payload := map[string]any{}
+	if json.Unmarshal([]byte(tx.RawPayload), &payload) != nil {
+		return tx.RawPayload
+	}
+	if _, kept := payload[chain.SignedTxPayloadKey]; !kept {
+		return tx.RawPayload
+	}
+	delete(payload, chain.SignedTxPayloadKey)
+	if payload[chain.BroadcastOutcomePayloadKey] == chain.BroadcastOutcomePending {
+		payload[chain.BroadcastOutcomePayloadKey] = chain.BroadcastOutcomeAccepted
+	}
+	raw, err := json.Marshal(payload)
+	if err == nil {
+		err = s.txRepo.SetRawPayload(ctx, tx.ID, string(raw))
+	}
+	if err != nil {
+		slog.Error("drop the signed bytes of a settled transaction", "tx_id", tx.ID, "error", err)
+		return tx.RawPayload
+	}
+	return string(raw)
+}
+
 // lastValidBlockOf is the last valid block raw_payload keeps, 0 for none.
 func lastValidBlockOf(tx models.Transaction) uint64 {
 	var payload map[string]json.RawMessage
@@ -547,6 +578,7 @@ func (s *Service) failOnChain(ctx context.Context, adapter types.Chain, tx model
 		slog.Error("mark transaction failed", "tx_id", tx.ID, "error", err)
 		return false
 	}
+	s.forgetSignedBytes(ctx, tx)
 	slog.Warn("transaction failed on chain", "tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "failure_code", failureCode)
 	return true
 }
@@ -676,20 +708,25 @@ func (s *Service) publishWithdrawalConfirmed(ctx context.Context, tx models.Tran
 	}
 }
 
-// RunConfirmationCheck walks all registered chains that have pending deposits and
-// refreshes confirmation counts using free block-height APIs when configured, then
-// repairs the withdrawal confirmations and the deposit.confirmed events that were lost.
+// RunConfirmationCheck warns about the deposit scans that lag, stalled or keep
+// pending blocks (warnScanHealth), walks all registered chains that have pending
+// deposits and refreshes confirmation counts using free block-height APIs when
+// configured, then repairs the withdrawal confirmations and the deposit.confirmed
+// events that were lost.
 func (s *Service) RunConfirmationCheck(ctx context.Context) error {
+	s.warnScanHealth(ctx)
 	s.runConfirmationCheck(ctx, allTxTypes)
 	s.backfillWithdrawalConfirmations(ctx)
 	s.backfillDepositEvents(ctx)
 	return nil
 }
 
-// RunWithdrawalConfirmationCheck is the local-mode tracker: it only advances outbound
-// withdrawal transactions, so deposits, sweeps and gas seeds keep waiting for the
-// real confirmation_tracker and no deposit webhook is emitted from a dev machine.
+// RunWithdrawalConfirmationCheck is the local-mode tracker: it warns about the deposit
+// scans like the real one, but only advances outbound withdrawal transactions, so
+// deposits, sweeps and gas seeds keep waiting for the real confirmation_tracker and
+// no deposit webhook is emitted from a dev machine.
 func (s *Service) RunWithdrawalConfirmationCheck(ctx context.Context) error {
+	s.warnScanHealth(ctx)
 	s.runConfirmationCheck(ctx, models.TxTypeWithdrawal)
 	s.backfillWithdrawalConfirmations(ctx)
 	return nil

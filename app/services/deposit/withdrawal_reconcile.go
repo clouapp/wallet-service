@@ -238,6 +238,7 @@ func (s *Service) applyReconciliation(ctx context.Context, adapter types.Chain, 
 			report.Reason += "; the block could not be recorded: " + err.Error()
 			return
 		}
+		s.forgetSignedBytes(ctx, tx)
 		report.Applied = true
 	case ReconcileFailed:
 		block := report.Block

@@ -1,4 +1,4 @@
-.PHONY: help build localstack-hooks e2e-tools clean run dev dev-back dev-front stop deploy deploy-guided delete validate check-account require-sam-env require-server-ssh stack-outputs server-credentials verify-aws local test test-integration test-unit arch arch-baseline contract contract-update test-coverage test-race test-verbose lint fmt vet security mocks migrate migrate-rollback migrate-status migrate-fresh migrate-fresh-seed migrate-fresh-hard db-reset db-seed key-generate jwt-secret docker-up docker-down docker-logs docker-build docker-test docker-status ecr-login ecr-push logs-api logs-scanner logs-webhook logs-withdrawal dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
+.PHONY: help build localstack-hooks e2e-tools clean run dev dev-back dev-front stop deploy deploy-guided delete validate check-account require-sam-env require-server-ssh stack-outputs server-credentials verify-aws local test test-integration test-unit arch arch-baseline contract contract-update test-coverage test-race test-verbose lint fmt vet security mocks migrate migrate-rollback migrate-status migrate-fresh migrate-fresh-seed migrate-fresh-hard db-reset db-seed key-generate jwt-secret docker-up docker-down docker-logs docker-build docker-test docker-status ecr-login ecr-push logs-api logs-scanner logs-webhook dlq-check dlq-replay-webhooks dlq-replay-withdrawals ping env-info swagger-install swagger-generate swagger-fmt deps-install deps-update
 
 # =============================================================================
 # Configuration
@@ -315,7 +315,7 @@ check-account: ## Refuse unless the AWS credentials belong to AWS_ACCOUNT_ID of 
 ifeq ($(ENV),dev)
 DEPLOY_PREREQUISITES = check-account validate
 else
-DEPLOY_PREREQUISITES = build check-account
+DEPLOY_PREREQUISITES = validate build check-account
 endif
 
 deploy: $(DEPLOY_PREREQUISITES) ## Deploy ENV: dev applies template.dev.yaml (queues, KMS key, server user); staging/prod deploy template.yaml with SAM
@@ -357,13 +357,10 @@ delete: check-account ## Delete ENV's CloudFormation stack (dev keeps its KMS ke
 	$(AWS_ENV) sam delete --stack-name $(STACK_NAME) --region $(AWS_REGION) --no-prompts
 	@echo "✅ Stack deleted"
 
-validate: ## Validate ENV's template (cfn-lint for template.dev.yaml, SAM for template.yaml)
-ifeq ($(ENV),dev)
+# --lint runs cfn-lint locally: plain sam validate accepted the sub-minute rates
+# EventBridge refuses at deploy time.
+validate: ## Validate ENV's template with SAM and cfn-lint (template.dev.yaml for dev, template.yaml otherwise)
 	sam validate --lint -t $(TEMPLATE_FILE)
-else
-	@echo "✅ Validating SAM template..."
-	sam validate
-endif
 
 stack-outputs: ## Print ENV's stack outputs (queue URLs, MasterKeyArn for MASTER_KEY_REF, ...)
 	@$(AWS_ENV) aws cloudformation describe-stacks --stack-name $(STACK_NAME) \
@@ -693,9 +690,6 @@ logs-scanner: ## Tail deposit scanner logs
 
 logs-webhook: ## Tail webhook worker logs
 	sam logs -n WebhookWorkerFunction --stack-name $(STACK_NAME) --tail
-
-logs-withdrawal: ## Tail withdrawal worker logs
-	sam logs -n WithdrawalWorkerFunction --stack-name $(STACK_NAME) --tail
 
 dlq-check: ## Check DLQ message counts
 	@echo "═══════════════════════════════════════"
