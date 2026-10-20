@@ -237,3 +237,48 @@ func (e *Endpoints) Do(ctx context.Context, broadcast bool, exchange Exchange) e
 	}
 	return lastErr
 }
+
+// Any asks every endpoint, in order and cooling down or not, until ask finds what it
+// looks for (a transaction known to one of them): true when one did. A fallback is
+// asked which network it serves first and is never asked on another network. An
+// endpoint that could not answer is passed; the error is the last one only when no
+// endpoint answered at all. Health is not changed: it is a search, not a call.
+func (e *Endpoints) Any(ctx context.Context, ask func(ctx context.Context, at Attempt) (bool, error)) (bool, error) {
+	if e == nil || ask == nil {
+		return false, fmt.Errorf("rpc search: endpoints are not configured")
+	}
+	set := e.endpoints.Load()
+	if set == nil || len(set.members) == 0 {
+		return false, fmt.Errorf("rpc search: no endpoint is configured")
+	}
+	var lastErr error
+	answered := false
+	for i, member := range set.members {
+		cand := candidate{ep: member, index: i, position: set.positions[i]}
+		if i > 0 {
+			if err := e.verifyIdentity(ctx, set, cand, 1); err != nil {
+				lastErr = err
+				continue
+			}
+		}
+		found, err := ask(ctx, Attempt{URL: member.url, Primary: i == 0, Last: i == len(set.members)-1})
+		if err != nil {
+			lastErr = httpclient.RedactURL(err, member.url)
+			if ctx.Err() != nil {
+				break
+			}
+			continue
+		}
+		if found {
+			return true, nil
+		}
+		answered = true
+	}
+	if answered {
+		return false, nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("rpc search: no usable endpoint")
+	}
+	return false, lastErr
+}

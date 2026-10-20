@@ -573,9 +573,9 @@ func (a *TronLive) buildNativeSweep(ctx context.Context, params tronChainParams,
 
 // BroadcastTransaction submits the serialized signed transaction with
 // /wallet/broadcasthex and returns its txID (tron_broadcast.go classifies the
-// answer: a duplicate is a success, a node that did not take the bytes passes them
-// to the next endpoint, and a failure that may have handed them over is an unknown
-// outcome).
+// answer: a duplicate is a success once an endpoint has the transaction by its id,
+// a node that did not take the bytes passes them to the next endpoint, and a
+// failure that may have handed them over is an unknown outcome).
 func (a *TronLive) BroadcastTransaction(ctx context.Context, signed *types.SignedTx) (string, error) {
 	if signed == nil || len(signed.RawBytes) == 0 {
 		return "", fmt.Errorf("signed transaction is required")
@@ -592,6 +592,15 @@ func (a *TronLive) BroadcastTransaction(ctx context.Context, signed *types.Signe
 		return "", fmt.Errorf("tron broadcast: tx hash %s does not match txID %s", signed.TxHash, txID)
 	}
 	raw, err := a.postRaw(ctx, tronBroadcastPath, map[string]any{"transaction": hex.EncodeToString(signed.RawBytes)}, true)
+	var duplicate *tronDuplicateError
+	if errors.As(err, &duplicate) {
+		// The recent-id cache also answers a duplicate after a push it refused: only an
+		// endpoint that has the transaction proves it was sent.
+		if known, findErr := a.knownByID(ctx, txID); findErr == nil && known {
+			return txID, nil
+		}
+		return "", chain.UnknownOutcome(err)
+	}
 	if err != nil {
 		return "", classifyTronBroadcast(err)
 	}

@@ -261,3 +261,32 @@ func TestEndpoints_Replace_KeepsTheHealthOfAnEndpointStillListed(t *testing.T) {
 	endpoints.ReplaceEndpoints("  ", nil)
 	assert.Equal(t, primaryURL, endpoints.Endpoint(), "an empty primary never wipes the list")
 }
+
+func TestEndpoints_Any_AsksEveryEndpointOfTheNetworkUntilOneFindsIt(t *testing.T) {
+	ids := &identities{network: map[string]string{primaryURL: "nile", fallbackURL: "mainnet", thirdURL: "nile"}}
+	endpoints, _ := testEndpoints("nile", ids.read, primaryURL, fallbackURL, thirdURL)
+	var asked []string
+	found, err := endpoints.Any(context.Background(), func(_ context.Context, at Attempt) (bool, error) {
+		asked = append(asked, at.URL)
+		return at.URL == thirdURL, nil
+	})
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, []string{primaryURL, thirdURL}, asked, "a fallback on another network is never asked")
+
+	found, err = endpoints.Any(context.Background(), func(context.Context, Attempt) (bool, error) { return false, nil })
+	require.NoError(t, err)
+	assert.False(t, found, "every endpoint answered it does not have it")
+
+	_, err = endpoints.Any(context.Background(), func(context.Context, Attempt) (bool, error) { return false, errors.New("http 502") })
+	require.Error(t, err, "no endpoint answered: nothing is known")
+
+	found, err = endpoints.Any(context.Background(), func(_ context.Context, at Attempt) (bool, error) {
+		if at.URL == primaryURL {
+			return false, errors.New("http 502")
+		}
+		return false, nil
+	})
+	require.NoError(t, err)
+	assert.False(t, found)
+}

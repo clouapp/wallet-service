@@ -84,6 +84,16 @@ func tronAnswers(status int, body string) func(string) (int, string) {
 	return func(string) (int, string) { return status, body }
 }
 
+// tronPaths answers each path its body, every other path "{}".
+func tronPaths(bodies map[string]string) func(string) (int, string) {
+	return func(path string) (int, string) {
+		if body, ok := bodies[path]; ok {
+			return http.StatusOK, body
+		}
+		return http.StatusOK, "{}"
+	}
+}
+
 func nileGenesis() string { return models.TronGenesisBlockID(models.NetworkTronNile) }
 
 // newTronFailoverAdapter is a Nile adapter whose primary is primaryURL and whose
@@ -172,12 +182,34 @@ func TestTron_Broadcast_ClassifiesEveryAnswer(t *testing.T) {
 	signed := signedTestTRXTransfer(t)
 	accepted := `{"result":true,"txid":"` + signed.TxHash + `"}`
 
-	t.Run("a duplicate is the network already holding these bytes", func(t *testing.T) {
-		primary := newTronEndpoint(t, nileGenesis(), tronAnswers(http.StatusOK, tronRefusal("DUP_TRANSACTION_ERROR", "dup transaction")))
-		txID, err := newTronFailoverAdapter(primary.server.URL).BroadcastTransaction(context.Background(), signed)
+	duplicate := tronRefusal("DUP_TRANSACTION_ERROR", "dup transaction")
+	known := `{"txID":"` + signed.TxHash + `","raw_data":{}}`
+	t.Run("a duplicate an endpoint knows by its id was sent", func(t *testing.T) {
+		primary := newTronEndpoint(t, nileGenesis(), tronPaths(map[string]string{tronBroadcastPath: duplicate}))
+		fallback := newTronEndpoint(t, nileGenesis(), tronPaths(map[string]string{"/wallet/gettransactionbyid": known}))
+		txID, err := newTronFailoverAdapter(primary.server.URL, fallback).BroadcastTransaction(context.Background(), signed)
 		require.NoError(t, err)
 		assert.Equal(t, signed.TxHash, txID)
+		assert.Equal(t, 1, primary.calls("/wallet/gettransactionbyid"))
+		assert.Zero(t, fallback.calls(tronBroadcastPath))
 	})
+	t.Run("a duplicate no endpoint knows is unknown: the recent-id cache answers it after a refused push", func(t *testing.T) {
+		primary := newTronEndpoint(t, nileGenesis(), tronPaths(map[string]string{tronBroadcastPath: duplicate}))
+		fallback := newTronEndpoint(t, nileGenesis(), tronPaths(nil))
+		_, err := newTronFailoverAdapter(primary.server.URL, fallback).BroadcastTransaction(context.Background(), signed)
+		require.ErrorIs(t, err, chain.ErrUnknownOutcome)
+		assert.Equal(t, 1, fallback.calls("/wallet/gettransactionbyid"))
+	})
+	for _, code := range []string{"NOT_ENOUGH_EFFECTIVE_CONNECTION", "OTHER_ERROR"} {
+		t.Run(code+" may follow the push: unknown, not sent again", func(t *testing.T) {
+			primary := newTronEndpoint(t, nileGenesis(), tronAnswers(http.StatusOK, tronRefusal(code, "P2P broadcast failed.")))
+			fallback := newTronEndpoint(t, nileGenesis(), tronAnswers(http.StatusOK, accepted))
+			_, err := newTronFailoverAdapter(primary.server.URL, fallback).BroadcastTransaction(context.Background(), signed)
+			require.ErrorIs(t, err, chain.ErrUnknownOutcome)
+			assert.False(t, chain.RequestNotSent(err))
+			assert.Zero(t, fallback.calls(tronBroadcastPath))
+		})
+	}
 	t.Run("a refusal of the transaction is a known failure, never sent again", func(t *testing.T) {
 		primary := newTronEndpoint(t, nileGenesis(), tronAnswers(http.StatusOK, tronRefusal("SIGERROR", "validate signature error")))
 		fallback := newTronEndpoint(t, nileGenesis(), tronAnswers(http.StatusOK, accepted))
@@ -212,7 +244,7 @@ func TestTron_Broadcast_ClassifiesEveryAnswer(t *testing.T) {
 		assert.Equal(t, 1, fallback.calls("/wallet/broadcasthex"))
 	})
 	t.Run("no node took the bytes: not sent", func(t *testing.T) {
-		primary := newTronEndpoint(t, nileGenesis(), tronAnswers(http.StatusOK, tronRefusal("NOT_ENOUGH_EFFECTIVE_CONNECTION", "not enough connections")))
+		primary := newTronEndpoint(t, nileGenesis(), tronAnswers(http.StatusOK, tronRefusal("NO_CONNECTION", "No connection.")))
 		fallback := newTronEndpoint(t, nileGenesis(), tronAnswers(http.StatusTooManyRequests, "slow down"))
 		_, err := newTronFailoverAdapter(primary.server.URL, fallback).BroadcastTransaction(context.Background(), signed)
 		require.Error(t, err)
