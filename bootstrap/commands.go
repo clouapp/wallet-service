@@ -25,6 +25,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/evmcall"
+	"github.com/macrowallets/waas/app/services/ingestsubscription"
 	"github.com/macrowallets/waas/app/services/keyexport"
 	"github.com/macrowallets/waas/app/services/price"
 	"github.com/macrowallets/waas/app/services/refresh"
@@ -124,6 +125,8 @@ func Commands() []console.Command {
 		commands.NewTransactionsBackfillFees(deposits, registry),
 		commands.NewDepositsVerifyReceipts(deposits),
 		commands.NewWithdrawalsReconcile(deposits),
+		commands.NewIngestSubscribe(container.MustMake[*ingestsubscription.Service]()),
+		commands.NewIngestSubscriptions(container.MustMake[*ingestsubscription.Service]()),
 	})
 }
 

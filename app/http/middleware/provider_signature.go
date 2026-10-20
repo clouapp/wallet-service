@@ -16,6 +16,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	ingestsvc "github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
+	"github.com/macrowallets/waas/app/services/settings"
 )
 
 const inboundWebhookPrefix = "/v1/webhooks/ingest/"
@@ -33,7 +34,7 @@ type inboundWebhookKey struct{}
 // InboundSignatureDeps is the subscription lookup and the provider whose
 // VerifyInbound implements the existing signature scheme. Subscriptions is
 // required; a nil Lookup uses the built-in providers and a nil Decrypt opens
-// the secret with the application key.
+// the stored secret with the application key (settings.OpenStored).
 type InboundSignatureDeps struct {
 	Subscriptions *ingestsvc.Subscriptions
 	Lookup        func() map[string]providers.WebhookProvider
@@ -180,9 +181,11 @@ func inboundSubscription(ctx contractshttp.Context, deps InboundSignatureDeps, p
 	return sub, 0, ""
 }
 
-func decryptInboundSecret(deps InboundSignatureDeps, ciphertext string) (string, error) {
+// decryptInboundSecret opens the stored signing secret: sealed (enc:v1:, how
+// ingest:subscribe writes it) or the bare Crypt envelope of an older row.
+func decryptInboundSecret(deps InboundSignatureDeps, stored string) (string, error) {
 	if deps.Decrypt != nil {
-		return deps.Decrypt(ciphertext)
+		return deps.Decrypt(stored)
 	}
-	return facades.Crypt().DecryptString(ciphertext)
+	return settings.OpenStored(facades.Crypt(), stored)
 }

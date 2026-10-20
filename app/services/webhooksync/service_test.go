@@ -44,8 +44,8 @@ func TestSync_ChainAddresses_ReadsTheProviderKeyOnEverySync(t *testing.T) {
 			seen = append(seen, opened)
 			return opened
 		},
+		OpenSecret: func(string) (string, error) { return syncSigning, nil },
 	})
-	service.openSecret = func(string) (string, error) { return syncSigning, nil }
 
 	if err := service.SyncChainAddresses(context.Background(), "eth"); err != nil {
 		t.Fatal("the first sync failed")
@@ -70,8 +70,8 @@ func TestSync_ChainAddresses_EmptyKeyDoesNotCallTheProvider(t *testing.T) {
 			"alchemy": stub,
 		},
 		ProviderKey: func(context.Context, string) string { return "" },
+		OpenSecret:  func(string) (string, error) { return syncSigning, nil },
 	})
-	service.openSecret = func(string) (string, error) { return syncSigning, nil }
 
 	err := service.SyncChainAddresses(context.Background(), "eth")
 	if err == nil || stub.calls != 0 {
@@ -81,6 +81,28 @@ func TestSync_ChainAddresses_EmptyKeyDoesNotCallTheProvider(t *testing.T) {
 		t.Fatal("the sync error carried a credential")
 	}
 	requireSyncLogsOmit(t, logs.String(), syncOpenedKey, syncEnvKey, syncSigning, "enc:v1:")
+}
+
+func TestSync_ChainAddresses_ASecretThatDoesNotOpenFailsTheSync(t *testing.T) {
+	for name, open := range map[string]signingSecretOpener{
+		"no opener":      nil,
+		"opener refuses": func(string) (string, error) { return "", errors.New("not sealed") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			stub := &syncStub{}
+			service := NewService(Deps{
+				Subscriptions: syncSubs{},
+				Addresses:     syncAddresses{},
+				Providers:     map[string]AddressSyncer{"alchemy": stub},
+				ProviderKey:   func(context.Context, string) string { return syncOpenedKey },
+				OpenSecret:    open,
+			})
+
+			if err := service.SyncChainAddresses(context.Background(), "eth"); err == nil || stub.calls != 0 {
+				t.Fatal("a subscription whose signing secret does not open was synced")
+			}
+		})
+	}
 }
 
 type syncSubs struct{}

@@ -91,3 +91,24 @@ func (s *WebhookSubscriptionRepositoryTestSuite) TestCreate_Find_AndRecordSync()
 	s.Require().NotNil(again.SyncedAddressesHash)
 	s.Equal("abc", *again.SyncedAddressesHash)
 }
+
+func (s *WebhookSubscriptionRepositoryTestSuite) TestFind_All_ListsEverySubscriptionByChainAndProvider() {
+	ctx := context.Background()
+	sol := &models.Chain{
+		ID: "sol", Name: "sol", AdapterType: models.AdapterTypeSolana, NativeSymbol: "SOL",
+		NativeDecimals: 9, RpcURL: "enc", RequiredConfirmations: 1, Status: "active", DisplayOrder: 2,
+	}
+	s.Require().NoError(repositories.NewChainRepository(nil).Create(ctx, sol))
+	helius := s.subscription("helius", "sol", "active")
+	quicknode := s.subscription("quicknode", "eth", "disabled")
+	alchemy := s.subscription("alchemy", "eth", "active")
+	for _, sub := range []*models.WebhookSubscription{helius, quicknode, alchemy} {
+		s.Require().NoError(s.repo.Create(ctx, sub))
+	}
+
+	all, err := s.repo.FindAll(ctx)
+	s.Require().NoError(err)
+
+	s.Require().Len(all, 3, "inactive subscriptions are listed too")
+	s.Equal([]uuid.UUID{alchemy.ID, quicknode.ID, helius.ID}, []uuid.UUID{all[0].ID, all[1].ID, all[2].ID})
+}
