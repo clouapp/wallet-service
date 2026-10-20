@@ -138,8 +138,8 @@ func (s *Store) RaiseAlert(ctx context.Context, key string, remind time.Duration
 		return deposit.AlertQuiet, fmt.Errorf("raise scan alert: %w", err)
 	}
 	if first {
-		if err := s.client.Set(ctx, raised+reminderSuffix, 1, remind).Err(); err != nil {
-			return deposit.AlertRaised, fmt.Errorf("raise scan alert: reminder: %w", err)
+		if setErr := s.client.Set(ctx, raised+reminderSuffix, 1, remind).Err(); setErr != nil {
+			return deposit.AlertRaised, fmt.Errorf("raise scan alert: reminder: %w", setErr)
 		}
 		return deposit.AlertRaised, nil
 	}
