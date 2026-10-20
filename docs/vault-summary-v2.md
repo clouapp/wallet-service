@@ -319,10 +319,12 @@ configs legadas sem dono recebem tudo. Deduplicação por (config, tipo, transa�
     foi registrado com o do bloco que a chain tem hoje naquela altura (EVM, Bitcoin, Litecoin, Solana e TRON; os
     ledgers validados do XRP já são finais). Se a reorganização apenas mudou a transação de bloco, o depósito passa
     para o bloco novo (`block_number` e `block_hash` mudam em `GET /api/v1/transactions`) e é confirmado a partir da
-    profundidade nova, sem `deposit.failed`. Se a transação não está em bloco nenhum, o depósito fica sem confirmar
-    até a chain avançar `required_confirmations` blocos; se ela não voltar a ser minerada nesse intervalo, chega
-    `deposit.failed` com `reorged_out`. Como isso acontece antes da confirmação, `confirmed_at` vem `null` e não há
-    crédito a desfazer. Um depósito já confirmado não é revisto: a profundidade de confirmação é a garantia.
+    profundidade nova, sem `deposit.failed` (`confirmations` pode descer). Se a transação não está em bloco nenhum,
+    o depósito só falha com uma prova de que ela nunca pode entrar: na EVM, outra transação gastou o nonce do
+    remetente a uma profundidade final. Sem essa prova (a transação pode ter voltado ao mempool), o depósito fica
+    sem confirmar, sem evento, até a transação entrar num bloco (e então é confirmado) ou até a operação o resolver
+    (`deposits:reorgs`). Como isso acontece antes da confirmação, `confirmed_at` vem `null` e não há crédito a
+    desfazer. Um depósito já confirmado não é revisto: a profundidade de confirmação é a garantia.
 - `finality` diz qual regra decide o `status`: `confirmations` (confirmado quando `confirmations` atinge
   `required_confirmations`), `finalized_tag` (EVM: confirmado quando o bloco do depósito está no bloco `finalized`
   do nó ou abaixo dele, com pelo menos 1 confirmação) ou `solidified` (TRON: o mesmo com o bloco solidificado).
