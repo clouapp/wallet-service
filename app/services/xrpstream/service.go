@@ -1,8 +1,10 @@
 // Package xrpstream is the real-time XRP deposit listener: one long-running
 // XRPL WebSocket subscription to the watched addresses of one XRP chain, run by
-// the local workers when it is enabled. It records the validated payments it
-// hears through the deposit scanner's own path, so the ledger scan, which keeps
-// running beside it, stays the guarantee and records nothing twice.
+// the local workers when it is enabled. The stream is only a trigger: a validated
+// payment it hears to a watched address makes the deposit service read that ledger
+// through the chain's own RPC adapter, like the scanner reads it, so a stream on
+// another network can never be the source of a deposit, and the ledger scan, which
+// keeps running beside it, stays the guarantee and records nothing twice.
 package xrpstream
 
 import (
@@ -21,11 +23,20 @@ const (
 	// stream.
 	DefaultReconnectMin = time.Second
 	DefaultReconnectMax = time.Minute
+	// MaxBackfillLedgers is how many ledgers a reconnect reads at most (the newest of
+	// the gap, about a minute and a half); older ones are the ledger scan's.
+	MaxBackfillLedgers = 20
+	// maxLedgerAttempts is how many times a ledger whose read failed (the chain RPC
+	// a ledger behind the stream) is read, once per new validated ledger; then it is
+	// the ledger scan's. maxRetriedLedgers bounds the ledgers waiting for a retry.
+	maxLedgerAttempts = 3
+	maxRetriedLedgers = 100
 )
 
 // Event is one stream message: the validated ledger it is about (0 for none) and
 // the native XRP payments it reports (a validated, tesSUCCESS Payment to another
-// account, read like the ledger scan reads it).
+// account). They only say which ledger to read: what is recorded comes from the
+// chain RPC.
 type Event struct {
 	Ledger   uint64
 	Deposits []types.DetectedTransfer
@@ -42,16 +53,14 @@ type Session interface {
 	SubscribeAccounts(ctx context.Context, accounts []string) error
 	// UnsubscribeAccounts removes accounts from the subscription.
 	UnsubscribeAccounts(ctx context.Context, accounts []string) error
-	// AccountDeposits reads the validated native payments to account in ledgers
-	// fromLedger..toLedger (account_tx).
-	AccountDeposits(ctx context.Context, account string, fromLedger, toLedger uint64) ([]types.DetectedTransfer, error)
 	// Next waits for the next stream message. A session that hears nothing for its
 	// idle timeout fails.
 	Next(ctx context.Context) (Event, error)
 	Close() error
 }
 
-// Dialer opens a session to the configured endpoint.
+// Dialer opens a session to the configured endpoint, refusing one that serves
+// another network than the chain's.
 type Dialer interface {
 	Dial(ctx context.Context) (Session, error)
 }
@@ -61,14 +70,15 @@ type AddressSource interface {
 	PluckActiveAddresses(ctx context.Context, chainID string) ([]string, error)
 }
 
-// DepositRecorder records validated transfers as deposits through the scanner's
-// path and confirms the new ones at head (deposit.Service).
+// DepositRecorder reads one validated ledger through the chain's RPC adapter,
+// records its deposits through the scanner's path and confirms them
+// (deposit.Service.RecordStreamedLedger).
 type DepositRecorder interface {
-	RecordValidatedTransfers(ctx context.Context, chainID string, head uint64, transfers []types.DetectedTransfer) (int, error)
+	RecordStreamedLedger(ctx context.Context, chainID string, ledger uint64) (int, error)
 }
 
 // Service listens to one XRP chain. Run is its only entry point; its state (the
-// newest validated ledger heard, a backfill left incomplete) lives in Run's
+// newest validated ledger heard, the ledgers waiting for a retry) lives in Run's
 // goroutine.
 type Service struct {
 	chainID        string
@@ -78,13 +88,14 @@ type Service struct {
 	addressRefresh time.Duration
 	reconnectMin   time.Duration
 	reconnectMax   time.Duration
+	now            func() time.Time
+	sleep          func(ctx context.Context, d time.Duration) bool
 
-	// lastLedger is the newest validated ledger a session heard; a session that
-	// follows backfills from it.
+	// lastLedger is the newest validated ledger a session heard; the session that
+	// follows reads the ledgers from it.
 	lastLedger uint64
-	// backfillFrom is the first ledger of a backfill that did not complete, 0 for
-	// none; the next session starts its backfill there.
-	backfillFrom uint64
+	// retries counts the reads of each ledger whose read failed.
+	retries map[uint64]int
 }
 
 // Deps is everything the listener needs. A zero duration keeps its default.
@@ -108,6 +119,9 @@ func NewService(deps Deps) *Service {
 		addressRefresh: orDefault(deps.AddressRefresh, DefaultAddressRefresh),
 		reconnectMin:   orDefault(deps.ReconnectMin, DefaultReconnectMin),
 		reconnectMax:   orDefault(deps.ReconnectMax, DefaultReconnectMax),
+		now:            time.Now,
+		sleep:          sleepContext,
+		retries:        map[uint64]int{},
 	}
 	s.reconnectMax = max(s.reconnectMax, s.reconnectMin)
 	return s

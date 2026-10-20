@@ -23,24 +23,26 @@ const (
 	taggedSender     = "rDWd81gTyMMA1arNv9bH1qcBDN4EaozN1Y"
 )
 
-// fakeXRPLSocket is a rippled WebSocket stand-in: it answers each request with
-// what answer returns (stream messages first, then the response) and can push
+// fakeXRPLSocket is a rippled WebSocket stand-in: it answers server_info with
+// networkID (the altnet's 1 unless set; nil omits it), every other request with
+// what answer returns (stream messages first, then the response), and can push
 // stream messages at any time.
 type fakeXRPLSocket struct {
-	t        *testing.T
-	srv      *httptest.Server
-	mu       sync.Mutex
-	conn     *websocket.Conn
-	requests []map[string]any
-	answer   func(request map[string]any) []any
-	accepted chan struct{}
+	t         *testing.T
+	srv       *httptest.Server
+	mu        sync.Mutex
+	conn      *websocket.Conn
+	requests  []map[string]any
+	answer    func(request map[string]any) []any
+	accepted  chan struct{}
+	networkID any
 	// seen gets every request as it arrives.
 	seen chan map[string]any
 }
 
 func newFakeXRPLSocket(t *testing.T, answer func(request map[string]any) []any) *fakeXRPLSocket {
 	t.Helper()
-	f := &fakeXRPLSocket{t: t, answer: answer, accepted: make(chan struct{}, 8), seen: make(chan map[string]any, 256)}
+	f := &fakeXRPLSocket{t: t, answer: answer, accepted: make(chan struct{}, 8), seen: make(chan map[string]any, 256), networkID: altnetNetworkID}
 	upgrader := websocket.Upgrader{}
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -62,6 +64,16 @@ func newFakeXRPLSocket(t *testing.T, answer func(request map[string]any) []any) 
 			select {
 			case f.seen <- request:
 			default:
+			}
+			if request["command"] == "server_info" {
+				info := map[string]any{"build_version": "2.4.0", "server_state": "full"}
+				f.mu.Lock()
+				if f.networkID != nil {
+					info["network_id"] = f.networkID
+				}
+				f.mu.Unlock()
+				f.push(success(request, map[string]any{"info": info}))
+				continue
 			}
 			for _, message := range f.answer(request) {
 				f.push(message)
@@ -112,10 +124,17 @@ func (f *fakeXRPLSocket) awaitRequest(t *testing.T, command string) map[string]a
 	}
 }
 
+// recorded is the requests after the network check of each dial.
 func (f *fakeXRPLSocket) recorded() []map[string]any {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]map[string]any(nil), f.requests...)
+	var requests []map[string]any
+	for _, request := range f.requests {
+		if request["command"] != "server_info" {
+			requests = append(requests, request)
+		}
+	}
+	return requests
 }
 
 func success(request map[string]any, result any) map[string]any {
@@ -128,7 +147,7 @@ func emptySuccess(request map[string]any) []any {
 
 func dialFake(t *testing.T, f *fakeXRPLSocket, idle time.Duration) xrpstream.Session {
 	t.Helper()
-	session, err := NewStreamDialer(StreamConfig{ChainIDStr: models.ChainTXRP, NativeSymbol: models.NativeXRP, URL: f.url(), IdleTimeout: idle}).Dial(context.Background())
+	session, err := NewStreamDialer(StreamConfig{ChainIDStr: models.ChainTXRP, NativeSymbol: models.NativeXRP, URL: f.url(), IsTestnet: true, IdleTimeout: idle}).Dial(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,63 +328,6 @@ func TestStream_SubscribeAccountsSendsTheAccountsInBatches(t *testing.T) {
 	}
 }
 
-func TestStream_AccountDepositsPagesThroughAccountTx(t *testing.T) {
-	fields, meta := recordedPayment(t)
-	v1Entry := map[string]any{"meta": meta, "tx": clone(fields), "validated": true}
-	v1Entry["tx"].(map[string]any)["ledger_index"] = ledgerTaggedPayment
-	outgoing := clone(fields)
-	outgoing["Account"], outgoing["Destination"], outgoing["hash"] = taggedRecipient, taggedSender, strings.Repeat("A", 64)
-	outgoing["ledger_index"] = ledgerTaggedPayment + 1
-	v2 := streamedV2(fields, meta)
-	v2Entry := map[string]any{"meta": meta, "tx_json": v2["tx_json"], "hash": strings.Repeat("B", 64), "ledger_index": ledgerTaggedPayment + 2, "validated": true}
-
-	f := newFakeXRPLSocket(t, func(request map[string]any) []any {
-		if request["marker"] == nil {
-			return []any{success(request, map[string]any{
-				"transactions": []any{v1Entry, map[string]any{"meta": meta, "tx": outgoing, "validated": true}},
-				"marker":       map[string]any{"ledger": 21451515, "seq": 3},
-			})}
-		}
-		return []any{success(request, map[string]any{"transactions": []any{v2Entry}})}
-	})
-	session := dialFake(t, f, time.Second)
-
-	deposits, err := session.AccountDeposits(context.Background(), taggedRecipient, 21451500, 21451600)
-
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(deposits) != 2 || deposits[0].TxHash != taggedPaymentHash || deposits[0].BlockNumber != ledgerTaggedPayment ||
-		deposits[1].TxHash != strings.Repeat("B", 64) || deposits[1].BlockNumber != ledgerTaggedPayment+2 {
-		t.Fatalf("deposits %+v, want the two payments to the account and not the one it sent", deposits)
-	}
-	requests := f.recorded()
-	if len(requests) != 2 {
-		t.Fatalf("%d requests, want two pages", len(requests))
-	}
-	first := requests[0]
-	if first["command"] != "account_tx" || first["account"] != taggedRecipient || first["ledger_index_min"] != float64(21451500) ||
-		first["ledger_index_max"] != float64(21451600) || first["forward"] != true || first["limit"] == nil {
-		t.Fatalf("first page request %v", first)
-	}
-	if marker, ok := requests[1]["marker"].(map[string]any); !ok || marker["seq"] != float64(3) {
-		t.Fatalf("second page request %v, want the marker of the first page", requests[1])
-	}
-}
-
-func TestStream_AccountDepositsOfAnAccountNotFundedYetAreNone(t *testing.T) {
-	f := newFakeXRPLSocket(t, func(request map[string]any) []any {
-		return []any{map[string]any{"id": request["id"], "type": "response", "status": "error", "error": "actNotFound"}}
-	})
-	session := dialFake(t, f, time.Second)
-
-	deposits, err := session.AccountDeposits(context.Background(), taggedRecipient, 1, 2)
-
-	if err != nil || len(deposits) != 0 {
-		t.Fatalf("deposits %+v err %v", deposits, err)
-	}
-}
-
 func TestStream_AnErrorAnswerIsAnError(t *testing.T) {
 	f := newFakeXRPLSocket(t, func(request map[string]any) []any {
 		return []any{map[string]any{"id": request["id"], "type": "response", "status": "error", "error": "noPermission"}}
@@ -399,6 +361,72 @@ func TestStream_CancellingTheContextEndsNext(t *testing.T) {
 
 	if err == nil || ctx.Err() == nil {
 		t.Fatalf("err %v, want the cancellation", err)
+	}
+}
+
+func TestStream_DialRefusesAnEndpointOfAnotherNetwork(t *testing.T) {
+	mainnet := newFakeXRPLSocket(t, emptySuccess)
+	mainnet.networkID = 0
+	testnet := StreamConfig{ChainIDStr: models.ChainTXRP, NativeSymbol: models.NativeXRP, URL: mainnet.url(), IsTestnet: true}
+	if _, err := NewStreamDialer(testnet).Dial(context.Background()); err == nil || !strings.Contains(err.Error(), "network") {
+		t.Fatalf("err %v, want the mainnet endpoint of a testnet chain refused", err)
+	}
+
+	// A server that names no network_id is the mainnet's (0).
+	unnamed := newFakeXRPLSocket(t, emptySuccess)
+	unnamed.networkID = nil
+	session, err := NewStreamDialer(StreamConfig{ChainIDStr: models.ChainXRP, NativeSymbol: models.NativeXRP, URL: unnamed.url()}).Dial(context.Background())
+	if err != nil {
+		t.Fatalf("a mainnet chain refused a server without network_id: %v", err)
+	}
+	_ = session.Close()
+	testnet.URL = unnamed.url()
+	if _, err := NewStreamDialer(testnet).Dial(context.Background()); err == nil {
+		t.Fatal("a testnet chain accepted a server without network_id")
+	}
+}
+
+func TestStream_DialRefusesAPlainWebSocketOffTheLoopback(t *testing.T) {
+	for _, rawURL := range []string{"ws://s.altnet.rippletest.net:51233", "ws://10.0.0.5:6006", "https://s.altnet.rippletest.net:51234"} {
+		if _, err := NewStreamDialer(StreamConfig{URL: rawURL, IsTestnet: true}).Dial(context.Background()); err == nil {
+			t.Fatalf("%s was dialed", rawURL)
+		}
+	}
+	for _, rawURL := range []string{"ws://localhost:1/x", "ws://[::1]:1/x"} {
+		_, err := NewStreamDialer(StreamConfig{URL: rawURL}).Dial(context.Background())
+		if err == nil || strings.Contains(err.Error(), "loopback") {
+			t.Fatalf("%s: err %v, want it dialed (and refused by the closed port)", rawURL, err)
+		}
+	}
+}
+
+func TestStream_AFloodOfStreamMessagesWhileAnAnswerIsAwaitedEndsTheSession(t *testing.T) {
+	ledgerClosed := map[string]any{"type": "ledgerClosed", "ledger_index": 21451515}
+	f := newFakeXRPLSocket(t, func(request map[string]any) []any {
+		messages := make([]any, 0, streamMaxQueued+2)
+		for i := 0; i <= streamMaxQueued; i++ {
+			messages = append(messages, ledgerClosed)
+		}
+		return append(messages, success(request, map[string]any{}))
+	})
+	session := dialFake(t, f, time.Second)
+
+	if err := session.SubscribeAccounts(context.Background(), []string{taggedRecipient}); err == nil {
+		t.Fatalf("more than %d queued stream messages were accepted", streamMaxQueued)
+	}
+}
+
+func TestStream_ACancelledContextEndsARequestAtOnce(t *testing.T) {
+	f := newFakeXRPLSocket(t, func(map[string]any) []any { return nil })
+	session := dialFake(t, f, time.Minute)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	started := time.Now()
+	err := session.SubscribeAccounts(ctx, []string{taggedRecipient})
+
+	if err == nil || time.Since(started) > time.Second {
+		t.Fatalf("err %v after %s, want the cancellation at once", err, time.Since(started))
 	}
 }
 

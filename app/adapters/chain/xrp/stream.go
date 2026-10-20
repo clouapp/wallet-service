@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/url"
 	"strings"
 	"time"
 
@@ -23,13 +24,18 @@ const (
 	streamIdleTimeout = 30 * time.Second
 	// streamRequestTimeout bounds the wait for the answer to one request.
 	streamRequestTimeout = 30 * time.Second
-	streamDialTimeout    = 15 * time.Second
+	// streamWriteTimeout bounds one write, below the local shutdown timeout
+	// (SHUTDOWN_TIMEOUT_SECONDS, default 15 s).
+	streamWriteTimeout = 5 * time.Second
+	streamDialTimeout  = 15 * time.Second
 	// streamSubscribeBatch is how many accounts one subscribe request names.
 	streamSubscribeBatch = 500
-	// accountTxPageLimit and accountTxMaxPages bound one account's backfill: 200
-	// transactions per page, 50 pages.
-	accountTxPageLimit     = 200
-	accountTxMaxPages      = 50
+	// streamMaxQueued is how many stream messages may wait while an answer is
+	// awaited; more ends the session (the server streams faster than it answers).
+	streamMaxQueued = 1000
+	// mainnetNetworkID is the network_id of the XRP Ledger mainnet, the one a
+	// server that names none serves.
+	mainnetNetworkID       = 0
 	streamTypeResponse     = "response"
 	streamTypeLedgerClosed = "ledgerClosed"
 	streamTypeTransaction  = "transaction"
@@ -40,9 +46,13 @@ const (
 type StreamConfig struct {
 	ChainIDStr   string
 	NativeSymbol string
-	// URL is the ws:// or wss:// endpoint. It may carry a key: it is never logged
-	// and dial errors drop it.
+	// URL is the wss:// endpoint (ws:// only on the loopback). It may carry a key:
+	// it is never logged and dial errors drop it.
 	URL string
+	// IsTestnet is the chain's network: every session checks the server's
+	// network_id is the altnet's (1), or the mainnet's (0, also a server that names
+	// none), since XRP addresses are the same on every network.
+	IsTestnet bool
 	// IdleTimeout ends a session that receives nothing for this long; 0 keeps 30 s.
 	IdleTimeout time.Duration
 }
@@ -65,12 +75,13 @@ func NewStreamDialer(cfg StreamConfig) *StreamDialer {
 	return &StreamDialer{cfg: cfg, dialer: &dialer}
 }
 
-// Dial opens a session. An endpoint that is not ws:// or wss:// is refused before
-// any network call.
+// Dial opens a session and checks the server serves the chain's network
+// (server_info network_id). An endpoint that is neither wss:// nor ws:// on the
+// loopback is refused before any network call.
 func (d *StreamDialer) Dial(ctx context.Context) (xrpstream.Session, error) {
 	rawURL := strings.TrimSpace(d.cfg.URL)
-	if !strings.HasPrefix(rawURL, "ws://") && !strings.HasPrefix(rawURL, "wss://") {
-		return nil, fmt.Errorf("xrp stream %s: the endpoint must be a ws:// or wss:// URL", d.cfg.ChainIDStr)
+	if err := checkStreamURL(rawURL); err != nil {
+		return nil, fmt.Errorf("xrp stream %s: %w", d.cfg.ChainIDStr, err)
 	}
 	conn, response, err := d.dialer.DialContext(ctx, rawURL, nil)
 	if response != nil && response.Body != nil {
@@ -80,7 +91,59 @@ func (d *StreamDialer) Dial(ctx context.Context) (xrpstream.Session, error) {
 		return nil, httpclient.RedactURL(fmt.Errorf("xrp stream %s dial: %w", d.cfg.ChainIDStr, err), rawURL)
 	}
 	conn.SetReadLimit(xrpLedgerMaxResponseBytes)
-	return &streamSession{conn: conn, cfg: d.cfg}, nil
+	session := &streamSession{conn: conn, cfg: d.cfg}
+	if err := session.checkNetwork(ctx); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return session, nil
+}
+
+// checkStreamURL accepts wss://, and ws:// only to a loopback host: a plain
+// WebSocket elsewhere would carry the subscription, and any key in the URL, in the
+// clear.
+func checkStreamURL(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Hostname() == "" {
+		return fmt.Errorf("the endpoint is not a WebSocket URL")
+	}
+	switch parsed.Scheme {
+	case "wss":
+		return nil
+	case "ws":
+		host := parsed.Hostname()
+		if ip := net.ParseIP(host); host == "localhost" || (ip != nil && ip.IsLoopback()) {
+			return nil
+		}
+		return fmt.Errorf("a ws:// endpoint must be on the loopback; use wss://")
+	}
+	return fmt.Errorf("the endpoint must be a wss:// URL")
+}
+
+// checkNetwork refuses a server of another network than the chain's: the
+// addresses are the same on every network, so a payment heard there would name a
+// watched address.
+func (s *streamSession) checkNetwork(ctx context.Context) error {
+	var result struct {
+		Info struct {
+			NetworkID json.Number `json:"network_id"`
+		} `json:"info"`
+	}
+	if err := s.request(ctx, map[string]any{"command": "server_info"}, &result); err != nil {
+		return fmt.Errorf("xrp stream %s: network check: %w", s.cfg.ChainIDStr, err)
+	}
+	served, err := optionalNonNegativeJSON(result.Info.NetworkID)
+	if err != nil {
+		return fmt.Errorf("xrp stream %s: network check: network_id %w", s.cfg.ChainIDStr, err)
+	}
+	want := uint64(mainnetNetworkID)
+	if s.cfg.IsTestnet {
+		want = altnetNetworkID
+	}
+	if served != want {
+		return fmt.Errorf("xrp stream %s: the endpoint serves network %d, the chain is on network %d", s.cfg.ChainIDStr, served, want)
+	}
+	return nil
 }
 
 // streamSession is one connection. Requests are answered in turn; a stream message
@@ -141,46 +204,6 @@ func (s *streamSession) accounts(ctx context.Context, command string, accounts [
 		}
 	}
 	return nil
-}
-
-// AccountDeposits reads account_tx of account over fromLedger..toLedger, oldest
-// first, page by page (at most accountTxMaxPages), and returns the validated native
-// payments to account. An account the ledger does not hold yet has none. A
-// transaction that cannot be read is logged and skipped: the ledger scan reads it.
-func (s *streamSession) AccountDeposits(ctx context.Context, account string, fromLedger, toLedger uint64) ([]types.DetectedTransfer, error) {
-	var deposits []types.DetectedTransfer
-	var marker json.RawMessage
-	for page := 0; page < accountTxMaxPages; page++ {
-		command := map[string]any{
-			"command": "account_tx", "account": account, "ledger_index_min": fromLedger, "ledger_index_max": toLedger,
-			"forward": true, "limit": accountTxPageLimit,
-		}
-		if len(marker) > 0 {
-			command["marker"] = marker
-		}
-		var result struct {
-			Transactions []json.RawMessage `json:"transactions"`
-			Marker       json.RawMessage   `json:"marker"`
-		}
-		err := s.request(ctx, command, &result)
-		var refused *streamError
-		if errors.As(err, &refused) && refused.code == xrpAccountNotFound {
-			return nil, nil
-		}
-		if err != nil {
-			return deposits, err
-		}
-		for _, raw := range result.Transactions {
-			if transfer, ok := s.deposit(raw); ok && transfer.To == account {
-				deposits = append(deposits, transfer)
-			}
-		}
-		if len(bytes.TrimSpace(result.Marker)) == 0 || bytes.Equal(bytes.TrimSpace(result.Marker), []byte("null")) {
-			return deposits, nil
-		}
-		marker = result.Marker
-	}
-	return deposits, fmt.Errorf("xrp account_tx of %s: more than %d pages from ledger %d", account, accountTxMaxPages, fromLedger)
 }
 
 // Next returns the next stream message: a validated ledger (ledgerClosed), or a
@@ -246,13 +269,10 @@ func (s *streamSession) request(ctx context.Context, command map[string]any, res
 	id := s.nextID
 	command["id"] = id
 	name, _ := command["command"].(string)
-	deadline := time.Now().Add(streamRequestTimeout)
-	if err := s.conn.SetWriteDeadline(deadline); err != nil {
-		return fmt.Errorf("xrp %s: %w", name, err)
-	}
-	if err := s.conn.WriteJSON(command); err != nil {
+	if err := s.write(ctx, command); err != nil {
 		return fmt.Errorf("xrp %s: send: %w", name, err)
 	}
+	deadline := time.Now().Add(streamRequestTimeout)
 	for {
 		raw, err := s.read(ctx, deadline)
 		if err != nil {
@@ -263,6 +283,9 @@ func (s *streamSession) request(ctx context.Context, command map[string]any, res
 			return fmt.Errorf("xrp %s: message is not json", name)
 		}
 		if envelope.Type != streamTypeResponse {
+			if len(s.queued) >= streamMaxQueued {
+				return fmt.Errorf("xrp %s: more than %d stream messages while the answer was awaited", name, streamMaxQueued)
+			}
 			s.queued = append(s.queued, raw)
 			continue
 		}
@@ -279,6 +302,27 @@ func (s *streamSession) request(ctx context.Context, command map[string]any, res
 		}
 		return nil
 	}
+}
+
+// write sends message within streamWriteTimeout (or ctx's deadline, if sooner); ctx
+// ending first ends the write.
+func (s *streamSession) write(ctx context.Context, message any) error {
+	deadline := time.Now().Add(streamWriteTimeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	if err := s.conn.SetWriteDeadline(deadline); err != nil {
+		return err
+	}
+	stop := context.AfterFunc(ctx, func() { _ = s.conn.SetWriteDeadline(time.Now()) })
+	defer stop()
+	if err := s.conn.WriteJSON(message); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return err
+	}
+	return nil
 }
 
 // nextMessage is the oldest queued stream message, or the next one read within

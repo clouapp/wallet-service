@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -19,11 +18,12 @@ const (
 	addressA     = "rai1iQmERbDPvfuk31XVsYs6ZXeA8QRZnC"
 	addressB     = "rwpNHW66K4YcwAGyx7F1ehUW12Yujwy7Ni"
 	addressC     = "rDWd81gTyMMA1arNv9bH1qcBDN4EaozN1Y"
+	unwatched    = "rJJWTfxZUg6FkYfcNHqrEgG9CUAFvnw7DB"
 	waitDeadline = 5 * time.Second
 )
 
 func payment(hash, to string, ledger uint64) types.DetectedTransfer {
-	return types.DetectedTransfer{TxHash: hash, BlockNumber: ledger, From: "rJJWTfxZUg6FkYfcNHqrEgG9CUAFvnw7DB", To: to, Amount: big.NewInt(1_000_000), Asset: "xrp"}
+	return types.DetectedTransfer{TxHash: hash, BlockNumber: ledger, From: unwatched, To: to, Amount: big.NewInt(1_000_000), Asset: "xrp"}
 }
 
 // fakeNext is what one Next call answers.
@@ -34,18 +34,15 @@ type fakeNext struct {
 
 // fakeSession is a scripted XRPL session: the test pushes what Next answers and
 // reads, in order, the calls the listener made ("subscribe:a,b", "unsubscribe:a",
-// "account_tx:a:from:to", "close").
+// "ledgers", "close").
 type fakeSession struct {
-	ledger      uint64
-	next        chan fakeNext
-	calls       chan string
-	backfill    map[string][]types.DetectedTransfer
-	backfillErr map[string]error
+	ledger uint64
+	next   chan fakeNext
+	calls  chan string
 }
 
 func newFakeSession(ledger uint64) *fakeSession {
-	return &fakeSession{ledger: ledger, next: make(chan fakeNext), calls: make(chan string, 64),
-		backfill: map[string][]types.DetectedTransfer{}, backfillErr: map[string]error{}}
+	return &fakeSession{ledger: ledger, next: make(chan fakeNext), calls: make(chan string, 64)}
 }
 
 func (s *fakeSession) SubscribeLedgers(context.Context) (uint64, error) {
@@ -61,11 +58,6 @@ func (s *fakeSession) SubscribeAccounts(_ context.Context, accounts []string) er
 func (s *fakeSession) UnsubscribeAccounts(_ context.Context, accounts []string) error {
 	s.calls <- "unsubscribe:" + strings.Join(accounts, ",")
 	return nil
-}
-
-func (s *fakeSession) AccountDeposits(_ context.Context, account string, from, to uint64) ([]types.DetectedTransfer, error) {
-	s.calls <- fmt.Sprintf("account_tx:%s:%d:%d", account, from, to)
-	return s.backfill[account], s.backfillErr[account]
 }
 
 func (s *fakeSession) Next(ctx context.Context) (Event, error) {
@@ -104,7 +96,15 @@ func (s *fakeSession) expect(t *testing.T, want string) {
 	}
 }
 
-// fakeDialer hands out its sessions in order, then refuses.
+// subscribed waits for the session's subscription: the addresses first, then the
+// ledger stream, so no ledger falls between the two.
+func (s *fakeSession) subscribed(t *testing.T, addresses ...string) {
+	t.Helper()
+	s.expect(t, "subscribe:"+strings.Join(addresses, ","))
+	s.expect(t, "ledgers")
+}
+
+// fakeDialer hands out its sessions in order, after refusals refused dials.
 type fakeDialer struct {
 	mu       sync.Mutex
 	sessions []*fakeSession
@@ -148,64 +148,85 @@ func (a *fakeAddresses) set(addresses ...string) {
 	a.addresses = addresses
 }
 
-// recorded is one RecordValidatedTransfers call.
-type recorded struct {
-	head   uint64
-	hashes string
+// fakeRecorder records the ledgers the listener asks to read; failing makes a
+// ledger's read fail.
+type fakeRecorder struct {
+	mu      sync.Mutex
+	ledgers chan uint64
+	failing map[uint64]bool
 }
 
-type fakeRecorder struct{ calls chan recorded }
+func newFakeRecorder() *fakeRecorder {
+	return &fakeRecorder{ledgers: make(chan uint64, 128), failing: map[uint64]bool{}}
+}
 
-func (r *fakeRecorder) RecordValidatedTransfers(_ context.Context, chainID string, head uint64, transfers []types.DetectedTransfer) (int, error) {
+func (r *fakeRecorder) RecordStreamedLedger(_ context.Context, chainID string, ledger uint64) (int, error) {
 	if chainID != testChain {
 		return 0, fmt.Errorf("unexpected chain %s", chainID)
 	}
-	hashes := make([]string, 0, len(transfers))
-	for _, transfer := range transfers {
-		hashes = append(hashes, transfer.TxHash)
+	r.ledgers <- ledger
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.failing[ledger] {
+		return 0, errors.New("ledger past the chain head")
 	}
-	sort.Strings(hashes)
-	r.calls <- recorded{head: head, hashes: strings.Join(hashes, ",")}
-	return len(transfers), nil
+	return 1, nil
 }
 
-func (r *fakeRecorder) expect(t *testing.T, want recorded) {
+func (r *fakeRecorder) fail(ledger uint64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.failing[ledger] = true
+}
+
+func (r *fakeRecorder) expect(t *testing.T, want ...uint64) {
+	t.Helper()
+	for _, ledger := range want {
+		select {
+		case got := <-r.ledgers:
+			if got != ledger {
+				t.Fatalf("recorded ledger %d, want %d", got, ledger)
+			}
+		case <-time.After(waitDeadline):
+			t.Fatalf("no ledger recorded, want %d", ledger)
+		}
+	}
+}
+
+func (r *fakeRecorder) none(t *testing.T) {
 	t.Helper()
 	select {
-	case got := <-r.calls:
-		if got != want {
-			t.Fatalf("recorded %+v, want %+v", got, want)
-		}
-	case <-time.After(waitDeadline):
-		t.Fatalf("nothing recorded, want %+v", want)
+	case got := <-r.ledgers:
+		t.Fatalf("recorded ledger %d, want none", got)
+	default:
 	}
 }
 
 type listenerFixture struct {
+	svc       *Service
 	dialer    *fakeDialer
 	addresses *fakeAddresses
 	recorder  *fakeRecorder
 	stop      func()
 }
 
-// run starts the listener over sessions and returns when its first session is
-// subscribed to the ledger stream.
-func run(t *testing.T, refresh time.Duration, sessions ...*fakeSession) listenerFixture {
-	t.Helper()
-	f := listenerFixture{
-		dialer:    &fakeDialer{sessions: sessions},
-		addresses: &fakeAddresses{addresses: []string{addressA, addressB}},
-		recorder:  &fakeRecorder{calls: make(chan recorded, 16)},
-	}
-	svc := NewService(Deps{
+func newListener(refresh time.Duration, dialer *fakeDialer) *listenerFixture {
+	f := &listenerFixture{dialer: dialer, addresses: &fakeAddresses{addresses: []string{addressA, addressB}}, recorder: newFakeRecorder()}
+	f.svc = NewService(Deps{
 		ChainID: testChain, Dialer: f.dialer, Addresses: f.addresses, Deposits: f.recorder,
 		AddressRefresh: refresh, ReconnectMin: time.Millisecond, ReconnectMax: 4 * time.Millisecond,
 	})
+	return f
+}
+
+// start runs the listener until the test ends.
+func (f *listenerFixture) start(t *testing.T) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		svc.Run(ctx)
+		f.svc.Run(ctx)
 	}()
 	f.stop = func() {
 		cancel()
@@ -216,75 +237,81 @@ func run(t *testing.T, refresh time.Duration, sessions ...*fakeSession) listener
 		}
 	}
 	t.Cleanup(f.stop)
+}
+
+func run(t *testing.T, refresh time.Duration, sessions ...*fakeSession) *listenerFixture {
+	t.Helper()
+	f := newListener(refresh, &fakeDialer{sessions: sessions})
+	f.start(t)
 	return f
 }
 
-func TestRun_SubscribesTheWatchedAddressesAndRecordsAStreamedDeposit(t *testing.T) {
+func TestRun_ReadsTheLedgerOfADepositToAWatchedAddress(t *testing.T) {
 	session := newFakeSession(100)
 	f := run(t, time.Hour, session)
-	session.expect(t, "ledgers")
-	session.expect(t, "subscribe:"+addressA+","+addressB)
+	session.subscribed(t, addressA, addressB)
 
 	session.push(t, fakeNext{event: Event{Ledger: 101, Deposits: []types.DetectedTransfer{payment("H1", addressA, 101)}}})
+	f.recorder.expect(t, 101)
 
-	f.recorder.expect(t, recorded{head: 101, hashes: "H1"})
-	session.push(t, fakeNext{event: Event{Ledger: 102}})
+	// A payment the subscription streams to an address nobody watches (a
+	// withdrawal of the wallet) reads nothing.
+	session.push(t, fakeNext{event: Event{Ledger: 102, Deposits: []types.DetectedTransfer{payment("H2", unwatched, 102)}}})
+	session.push(t, fakeNext{event: Event{Ledger: 103, Deposits: []types.DetectedTransfer{payment("H3", addressB, 103)}}})
+	f.recorder.expect(t, 103)
 	f.stop()
 	session.expect(t, "close")
-	select {
-	case call := <-session.calls:
-		t.Fatalf("unexpected session call %q: the first session backfills nothing (the ledger scan covers the time before it)", call)
-	default:
-	}
+	f.recorder.none(t)
 }
 
-func TestRun_ReconnectsAndBackfillsFromTheLastLedgerItHeard(t *testing.T) {
-	first, second := newFakeSession(100), newFakeSession(110)
-	second.backfill[addressA] = []types.DetectedTransfer{payment("H2", addressA, 107)}
+func TestRun_ReadsEachLedgerSinceTheLastHeardAfterAReconnect(t *testing.T) {
+	first, second := newFakeSession(100), newFakeSession(108)
 	f := run(t, time.Hour, first, second)
-	first.expect(t, "ledgers")
-	first.expect(t, "subscribe:"+addressA+","+addressB)
+	first.subscribed(t, addressA, addressB)
 	first.push(t, fakeNext{event: Event{Ledger: 105}})
 
 	first.push(t, fakeNext{err: errors.New("connection reset by peer")})
 
 	first.expect(t, "close")
-	second.expect(t, "ledgers")
-	second.expect(t, "subscribe:"+addressA+","+addressB)
-	second.expect(t, "account_tx:"+addressA+":105:110")
-	second.expect(t, "account_tx:"+addressB+":105:110")
-	f.recorder.expect(t, recorded{head: 110, hashes: "H2"})
+	second.subscribed(t, addressA, addressB)
+	f.recorder.expect(t, 105, 106, 107, 108)
+	f.recorder.none(t)
 }
 
-func TestRun_AnIncompleteBackfillStartsAgainFromItsFirstLedger(t *testing.T) {
-	first, second, third := newFakeSession(100), newFakeSession(110), newFakeSession(130)
-	second.backfillErr[addressA] = errors.New("lgrIdxsInvalid")
-	f := run(t, time.Hour, first, second, third)
-	first.expect(t, "ledgers")
-	first.expect(t, "subscribe:"+addressA+","+addressB)
+func TestRun_ReadsAtMostTheLastLedgersOfALongGap(t *testing.T) {
+	head := uint64(100 + 3*MaxBackfillLedgers)
+	first, second := newFakeSession(100), newFakeSession(head)
+	f := run(t, time.Hour, first, second)
+	first.subscribed(t, addressA, addressB)
 	first.push(t, fakeNext{err: errors.New("closed")})
-	first.expect(t, "close")
 
-	second.expect(t, "ledgers")
-	second.expect(t, "subscribe:"+addressA+","+addressB)
-	second.expect(t, "account_tx:"+addressA+":100:110")
-	// The session goes on: the stream is not lost for a backfill that failed.
-	second.push(t, fakeNext{event: Event{Ledger: 120, Deposits: []types.DetectedTransfer{payment("H3", addressB, 120)}}})
-	f.recorder.expect(t, recorded{head: 120, hashes: "H3"})
-	second.push(t, fakeNext{err: errors.New("closed")})
-	second.expect(t, "close")
+	second.subscribed(t, addressA, addressB)
+	for ledger := head - MaxBackfillLedgers + 1; ledger <= head; ledger++ {
+		f.recorder.expect(t, ledger)
+	}
+	f.recorder.none(t)
+}
 
-	third.expect(t, "ledgers")
-	third.expect(t, "subscribe:"+addressA+","+addressB)
-	third.expect(t, "account_tx:"+addressA+":100:130")
-	third.expect(t, "account_tx:"+addressB+":100:130")
+func TestRun_RetriesALedgerThatFailedOnTheNextLedgersThenLeavesItToTheScan(t *testing.T) {
+	session := newFakeSession(100)
+	f := run(t, time.Hour, session)
+	f.recorder.fail(101)
+	session.subscribed(t, addressA, addressB)
+
+	session.push(t, fakeNext{event: Event{Ledger: 101, Deposits: []types.DetectedTransfer{payment("H1", addressA, 101)}}})
+	for ledger := uint64(102); ledger <= 105; ledger++ {
+		session.push(t, fakeNext{event: Event{Ledger: ledger}})
+	}
+	session.push(t, fakeNext{event: Event{Ledger: 106, Deposits: []types.DetectedTransfer{payment("H2", addressA, 106)}}})
+
+	f.recorder.expect(t, 101, 101, 101, 106)
+	f.recorder.none(t)
 }
 
 func TestRun_FollowsTheWatchedAddressesOnEachRefresh(t *testing.T) {
 	session := newFakeSession(100)
 	f := run(t, time.Nanosecond, session)
-	session.expect(t, "ledgers")
-	session.expect(t, "subscribe:"+addressA+","+addressB)
+	session.subscribed(t, addressA, addressB)
 
 	f.addresses.set(addressB, addressC)
 	session.push(t, fakeNext{event: Event{Ledger: 101}})
@@ -293,26 +320,71 @@ func TestRun_FollowsTheWatchedAddressesOnEachRefresh(t *testing.T) {
 	session.expect(t, "unsubscribe:"+addressA)
 }
 
+// fakeTime is the listener's clock and sleep: the test moves the clock, and each
+// wait is recorded and returns at once.
+type fakeTime struct {
+	mu    sync.Mutex
+	at    time.Time
+	waits []time.Duration
+}
+
+func (c *fakeTime) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.at
+}
+
+func (c *fakeTime) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.at = c.at.Add(d)
+}
+
+func (c *fakeTime) sleep(ctx context.Context, d time.Duration) bool {
+	c.mu.Lock()
+	c.waits = append(c.waits, d)
+	c.mu.Unlock()
+	return ctx.Err() == nil
+}
+
+func (c *fakeTime) slept() []time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]time.Duration(nil), c.waits...)
+}
+
+func TestRun_TheBackoffStartsAgainOnlyAfterASessionLivedTheLongestWait(t *testing.T) {
+	long, short, last := newFakeSession(100), newFakeSession(100), newFakeSession(100)
+	f := newListener(time.Hour, &fakeDialer{sessions: []*fakeSession{long, short, last}, refusals: 4})
+	f.svc.reconnectMin, f.svc.reconnectMax = time.Second, 8*time.Second
+	clock := &fakeTime{at: time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)}
+	f.svc.now, f.svc.sleep = clock.now, clock.sleep
+	f.start(t)
+
+	long.subscribed(t, addressA, addressB)
+	clock.advance(10 * time.Second)
+	long.push(t, fakeNext{err: errors.New("closed")})
+	short.subscribed(t, addressA, addressB)
+	short.push(t, fakeNext{event: Event{Ledger: 101}})
+	clock.advance(2 * time.Second)
+	short.push(t, fakeNext{err: errors.New("closed")})
+	last.subscribed(t, addressA, addressB)
+
+	want := []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, time.Second, 2 * time.Second}
+	if got := clock.slept(); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("waits %v, want %v: doubling while the endpoint refuses, starting again after a session that lived the longest wait, not after one that only heard a message", got, want)
+	}
+}
+
 func TestRun_KeepsDialingUntilTheEndpointAnswers(t *testing.T) {
 	session := newFakeSession(100)
-	dialer := &fakeDialer{sessions: []*fakeSession{session}, refusals: 3}
-	svc := NewService(Deps{
-		ChainID: testChain, Dialer: dialer, Addresses: &fakeAddresses{addresses: []string{addressA}},
-		Deposits: &fakeRecorder{calls: make(chan recorded, 1)}, ReconnectMin: time.Millisecond, ReconnectMax: 2 * time.Millisecond,
-	})
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		svc.Run(ctx)
-	}()
+	f := newListener(time.Hour, &fakeDialer{sessions: []*fakeSession{session}, refusals: 3})
+	f.start(t)
 
-	session.expect(t, "ledgers")
-	session.expect(t, "subscribe:"+addressA)
-	cancel()
-	<-done
-	if dialer.dials != 4 {
-		t.Fatalf("%d dials, want three refusals then the session", dialer.dials)
+	session.subscribed(t, addressA, addressB)
+	f.stop()
+	if f.dialer.dials != 4 {
+		t.Fatalf("%d dials, want three refusals then the session", f.dialer.dials)
 	}
 }
 
