@@ -541,6 +541,13 @@ func TestExecute_Linked_LegCommitsGasSeedAndSweepTogether(t *testing.T) {
 	if fixture.txRepo.created[0].TxType != models.TxTypeGasSeed || fixture.txRepo.created[1].TxType != models.TxTypeSweep {
 		t.Fatalf("order %s then %s", fixture.txRepo.created[0].TxType, fixture.txRepo.created[1].TxType)
 	}
+	// Only deposits have a position; the ORM writes log_index as set, so the outbound
+	// rows set the value the column always held for them.
+	for _, row := range fixture.txRepo.created {
+		if row.LogIndex != models.TransactionLogIndexNone {
+			t.Fatalf("%s row log_index %d, want %d", row.TxType, row.LogIndex, models.TransactionLogIndexNone)
+		}
+	}
 }
 
 // requireOnlyGasSeedRow asserts the leg's database transaction rolled back: the
@@ -1138,10 +1145,10 @@ func (f *fakeWebhookEventRepo) MarkFailed(_ context.Context, eventID, errMsg str
 func (f *fakeWebhookEventRepo) ClaimStaleForRedispatch(context.Context, time.Duration, int) ([]models.WebhookEvent, error) {
 	return nil, nil
 }
-func (f *fakeWebhookEventRepo) FindForRedelivery(context.Context, uuid.UUID, time.Time, time.Time, []string, int) ([]uuid.UUID, error) {
+func (f *fakeWebhookEventRepo) FindForRedelivery(context.Context, uuid.UUID, uuid.UUID, time.Time, time.Time, []string, int) ([]uuid.UUID, error) {
 	return nil, nil
 }
-func (f *fakeWebhookEventRepo) RequeueForRedelivery(context.Context, uuid.UUID, []uuid.UUID, time.Time, time.Time) ([]models.WebhookEvent, error) {
+func (f *fakeWebhookEventRepo) RequeueForRedelivery(context.Context, uuid.UUID, uuid.UUID, []uuid.UUID, time.Time, time.Time) ([]models.WebhookEvent, error) {
 	return nil, nil
 }
 

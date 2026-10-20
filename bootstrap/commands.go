@@ -20,6 +20,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/repositories/chaincatalog"
 	"github.com/macrowallets/waas/app/services/activity"
+	"github.com/macrowallets/waas/app/services/balanceaudit"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	"github.com/macrowallets/waas/app/services/chains"
@@ -124,6 +125,12 @@ func Commands() []console.Command {
 		})),
 		commands.NewTransactionsBackfillFees(deposits, registry),
 		commands.NewDepositsVerifyReceipts(deposits),
+		// Read-only and not scheduled: run it daily from the host's scheduler if wanted.
+		commands.NewDepositsAuditBalances(balanceaudit.NewService(balanceaudit.Deps{
+			Chains:    registry,
+			Addresses: container.MustMake[*repositories.AddressRepository](),
+			Ledger:    container.MustMake[*repositories.TransactionRepository](),
+		})),
 		commands.NewWithdrawalsReconcile(deposits),
 		commands.NewIngestSubscribe(container.MustMake[*ingestsubscription.Service]()),
 		commands.NewIngestSubscriptions(container.MustMake[*ingestsubscription.Service]()),

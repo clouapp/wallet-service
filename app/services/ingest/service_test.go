@@ -372,6 +372,7 @@ func (f *ingestTxRepo) ClaimDepositPosition(context.Context, uuid.UUID, int) (bo
 	return false, nil
 }
 func (f *ingestTxRepo) LockTransactionDeposits(context.Context, string, string) error { return nil }
+func (f *ingestTxRepo) FillDepositBlockHash(context.Context, uuid.UUID, string) error { return nil }
 func (f *ingestTxRepo) Within(ctx context.Context, fn func(context.Context) error) error {
 	return fn(ctx)
 }
@@ -447,9 +448,9 @@ func (f *ingestWebhookEventRepo) MarkFailed(_ context.Context, eventID, errMsg s
 func (f *ingestWebhookEventRepo) ClaimStaleForRedispatch(context.Context, time.Duration, int) ([]models.WebhookEvent, error) {
 	return nil, nil
 }
-func (f *ingestWebhookEventRepo) FindForRedelivery(context.Context, uuid.UUID, time.Time, time.Time, []string, int) ([]uuid.UUID, error) {
+func (f *ingestWebhookEventRepo) FindForRedelivery(context.Context, uuid.UUID, uuid.UUID, time.Time, time.Time, []string, int) ([]uuid.UUID, error) {
 	return nil, nil
 }
-func (f *ingestWebhookEventRepo) RequeueForRedelivery(context.Context, uuid.UUID, []uuid.UUID, time.Time, time.Time) ([]models.WebhookEvent, error) {
+func (f *ingestWebhookEventRepo) RequeueForRedelivery(context.Context, uuid.UUID, uuid.UUID, []uuid.UUID, time.Time, time.Time) ([]models.WebhookEvent, error) {
 	return nil, nil
 }

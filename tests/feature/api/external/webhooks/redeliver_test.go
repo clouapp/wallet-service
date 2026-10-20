@@ -34,8 +34,14 @@ func (s *WebhooksControllerTestSuite) accountWebhook(token ctltestutil.Token) uu
 	return created.ID
 }
 
-// deliveredEvent stores an event of webhookID delivered createdAgo ago.
-func (s *WebhooksControllerTestSuite) deliveredEvent(webhookID uuid.UUID, eventType string, createdAgo time.Duration) uuid.UUID {
+// accountWallet inserts a wallet of the account.
+func (s *WebhooksControllerTestSuite) accountWallet(accountID uuid.UUID) uuid.UUID {
+	return fixtures.InsertWalletWithAccount(s.T(), "eth", &accountID).ID
+}
+
+// deliveredEvent stores an event of webhookID about walletID, delivered createdAgo
+// ago. The payload names the wallet the way an event without a transaction does.
+func (s *WebhooksControllerTestSuite) deliveredEvent(webhookID, walletID uuid.UUID, eventType string, createdAgo time.Duration) uuid.UUID {
 	id := uuid.New()
 	subject := uuid.NewString()
 	deliveredAt := time.Now().UTC()
@@ -44,7 +50,7 @@ func (s *WebhooksControllerTestSuite) deliveredEvent(webhookID uuid.UUID, eventT
 		WebhookConfigID: &webhookID,
 		SubjectID:       &subject,
 		EventType:       eventType,
-		Payload:         `{"type":"` + eventType + `"}`,
+		Payload:         `{"type":"` + eventType + `","data":{"wallet_id":"` + walletID.String() + `"}}`,
 		DeliveryURL:     "https://example.com/webhook",
 		DeliveryStatus:  models.WebhookDeliveryDelivered,
 		Attempts:        1,
@@ -77,10 +83,10 @@ func (s *WebhooksControllerTestSuite) assertRedelivery(resp interface {
 
 func (s *WebhooksControllerTestSuite) TestRedeliver_Webhook_RequeuesTheEventsItNames() {
 	testutil.SeededTestDB(s.T())
-	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
+	accountID, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	token := ctltestutil.Token{Bearer: bearer}
 	webhookID := s.accountWebhook(token)
-	eventID := s.deliveredEvent(webhookID, "deposit.confirmed", time.Hour)
+	eventID := s.deliveredEvent(webhookID, s.accountWallet(accountID), "deposit.confirmed", time.Hour)
 
 	resp := s.External(s.redeliverPath(webhookID.String()), token).Post(`{"event_ids":["` + eventID.String() + `"]}`)
 	resp.AssertStatus(http.StatusAccepted)
@@ -94,11 +100,12 @@ func (s *WebhooksControllerTestSuite) TestRedeliver_Webhook_RequeuesTheEventsItN
 
 func (s *WebhooksControllerTestSuite) TestRedeliver_Webhook_RequeuesTheEventsOfAWindowAndType() {
 	testutil.SeededTestDB(s.T())
-	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
+	accountID, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	token := ctltestutil.Token{Bearer: bearer}
 	webhookID := s.accountWebhook(token)
-	deposit := s.deliveredEvent(webhookID, "deposit.confirmed", time.Hour)
-	withdrawal := s.deliveredEvent(webhookID, "withdrawal.confirmed", time.Hour)
+	wallet := s.accountWallet(accountID)
+	deposit := s.deliveredEvent(webhookID, wallet, "deposit.confirmed", time.Hour)
+	withdrawal := s.deliveredEvent(webhookID, wallet, "withdrawal.confirmed", time.Hour)
 	since := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 
 	resp := s.External(s.redeliverPath(webhookID.String()), token).Post(`{"since":"` + since + `","types":["deposit.confirmed"]}`)
@@ -110,10 +117,10 @@ func (s *WebhooksControllerTestSuite) TestRedeliver_Webhook_RequeuesTheEventsOfA
 
 func (s *WebhooksControllerTestSuite) TestRedeliver_Webhook_OfAnotherAccountIsNotFound() {
 	testutil.SeededTestDB(s.T())
-	_, ownerBearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
+	ownerAccount, ownerBearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	_, otherBearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
 	webhookID := s.accountWebhook(ctltestutil.Token{Bearer: ownerBearer})
-	eventID := s.deliveredEvent(webhookID, "deposit.confirmed", time.Hour)
+	eventID := s.deliveredEvent(webhookID, s.accountWallet(ownerAccount), "deposit.confirmed", time.Hour)
 
 	resp := s.External(s.redeliverPath(webhookID.String()), ctltestutil.Token{Bearer: otherBearer}).Post(`{"event_ids":["` + eventID.String() + `"]}`)
 	s.AssertError(resp, http.StatusNotFound, "not_found", "webhook not found")
@@ -127,6 +134,50 @@ func (s *WebhooksControllerTestSuite) TestRedeliver_Webhook_RefusesALegacyWebhoo
 
 	resp := s.External(s.redeliverPath(legacy.ID.String()), ctltestutil.Token{Bearer: bearer}).Post(`{"event_ids":["` + uuid.NewString() + `"]}`)
 	s.AssertError(resp, http.StatusForbidden, "forbidden", "claim the webhook with its secret before asking for a redelivery")
+}
+
+// claimLegacyWebhook claims a webhook created before ownership was recorded for the
+// token's account, proving possession with its secret.
+func (s *WebhooksControllerTestSuite) claimLegacyWebhook(token ctltestutil.Token, webhookID uuid.UUID, secret string) {
+	s.External("/api/v1/webhooks/"+webhookID.String(), token).Patch(`{"is_active":true,"secret":"` + secret + `"}`).AssertOk()
+}
+
+func (s *WebhooksControllerTestSuite) TestRedeliver_Webhook_AClaimedLegacyWebhookNeverRequeuesAnotherAccountsEvents() {
+	testutil.SeededTestDB(s.T())
+	accountID, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
+	otherAccount, _, _ := ctltestutil.SetupAPIAuth(s.T(), false)
+	token := ctltestutil.Token{Bearer: bearer}
+	legacy := fixtures.InsertWebhookConfig(s.T(), "https://legacy.test/hook", "legacy_secret", []string{"deposit.confirmed"})
+	own := s.deliveredEvent(legacy.ID, s.accountWallet(accountID), "deposit.confirmed", time.Hour)
+	foreign := s.deliveredEvent(legacy.ID, s.accountWallet(otherAccount), "deposit.confirmed", time.Hour)
+	unowned := s.deliveredEvent(legacy.ID, fixtures.InsertWallet(s.T(), "eth").ID, "deposit.confirmed", time.Hour)
+	s.claimLegacyWebhook(token, legacy.ID, "legacy_secret")
+
+	resp := s.External(s.redeliverPath(legacy.ID.String()), token).
+		Post(`{"event_ids":["` + own.String() + `","` + foreign.String() + `","` + unowned.String() + `"]}`)
+	resp.AssertStatus(http.StatusAccepted)
+	s.assertRedelivery(resp, legacy.ID, 1)
+	s.Equal(models.WebhookDeliveryPending, s.storedEvent(own).DeliveryStatus)
+	s.Equal(models.WebhookDeliveryDelivered, s.storedEvent(foreign).DeliveryStatus, "an event of another account's wallet stays as it was")
+	s.Equal(models.WebhookDeliveryDelivered, s.storedEvent(unowned).DeliveryStatus, "an event of a wallet without an account stays as it was")
+}
+
+func (s *WebhooksControllerTestSuite) TestRedeliver_Webhook_AClaimedLegacyWebhookSinceSelectsOnlyTheAccountsWallets() {
+	testutil.SeededTestDB(s.T())
+	accountID, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
+	otherAccount, _, _ := ctltestutil.SetupAPIAuth(s.T(), false)
+	token := ctltestutil.Token{Bearer: bearer}
+	legacy := fixtures.InsertWebhookConfig(s.T(), "https://legacy.test/hook", "legacy_secret", []string{"deposit.confirmed"})
+	own := s.deliveredEvent(legacy.ID, s.accountWallet(accountID), "deposit.confirmed", time.Hour)
+	foreign := s.deliveredEvent(legacy.ID, s.accountWallet(otherAccount), "deposit.confirmed", time.Hour)
+	s.claimLegacyWebhook(token, legacy.ID, "legacy_secret")
+	since := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+
+	resp := s.External(s.redeliverPath(legacy.ID.String()), token).Post(`{"since":"` + since + `"}`)
+	resp.AssertStatus(http.StatusAccepted)
+	s.assertRedelivery(resp, legacy.ID, 1)
+	s.Equal(models.WebhookDeliveryPending, s.storedEvent(own).DeliveryStatus)
+	s.Equal(models.WebhookDeliveryDelivered, s.storedEvent(foreign).DeliveryStatus)
 }
 
 func (s *WebhooksControllerTestSuite) TestRedeliver_Webhook_RefusesAnInactiveWebhook() {

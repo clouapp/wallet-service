@@ -265,15 +265,64 @@ func TestParse_Payload_RefusesABodyThatIsNotAnEvent(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestParse_Payload_AnInternalTransferIsTheNativeValueOfItsTransaction(t *testing.T) {
-	internal := `{"blockNum":"0x10","hash":"0xbatch","fromAddress":"0xcontract","toAddress":"0xto","value":0.5,"asset":"ETH","category":"internal",` +
-		`"rawContract":{"rawValue":"0x6f05b59d3b20000","address":"","decimals":18},"typeTraceAddress":"CALL_0_1"}`
+func internalActivity(to, rawValue, traceAddress string) string {
+	trace := ""
+	if traceAddress != "" {
+		trace = `,"typeTraceAddress":"` + traceAddress + `"`
+	}
+	return `{"blockNum":"0x10","hash":"0xbatch","fromAddress":"0xdisperse","toAddress":"` + to + `","value":0.5,"asset":"ETH","category":"internal",` +
+		`"rawContract":{"rawValue":"` + rawValue + `","address":"","decimals":18}` + trace + `}`
+}
 
-	transfers, err := NewAlchemyProvider("test-key").ParsePayload(activityPayload(internal))
+func TestParse_Payload_GivesEachInternalTransferAPositionOfItsOwn(t *testing.T) {
+	payload := activityPayload(
+		internalActivity("0xalice", "0x6f05b59d3b20000", "call_0_1"),
+		internalActivity("0xbob", "0x6f05b59d3b20000", "call_0_2"),
+		`{"blockNum":"0x10","hash":"0xbatch","fromAddress":"0xpayer","toAddress":"0xcarol","value":1,"asset":"ETH","category":"external","rawContract":{"rawValue":"0xde0b6b3a7640000","address":"","decimals":18}}`,
+	)
+
+	transfers, err := NewAlchemyProvider("test-key").ParsePayload(payload)
+	require.NoError(t, err)
+	require.Len(t, transfers, 3)
+
+	alice, bob, carol := transfers[0].LogIndex, transfers[1].LogIndex, transfers[2].LogIndex
+	assert.Equal(t, types.NativeValuePosition, carol, "the transaction's own value")
+	assert.Less(t, alice, types.NativeValuePosition, "below the native value position, which the scanner reports")
+	assert.Less(t, bob, types.NativeValuePosition)
+	assert.NotEqual(t, alice, bob, "a batch payout pays each address its own deposit")
+	assert.Nil(t, transfers[0].Token)
+
+	again, err := NewAlchemyProvider("test-key").ParsePayload(payload)
+	require.NoError(t, err)
+	assert.Equal(t, alice, again[0].LogIndex, "a redelivery numbers it alike")
+	assert.Equal(t, -2-int(fnv32a("call_0_1")%(1<<30)), alice)
+}
+
+func TestParse_Payload_SkipsAnInternalTransferWithoutItsTraceAddress(t *testing.T) {
+	transfers, err := NewAlchemyProvider("test-key").ParsePayload(activityPayload(internalActivity("0xalice", "0x1", ""), usdcActivityAtLogZero))
+	require.NoError(t, err)
+	require.Len(t, transfers, 1, "without a trace address it would take another transfer's position")
+	assert.Equal(t, "USDC", transfers[0].Asset)
+}
+
+func TestParse_Payload_SkipsATransferARemovedLogCarries(t *testing.T) {
+	removed := `{"blockNum":"0x10","hash":"0xbatch","fromAddress":"0xfrom","toAddress":"0xto","value":1,"asset":"USDC","category":"token",` +
+		`"rawContract":{"rawValue":"0xf4240","address":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","decimals":6},"log":{"logIndex":"0x1","blockHash":"0xorphaned","removed":true}}`
+
+	transfers, err := NewAlchemyProvider("test-key").ParsePayload(activityPayload(removed, usdcActivityAtLogZero))
+	require.NoError(t, err)
+	require.Len(t, transfers, 1, "a log of a block reorganized away moved nothing")
+	assert.Equal(t, 0, transfers[0].LogIndex)
+}
+
+func TestParse_Payload_ReadsTheERC20CategoryAsAToken(t *testing.T) {
+	erc20 := strings.Replace(usdcActivityAtLogZero, `"category":"token"`, `"category":"erc20"`, 1)
+
+	transfers, err := NewAlchemyProvider("test-key").ParsePayload(activityPayload(erc20))
 	require.NoError(t, err)
 	require.Len(t, transfers, 1)
-	assert.Equal(t, types.NativeValuePosition, transfers[0].LogIndex)
-	assert.Nil(t, transfers[0].Token)
+	require.NotNil(t, transfers[0].Token)
+	assert.Equal(t, 0, transfers[0].LogIndex)
 }
 
 func TestParse_Payload_LeavesOutNFTTransfers(t *testing.T) {

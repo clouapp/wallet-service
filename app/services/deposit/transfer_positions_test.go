@@ -437,3 +437,121 @@ func TestScan_Block_RecordsTheTwinOutputThePushLeftOut(t *testing.T) {
 	assert.Equal(t, models.TxSourceDepositIngest, rows[0].Source)
 	assert.Equal(t, models.TxSourceChain, rows[1].Source)
 }
+
+// moveToBlock is what the reorganization check does with a deposit whose
+// transaction was mined again: the row takes the new block and keeps its log index.
+func moveToBlock(t *testing.T, row models.Transaction, number uint64, hash string) {
+	t.Helper()
+	_, err := facades.Orm().Query().Model(&models.Transaction{}).Where("id", row.ID).
+		Update(map[string]any{"block_number": number, "block_hash": hash})
+	require.NoError(t, err)
+}
+
+// A deposit moved to the block its transaction was mined in again keeps the log index
+// of the old block; a scan of the new block, where the Transfer has another log index,
+// is the same transfer.
+func TestScan_Block_ADepositMovedToItsNewBlockIsNotRecordedAgainByAScanOfThatBlock(t *testing.T) {
+	for name, newHeight := range map[string]uint64{"competing block at the same height": positionsBlock, "mined again later": positionsBlock + 1} {
+		t.Run(name, func(t *testing.T) {
+			f := newPositionsFixture(t, positionsChain, models.NativeETH)
+			alice := f.watch(t, positionsChain, "0xalice")
+			f.blocks[positionsBlock] = []types.DetectedTransfer{tokenLog(alice.Address, 10_000_000, 3)}
+			require.Equal(t, 1, f.scan(t, positionsChain, positionsBlock))
+			rows := depositsOf(t, positionsChain, positionsTx)
+			require.Len(t, rows, 1)
+
+			moveToBlock(t, rows[0], newHeight, "0xnewblock")
+			again := tokenLog(alice.Address, 10_000_000, 12)
+			again.BlockNumber, again.BlockHash = newHeight, "0xnewblock"
+			f.blocks[positionsBlock] = nil
+			f.blocks[newHeight] = []types.DetectedTransfer{again}
+
+			assert.Equal(t, 0, f.scan(t, positionsChain, newHeight))
+			recorded, err := f.svc.ScanTransaction(context.Background(), positionsChain, positionsTx)
+			require.NoError(t, err)
+			assert.Equal(t, 0, recorded)
+			assert.Len(t, depositsOf(t, positionsChain, positionsTx), 1, "one transfer, one deposit")
+		})
+	}
+}
+
+// An old row the one-per-transaction rule kept for a token transfer, beside a
+// native value it left out: one rescan records the native value too.
+func TestScan_Block_OneRescanMovesAnOldTokenRowAndRecordsTheNativeValue(t *testing.T) {
+	f := newPositionsFixture(t, positionsChain, models.NativeETH)
+	alice := f.watch(t, positionsChain, "0xalice")
+	bob := f.watch(t, positionsChain, "0xbob")
+	native := types.DetectedTransfer{TxHash: positionsTx, BlockNumber: positionsBlock, BlockHash: positionsBlockHash,
+		From: "0xpayer", To: bob.Address, Amount: big.NewInt(7_000), Asset: models.NativeETH, LogIndex: types.NativeValuePosition}
+	token := tokenLog(alice.Address, 10_000_000, 3)
+	old := insertScannerRowBeforePositions(t, alice, token)
+	f.blocks[positionsBlock] = []types.DetectedTransfer{native, token}
+
+	assert.Equal(t, 1, f.scan(t, positionsChain, positionsBlock), "the native value is recorded on the first rescan")
+
+	rows := depositsOf(t, positionsChain, positionsTx)
+	require.Len(t, rows, 2)
+	assert.Equal(t, bob.Address, rows[0].ToAddress)
+	assert.Equal(t, types.NativeValuePosition, rows[0].LogIndex)
+	assert.Equal(t, old.ID, rows[1].ID)
+	assert.Equal(t, 3, rows[1].LogIndex)
+}
+
+// A pushed native deposit has no block hash (Alchemy sends none without a log); the
+// scanner's sight of it writes the hash the reorganization check reads.
+func TestScan_Block_FillsTheBlockHashOfAPushedDeposit(t *testing.T) {
+	f := newPositionsFixture(t, positionsChain, models.NativeETH)
+	bob := f.watch(t, positionsChain, "0xbob")
+	require.NoError(t, f.newIngestService().Ingest(context.Background(), ingest.InboundEvent{ChainID: positionsChain, Transfers: []providers.InboundTransfer{
+		{TxHash: positionsTx, BlockNumber: positionsBlock, From: "0xpayer", To: bob.Address, Amount: big.NewInt(7_000), Asset: "ETH", LogIndex: types.NativeValuePosition},
+	}}))
+	f.blocks[positionsBlock] = []types.DetectedTransfer{{TxHash: positionsTx, BlockNumber: positionsBlock, BlockHash: positionsBlockHash,
+		From: "0xpayer", To: bob.Address, Amount: big.NewInt(7_000), Asset: models.NativeETH, LogIndex: types.NativeValuePosition}}
+
+	assert.Equal(t, 0, f.scan(t, positionsChain, positionsBlock))
+
+	rows := depositsOf(t, positionsChain, positionsTx)
+	require.Len(t, rows, 1)
+	assert.Equal(t, positionsBlockHash, rows[0].BlockHash)
+}
+
+// Internal transfers (native value a contract call sends) have positions of their
+// own, below the native value position, as the Alchemy adapter gives them.
+func pushedNative(to string, amount int64, position int) providers.InboundTransfer {
+	return providers.InboundTransfer{TxHash: positionsTx, BlockNumber: positionsBlock, From: "0xdisperse", To: to,
+		Amount: big.NewInt(amount), Asset: "ETH", LogIndex: position}
+}
+
+func TestPush_Of_ABatchPayoutRecordsEachInternalTransfer(t *testing.T) {
+	f := newPositionsFixture(t, positionsChain, models.NativeETH)
+	alice := f.watch(t, positionsChain, "0xalice")
+	bob := f.watch(t, positionsChain, "0xbob")
+
+	require.NoError(t, f.newIngestService().Ingest(context.Background(), ingest.InboundEvent{ChainID: positionsChain, Transfers: []providers.InboundTransfer{
+		pushedNative(alice.Address, 1_000, -7_001), pushedNative(bob.Address, 2_000, -91_244),
+	}}))
+
+	assert.Len(t, depositsOf(t, positionsChain, positionsTx), 2, "two users paid by one batch transaction")
+}
+
+func TestPush_And_Scan_RecordTheExternalAndTheInternalTransferOfOneTransaction(t *testing.T) {
+	for name, internalFirst := range map[string]bool{"external first": false, "internal first": true} {
+		t.Run(name, func(t *testing.T) {
+			f := newPositionsFixture(t, positionsChain, models.NativeETH)
+			alice := f.watch(t, positionsChain, "0xalice")
+			bob := f.watch(t, positionsChain, "0xbob")
+			external := pushedNative(bob.Address, 7_000, types.NativeValuePosition)
+			internal := pushedNative(alice.Address, 9_000, -7_001)
+			push := []providers.InboundTransfer{external, internal}
+			if internalFirst {
+				push = []providers.InboundTransfer{internal, external}
+			}
+			require.NoError(t, f.newIngestService().Ingest(context.Background(), ingest.InboundEvent{ChainID: positionsChain, Transfers: push}))
+			f.blocks[positionsBlock] = []types.DetectedTransfer{{TxHash: positionsTx, BlockNumber: positionsBlock, BlockHash: positionsBlockHash,
+				From: "0xpayer", To: bob.Address, Amount: big.NewInt(7_000), Asset: models.NativeETH, LogIndex: types.NativeValuePosition}}
+
+			assert.Equal(t, 0, f.scan(t, positionsChain, positionsBlock))
+			assert.Len(t, depositsOf(t, positionsChain, positionsTx), 2, "the scanner's native value is the pushed external transfer")
+		})
+	}
+}

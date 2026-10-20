@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 
@@ -376,6 +377,11 @@ func (s *Service) recordTransfers(ctx context.Context, chainID string, adapter t
 		failures = append(failures, err)
 	}
 	siblings := transfersByTx(deposits)
+	// Positioned transfers first: one of them may claim the old row of its transaction
+	// (log_index -1) that the native value position would otherwise find taken.
+	sort.SliceStable(deposits, func(i, j int) bool {
+		return deposits[i].LogIndex != types.NativeValuePosition && deposits[j].LogIndex == types.NativeValuePosition
+	})
 	for _, transfer := range deposits {
 		created, err := s.processTransfer(ctx, chainID, adapter, transfer, siblings[transfer.TxHash])
 		if err != nil {

@@ -23,6 +23,8 @@ type memoryStore struct {
 	txMu      sync.Mutex
 	locks     int
 	lockErr   error
+	fills     int
+	fillErr   error
 	mu        sync.Mutex
 	rows      []models.Transaction
 	findErr   error
@@ -91,6 +93,18 @@ func (m *memoryStore) ClaimDepositPosition(_ context.Context, id uuid.UUID, posi
 		return true, nil
 	}
 	return false, nil
+}
+
+func (m *memoryStore) FillDepositBlockHash(_ context.Context, id uuid.UUID, blockHash string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.fills++
+	for i := range m.rows {
+		if m.rows[i].ID == id && m.rows[i].BlockHash == "" {
+			m.rows[i].BlockHash = blockHash
+		}
+	}
+	return m.fillErr
 }
 
 func (m *memoryStore) Create(_ context.Context, tx *models.Transaction) error {
@@ -496,4 +510,105 @@ func TestRecord_Concurrent_ScansOfOneTransferKeepOneRow(t *testing.T) {
 	}
 	assert.Equal(t, 1, created)
 	assert.Equal(t, 1, store.count())
+}
+
+// recordWith records row with the transfers its source reports for the transaction.
+func recordWith(t *testing.T, store *memoryStore, row *models.Transaction, siblings ...Transfer) Outcome {
+	t.Helper()
+	if siblings == nil {
+		siblings = []Transfer{}
+	}
+	outcome, err := Record(context.Background(), store, row, append(siblings, TransferOf(*row)))
+	require.NoError(t, err)
+	return outcome
+}
+
+// The tracker moved a deposit to the block its transaction was mined in again,
+// keeping the log index of the old block; a scan of the new block finds the
+// transfer at another log index, and none of the scan's transfers is at the old one.
+func TestRecord_Skips_ATransferThisSourceRecordedAtAPositionItNoLongerReports(t *testing.T) {
+	store := &memoryStore{}
+	moved := deposit(models.TxSourceChain, 3, "0xalice", testUSDT, "10")
+	moved.BlockNumber, moved.BlockHash = 101, "0xcanonical"
+	store.rows = append(store.rows, *moved)
+
+	again := deposit(models.TxSourceChain, 12, "0xalice", testUSDT, "10")
+	again.BlockNumber, again.BlockHash = 101, "0xcanonical"
+	assert.Equal(t, OtherPosition, recordWith(t, store, again))
+	assert.Equal(t, 1, store.count())
+}
+
+func TestRecord_OtherPosition_NeedsTheSourcesTransfers(t *testing.T) {
+	store := &memoryStore{}
+	require.Equal(t, Created, record(t, store, deposit(models.TxSourceChain, 3, "0xalice", testUSDT, "10")))
+
+	// Without the source's transfers a second identical transfer cannot be told
+	// from the same one moved: it is recorded, as a caller that reports none asks.
+	assert.Equal(t, Created, record(t, store, deposit(models.TxSourceChain, 12, "0xalice", testUSDT, "10")))
+}
+
+func TestRecord_OtherPosition_KeepsATwinTheSourceReports(t *testing.T) {
+	store := &memoryStore{}
+	require.Equal(t, Created, record(t, store, deposit(models.TxSourceChain, 3, "0xalice", testUSDT, "10")))
+
+	twin := deposit(models.TxSourceChain, 12, "0xalice", testUSDT, "10")
+	assert.Equal(t, Created, recordWith(t, store, twin, Transfer{Position: 3, To: "0xalice", Contract: testUSDT, Amount: "10"}))
+	assert.Equal(t, 2, store.count())
+}
+
+func TestRecord_Fills_TheBlockHashARecordedRowLacks(t *testing.T) {
+	for name, scanned := range map[string]*models.Transaction{
+		"same position": deposit(models.TxSourceChain, types.NativeValuePosition, "0xalice", "", "7000"),
+		"other source":  deposit(models.TxSourceChain, 5, "0xalice", "", "7000"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := &memoryStore{}
+			pushed := deposit(models.TxSourceDepositIngest, types.NativeValuePosition, "0xalice", "", "7000")
+			pushed.BlockHash = "" // Alchemy sends no block hash for a transfer without a log
+			store.rows = append(store.rows, *pushed)
+
+			outcome := recordWith(t, store, scanned)
+
+			assert.NotEqual(t, Created, outcome)
+			assert.Equal(t, testBlockHash, store.row(pushed.ID).BlockHash, "the reorganization check needs the hash")
+		})
+	}
+}
+
+func TestRecord_Fills_NoHashOfAnotherHeightAndKeepsAHashThatIsThere(t *testing.T) {
+	store := &memoryStore{}
+	elsewhere := deposit(models.TxSourceDepositIngest, types.NativeValuePosition, "0xalice", "", "7000")
+	elsewhere.BlockHash, elsewhere.BlockNumber = "", 99
+	store.rows = append(store.rows, *elsewhere)
+
+	recordWith(t, store, deposit(models.TxSourceChain, types.NativeValuePosition, "0xalice", "", "7000"))
+
+	assert.Empty(t, store.row(elsewhere.ID).BlockHash, "a hash of another height is not this row's")
+	assert.Zero(t, store.fills)
+
+	pushedTwice := &memoryStore{}
+	first := deposit(models.TxSourceDepositIngest, types.NativeValuePosition, "0xalice", "", "7000")
+	first.BlockHash = ""
+	pushedTwice.rows = append(pushedTwice.rows, *first)
+	again := deposit(models.TxSourceDepositIngest, types.NativeValuePosition, "0xalice", "", "7000")
+	again.BlockHash = ""
+	recordWith(t, pushedTwice, again)
+	assert.Zero(t, pushedTwice.fills, "a source without the hash has none to write")
+
+	kept := &memoryStore{}
+	hashed := deposit(models.TxSourceChain, 3, "0xalice", testUSDT, "10")
+	kept.rows = append(kept.rows, *hashed)
+	recordWith(t, kept, deposit(models.TxSourceChain, 3, "0xalice", testUSDT, "10"))
+	assert.Zero(t, kept.fills)
+}
+
+func TestRecord_Returns_AFailedHashFill(t *testing.T) {
+	boom := errors.New("connection refused")
+	store := &memoryStore{fillErr: boom}
+	pushed := deposit(models.TxSourceDepositIngest, types.NativeValuePosition, "0xalice", "", "7000")
+	pushed.BlockHash = ""
+	store.rows = append(store.rows, *pushed)
+
+	_, err := Record(context.Background(), store, deposit(models.TxSourceChain, types.NativeValuePosition, "0xalice", "", "7000"), nil)
+	assert.ErrorIs(t, err, boom)
 }
