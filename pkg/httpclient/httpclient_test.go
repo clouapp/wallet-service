@@ -257,3 +257,41 @@ func TestNew_Rejects_ANonPositiveTimeout(t *testing.T) {
 		}()
 	}
 }
+
+func TestNewClientWithoutRedirects_HandsBackTheRedirectInsteadOfFollowingIt(t *testing.T) {
+	var followed atomic.Bool
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		followed.Store(true)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(target.Close)
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(redirect.Close)
+
+	resp, err := NewClientWithoutRedirects(time.Second).Do(context.Background(), Request{
+		Method:  MethodPost,
+		URL:     redirect.URL,
+		Header:  map[string]string{"X-Signed": "value"},
+		Body:    []byte("{}"),
+		HasBody: true,
+	})
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	if resp.StatusCode != http.StatusTemporaryRedirect || resp.Header.Get("Location") != target.URL {
+		t.Fatalf("status %d location %q; want the redirect itself", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	if followed.Load() {
+		t.Fatal("the redirect was followed, with the request's headers")
+	}
+}
+
+func TestBuildFailure_IsABuildPhaseErrorThatKeepsItsCause(t *testing.T) {
+	cause := errors.New("signature missing")
+	err := BuildFailure(cause)
+	if !IsBuild(err) || IsRoundtrip(err) || !errors.Is(err, cause) || err.Error() != cause.Error() {
+		t.Fatalf("BuildFailure(%v) = %v", cause, err)
+	}
+}

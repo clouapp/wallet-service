@@ -198,7 +198,16 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   rest; it is not the MPC share envelope. One write format, `settings.Seal` (`enc:v1:` +
   the Crypt envelope); `settings.OpenStored` also opens the bare envelope that older
   `chains.rpc_url` rows hold. — guarded by `app/services/settings/seal_legacy_test.go`.
-  **KNOWN VIOLATION** S11: `webhook_configs.secret` is plain text.
+- `webhook_configs.secret` is sealed the same way (`enc:v1:`; migration 540 sealed the rows
+  that were stored in the clear, and its `Down` opens them again). `WebhookConfigRepository`
+  seals on write and opens on every read, failing closed on a value without the marker;
+  only delivery reads it, to sign. No response, queue message or log carries it: the
+  secret is given by the client on create (and to claim a legacy webhook) and never
+  returned. — guarded by `TestWebhook_Secret_IsSealedAtRestAndSignaturesUseThePlaintext`,
+  `TestWebhook_Config_WithAPlaintextSecretIsRefusedOnRead` (`app/services/webhook`),
+  `TestSeal_Webhook_ConfigSecrets*` and `TestAppendix_B330_*` (`tests/migrations`),
+  `TestCreate_Webhook_Success` and `TestList_Webhooks_*` (`tests/feature/api/external/webhooks`)
+  and `TestEnqueue_Event_QueuePayloadCarriesNoSecret`.
 
 ### 7. Queues and workers
 
@@ -212,6 +221,22 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   configured, so a message is never drained twice. — guarded by
   `TestStart_Skips_OutboxWhenAQueueDelivers` (`app/services/localworkers`) and
   `TestOne_Consumer_PerQueue` (`tests/architecture`).
+- Every webhook delivery is signed when it is posted (`webhook.postSignedWebhook`, the one path
+  of the queue worker, the poller, the local outbox, a re-dispatch, a redelivery and
+  `webhook.test`), under the config's secret: `X-Vault-Timestamp` is the unix second of that
+  send, `X-Vault-Signature-V2` is `t=<that second>,v1=<hex HMAC-SHA256 of "<t>.<raw body>">`,
+  and the legacy `X-Vault-Signature` (hex HMAC-SHA256 of the body alone) is still sent while
+  receivers move to V2. The time is read from `webhook.Deps.Now` (`time.Now` when nil).
+  Nothing stores or queues a signature or a timestamp, so every retry, re-dispatch and
+  redelivery carries the time of its own send and a receiver can refuse a delivery whose `t` is
+  too far from its clock (a replay). The delivery client never follows a redirect
+  (`httpclient.NewClientWithoutRedirects`), so the signed headers reach only the config's URL,
+  and only a 2xx answer marks an event delivered: a 3xx is a failed attempt like a 4xx or a 5xx.
+  A delivery refused before the POST (no timestamped signature) is a build error and not an
+  attempt. — guarded by `TestDeliver_Signature_*`, `TestDeliver_Redirect_IsAFailedAttemptNotADelivery`,
+  `TestRedeliver_Signature_AnOldEventIsSignedWithTheTimeOfTheResend`, `TestSendTest_*`
+  (`app/services/webhook`), `TestPost_*` (`app/adapters/webhook/delivery`) and
+  `TestNewClientWithoutRedirects_*` (`pkg/httpclient`). Receiver side: `docs/vault-summary-v2.md`.
 - Webhook delivery is at least once. An event is a `webhook_events` row (one per config, type
   and subject: the partial unique index of migration 260) written before the queue send, and
   receivers deduplicate on `X-Vault-Delivery-Id` (the row id), which every resend keeps. Three
@@ -238,9 +263,16 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   - **On request.** `POST /api/v1/webhooks/{webhookId}/redeliver` (`webhooks.write`) requeues
     `event_ids`, or the events created from `since` to `until` of `types`, of one webhook the
     token's account owns: only events of the last 7 days, at most 500 per request, an event
-    pending and queued in the last minute left alone. — guarded by
-    `tests/feature/api/external/webhooks` (`TestRedeliver_Webhook_*`) and `TestRedeliver_*`
-    (`app/services/webhook`).
+    pending and queued in the last minute left alone. Only events about a wallet of that
+    account are requeued (the wallet of the event's transaction, or `data.wallet_id` of its
+    payload for an event without one; an event whose wallet cannot be told is left alone): a
+    legacy webhook received every account's events before it was claimed, and its new owner
+    never gets another account's events sent again. Migration 660 indexes what this reads
+    (`webhook_events (webhook_config_id, created_at)`, `wallets (account_id)`). — guarded by
+    `tests/feature/api/external/webhooks` (`TestRedeliver_Webhook_*`, among them
+    `TestRedeliver_Webhook_AClaimedLegacyWebhook*`), `TestRedeliver_*` (`app/services/webhook`)
+    `TestWebhookEventRepository_*Redelivery_*AccountsWallets` (`tests/feature/repositories`) and
+    `TestRedelivery_Indexes_CoverTheConfigWindowAndTheAccountWallets` (`tests/migrations`).
 - Deposit events: `deposit.pending`, `deposit.confirmed` and `deposit.failed` are sent once per
   deposit, with the transaction id as subject (the key the backfill looks up).
   `deposit.confirming` reports progress and may arrive several times, with increasing

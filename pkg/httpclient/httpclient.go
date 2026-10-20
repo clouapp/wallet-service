@@ -77,6 +77,18 @@ func NewClient(timeout time.Duration) *Client {
 	return Wrap(New(timeout))
 }
 
+// NewClientWithoutRedirects is NewClient for a request that must reach its URL and
+// nowhere else, such as a signed webhook: a 3xx answer is handed back as the
+// response instead of being followed, so the request's headers never go to the
+// Location it names.
+func NewClientWithoutRedirects(timeout time.Duration) *Client {
+	raw := New(timeout)
+	raw.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return Wrap(raw)
+}
+
 // Wrap adapts an existing client, including one from httptest.Server.Client.
 func Wrap(raw *http.Client) *Client {
 	if raw == nil {
@@ -173,6 +185,13 @@ func (c *Client) Do(ctx context.Context, call Request) (Response, error) {
 // ParseTime reads an HTTP-date, as Retry-After may send one.
 func ParseTime(value string) (time.Time, error) {
 	return http.ParseTime(value)
+}
+
+// BuildFailure marks err as a failure before anything was sent, the way Do
+// reports a request it could not build; IsBuild reports it. A caller that checks
+// its own input before Do uses it so its refusal reads like Do's.
+func BuildFailure(err error) error {
+	return phase("build", err)
 }
 
 // IsBuild reports a failure while constructing the request.

@@ -12,7 +12,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
@@ -38,15 +37,16 @@ func (testHTTPDelivery) Post(ctx context.Context, call SignedDelivery) (httpclie
 	if call.Timeout <= 0 {
 		return httpclient.Response{}, fmt.Errorf("webhook delivery: timeout is required")
 	}
-	return httpclient.NewClient(call.Timeout).Do(ctx, httpclient.Request{
+	return httpclient.NewClientWithoutRedirects(call.Timeout).Do(ctx, httpclient.Request{
 		Method: httpclient.MethodPost,
 		URL:    call.URL,
 		Header: map[string]string{
-			"Content-Type":        "application/json",
-			"X-Vault-Signature":   call.Signature,
-			"X-Vault-Event":       call.EventType,
-			"X-Vault-Delivery-Id": call.DeliveryID,
-			"X-Vault-Timestamp":   fmt.Sprintf("%d", time.Now().Unix()),
+			"Content-Type":         "application/json",
+			"X-Vault-Signature":    call.Signature,
+			"X-Vault-Signature-V2": call.SignatureV2,
+			"X-Vault-Event":        call.EventType,
+			"X-Vault-Delivery-Id":  call.DeliveryID,
+			"X-Vault-Timestamp":    fmt.Sprintf("%d", call.Timestamp),
 		},
 		Body:    call.Body,
 		HasBody: true,
