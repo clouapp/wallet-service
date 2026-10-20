@@ -156,7 +156,7 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 				continue
 			}
 			if block == 0 {
-				spend, settled := s.settleByNonceSpend(ctx, adapter, tx)
+				spend, settled := s.settleUnknownOutcome(ctx, adapter, tx)
 				switch {
 				case settled && !spend.Ours:
 					if s.failOnChain(ctx, adapter, tx, models.WithdrawalFailureNotLanded, 0) {
@@ -182,6 +182,7 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 				slog.Error("persist block number", "tx_id", tx.ID, "error", err)
 				continue
 			}
+			tx.RawPayload = s.forgetSignedBytes(ctx, tx)
 		}
 		confs := confirmationsAt(currentBlock, tx.BlockNumber)
 
@@ -275,6 +276,50 @@ func onChainFailureCode(result string) string {
 	return code
 }
 
+// settleUnknownOutcome settles, by positive proof, a transfer whose broadcast outcome
+// was unknown and that the node does not know by its hash: the transaction that
+// spent what it spends, its sender nonce (EVM, settleByNonceSpend) or its inputs
+// (Bitcoin family, settleByInputsSpend), is ours in a block, or another one and ours
+// can never land.
+func (s *Service) settleUnknownOutcome(ctx context.Context, adapter types.Chain, tx models.Transaction) (chain.NonceSpend, bool) {
+	if reader, ok := adapter.(chain.InputsSpendReader); ok {
+		return s.settleByInputsSpend(ctx, adapter, reader, tx)
+	}
+	return s.settleByNonceSpend(ctx, adapter, tx)
+}
+
+// settleByInputsSpend settles a Bitcoin-family transfer whose broadcast outcome was
+// unknown, in the shape of a nonce spend: found in a block on any provider
+// (chain.TransactionSearcher) or with its inputs spent by itself in a block, it is
+// ours in that block; every input spent by another transaction at the confirmation
+// depth means another one spent them and ours can never land. Only rows recorded
+// with broadcast_outcome unknown and spent_inputs are read; a row nothing proved
+// (its inputs unspent, a spend not deep enough, ours still in the mempool, a provider
+// that cannot say) stays pending for withdrawals:reconcile and is not asked again for
+// spendProofRetryAfter (kept in raw_payload).
+func (s *Service) settleByInputsSpend(ctx context.Context, adapter types.Chain, reader chain.InputsSpendReader, tx models.Transaction) (chain.NonceSpend, bool) {
+	inputs, ok := unknownOutcomeInputs(tx)
+	if !ok || s.now().Before(payloadUnixTime(tx, chain.SpendProofRetryAtPayloadKey)) {
+		return chain.NonceSpend{}, false
+	}
+	if block, err := searchTransactionBlock(ctx, adapter, tx.TxHash); err == nil && block > 0 {
+		return chain.NonceSpend{Spent: true, Ours: true, Block: block}, true
+	}
+	spend, err := reader.InputsSpend(ctx, s.inputsQueryOf(ctx, tx, inputs))
+	switch {
+	case err != nil:
+		slog.Warn("cannot read who spent the inputs of an unknown-outcome transfer; it stays pending (withdrawals:reconcile)",
+			"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "error", err)
+	case spend.Conflicted:
+		return chain.NonceSpend{Spent: true, Block: spend.Block}, true
+	case spend.Ours && spend.Block > 0:
+		s.recordCopy(ctx, tx, spend)
+		return chain.NonceSpend{Spent: true, Ours: true, Block: spend.Block}, true
+	}
+	s.recordPayloadValue(ctx, tx, chain.SpendProofRetryAtPayloadKey, s.now().Add(spendProofRetryAfter).Unix())
+	return chain.NonceSpend{}, false
+}
+
 // settleByNonceSpend settles, by positive proof, a transfer whose broadcast outcome
 // was unknown and that the node does not know by its hash (EVM): the transaction
 // that spent its sender nonce (kept in raw_payload with the head at the send) is
@@ -310,6 +355,10 @@ func (s *Service) settleByNonceSpend(ctx context.Context, adapter types.Chain, t
 // state to prove before it tries again.
 const nonceProofRetryAfter = time.Hour
 
+// spendProofRetryAfter is how long the tracker leaves a Bitcoin-family row its
+// inputs proved nothing about before it asks the providers again.
+const spendProofRetryAfter = 10 * time.Minute
+
 // nonceProof is what raw_payload keeps for settleByNonceSpend.
 type nonceProof struct {
 	nonce, head uint64
@@ -332,6 +381,69 @@ func unknownOutcomeProof(tx models.Transaction) (nonceProof, bool) {
 		return nonceProof{}, false
 	}
 	return proof, true
+}
+
+// inputsQueryOf is the inputs proof's question about tx: its hash, inputs, what it
+// pays, and how to tell another transfer of ours (a spender that is a copy of tx only
+// when it is none of our other rows).
+func (s *Service) inputsQueryOf(ctx context.Context, tx models.Transaction, inputs []string) chain.InputsQuery {
+	amount, ok := new(big.Int).SetString(strings.TrimSpace(tx.Amount), 10)
+	if !ok {
+		amount = nil
+	}
+	return chain.InputsQuery{TxHash: tx.TxHash, Inputs: inputs, To: tx.ToAddress, Amount: amount,
+		OwnTransfer: func(txID string) (bool, error) { return s.ownOtherTransfer(ctx, tx, txID) }}
+}
+
+// outboundTxTypes are the rows this service broadcast (isOutboundTxType).
+var outboundTxTypes = []string{models.TxTypeWithdrawal, models.TxTypeSweep, models.TxTypeGasSeed}
+
+// ownOtherTransfer reports whether txID is the hash of an outbound row of ours on
+// tx's chain other than tx: another withdrawal, sweep or gas seed.
+func (s *Service) ownOtherTransfer(ctx context.Context, tx models.Transaction, txID string) (bool, error) {
+	if strings.EqualFold(strings.TrimSpace(txID), strings.TrimSpace(tx.TxHash)) {
+		return false, nil
+	}
+	for _, txType := range outboundTxTypes {
+		count, err := s.txRepo.CountByChainAndTxHash(ctx, tx.Chain, txID, txType)
+		if err != nil {
+			return false, err
+		}
+		if count > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// recordCopy keeps on the row the transaction that carried it when it is a copy of
+// the signed one (a malleated or re-signed transaction paying the same).
+func (s *Service) recordCopy(ctx context.Context, tx models.Transaction, spend chain.InputsSpend) {
+	if spend.TxHash == "" || strings.EqualFold(spend.TxHash, tx.TxHash) {
+		return
+	}
+	slog.Warn("an unknown-outcome transfer landed as a copy paying the same", "tx_id", tx.ID, "tx_hash", tx.TxHash, "landed_as", spend.TxHash, "chain", tx.Chain)
+	s.recordPayloadValue(ctx, tx, chain.LandedAsPayloadKey, spend.TxHash)
+}
+
+// unknownOutcomeInputs reads the inputs of a Bitcoin-family row whose broadcast
+// outcome was unknown.
+func unknownOutcomeInputs(tx models.Transaction) ([]string, bool) {
+	if !isUnknownOutcome(tx) {
+		return nil, false
+	}
+	return spentInputsOf(tx)
+}
+
+// spentInputsOf reads the inputs raw_payload keeps (Bitcoin family).
+func spentInputsOf(tx models.Transaction) ([]string, bool) {
+	var payload struct {
+		Inputs []string `json:"spent_inputs"`
+	}
+	if err := json.Unmarshal([]byte(tx.RawPayload), &payload); err != nil || len(payload.Inputs) == 0 {
+		return nil, false
+	}
+	return payload.Inputs, true
 }
 
 // expiryWitnessGap is how long apart one endpoint alone must be seen not to know a
@@ -436,6 +548,33 @@ func (s *Service) editPayload(ctx context.Context, tx models.Transaction, set ma
 	}
 }
 
+// forgetSignedBytes drops the signed bytes a withdrawal row recorded before its send
+// keeps (sealed, for a same-key retry) once the chain settled it: in a block, or
+// failed on chain. Its send was taken, so a pending outcome becomes accepted. It
+// returns the payload the row now holds; a row without bytes is not written.
+func (s *Service) forgetSignedBytes(ctx context.Context, tx models.Transaction) string {
+	payload := map[string]any{}
+	if json.Unmarshal([]byte(tx.RawPayload), &payload) != nil {
+		return tx.RawPayload
+	}
+	if _, kept := payload[chain.SignedTxPayloadKey]; !kept {
+		return tx.RawPayload
+	}
+	delete(payload, chain.SignedTxPayloadKey)
+	if payload[chain.BroadcastOutcomePayloadKey] == chain.BroadcastOutcomePending {
+		payload[chain.BroadcastOutcomePayloadKey] = chain.BroadcastOutcomeAccepted
+	}
+	raw, err := json.Marshal(payload)
+	if err == nil {
+		err = s.txRepo.SetRawPayload(ctx, tx.ID, string(raw))
+	}
+	if err != nil {
+		slog.Error("drop the signed bytes of a settled transaction", "tx_id", tx.ID, "error", err)
+		return tx.RawPayload
+	}
+	return string(raw)
+}
+
 // lastValidBlockOf is the last valid block raw_payload keeps, 0 for none.
 func lastValidBlockOf(tx models.Transaction) uint64 {
 	return payloadUint64(tx, chain.LastValidBlockPayloadKey)
@@ -488,6 +627,7 @@ func (s *Service) failOnChain(ctx context.Context, adapter types.Chain, tx model
 		slog.Error("mark transaction failed", "tx_id", tx.ID, "error", err)
 		return false
 	}
+	s.forgetSignedBytes(ctx, tx)
 	slog.Warn("transaction failed on chain", "tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "failure_code", failureCode)
 	return true
 }

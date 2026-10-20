@@ -616,14 +616,15 @@ func TestFailover_Broadcast_AlreadyKnownOnTheNextEndpointIsASuccess(t *testing.T
 	}
 }
 
-func TestFailover_Broadcast_AlreadyKnownOnTheFirstEndpointStaysItsAnswer(t *testing.T) {
+func TestFailover_Broadcast_AlreadyKnownOnThePrimaryIsASuccessToo(t *testing.T) {
+	// A retry of bytes still in the primary's pool: the node holds them, so they were
+	// sent; reading it as a refusal would let a caller sign the payment again.
 	primary := newFakeNode(t, answers(rpcFailure(-32000, "already known")))
 	fallback := newFakeNode(t, answers(result(`"0xhash"`)))
 	client, _, _ := failoverClient(primary.URL(), fallback.URL())
 
 	err := client.Call(context.Background(), "eth_sendRawTransaction", nil, "0xraw")
-	var rpcErr *RPCError
-	if errors.Is(err, ErrBroadcastAlreadyKnown) || !errors.As(err, &rpcErr) || fallback.total() != 0 {
+	if !errors.Is(err, ErrBroadcastAlreadyKnown) || fallback.total() != 0 {
 		t.Fatalf("err = %v, fallback = %d", err, fallback.total())
 	}
 }
@@ -919,7 +920,7 @@ func TestFailover_Call_AContractRevertNeverMovesOnNorCountsAFailure(t *testing.T
 // sepoliaIdentityClient is failoverClient with fallbacks checked for Sepolia.
 func sepoliaIdentityClient(primary string, fallbacks ...string) *RPCClient {
 	client, _, _ := failoverClient(primary, fallbacks...)
-	client.identity, client.network = evmChainIDReader, "11155111"
+	client.identity, client.network = client.identityThrough(evmChainIDReader), "11155111"
 	return client
 }
 
@@ -1248,6 +1249,65 @@ func TestFailover_MissingHistoricalState_MovesOnWithoutCountingAFailure(t *testi
 	err := NewRPCClient(RPCClientDeps{URL: pruned.URL()}).Call(context.Background(), "eth_getTransactionCount", nil, "0xabc", "0x10")
 	assert.True(t, MissingState(err), "the caller can tell a missing state from an outage: %v", err)
 	assert.False(t, MissingState(errors.New("connection refused")))
+}
+
+func TestFailover_MissingState_OnACurrentReadIsAnEndpointFailure(t *testing.T) {
+	for _, tag := range []any{"latest", "pending", nil} {
+		broken := newFakeNode(t, answers(rpcFailure(-32000, "missing trie node 7c2f… (path ) state 0x… is not available")))
+		healthy := newFakeNode(t, answers(result(`"0x2a"`)))
+		client, _, _ := failoverClient(broken.URL(), healthy.URL())
+		params := []any{"0x1111111111111111111111111111111111111111"}
+		if tag != nil {
+			params = append(params, tag)
+		}
+
+		var count string
+		require.NoError(t, client.Call(context.Background(), "eth_getTransactionCount", &count, params...))
+		assert.Equal(t, 1, healthOf(client)[0].ConsecutiveFailures,
+			"tag %v: a node missing the state of the current block is broken, not short of history", tag)
+	}
+	for _, past := range []any{"0x10", map[string]any{"blockHash": "0xabc"}, map[string]any{"blockNumber": "0x10"}} {
+		pruned := newFakeNode(t, answers(rpcFailure(-32000, "missing trie node")))
+		archive := newFakeNode(t, answers(result(`"0x2a"`)))
+		client, _, _ := failoverClient(pruned.URL(), archive.URL())
+		require.NoError(t, client.Call(context.Background(), "eth_getTransactionCount", nil, "0xabc", past))
+		assert.Zero(t, healthOf(client)[0].ConsecutiveFailures, "block %v: a past block's state is history", past)
+	}
+}
+
+func TestFailover_MissingState_FindsTheBlockOfEveryReadShape(t *testing.T) {
+	const address = "0x1111111111111111111111111111111111111111"
+	cases := []struct {
+		name   string
+		method string
+		params []any
+		past   bool
+	}{
+		{"a past block with full transactions", "eth_getBlockByNumber", []any{"0x10", true}, true},
+		{"the latest block with full transactions", "eth_getBlockByNumber", []any{"latest", true}, false},
+		{"logs from a past block", "eth_getLogs", []any{map[string]any{"fromBlock": "0x10", "toBlock": "0x20"}}, true},
+		{"logs of a block by hash", "eth_getLogs", []any{map[string]any{"blockHash": "0xabc"}}, true},
+		{"logs of the latest block", "eth_getLogs", []any{map[string]any{"fromBlock": "latest", "toBlock": "latest"}}, false},
+		{"logs without a range", "eth_getLogs", []any{map[string]any{"address": address}}, false},
+		{"a storage slot at the latest block", "eth_getStorageAt", []any{address, "0x0", "latest"}, false},
+		{"a storage slot at a past block", "eth_getStorageAt", []any{address, "0x0", "0x10"}, true},
+		{"the earliest block", "eth_getBalance", []any{address, "earliest"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			broken := newFakeNode(t, answers(rpcFailure(-32000, "missing trie node")))
+			healthy := newFakeNode(t, answers(result(`"0x2a"`)))
+			client, _, _ := failoverClient(broken.URL(), healthy.URL())
+
+			require.NoError(t, client.Call(context.Background(), tc.method, nil, tc.params...))
+			failures := healthOf(client)[0].ConsecutiveFailures
+			if tc.past {
+				assert.Zero(t, failures, "a past block's state is history")
+			} else {
+				assert.Equal(t, 1, failures, "a node missing current state is broken")
+			}
+		})
+	}
 }
 
 func TestFailover_SolanaHistoryAnswers_MoveOnWithoutCountingAFailure(t *testing.T) {

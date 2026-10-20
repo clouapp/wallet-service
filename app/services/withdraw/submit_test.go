@@ -3,8 +3,10 @@ package withdraw
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -68,6 +70,10 @@ func (e *submitEvents) PublishFailed(_ context.Context, _ *models.Withdrawal, co
 // planSweep plans a withdrawal and executes it the way the test says.
 type planSweep struct {
 	mockSweepSvc
+	// settleErr answers SettleUnanswered (the row as given otherwise); settled counts
+	// the calls.
+	settleErr error
+	settled   int
 	strategy  sweep.Strategy
 	shortfall error
 	planErr   error
@@ -83,6 +89,14 @@ func (p *planSweep) PlanForWithdrawalTo(_ context.Context, walletID uuid.UUID, a
 		return nil, p.planErr
 	}
 	return &sweep.Plan{WalletID: walletID, Asset: asset, Amount: amount, Strategy: p.strategy, Shortfall: p.shortfall}, nil
+}
+
+func (p *planSweep) SettleUnanswered(_ context.Context, tx *models.Transaction) (*models.Transaction, error) {
+	p.settled++
+	if p.settleErr != nil {
+		return nil, p.settleErr
+	}
+	return tx, nil
 }
 
 func (p *planSweep) ExecutePlan(context.Context, *sweep.Plan, sweep.SigningCredentials, uuid.UUID, string, string) (*sweep.Result, error) {
@@ -463,7 +477,9 @@ func (s *sendingSweep) ExecutePlan(_ context.Context, plan *sweep.Plan, _ sweep.
 		return nil, errors.New("the plan names no withdrawal: the transfer could not be found by a retry")
 	}
 	key := plan.IdempotencyKey
-	tx := &models.Transaction{ID: txID, TxHash: "0xsent", Status: string(types.TxStatusConfirming), IdempotencyKey: &key}
+	// The executor records what the send answered once the bytes left.
+	tx := &models.Transaction{ID: txID, TxHash: "0xsent", Status: string(types.TxStatusConfirming), IdempotencyKey: &key,
+		RawPayload: `{"broadcast_outcome":"accepted"}`}
 	if s.txs.byKey == nil {
 		s.txs.byKey = map[string]*models.Transaction{}
 	}
@@ -514,4 +530,127 @@ func TestSubmit_Retry_AfterACrashBetweenTheSendAndItsMarkNeverSignsAgain(t *test
 	if w := result.Withdrawal; w.Status != models.WithdrawalStatusBroadcast || w.TxHash != "0xsent" {
 		t.Fatalf("retry result %+v: the transfer sent the first time", w)
 	}
+}
+
+// holdingSweep sends like sendingSweep, but holds the send until release closes.
+type holdingSweep struct {
+	sendingSweep
+	started chan struct{}
+	release chan struct{}
+}
+
+func (h *holdingSweep) ExecutePlan(ctx context.Context, plan *sweep.Plan, creds sweep.SigningCredentials, txID uuid.UUID, to, user string) (*sweep.Result, error) {
+	result, err := h.sendingSweep.ExecutePlan(ctx, plan, creds, txID, to, user)
+	close(h.started)
+	<-h.release
+	return result, err
+}
+
+func TestSubmit_SameKey_ASecondSubmitWaitsForTheFirstsOutcome(t *testing.T) {
+	wallet := sealedCreateWallet(t, "eth", nil)
+	rows := newSubmitRows()
+	txs := newMemTransactions()
+	runner := &holdingSweep{
+		sendingSweep: sendingSweep{planSweep: planSweep{strategy: sweep.StrategyDirectFromBase}, txs: txs, rows: rows},
+		started:      make(chan struct{}), release: make(chan struct{}),
+	}
+	svc := newSubmitService(t, wallet, &runner.planSweep, rows, &submitEvents{})
+	svc.sweep = runner
+	svc.transactionRepo = txs
+	in := submitInput(wallet)
+
+	first := make(chan error, 1)
+	go func() {
+		_, err := svc.Submit(context.Background(), in)
+		first <- err
+	}()
+	<-runner.started // the first submit recorded its transfer and holds the send
+
+	second := make(chan *SubmitResult, 1)
+	secondErr := make(chan error, 1)
+	go func() {
+		result, err := svc.Submit(context.Background(), in)
+		second <- result
+		secondErr <- err
+	}()
+	select {
+	case <-second:
+		t.Fatal("the second submit with the same key answered before the first one's bytes left")
+	case <-time.After(300 * time.Millisecond):
+	}
+	close(runner.release)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	result := <-second
+	if err := <-secondErr; err != nil {
+		t.Fatal(err)
+	}
+	if runner.signed != 1 || !result.Replayed || result.Withdrawal.TxHash != "0xsent" {
+		t.Fatalf("signed %d, second %+v: the second submit replays the first one's outcome", runner.signed, result)
+	}
+}
+
+func TestSubmit_Retry_OfASendNeverAnsweredIsSettledAndNeverSignedAgain(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		settleErr error
+		failed    bool
+	}{
+		{"the transfer is on its way or its outcome unknown", nil, false},
+		{"nothing can be verified yet", sweep.ErrSendUnverified, false},
+		{"its bytes can never be valid", fmt.Errorf("%w: invalid sender", sweep.ErrSignedBytesInvalid), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wallet := sealedCreateWallet(t, "eth", nil)
+			existingID := uuid.New()
+			rows := newSubmitRows()
+			rows.byID = map[uuid.UUID]*models.Withdrawal{existingID: {ID: existingID, WalletID: wallet.ID, Status: models.WithdrawalStatusBroadcasting}}
+			fresh := &models.Transaction{ID: uuid.New(), TxHash: "NEW"}
+			runner := &planSweep{strategy: sweep.StrategyDirectFromBase, result: &sweep.Result{FinalWithdrawTx: fresh}, settleErr: tc.settleErr}
+			executed := &countingRunner{planSweep: runner}
+			svc := newSubmitService(t, wallet, runner, rows, &submitEvents{})
+			svc.sweep = executed
+			unanswered := &models.Transaction{ID: uuid.New(), TxHash: "OLD", Status: string(types.TxStatusConfirming),
+				RawPayload: `{"broadcast_outcome":"pending","signed_tx":"enc:v1:aa"}`}
+			txs := newMemTransactions()
+			txs.byKey = map[string]*models.Transaction{existingID.String(): unanswered}
+			svc.transactionRepo = txs
+			in := submitInput(wallet)
+			in.IdempotencyKey = existingID.String()
+
+			result, err := svc.Submit(context.Background(), in)
+			if runner.settled != 1 {
+				t.Fatalf("settled %d times: a row whose send was never answered is checked before any replay", runner.settled)
+			}
+			if executed.executions != 0 {
+				t.Fatalf("executions %d: a retry never signs a second payment", executed.executions)
+			}
+			switch {
+			case tc.failed:
+				if !errors.Is(err, sweep.ErrSignedBytesInvalid) || len(rows.failed) != 1 {
+					t.Fatalf("err %v failed %v: bytes that can never be valid fail the withdrawal", err, rows.failed)
+				}
+			case tc.settleErr != nil:
+				if !errors.Is(err, sweep.ErrSendUnverified) || len(rows.failed) != 0 {
+					t.Fatalf("err %v failed %v: unverified is neither replayed nor failed", err, rows.failed)
+				}
+			default:
+				if err != nil || result.Withdrawal.TxHash != "OLD" || len(rows.failed) != 0 {
+					t.Fatalf("result %+v err %v failed %v: the row is replayed as broadcast", result, err, rows.failed)
+				}
+			}
+		})
+	}
+}
+
+// countingRunner counts the plans executed.
+type countingRunner struct {
+	*planSweep
+	executions int
+}
+
+func (c *countingRunner) ExecutePlan(ctx context.Context, plan *sweep.Plan, creds sweep.SigningCredentials, txID uuid.UUID, to, user string) (*sweep.Result, error) {
+	c.executions++
+	return c.planSweep.ExecutePlan(ctx, plan, creds, txID, to, user)
 }

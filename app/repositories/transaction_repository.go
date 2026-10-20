@@ -129,6 +129,20 @@ func (r *TransactionRepository) FindByChainAndTxHash(ctx context.Context, chainI
 	return &tx, nil
 }
 
+// CountByChainAndTxHash counts rows for a chain, hash, and type (another outbound
+// row of ours carrying a hash: the inputs proof's copy check).
+func (r *TransactionRepository) CountByChainAndTxHash(ctx context.Context, chainID, txHash, txType string) (int64, error) {
+	count, err := r.Query(ctx).Model(&models.Transaction{}).
+		Where("chain", chainID).
+		Where("tx_hash", txHash).
+		Where("tx_type", txType).
+		Count()
+	if err != nil {
+		return 0, fmt.Errorf("count transactions by hash: %w", err)
+	}
+	return count, nil
+}
+
 // LockTransactionDeposits takes the advisory lock of one chain transaction's
 // deposits, held until the database transaction of ctx ends (Within): the deposit
 // recorders of the scanner and the push decide on a transaction one at a time. Called

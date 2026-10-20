@@ -91,6 +91,8 @@ type Service struct {
 type transactionStore interface {
 	depositrecord.Store
 	CountInternalTransfers(ctx context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error)
+	// CountByChainAndTxHash counts the rows of a type carrying a hash on a chain.
+	CountByChainAndTxHash(ctx context.Context, chainID, txHash, txType string) (int64, error)
 	FindPendingByChain(ctx context.Context, chainID string) ([]models.Transaction, error)
 	FindConfirmedOutboundWithoutFee(ctx context.Context, chainID string, limit int) ([]models.Transaction, error)
 	FindConfirmedDepositsMissingEvent(ctx context.Context, eventType string, from, to time.Time, chainIDs []string, limit int) ([]models.Transaction, error)

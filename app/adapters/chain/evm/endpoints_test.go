@@ -193,6 +193,18 @@ func TestBroadcast_AlreadyKnownOnTheFallbackReturnsTheSignedHash(t *testing.T) {
 	}
 }
 
+func TestBroadcast_AlreadyKnownOnThePrimaryReturnsTheSignedHash(t *testing.T) {
+	primary := newCountingNode(t, map[string]string{
+		"eth_sendRawTransaction": `"error":{"code":-32000,"message":"already known"}`,
+	})
+	adapter := sepoliaWithFallbacks(primary.server.URL)
+
+	hash, err := adapter.BroadcastTransaction(context.Background(), &types.SignedTx{RawBytes: []byte{0x01}, TxHash: "0xsigned"})
+	if err != nil || hash != "0xsigned" {
+		t.Fatalf("hash=%q err=%v: the node holds these bytes, so they were sent", hash, err)
+	}
+}
+
 func TestReplace_Endpoints_PointsTheAdapterAtTheNewList(t *testing.T) {
 	fallback := newCountingNode(t, map[string]string{"eth_chainId": sepoliaChainIDResult, "eth_blockNumber": `"result":"0x20"`})
 	adapter := sepoliaWithFallbacks(closedURL(t))

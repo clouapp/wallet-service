@@ -564,3 +564,39 @@ func TestApply_Set_ChecksADisabledFallbackItPutsBackInUse(t *testing.T) {
 	assert.Equal(t, []string{drpc}, h.verified, "the disabled fallback is asked again; the primary and the enabled one are not")
 	assert.Equal(t, []string{filteredNode, "2:" + drpc, "3:" + tenderly}, h.storedList(t))
 }
+
+func TestApply_TRONAndXRPFailOverThroughTheListOnceTheirNetworkIsChecked(t *testing.T) {
+	cases := []struct {
+		chain, adapterType, network, primary string
+	}{
+		{models.ChainTron, models.AdapterTypeTron, models.NetworkTronNile, "https://nile.trongrid.io"},
+		{models.ChainTXRP, models.AdapterTypeXRP, models.NetworkXRPLTestnet, "https://s.altnet.rippletest.net:51234"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.adapterType, func(t *testing.T) {
+			h := newHarness(t, filteredNode)
+			h.store.chains[tc.chain] = &models.Chain{ID: tc.chain, AdapterType: tc.adapterType, IsTestnet: true, RpcURL: sealed(tc.primary)}
+			var asked []string
+			h.service.verify = func(_ context.Context, adapterType string, target chainregistry.EndpointTarget, rawURL string) (string, error) {
+				asked = append(asked, adapterType+" "+target.Network+" "+rawURL)
+				if rawURL == mainnetNode {
+					return "mainnet", fmt.Errorf("%w: it serves mainnet", chain.ErrWrongNetwork)
+				}
+				return target.Network, nil
+			}
+
+			plan, err := h.service.Apply(context.Background(), tc.chain, Change{Action: ActionAdd, URL: drpc}, true)
+			require.NoError(t, err)
+			assert.True(t, plan.Applied)
+			assert.True(t, plan.After.FailsOver)
+			assert.Equal(t, []string{tc.adapterType + " " + tc.network + " " + drpc}, asked)
+			assert.Equal(t, tc.primary, h.dialer.primary)
+			assert.Equal(t, []chain.RPCFallback{{URL: drpc, Position: 2}}, h.dialer.fallbacks)
+
+			_, err = h.service.Apply(context.Background(), tc.chain, Change{Action: ActionAdd, URL: mainnetNode}, true)
+			var refusal *Refusal
+			require.ErrorAs(t, err, &refusal)
+			assert.Contains(t, refusal.Reason, "serves another network")
+		})
+	}
+}

@@ -23,9 +23,15 @@ type ChainRPCEndpoint struct {
 func (ChainRPCEndpoint) TableName() string { return "chain_rpc_endpoints" }
 
 // RPCFallbacksSupported reports whether chains of adapterType fail over through
-// chain_rpc_endpoints: EVM and Solana, whose adapters share the JSON-RPC client.
-// The Bitcoin family keeps its own fallback list (vault.utxo_fallbacks); TRON and
-// XRP have none yet.
+// chain_rpc_endpoints, each endpoint asked first which network it serves: EVM and
+// Solana (the shared JSON-RPC client), TRON and XRP (their own clients over the same
+// endpoint failover). The Bitcoin family keeps its own fallback list
+// (vault.utxo_fallbacks).
 func RPCFallbacksSupported(adapterType string) bool {
-	return adapterType == AdapterTypeEVM || adapterType == AdapterTypeSolana
+	switch adapterType {
+	case AdapterTypeEVM, AdapterTypeSolana, AdapterTypeTron, AdapterTypeXRP:
+		return true
+	default:
+		return false
+	}
 }
