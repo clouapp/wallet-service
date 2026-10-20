@@ -137,7 +137,7 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 	confirmedWallets := newWalletSet()
 	defer func() { s.refreshBalances(ctx, confirmedWallets.ids) }()
 	finality := newFinalityHeights(adapter)
-	hashes := newCanonicalHashes(adapter)
+	reorgs := newReorgPass(adapter)
 	for _, tx := range pending {
 		if tx.BlockNumber == 0 {
 			if !isOutboundTxType(tx.TxType) {
@@ -194,7 +194,7 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 		}
 
 		confirmedNow := newStatus == string(types.TxStatusConfirmed) && tx.Status != string(types.TxStatusConfirmed)
-		if confirmedNow && !s.depositBlockAllowsConfirmation(ctx, adapter, hashes, tx, currentBlock) {
+		if confirmedNow && !s.depositBlockAllowsConfirmation(ctx, reorgs, tx) {
 			continue
 		}
 		if confirmedNow && checksDepositReceipt(adapter, tx) && !s.depositReceiptAllowsConfirmation(ctx, adapter, tx) {
@@ -223,6 +223,10 @@ func (s *Service) applyConfirmations(ctx context.Context, adapter types.Chain, c
 		}
 
 		if err := s.txRepo.RecordConfirmations(ctx, tx.ID, confs, newStatus, confirmedAt); err != nil {
+			if errors.Is(err, models.ErrTransactionSettled) {
+				slog.Info("transaction settled by another process since this pass read it", "tx_id", tx.ID, "chain", tx.Chain)
+				continue
+			}
 			slog.Error("update confs", "tx_id", tx.ID, "error", err)
 			continue
 		}
@@ -405,15 +409,27 @@ func payloadUnixTime(tx models.Transaction, key string) time.Time {
 // recordPayloadValue keeps value under key in the row's raw_payload. A write that
 // fails is logged: the check runs again next pass.
 func (s *Service) recordPayloadValue(ctx context.Context, tx models.Transaction, key string, value any) {
+	s.editPayload(ctx, tx, map[string]any{key: value})
+}
+
+// editPayload sets the keys of set and removes the keys of drop in the row's
+// raw_payload, which keeps every other key. A write that fails is logged: the check
+// that needed it runs again next pass.
+func (s *Service) editPayload(ctx context.Context, tx models.Transaction, set map[string]any, drop ...string) {
 	payload := map[string]any{}
 	_ = json.Unmarshal([]byte(tx.RawPayload), &payload)
-	payload[key] = value
+	for key, value := range set {
+		payload[key] = value
+	}
+	for _, key := range drop {
+		delete(payload, key)
+	}
 	raw, err := json.Marshal(payload)
 	if err == nil {
 		err = s.txRepo.SetRawPayload(ctx, tx.ID, string(raw))
 	}
 	if err != nil {
-		slog.Error("record transaction payload", "tx_id", tx.ID, "key", key, "error", err)
+		slog.Error("record transaction payload", "tx_id", tx.ID, "error", err)
 	}
 }
 

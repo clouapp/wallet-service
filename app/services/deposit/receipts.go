@@ -152,20 +152,34 @@ func (s *Service) depositReceiptAllowsConfirmation(ctx context.Context, adapter 
 	if failureCode == "" {
 		return true
 	}
-	if err := s.failDeposit(ctx, tx, failureCode); err != nil {
+	if err := s.failDeposit(ctx, tx, failureCode); errors.Is(err, models.ErrTransactionSettled) {
+		slog.Info("deposit whose receipt failed was settled by another process meanwhile", "tx_id", tx.ID, "chain", tx.Chain)
+	} else if err != nil {
 		slog.Error("deposit whose receipt failed was not marked failed; retrying next pass", "tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "error", err)
 	}
 	return false
 }
 
 // failDeposit records a deposit that moved no value to the address (its
-// transaction was mined and failed, or its block was reorganized away and no block
-// holds it any more): it publishes deposit.failed with failureCode, then
+// transaction was mined and failed, or its block was reorganized away and its
+// transaction can never land): it publishes deposit.failed with failureCode, then
 // marks the row failed, last, so a failed publish leaves the row as it was and the
 // next pass (or run) tries again. The outbox keeps one deposit.failed per config
-// and deposit, so a retry never sends it twice. Without a deposit events publisher
-// the row is still marked failed, and no deposit webhook is sent at all.
+// and deposit, so a retry never sends it twice. The row is read again first and
+// failed only from the status the caller read: a deposit another process settled
+// meanwhile (the scan's confirmation step and the tracker can both see it) is left
+// as it is, with no event, and the error is models.ErrTransactionSettled. Without a
+// deposit events publisher the row is still marked failed, and no deposit webhook
+// is sent at all.
 func (s *Service) failDeposit(ctx context.Context, tx models.Transaction, failureCode string) error {
+	read := tx.Status
+	current, err := s.txRepo.FindByID(ctx, tx.ID)
+	if err != nil {
+		return fmt.Errorf("read deposit %s again: %w", tx.ID, err)
+	}
+	if current.Status != read {
+		return fmt.Errorf("deposit %s is %s, not %s: %w", tx.ID, current.Status, read, models.ErrTransactionSettled)
+	}
 	tx.Status = string(types.TxStatusFailed)
 	tx.ErrorMessage = failureCode
 	if s.deposits == nil {
@@ -173,7 +187,7 @@ func (s *Service) failDeposit(ctx context.Context, tx models.Transaction, failur
 	} else if err := s.deposits.Publish(ctx, types.EventDepositFailed, tx); err != nil {
 		return fmt.Errorf("publish %s for deposit %s: %w", types.EventDepositFailed, tx.ID, err)
 	}
-	if err := s.txRepo.MarkFailed(ctx, tx.ID, failureCode); err != nil {
+	if err := s.txRepo.MarkFailedFrom(ctx, tx.ID, failureCode, read); err != nil {
 		return fmt.Errorf("mark deposit %s failed: %w", tx.ID, err)
 	}
 	slog.Warn("deposit failed: no value reached the address",

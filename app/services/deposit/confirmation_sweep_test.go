@@ -55,6 +55,12 @@ func (s *sweepConfirmMemory) FindConfirmedNativeDeposits(context.Context, string
 func (s *sweepConfirmMemory) SetBlock(context.Context, uuid.UUID, uint64, string) error {
 	return nil
 }
+func (s *sweepConfirmMemory) MarkFailedFrom(context.Context, uuid.UUID, string, string) error {
+	return nil
+}
+func (s *sweepConfirmMemory) FindByID(context.Context, uuid.UUID) (*models.Transaction, error) {
+	return nil, models.ErrRepositoryNotFound
+}
 
 func (s *sweepConfirmMemory) RecordConfirmations(_ context.Context, id uuid.UUID, _ int, status string, _ *time.Time) error {
 	s.rows = append(s.rows, sweepConfirmRow{

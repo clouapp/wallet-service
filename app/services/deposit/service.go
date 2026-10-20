@@ -87,8 +87,13 @@ type transactionStore interface {
 	// SetBlock records the block number and hash of a deposit a reorganization moved.
 	SetBlock(ctx context.Context, id uuid.UUID, block uint64, blockHash string) error
 	SetFee(ctx context.Context, id uuid.UUID, fee string) error
+	// RecordConfirmations writes a row still pending or confirming only
+	// (models.ErrTransactionSettled otherwise).
 	RecordConfirmations(ctx context.Context, id uuid.UUID, confirmations int, status string, confirmedAt *time.Time) error
 	MarkFailed(ctx context.Context, id uuid.UUID, reason string) error
+	// MarkFailedFrom fails a row still in fromStatus (models.ErrTransactionSettled otherwise).
+	MarkFailedFrom(ctx context.Context, id uuid.UUID, reason, fromStatus string) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Transaction, error)
 	// SetRawPayload rewrites raw_payload (what the tracker keeps between passes).
 	SetRawPayload(ctx context.Context, id uuid.UUID, rawPayload string) error
 }
@@ -314,7 +319,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		BlockHash:      transfer.BlockHash,
 		Direction:      models.TxDirectionInbound,
 		Source:         models.TxSourceChain,
-		RawPayload:     "{}",
+		RawPayload:     depositPayload(transfer),
 	}
 
 	if err := s.txRepo.Create(ctx, tx); err != nil {
