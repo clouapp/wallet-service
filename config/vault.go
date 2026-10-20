@@ -66,6 +66,10 @@ func registerVault() {
 		// (Litecoin mainnet and testnet; Bitcoin has none); "none": no fallback. The
 		// optional API key is Tatum's (x-api-key, Tatum hosts only); with it the Data API
 		// at tatum_data_api_url (default https://api.tatum.io) also serves UTXOs.
+		// utxo_double_spend_depth is how deep every conflicting spend of a Bitcoin-family
+		// transfer's inputs must be before the tracker fails it not_landed (the chain's
+		// confirmations when they are more).
+		"utxo_double_spend_depth": envInt("UTXO_DOUBLE_SPEND_DEPTH", 6),
 		"utxo_fallbacks": map[string]any{
 			"btc":  utxoFallback("BTC"),
 			"tbtc": utxoFallback("TBTC"),

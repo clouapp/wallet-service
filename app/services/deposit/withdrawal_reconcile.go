@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -205,16 +206,20 @@ func (s *Service) judge(ctx context.Context, adapter types.Chain, tx models.Tran
 }
 
 // judgeInputsSpend reads who spent the inputs of a Bitcoin-family transfer into
-// report: every one spent by another transaction at the confirmation depth fails it
-// not_landed; spent by itself in a block, it landed.
+// report: every one spent by other transactions paying someone else, at the
+// double-spend depth, fails it not_landed; spent by itself or by a copy paying the
+// same in a block, it landed.
 func judgeInputsSpend(ctx context.Context, reader chain.InputsSpendReader, tx models.Transaction, inputs []string, report *WithdrawalReconcileReport) {
-	spend, err := reader.InputsSpend(ctx, tx.TxHash, inputs)
+	spend, err := reader.InputsSpend(ctx, inputsQueryOf(tx, inputs))
 	switch {
 	case err != nil:
 		report.Verdict, report.Reason = ReconcileUnknown, "who spent its inputs cannot be read: "+chain.ClientText(err)
 	case spend.Conflicted:
 		report.Verdict, report.Block, report.FailureCode = ReconcileFailed, spend.Block, models.WithdrawalFailureNotLanded
-		report.Reason = fmt.Sprintf("other transactions spent all %d of its inputs, the last in block %d", len(inputs), spend.Block)
+		report.Reason = fmt.Sprintf("other transactions paying someone else spent all %d of its inputs, the last in block %d", len(inputs), spend.Block)
+	case spend.Ours && spend.Block > 0 && spend.TxHash != "" && !strings.EqualFold(spend.TxHash, tx.TxHash):
+		report.Verdict, report.Block = ReconcileLanded, spend.Block
+		report.Reason = fmt.Sprintf("a copy paying the same (%s) spent its inputs in block %d", spend.TxHash, spend.Block)
 	case spend.Ours && spend.Block > 0:
 		report.Verdict, report.Block = ReconcileLanded, spend.Block
 		report.Reason = fmt.Sprintf("it spent its inputs in block %d", spend.Block)

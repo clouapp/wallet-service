@@ -37,6 +37,8 @@ type bitcoinProvider interface {
 	// outpointSpends is the tip and the transaction that spent each outpoint, read
 	// from this provider alone.
 	outpointSpends(ctx context.Context, outpoints []btcOutpoint) (btcSpendsView, error)
+	// transactionOutputs is the address and value of each output of txID.
+	transactionOutputs(ctx context.Context, txID string) ([]btcOutput, error)
 }
 
 // errProviderUnsupported is a provider that cannot serve an operation (an Electrum

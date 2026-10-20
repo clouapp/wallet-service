@@ -3,6 +3,7 @@ package chain
 import (
 	"context"
 	"errors"
+	"math/big"
 
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -32,6 +33,10 @@ const (
 	// SpendProofRetryAtPayloadKey is when (unix seconds) the tracker next tries the
 	// inputs proof of a Bitcoin-family row that nothing proved yet.
 	SpendProofRetryAtPayloadKey = "spend_proof_retry_at"
+	// LandedAsPayloadKey is the transaction that carried a Bitcoin-family transfer
+	// when it is a copy of the signed one (a malleated or re-signed transaction
+	// paying the same).
+	LandedAsPayloadKey = "landed_as"
 )
 
 // SpentInputsReader is an adapter whose signed transactions spend outpoints
@@ -40,26 +45,38 @@ type SpentInputsReader interface {
 	SpentInputs(signed *types.SignedTx) ([]string, error)
 }
 
+// InputsQuery is the transfer InputsSpend reads about: its hash, the outpoints it
+// spends, and what it pays (To, Amount in base units). A transaction that spends
+// them and pays the same is ours: a malleated or re-signed copy.
+type InputsQuery struct {
+	TxHash string
+	Inputs []string
+	To     string
+	Amount *big.Int
+}
+
 // InputsSpend is what a provider says about the inputs of a transfer the network
 // does not know by its hash (Bitcoin family).
 type InputsSpend struct {
-	// Conflicted is true when every input is spent by another transaction confirmed
-	// at the chain's confirmation depth: ours can never land.
+	// Conflicted is true when every input is spent by another transaction, paying
+	// someone else, at least the double-spend depth deep: ours can never land.
 	Conflicted bool
-	// Ours is true when an input is spent by the transfer itself: it is in a block,
-	// or still in the mempool (Block 0).
+	// Ours is true when an input is spent by the transfer itself or by a copy of it
+	// (TxHash): it is in a block, or still in the mempool (Block 0).
 	Ours bool
 	// Block is our block when Ours, else the highest block of the spends that
 	// conflict with it.
 	Block uint64
+	// TxHash is the transaction that carries ours when Ours: the transfer, or its copy.
+	TxHash string
 }
 
 // InputsSpendReader is an adapter that can read which transaction spent each
 // input of a transfer (Bitcoin family, from an Esplora provider): positive proof
-// that it landed, or that another transaction spent every input it spends and it
+// that it landed, or that other transactions spent every input it spends and it
 // can never land. A provider that cannot say proves nothing.
 type InputsSpendReader interface {
-	InputsSpend(ctx context.Context, txHash string, inputs []string) (InputsSpend, error)
+	InputsSpend(ctx context.Context, query InputsQuery) (InputsSpend, error)
 }
 
 // SenderNonceReader is an adapter whose signed transactions spend a sender nonce

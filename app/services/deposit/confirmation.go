@@ -292,7 +292,7 @@ func (s *Service) settleByInputsSpend(ctx context.Context, adapter types.Chain, 
 	if block, err := searchTransactionBlock(ctx, adapter, tx.TxHash); err == nil && block > 0 {
 		return chain.NonceSpend{Spent: true, Ours: true, Block: block}, true
 	}
-	spend, err := reader.InputsSpend(ctx, tx.TxHash, inputs)
+	spend, err := reader.InputsSpend(ctx, inputsQueryOf(tx, inputs))
 	switch {
 	case err != nil:
 		slog.Warn("cannot read who spent the inputs of an unknown-outcome transfer; it stays pending (withdrawals:reconcile)",
@@ -300,6 +300,7 @@ func (s *Service) settleByInputsSpend(ctx context.Context, adapter types.Chain, 
 	case spend.Conflicted:
 		return chain.NonceSpend{Spent: true, Block: spend.Block}, true
 	case spend.Ours && spend.Block > 0:
+		s.recordCopy(ctx, tx, spend)
 		return chain.NonceSpend{Spent: true, Ours: true, Block: spend.Block}, true
 	}
 	s.recordPayloadValue(ctx, tx, chain.SpendProofRetryAtPayloadKey, s.now().Add(spendProofRetryAfter).Unix())
@@ -367,6 +368,26 @@ func unknownOutcomeProof(tx models.Transaction) (nonceProof, bool) {
 		return nonceProof{}, false
 	}
 	return proof, true
+}
+
+// inputsQueryOf is the inputs proof's question about tx: its hash, inputs, and what
+// it pays.
+func inputsQueryOf(tx models.Transaction, inputs []string) chain.InputsQuery {
+	amount, ok := new(big.Int).SetString(strings.TrimSpace(tx.Amount), 10)
+	if !ok {
+		amount = nil
+	}
+	return chain.InputsQuery{TxHash: tx.TxHash, Inputs: inputs, To: tx.ToAddress, Amount: amount}
+}
+
+// recordCopy keeps on the row the transaction that carried it when it is a copy of
+// the signed one (a malleated or re-signed transaction paying the same).
+func (s *Service) recordCopy(ctx context.Context, tx models.Transaction, spend chain.InputsSpend) {
+	if spend.TxHash == "" || strings.EqualFold(spend.TxHash, tx.TxHash) {
+		return
+	}
+	slog.Warn("an unknown-outcome transfer landed as a copy paying the same", "tx_id", tx.ID, "tx_hash", tx.TxHash, "landed_as", spend.TxHash, "chain", tx.Chain)
+	s.recordPayloadValue(ctx, tx, chain.LandedAsPayloadKey, spend.TxHash)
 }
 
 // unknownOutcomeInputs reads the inputs of a Bitcoin-family row whose broadcast

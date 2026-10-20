@@ -218,6 +218,9 @@ func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByC
 				IsTestnet:     ch.IsTestnet,
 				Confirmations: uint64(ch.RequiredConfirmations),
 			}
+			if depth := facades.Config().GetInt("vault.utxo_double_spend_depth"); depth > 0 {
+				btcCfg.DoubleSpendDepth = uint64(depth)
+			}
 			fallbackKey := "vault.utxo_fallbacks." + ch.ID
 			tatumKey := facades.Config().GetString(fallbackKey + ".api_key")
 			btcCfg.Fallbacks = bitcoinFallbacks(

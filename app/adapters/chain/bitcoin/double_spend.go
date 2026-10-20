@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 
@@ -70,39 +71,71 @@ func (a *BitcoinLive) SearchTransactionBlock(ctx context.Context, txHash string)
 	return a.chainProviders().searchTransactionBlock(ctx, txID)
 }
 
+// btcDoubleSpendDepth is the default depth a conflicting spend must reach before it
+// proves a transfer can never land (BitcoinConfig.DoubleSpendDepth overrides it).
+const btcDoubleSpendDepth = 6
+
 // InputsSpend reads, from the first provider that can say (an Esplora indexer),
-// which transaction spent each input of txHash, and the tip. An input spent by
-// txHash itself is Ours (in its block, or in the mempool); every input spent by
-// another transaction at least the chain's confirmations deep is Conflicted: txHash
-// can never land. Anything else (an input unspent, a spend in the mempool or not
-// deep enough) proves nothing.
-func (a *BitcoinLive) InputsSpend(ctx context.Context, txHash string, inputs []string) (chain.InputsSpend, error) {
-	ours, err := normalizeBTCHash(txHash, "txid")
+// which transaction spent each input of query.TxHash, and the tip. An input spent by
+// the transfer itself, or by a transaction paying query.To exactly query.Amount (a
+// malleated or re-signed copy), is Ours (in its block, or in the mempool). Every
+// input spent by other transactions paying someone else, each at least the
+// double-spend depth deep (the larger of the chain's confirmations and
+// DoubleSpendDepth, 6 by default), is Conflicted: the transfer can never land.
+// Anything else (an input unspent, a spend in the mempool or not deep enough)
+// proves nothing; a conflicting transaction whose outputs cannot be read is an
+// error.
+func (a *BitcoinLive) InputsSpend(ctx context.Context, query chain.InputsQuery) (chain.InputsSpend, error) {
+	ours, err := normalizeBTCHash(query.TxHash, "txid")
 	if err != nil {
 		return chain.InputsSpend{}, err
 	}
-	if len(inputs) == 0 {
+	if len(query.Inputs) == 0 {
 		return chain.InputsSpend{}, fmt.Errorf("btc inputs spend: the transaction's inputs are required")
 	}
-	outpoints := make([]btcOutpoint, 0, len(inputs))
-	for _, input := range inputs {
+	outpoints := make([]btcOutpoint, 0, len(query.Inputs))
+	for _, input := range query.Inputs {
 		outpoint, parseErr := parseBTCOutpoint(input)
 		if parseErr != nil {
 			return chain.InputsSpend{}, parseErr
 		}
 		outpoints = append(outpoints, outpoint)
 	}
-	view, err := a.chainProviders().outpointSpends(ctx, outpoints)
+	providers := a.chainProviders()
+	view, err := providers.outpointSpends(ctx, outpoints)
 	if err != nil {
 		return chain.InputsSpend{}, err
 	}
-	depth := max(a.cfg.Confirmations, 1)
+	copies := map[string]bool{}
+	isOurs := func(spend btcOutpointSpend) (bool, error) {
+		if spend.txID == ours {
+			return true, nil
+		}
+		if known, ok := copies[spend.txID]; ok {
+			return known, nil
+		}
+		outputs, outputsErr := providers.transactionOutputs(ctx, spend.txID)
+		if outputsErr != nil {
+			return false, fmt.Errorf("btc inputs spend: outputs of the conflicting %s: %w", spend.txID, outputsErr)
+		}
+		copies[spend.txID] = paysTo(outputs, query.To, query.Amount)
+		return copies[spend.txID], nil
+	}
+	depth := max(a.cfg.Confirmations, a.doubleSpendDepth())
 	conflict := chain.InputsSpend{Conflicted: true}
 	for _, spend := range view.spends {
-		if spend.spent && spend.txID == ours {
-			return chain.InputsSpend{Ours: true, Block: spend.block}, nil
+		if !spend.spent {
+			conflict.Conflicted = false
+			continue
 		}
-		deep := spend.spent && spend.block > 0 && view.tip >= spend.block && view.tip-spend.block+1 >= depth
+		mine, oursErr := isOurs(spend)
+		if oursErr != nil {
+			return chain.InputsSpend{}, oursErr
+		}
+		if mine {
+			return chain.InputsSpend{Ours: true, Block: spend.block, TxHash: spend.txID}, nil
+		}
+		deep := spend.block > 0 && view.tip >= spend.block && view.tip-spend.block+1 >= depth
 		if !deep {
 			conflict.Conflicted = false
 			continue
@@ -113,6 +146,27 @@ func (a *BitcoinLive) InputsSpend(ctx context.Context, txHash string, inputs []s
 		return chain.InputsSpend{}, nil
 	}
 	return conflict, nil
+}
+
+func (a *BitcoinLive) doubleSpendDepth() uint64 {
+	if a.cfg.DoubleSpendDepth > 0 {
+		return a.cfg.DoubleSpendDepth
+	}
+	return btcDoubleSpendDepth
+}
+
+// paysTo reports outputs holding one that pays to exactly amount.
+func paysTo(outputs []btcOutput, to string, amount *big.Int) bool {
+	to = strings.TrimSpace(to)
+	if to == "" || amount == nil || !amount.IsInt64() {
+		return false
+	}
+	for _, output := range outputs {
+		if strings.EqualFold(strings.TrimSpace(output.Address), to) && output.Value == amount.Int64() {
+			return true
+		}
+	}
+	return false
 }
 
 func parseBTCOutpoint(input string) (btcOutpoint, error) {
@@ -156,6 +210,47 @@ func (f *bitcoinFailover) searchTransactionBlock(ctx context.Context, txID strin
 
 func (f *bitcoinFailover) outpointSpends(ctx context.Context, outpoints []btcOutpoint) (btcSpendsView, error) {
 	return failoverRead(ctx, f, "outspends", func(p bitcoinProvider) (btcSpendsView, error) { return p.outpointSpends(ctx, outpoints) })
+}
+
+func (f *bitcoinFailover) transactionOutputs(ctx context.Context, txID string) ([]btcOutput, error) {
+	return failoverRead(ctx, f, "tx outputs", func(p bitcoinProvider) ([]btcOutput, error) { return p.transactionOutputs(ctx, txID) })
+}
+
+func (p directProvider) transactionOutputs(ctx context.Context, txID string) ([]btcOutput, error) {
+	if !p.live.restAPI {
+		return nil, errProviderUnsupported
+	}
+	if err := p.verifyNetwork(ctx); err != nil {
+		return nil, err
+	}
+	return p.live.transactionOutputsREST(ctx, txID)
+}
+
+// transactionOutputs is unsupported: only Esplora is asked who spent an input.
+func (p *electrumProvider) transactionOutputs(context.Context, string) ([]btcOutput, error) {
+	return nil, errProviderUnsupported
+}
+
+// transactionOutputs is unsupported: only Esplora is asked who spent an input.
+func (p tatumProvider) transactionOutputs(context.Context, string) ([]btcOutput, error) {
+	return nil, errProviderUnsupported
+}
+
+// transactionOutputsREST reads GET /tx/:txid: the address and value of each output.
+func (a *BitcoinLive) transactionOutputsREST(ctx context.Context, txID string) ([]btcOutput, error) {
+	body, err := a.esploraGet(ctx, "/tx/"+txID)
+	if err != nil {
+		return nil, fmt.Errorf("fetch tx %s: %w", txID, err)
+	}
+	var tx esploraTx
+	if err := json.Unmarshal(body, &tx); err != nil {
+		return nil, fmt.Errorf("parse tx %s: %w", txID, err)
+	}
+	outputs := make([]btcOutput, 0, len(tx.Vout))
+	for _, out := range tx.Vout {
+		outputs = append(outputs, btcOutput{Address: out.ScriptpubkeyAddress, Value: out.Value})
+	}
+	return outputs, nil
 }
 
 func (p directProvider) outpointSpends(ctx context.Context, outpoints []btcOutpoint) (btcSpendsView, error) {

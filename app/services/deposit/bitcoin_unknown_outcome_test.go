@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -45,14 +46,17 @@ func (c *utxoChain) SearchTransactionBlock(_ context.Context, txHash string) (ui
 	return c.search[txHash], nil
 }
 
-func (c *utxoChain) InputsSpend(_ context.Context, txHash string, inputs []string) (chain.InputsSpend, error) {
+func (c *utxoChain) InputsSpend(_ context.Context, query chain.InputsQuery) (chain.InputsSpend, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.proofs[txHash]++
-	if len(inputs) == 0 {
+	c.proofs[query.TxHash]++
+	if len(query.Inputs) == 0 {
 		return chain.InputsSpend{}, errors.New("no inputs")
 	}
-	return c.spends[txHash], c.spendErr
+	if query.To != "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx" || query.Amount == nil || query.Amount.Int64() != 10000 {
+		return chain.InputsSpend{}, fmt.Errorf("the proof is asked about %s %v, not what the withdrawal pays", query.To, query.Amount)
+	}
+	return c.spends[query.TxHash], c.spendErr
 }
 
 func (c *utxoChain) asked(txHash string) int {
@@ -81,14 +85,15 @@ func utxoWithdrawal(t *testing.T, walletID uuid.UUID, inputs []string, unknown b
 		t.Fatal(err)
 	}
 	withdrawalID := uuid.New()
+	const destination = "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx"
 	if _, err := facades.Orm().Query().Model(&models.Transaction{}).Where("id = ?", tx.ID).
-		Update(map[string]any{"raw_payload": string(raw), "idempotency_key": withdrawalID.String()}); err != nil {
+		Update(map[string]any{"raw_payload": string(raw), "idempotency_key": withdrawalID.String(), "to_address": destination}); err != nil {
 		t.Fatal(err)
 	}
-	tx.RawPayload = string(raw)
+	tx.RawPayload, tx.ToAddress = string(raw), destination
 	withdrawal := models.Withdrawal{
 		ID: withdrawalID, WalletID: walletID, TransactionID: &tx.ID, Status: models.WithdrawalStatusBroadcast,
-		Amount: "0.0001", DestinationAddress: "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx", FeeEstimate: "0",
+		Amount: "0.0001", DestinationAddress: destination, FeeEstimate: "0",
 	}
 	if err := facades.Orm().Query().Create(&withdrawal); err != nil {
 		t.Fatal(err)
@@ -113,7 +118,11 @@ func TestRunConfirmationCheck_BitcoinUnknownOutcomesAreSettledByTheirInputs(t *t
 	utxo.search[foundTx.TxHash] = utxoHead - 20
 
 	spentByUsTx, spentByUs := utxoWithdrawal(t, w.ID, utxoInputs, true)
-	utxo.spends[spentByUsTx.TxHash] = chain.InputsSpend{Ours: true, Block: utxoHead - 5}
+	utxo.spends[spentByUsTx.TxHash] = chain.InputsSpend{Ours: true, Block: utxoHead - 5, TxHash: spentByUsTx.TxHash}
+
+	copiedTx, copied := utxoWithdrawal(t, w.ID, utxoInputs, true)
+	const copyHash = "c0ffee0000000000000000000000000000000000000000000000000000000000"
+	utxo.spends[copiedTx.TxHash] = chain.InputsSpend{Ours: true, Block: utxoHead - 7, TxHash: copyHash}
 
 	openTx, open := utxoWithdrawal(t, w.ID, utxoInputs, true)
 
@@ -149,8 +158,9 @@ func TestRunConfirmationCheck_BitcoinUnknownOutcomesAreSettledByTheirInputs(t *t
 		withdrawal models.Withdrawal
 		block      int64
 	}{
-		"found on another provider":  {foundTx, found, int64(utxoHead) - 20},
-		"its inputs spent by itself": {spentByUsTx, spentByUs, int64(utxoHead) - 5},
+		"found on another provider":         {foundTx, found, int64(utxoHead) - 20},
+		"its inputs spent by itself":        {spentByUsTx, spentByUs, int64(utxoHead) - 5},
+		"carried by a copy paying the same": {copiedTx, copied, int64(utxoHead) - 7},
 	} {
 		if got := reloadTransaction(t, landed.tx.ID); got.Status != string(types.TxStatusConfirmed) || got.BlockNumber != landed.block {
 			t.Errorf("%s: status %s block %d, want confirmed in block %d", name, got.Status, got.BlockNumber, landed.block)
@@ -174,6 +184,11 @@ func TestRunConfirmationCheck_BitcoinUnknownOutcomesAreSettledByTheirInputs(t *t
 		if got := reloadWithdrawal(t, pending.withdrawal.ID); got.Status != models.WithdrawalStatusBroadcast {
 			t.Errorf("%s: withdrawal %s, want broadcast", name, got.Status)
 		}
+	}
+	var copiedPayload map[string]any
+	_ = json.Unmarshal([]byte(reloadTransaction(t, copiedTx.ID).RawPayload), &copiedPayload)
+	if copiedPayload[chain.LandedAsPayloadKey] != copyHash {
+		t.Fatalf("raw_payload %v: the copy that carried the withdrawal is kept", copiedPayload)
 	}
 	if utxo.asked(acceptedTx.TxHash) != 0 || utxo.asked(inputlessTx.TxHash) != 0 {
 		t.Fatal("only unknown outcomes recorded with their inputs are proven")
@@ -224,6 +239,13 @@ func TestReconcile_Withdrawal_ProvesABitcoinTransferByItsInputs(t *testing.T) {
 	report, err = svc.ReconcileWithdrawal(ctx, WithdrawalReconciliation{ID: found.ID})
 	if err != nil || report.Verdict != ReconcileLanded || report.Block != utxoHead-20 || report.Applied {
 		t.Fatalf("found: %+v, %v", report, err)
+	}
+
+	copyTx, copied := utxoWithdrawal(t, w.ID, utxoInputs, true)
+	utxo.spends[copyTx.TxHash] = chain.InputsSpend{Ours: true, Block: utxoHead - 8, TxHash: strings.Repeat("ef", 32)}
+	report, err = svc.ReconcileWithdrawal(ctx, WithdrawalReconciliation{ID: copied.ID})
+	if err != nil || report.Verdict != ReconcileLanded || report.Block != utxoHead-8 || !strings.Contains(report.Reason, "copy") {
+		t.Fatalf("a copy paying the same: %+v, %v", report, err)
 	}
 
 	mempoolTx, mempool := utxoWithdrawal(t, w.ID, utxoInputs, true)
