@@ -13,18 +13,20 @@ import (
 
 const tronBroadcastPath = "/wallet/broadcasthex"
 
-// java-tron broadcast codes (Wallet.broadcastTransaction). NO_CONNECTION and
-// SERVER_BUSY are checked before the node pushes the transaction: those refusals
-// never hand the bytes to the network. NOT_ENOUGH_EFFECTIVE_CONNECTION is also what
-// the node answers after the push when it reached no peer ("P2P broadcast failed."),
-// and OTHER_ERROR can follow the push too. DUP_TRANSACTION_ERROR comes from the
-// node's recent-id cache, which also holds the id of a push it refused.
+// java-tron broadcast codes (Wallet.broadcastTransaction). NO_CONNECTION,
+// SERVER_BUSY and NOT_ENOUGH_EFFECTIVE_CONNECTION with "Effective connection:…" are
+// checked before the node pushes the transaction: those refusals never hand the
+// bytes to the network. NOT_ENOUGH_EFFECTIVE_CONNECTION with any other message
+// ("P2P broadcast failed.") follows the push when the node reached no peer, and
+// OTHER_ERROR can follow the push too. DUP_TRANSACTION_ERROR comes from the node's
+// recent-id cache, which also holds the id of a push it refused.
 const (
 	tronDuplicateTransaction    = "DUP_TRANSACTION_ERROR"
 	tronServerBusy              = "SERVER_BUSY"
 	tronNoConnection            = "NO_CONNECTION"
 	tronNotEnoughConnections    = "NOT_ENOUGH_EFFECTIVE_CONNECTION"
 	tronOtherError              = "OTHER_ERROR"
+	tronBeforePushConnections   = "effective connection:"
 	tronBroadcastRefusedPattern = "tron broadcast refused: %s"
 	tronTransactionByIDPath     = "/wallet/gettransactionbyid"
 )
@@ -74,13 +76,21 @@ func judgeTronBroadcast(raw []byte) (rpc.Outcome, error) {
 		return rpc.OutcomeAnswer, nil
 	case answer.Code == tronDuplicateTransaction:
 		return rpc.OutcomeAnswer, &tronDuplicateError{answer: answer.tronCallResult}
-	case answer.Code == tronServerBusy, answer.Code == tronNoConnection:
+	case answer.Code == tronServerBusy, answer.Code == tronNoConnection, connectionsCheckedBeforePush(answer.tronCallResult):
 		return rpc.OutcomeUnavailable, chain.NotSent(refused)
 	case answer.Code == tronNotEnoughConnections, answer.Code == tronOtherError:
 		return rpc.OutcomeUnavailable, chain.UnknownOutcome(refused)
 	default:
 		return rpc.OutcomeAnswer, refused
 	}
+}
+
+// connectionsCheckedBeforePush reports the NOT_ENOUGH_EFFECTIVE_CONNECTION the node
+// answers before it pushes the transaction ("Effective connection:N lt
+// minEffectiveConnection:M"), not the one after the push ("P2P broadcast failed.").
+func connectionsCheckedBeforePush(answer tronCallResult) bool {
+	message := strings.ToLower(strings.TrimSpace(decodeTronMessage(answer.Message)))
+	return answer.Code == tronNotEnoughConnections && strings.HasPrefix(message, tronBeforePushConnections)
 }
 
 // knownByID reports whether any endpoint of the chain's network has the transaction

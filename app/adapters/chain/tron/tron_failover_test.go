@@ -200,9 +200,13 @@ func TestTron_Broadcast_ClassifiesEveryAnswer(t *testing.T) {
 		require.ErrorIs(t, err, chain.ErrUnknownOutcome)
 		assert.Equal(t, 1, fallback.calls("/wallet/gettransactionbyid"))
 	})
-	for _, code := range []string{"NOT_ENOUGH_EFFECTIVE_CONNECTION", "OTHER_ERROR"} {
-		t.Run(code+" may follow the push: unknown, not sent again", func(t *testing.T) {
-			primary := newTronEndpoint(t, nileGenesis(), tronAnswers(http.StatusOK, tronRefusal(code, "P2P broadcast failed.")))
+	for _, refusal := range []struct{ code, message string }{
+		{"NOT_ENOUGH_EFFECTIVE_CONNECTION", "P2P broadcast failed."},
+		{"OTHER_ERROR", "class java.lang.NullPointerException"},
+	} {
+		code, message := refusal.code, refusal.message
+		t.Run(code+" "+message+" may follow the push: unknown, not sent again", func(t *testing.T) {
+			primary := newTronEndpoint(t, nileGenesis(), tronAnswers(http.StatusOK, tronRefusal(code, message)))
 			fallback := newTronEndpoint(t, nileGenesis(), tronAnswers(http.StatusOK, accepted))
 			_, err := newTronFailoverAdapter(primary.server.URL, fallback).BroadcastTransaction(context.Background(), signed)
 			require.ErrorIs(t, err, chain.ErrUnknownOutcome)
@@ -231,6 +235,15 @@ func TestTron_Broadcast_ClassifiesEveryAnswer(t *testing.T) {
 		primary := newTronEndpoint(t, nileGenesis(), tronAnswers(http.StatusOK, `{"result":tru`))
 		_, err := newTronFailoverAdapter(primary.server.URL).BroadcastTransaction(context.Background(), signed)
 		require.ErrorIs(t, err, chain.ErrUnknownOutcome)
+	})
+	t.Run("too few effective connections before the push passes the bytes to the next one", func(t *testing.T) {
+		thin := newTronEndpoint(t, nileGenesis(), tronAnswers(http.StatusOK,
+			tronRefusal("NOT_ENOUGH_EFFECTIVE_CONNECTION", "Effective connection:0 lt minEffectiveConnection:1")))
+		fallback := newTronEndpoint(t, nileGenesis(), tronAnswers(http.StatusOK, accepted))
+		txID, err := newTronFailoverAdapter(thin.server.URL, fallback).BroadcastTransaction(context.Background(), signed)
+		require.NoError(t, err)
+		assert.Equal(t, signed.TxHash, txID)
+		assert.Equal(t, 1, fallback.calls(tronBroadcastPath))
 	})
 	t.Run("a node that did not take the bytes passes them to the next one", func(t *testing.T) {
 		closed := httptest.NewServer(http.NotFoundHandler())
