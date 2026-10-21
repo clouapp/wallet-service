@@ -26,6 +26,8 @@ func TestApply_RefusesALinkLocalOrMetadataEndpointBeforeAskingIt(t *testing.T) {
 		"in a whole list":        {Change{Action: ActionSet, URLs: []string{filteredNode, "http://169.254.169.254/"}}, egress.ReasonLinkLocal},
 		"as a new primary":       {Change{Action: ActionAdd, URL: "http://100.100.100.200/latest/", Position: 1}, egress.ReasonLinkLocal},
 		"AWS IPv6 metadata node": {Change{Action: ActionAdd, URL: "http://[fd00:ec2::254]/latest/"}, egress.ReasonLinkLocal},
+		"a name for metadata":    {Change{Action: ActionAdd, URL: "http://169.254.169.254.nip.io/latest/meta-data/"}, egress.ReasonResolved},
+		"the SSH port":           {Change{Action: ActionAdd, URL: "http://10.0.0.5:22"}, egress.ReasonPort},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -54,7 +56,7 @@ func TestApply_AcceptsAPrivateOrLoopbackNode(t *testing.T) {
 func TestApply_AcceptsALinkLocalNodeWithTheFlag(t *testing.T) {
 	h := newHarness(t, filteredNode)
 	deps := h.deps
-	deps.AllowLinkLocal = true
+	deps.Destinations = egress.NewGuard(egress.RPCPolicy(true), nil)
 	h.service = NewService(deps)
 	_, _ = h.service.Apply(context.Background(), models.ChainETH, Change{Action: ActionAdd, URL: "http://169.254.10.20:8545"}, false)
 	assert.Equal(t, []string{"http://169.254.10.20:8545"}, h.verified)

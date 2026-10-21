@@ -73,6 +73,11 @@ func TestPolicy_CheckURL_RefusesEveryInternalDestinationOfAWebhook(t *testing.T)
 		{"documentation", "https://192.0.2.10/in", ReasonReserved},
 		{"benchmarking", "https://198.18.0.1/in", ReasonReserved},
 		{"IPv6 documentation", "https://[2001:db8::1]/in", ReasonReserved},
+		{"Teredo", "https://[2001::5efe:a9fe:a9fe]/in", ReasonReserved},
+		{"local-use NAT64", "https://[64:ff9b:1::a9fe:a9fe]/in", ReasonReserved},
+		{"6to4 relay anycast", "https://192.88.99.1/in", ReasonReserved},
+		{"SSH port", "https://hooks.example.com:22/in", ReasonPort},
+		{"SMTP port", "https://hooks.example.com:25/in", ReasonPort},
 
 		{"single label", "https://openbao/v1/sys/health", ReasonHostName},
 		{"a service name", "https://wallet-service:2002/health", ReasonHostName},
@@ -118,6 +123,24 @@ func TestPolicy_CheckURL_AllowsAPublicHTTPSHost(t *testing.T) {
 		if err := webhook.CheckURL(raw); err != nil {
 			t.Errorf("%s refused: %v", raw, err)
 		}
+	}
+}
+
+func TestPolicy_CheckURL_AllowsOnlyTheListedPortsWhenThereIsAList(t *testing.T) {
+	listed := Policy{AllowedPorts: []int{443, 8443}}
+	for _, raw := range []string{"https://hooks.example.com/in", "https://hooks.example.com:443/in", "https://hooks.example.com:8443/in"} {
+		if err := listed.CheckURL(raw); err != nil {
+			t.Errorf("%s refused: %v", raw, err)
+		}
+	}
+	assertRefusal(t, listed.CheckURL("https://hooks.example.com:8080/in"), ReasonPort)
+	assertRefusal(t, (Policy{AllowHTTP: true, AllowedPorts: []int{443}}).CheckURL("http://hooks.example.com/in"), ReasonPort)
+	if err := (Policy{AllowHTTP: true, AllowedPorts: []int{80}}).CheckURL("http://hooks.example.com/in"); err != nil {
+		t.Fatalf("http on its default port 80: %v", err)
+	}
+	// No list: any port but the refused ones.
+	if err := (Policy{}).CheckURL("https://hooks.example.com:8080/in"); err != nil {
+		t.Fatalf("an unlisted port without a list: %v", err)
 	}
 }
 
@@ -174,6 +197,7 @@ func TestRPCPolicy_AllowsPrivateNodesButNotMetadata(t *testing.T) {
 		{"http://224.0.0.1:8545", ReasonReserved},
 		{"http://0x7f000001:8545", ReasonHostName},
 		{"ws://node.example.com", ReasonInvalidURL},
+		{"http://node.example.com:25", ReasonPort},
 	}
 	for _, tc := range refused {
 		assertRefusal(t, rpc.CheckURL(tc.url), tc.reason)
@@ -223,13 +247,17 @@ func TestPolicy_CheckAddr_ClassifiesEveryRange(t *testing.T) {
 		{"::ffff:100.64.0.1", ReasonPrivate},
 		{"::ffff:192.0.2.1", ReasonReserved},
 		{"::ffff:240.0.0.1", ReasonReserved},
+		{"2001::1", ReasonReserved},
+		{"2001:0:ffff::1", ReasonReserved},
+		{"64:ff9b:1::1", ReasonReserved},
+		{"192.88.99.200", ReasonReserved},
 	}
 	for _, tc := range cases {
 		t.Run(tc.addr, func(t *testing.T) {
 			assertRefusal(t, webhook.CheckAddr(netip.MustParseAddr(tc.addr)), tc.reason)
 		})
 	}
-	for _, public := range []string{"1.1.1.1", "93.184.216.34", "2606:4700::1111", "64:ff9b::808:808", "2002:808:808::"} {
+	for _, public := range []string{"1.1.1.1", "93.184.216.34", "2606:4700::1111", "2001:4860:4860::8888", "64:ff9b::808:808", "2002:808:808::", "192.88.98.1"} {
 		if err := webhook.CheckAddr(netip.MustParseAddr(public)); err != nil {
 			t.Errorf("%s refused: %v", public, err)
 		}

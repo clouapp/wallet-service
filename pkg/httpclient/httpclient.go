@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync/atomic"
 	"time"
 )
 
@@ -21,6 +22,24 @@ const (
 )
 
 var sharedTransport = newTransport(pingAfterIdleRead, pingTimeout)
+
+// sharedGuard opens the connections of the shared transport once GuardConnections
+// set it; nil dials as http.DefaultTransport does.
+var sharedGuard atomic.Pointer[DialFunc]
+
+// GuardConnections makes every connection of the shared transport (New, NewClient,
+// NewClientWithoutRedirects: the chain nodes and provider APIs) open through dial.
+// The composition root passes egress.Guard.DialContext with the RPC policy, so an
+// endpoint never reaches a refused destination, whatever its name resolves to. With
+// a proxy in the environment (HTTPS_PROXY) dial sees the proxy, not the endpoint.
+// nil removes the guard.
+func GuardConnections(dial DialFunc) {
+	if dial == nil {
+		sharedGuard.Store(nil)
+		return
+	}
+	sharedGuard.Store(&dial)
+}
 
 // New returns a client with the given total request timeout over a transport whose
 // HTTP/2 connections are health-checked. Without the check, a connection that dies
@@ -36,6 +55,16 @@ func New(timeout time.Duration) *http.Client {
 
 func newTransport(pingAfter, pingWait time.Duration) *http.Transport {
 	transport := baseTransport()
+	unguarded := transport.DialContext
+	if unguarded == nil {
+		unguarded = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext
+	}
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		if guard := sharedGuard.Load(); guard != nil {
+			return (*guard)(ctx, network, address)
+		}
+		return unguarded(ctx, network, address)
+	}
 	transport.HTTP2 = &http.HTTP2Config{
 		SendPingTimeout: pingAfter,
 		PingTimeout:     pingWait,

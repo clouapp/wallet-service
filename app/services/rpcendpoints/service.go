@@ -70,9 +70,17 @@ type Deps struct {
 	Dialer    Dialer
 	Defaults  func(network string) []string
 	Now       func() time.Time
-	// AllowLinkLocal also accepts link-local and cloud metadata endpoints
-	// (RPC_ALLOW_LINK_LOCAL); every other destination of egress.RPCPolicy is allowed.
-	AllowLinkLocal bool
+	// Destinations checks the URL each change would dial, and what its name resolves
+	// to (the composition root gives the RPC guard, egress.RPCPolicy); nil is that
+	// policy with link-local and metadata destinations refused, over the system
+	// resolver.
+	Destinations destinationGuard
+}
+
+// destinationGuard refuses an endpoint URL whose destination the RPC policy does
+// not allow, by its literal host or by what its name resolves to now.
+type destinationGuard interface {
+	CheckDestination(ctx context.Context, rawURL string) error
 }
 
 // Service lists and changes the RPC endpoints of a chain.
@@ -86,7 +94,7 @@ type Service struct {
 	dialer    Dialer
 	defaults  func(network string) []string
 	now       func() time.Time
-	rpcPolicy egress.Policy
+	rpcGuard  destinationGuard
 }
 
 // NewService builds the endpoint service. It panics without Chains, Endpoints or Sealer.
@@ -104,7 +112,10 @@ func NewService(deps Deps) *Service {
 		dialer:    deps.Dialer,
 		defaults:  deps.Defaults,
 		now:       deps.Now,
-		rpcPolicy: egress.RPCPolicy(deps.AllowLinkLocal),
+		rpcGuard:  deps.Destinations,
+	}
+	if svc.rpcGuard == nil {
+		svc.rpcGuard = egress.NewGuard(egress.RPCPolicy(false), nil)
 	}
 	if svc.verify == nil {
 		svc.verify = chainregistry.VerifyEndpoint

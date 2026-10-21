@@ -72,7 +72,7 @@ Both fail on `main`'s template (checked) and pass after the change.
 | T8 | `VaultApi` is `AWS::Serverless::Api` (REST API, payload 1.0), but `handleAPIGateway` decodes `events.APIGatewayV2HTTPRequest` (`httpadapter.NewV2`, HTTP API payload 2.0) | `main.go` |
 | T9 | No `VpcConfig`, so no function reaches a private RDS or ElastiCache. No function may read or write `vault/wallet/*` or use the KMS key, so wallet creation cannot store share B | Compare `ServerPolicy` in `template.dev.yaml` (`WalletSecrets`, `MasterKeyUse`) |
 | T10 | The `MasterKeyRef` default is `local:dev-master-key`. A local reference leaves share B on the Secrets Manager default key | `app/adapters/secretsmanager/kms_key.go` |
-| T11 | `ENV`, `API_KEY_SECRET` and `WEBHOOK_INGEST_BASE_URL` are passed but read by no code (`vault.api_key_secret` is declared and never read) | `config/vault.go` |
+| T11 | `API_KEY_SECRET` and `WEBHOOK_INGEST_BASE_URL` are passed but read by no code (`vault.api_key_secret` is declared and never read); `ENV` is read only to keep `APP_ENV=testing` from allowing loopback webhook receivers on a prod or staging deployment (`vault.deployment.env`) | `config/vault.go` |
 | T12 | In every Lambda mode the pre-parameters pool never runs, so a secp256k1 keygen searches its own primes inside a 29 s API invocation | §3, §5.3 |
 
 ## 2. The processes

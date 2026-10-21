@@ -47,7 +47,7 @@ func TestUpdate_RPC_RefusesAnEndpointOnAnotherNetworkOrThatDoesNotAnswer(t *test
 			store.chain.RpcURL = "kept"
 			activity := &thresholdActivity{}
 			verifier := &fixedVerifier{err: tc.err}
-			service := chainsvc.NewRPC(chainsvc.RPCDeps{
+			service := chainsvc.NewRPC(chainsvc.RPCDeps{Destinations: testRPCDestinations(t),
 				Store: store, Admins: &thresholdAdmins{allow: true}, Activity: activity, Sealer: prefixSeal{}, Dialer: &hostDialer{}, Verify: verifier,
 			})
 
@@ -67,7 +67,7 @@ func TestUpdate_RPC_WritesAChainWhoseEndpointsCannotBeAskedAsBefore(t *testing.T
 	t.Parallel()
 
 	store := &rpcStore{chain: ethChain("1", "1", "1")}
-	service := chainsvc.NewRPC(chainsvc.RPCDeps{
+	service := chainsvc.NewRPC(chainsvc.RPCDeps{Destinations: testRPCDestinations(t),
 		Store: store, Admins: &thresholdAdmins{allow: true}, Activity: &thresholdActivity{}, Sealer: prefixSeal{}, Dialer: &hostDialer{},
 		Verify: &fixedVerifier{err: chainregistry.ErrEndpointIdentityUnsupported},
 	})
@@ -84,7 +84,7 @@ func TestNew_RPC_RequiresTheVerifier(t *testing.T) {
 	defer func() {
 		assert.Equal(t, "chain rpc: endpoint verifier is required", recover())
 	}()
-	chainsvc.NewRPC(chainsvc.RPCDeps{
+	chainsvc.NewRPC(chainsvc.RPCDeps{Destinations: testRPCDestinations(t),
 		Store: &rpcStore{}, Admins: &thresholdAdmins{}, Activity: &thresholdActivity{}, Sealer: prefixSeal{}, Dialer: &hostDialer{},
 	})
 	t.Fatal(errors.New("expected a panic"))

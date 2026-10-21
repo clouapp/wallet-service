@@ -11,6 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/pkg/egress"
+	"github.com/macrowallets/waas/tests/fakedns"
 )
 
 func TestUpdate_RPC_RefusesALinkLocalOrMetadataEndpointBeforeAskingIt(t *testing.T) {
@@ -22,6 +23,8 @@ func TestUpdate_RPC_RefusesALinkLocalOrMetadataEndpointBeforeAskingIt(t *testing
 		"http://metadata.google.internal/":         egress.ReasonMetadata,
 		"http://0.0.0.0:8545":                      egress.ReasonReserved,
 		"env:CHAIN_RPC_TEST_METADATA_URL":          egress.ReasonLinkLocal,
+		"http://169.254.169.254.nip.io/latest/":    egress.ReasonResolved,
+		"http://10.0.0.5:25":                       egress.ReasonPort,
 	}
 	for url, reason := range cases {
 		store := &rpcStore{chain: ethChain("1", "1", "1"), sealed: "kept"}
@@ -29,6 +32,7 @@ func TestUpdate_RPC_RefusesALinkLocalOrMetadataEndpointBeforeAskingIt(t *testing
 		verifier := &fixedVerifier{network: models.NetworkEthereumSepolia}
 		service := chainsvc.NewRPC(chainsvc.RPCDeps{
 			Store: store, Admins: &thresholdAdmins{allow: true}, Activity: &thresholdActivity{}, Sealer: prefixSeal{}, Dialer: &hostDialer{}, Verify: verifier,
+			Destinations: testRPCDestinations(t),
 		})
 
 		_, err := service.Update(context.Background(), uuid.New(), "eth", thresholdObject(t, `{"rpcUrl":"`+url+`"}`))
@@ -53,9 +57,19 @@ func TestUpdate_RPC_AcceptsAPrivateNodeAndALinkLocalOneWithTheFlag(t *testing.T)
 		store.chain.RpcURL = "kept"
 		service := chainsvc.NewRPC(chainsvc.RPCDeps{
 			Store: store, Admins: &thresholdAdmins{allow: true}, Activity: &thresholdActivity{}, Sealer: prefixSeal{}, Dialer: &hostDialer{},
-			Verify: &fixedVerifier{network: models.NetworkEthereumSepolia}, AllowLinkLocal: tc.allowLinkLocal,
+			Verify: &fixedVerifier{network: models.NetworkEthereumSepolia}, Destinations: egress.NewGuard(egress.RPCPolicy(tc.allowLinkLocal), nil),
 		})
 		_, err := service.Update(context.Background(), uuid.New(), "eth", thresholdObject(t, `{"rpcUrl":"`+tc.url+`"}`))
 		require.NoError(t, err, tc.url)
 	}
+}
+
+// testRPCDestinations is the RPC guard over a fake DNS server: 169.254.169.254.nip.io
+// resolves to the metadata address, any other name does not resolve, so no test asks
+// the network.
+func testRPCDestinations(t *testing.T) *egress.Guard {
+	t.Helper()
+	return egress.NewGuard(egress.RPCPolicy(false), fakedns.Start(t, map[string][]string{
+		"169.254.169.254.nip.io": {"169.254.169.254"},
+	}).Resolver())
 }

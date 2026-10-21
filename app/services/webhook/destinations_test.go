@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"net/netip"
 	"strings"
 	"testing"
 
@@ -16,26 +15,28 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/pkg/egress"
 	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/fakedns"
 )
 
-// staticResolver answers the names it lists with their address and every other
-// name with a public one, so no test asks the network.
-type staticResolver map[string]string
+// testDNS answers two names with internal addresses; any other name does not
+// resolve (and is left to the dial), so no test asks the network.
+var testDNS = mustServeDNS(map[string][]string{
+	"private.example.com":  {"10.0.0.7"},
+	"metadata.example.com": {"169.254.169.254"},
+})
 
-func (r staticResolver) LookupNetIP(_ context.Context, _, host string) ([]netip.Addr, error) {
-	if addr, ok := r[host]; ok {
-		return []netip.Addr{netip.MustParseAddr(addr)}, nil
+func mustServeDNS(answers map[string][]string) *fakedns.Server {
+	server, err := fakedns.Serve(answers)
+	if err != nil {
+		panic(err)
 	}
-	return []netip.Addr{netip.MustParseAddr("93.184.216.34")}, nil
+	return server
 }
 
 // testDestinations is the guard of these tests: the webhook policy, with loopback
-// allowed for the httptest receivers, and two names that resolve inside.
+// allowed for the httptest receivers, over testDNS.
 func testDestinations() *egress.Guard {
-	return egress.NewGuard(egress.Policy{AllowLoopback: true}, staticResolver{
-		"private.example.com":  "10.0.0.7",
-		"metadata.example.com": "169.254.169.254",
-	})
+	return egress.NewGuard(egress.Policy{AllowLoopback: true}, testDNS.Resolver())
 }
 
 func TestCreate_Config_RefusesAnInternalDestinationAndStoresNothing(t *testing.T) {
@@ -52,8 +53,8 @@ func TestCreate_Config_RefusesAnInternalDestinationAndStoresNothing(t *testing.T
 		"http://hooks.example.com/in":                      egress.ReasonScheme,
 		"https://user:secret@hooks.example.com/in":         egress.ReasonUserinfo,
 		"https://0x7f000001/in":                            egress.ReasonHostName,
-		"https://private.example.com/hook":                 egress.ReasonPrivate,
-		"https://metadata.example.com/hook":                egress.ReasonLinkLocal,
+		"https://private.example.com/hook":                 egress.ReasonResolved,
+		"https://metadata.example.com/hook":                egress.ReasonResolved,
 	}
 	for raw, reason := range cases {
 		for _, owner := range []*uuid.UUID{&accountID, nil} {
@@ -135,7 +136,7 @@ func TestDeliver_ARefusedDestinationIsSettledFailedAndNeverPosted(t *testing.T) 
 		// Stored before the guard existed.
 		"http://169.254.169.254/latest/meta-data/iam/security-credentials": egress.ReasonLinkLocal,
 		// Accepted when it resolved outside, resolving inside at send time.
-		"https://private.example.com/hooks/in": egress.ReasonPrivate,
+		"https://private.example.com/hooks/in": egress.ReasonResolved,
 	}
 	for deliveryURL, reason := range cases {
 		svc, store := newMemoryWebhookService()
@@ -171,8 +172,8 @@ func TestSendTest_ARefusedDestinationIsNotPosted(t *testing.T) {
 	svc, store := newMemoryWebhookService()
 	cfg := storedConfig(t, store, "https://metadata.example.com/latest/meta-data/", "secret", nil)
 	err := svc.SendTest(context.Background(), cfg, uuid.New())
-	if !errors.Is(err, ErrURLNotAllowed) || RefusalReason(err) != egress.ReasonLinkLocal {
-		t.Fatalf("SendTest = %v, want the link-local refusal", err)
+	if !errors.Is(err, ErrURLNotAllowed) || RefusalReason(err) != egress.ReasonResolved {
+		t.Fatalf("SendTest = %v, want the refusal of what the name resolves to", err)
 	}
 }
 
@@ -217,7 +218,7 @@ func TestAudit_Destinations_ListsTheActiveConfigsTheGuardRefuses(t *testing.T) {
 	}
 	want := []RefusedDestination{
 		{ConfigID: metadata.ID, Scope: ScopeWallet, Host: "169.254.169.254", Reason: egress.ReasonLinkLocal},
-		{ConfigID: private.ID, Scope: ScopeAccount, Host: "private.example.com", Reason: egress.ReasonPrivate},
+		{ConfigID: private.ID, Scope: ScopeAccount, Host: "private.example.com", Reason: egress.ReasonResolved},
 		{ConfigID: legacy.ID, Scope: ScopeLegacy, Host: "openbao", Reason: egress.ReasonHostName},
 	}
 	for i, refused := range audit.Refused {

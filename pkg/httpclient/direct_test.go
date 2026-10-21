@@ -112,3 +112,38 @@ func TestDirectTransport_KeepsTheDialRefusalOnTheErrorChain(t *testing.T) {
 		t.Fatalf("the error %q carries the URL", got)
 	}
 }
+
+func TestGuardConnections_OpensEveryConnectionOfTheSharedTransportThroughTheDial(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(server.Close)
+	dial := &recordingDial{target: server.Listener.Addr().String()}
+	GuardConnections(dial.dial)
+	t.Cleanup(func() { GuardConnections(nil) })
+
+	resp, err := NewClient(time.Second).Do(context.Background(), Request{Method: MethodGet, URL: "http://rpc.example.test:8545/"})
+	if err != nil || resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("Do = %d, %v", resp.StatusCode, err)
+	}
+	if asked := dial.asked(); len(asked) != 1 || asked[0] != "rpc.example.test:8545" {
+		t.Fatalf("dialed %v, want the request's host through the guard", asked)
+	}
+
+	refused := errors.New("destination refused")
+	GuardConnections((&recordingDial{err: refused}).dial)
+	if _, err := NewClient(time.Second).Do(context.Background(), Request{Method: MethodGet, URL: "http://other.example.test:8545/"}); !errors.Is(err, refused) {
+		t.Fatalf("err = %v, want the guard's refusal", err)
+	}
+}
+
+func TestGuardConnections_WithoutAGuardDialsAsBefore(t *testing.T) {
+	GuardConnections(nil)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+	if resp, err := NewClient(time.Second).Do(context.Background(), Request{Method: MethodGet, URL: server.URL}); err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("Do = %d, %v", resp.StatusCode, err)
+	}
+}
