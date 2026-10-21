@@ -52,7 +52,7 @@ func newPriceService(app foundation.Application) (*price.Service, error) {
 		Currencies: currencies,
 		Cache:      facades.Cache(),
 	}).
-		WithQuoteDialer(coinapiws.Dialer{}).
+		WithQuoteDialer(coinapiws.NewDialer(RPCDestinations().DialContext)).
 		WithEnvCoinAPIKey(credential.Key).
 		WithSettingsSource(func(ctx context.Context) ([]price.Credential, error) {
 			opened, err := accountSettings.PriceProvidersForQuote(ctx)

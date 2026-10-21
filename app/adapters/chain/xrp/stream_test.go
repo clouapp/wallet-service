@@ -3,11 +3,14 @@ package xrp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,7 +18,9 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/xrpstream"
+	"github.com/macrowallets/waas/pkg/egress"
 	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/fakedns"
 )
 
 const (
@@ -148,7 +153,7 @@ func emptySuccess(request map[string]any) []any {
 
 func dialFake(t *testing.T, f *fakeXRPLSocket, idle time.Duration) xrpstream.Session {
 	t.Helper()
-	session, err := NewStreamDialer(StreamConfig{ChainIDStr: models.ChainTXRP, NativeSymbol: models.NativeXRP, URL: f.url(), IsTestnet: true, IdleTimeout: idle}).Dial(context.Background())
+	session, err := newTestStreamDialer(StreamConfig{ChainIDStr: models.ChainTXRP, NativeSymbol: models.NativeXRP, URL: f.url(), IsTestnet: true, IdleTimeout: idle}).Dial(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,32 +374,32 @@ func TestStream_DialRefusesAnEndpointOfAnotherNetwork(t *testing.T) {
 	mainnet := newFakeXRPLSocket(t, emptySuccess)
 	mainnet.networkID = 0
 	testnet := StreamConfig{ChainIDStr: models.ChainTXRP, NativeSymbol: models.NativeXRP, URL: mainnet.url(), IsTestnet: true}
-	if _, err := NewStreamDialer(testnet).Dial(context.Background()); err == nil || !strings.Contains(err.Error(), "network") {
+	if _, err := newTestStreamDialer(testnet).Dial(context.Background()); err == nil || !strings.Contains(err.Error(), "network") {
 		t.Fatalf("err %v, want the mainnet endpoint of a testnet chain refused", err)
 	}
 
 	// A server that names no network_id is the mainnet's (0).
 	unnamed := newFakeXRPLSocket(t, emptySuccess)
 	unnamed.networkID = nil
-	session, err := NewStreamDialer(StreamConfig{ChainIDStr: models.ChainXRP, NativeSymbol: models.NativeXRP, URL: unnamed.url()}).Dial(context.Background())
+	session, err := newTestStreamDialer(StreamConfig{ChainIDStr: models.ChainXRP, NativeSymbol: models.NativeXRP, URL: unnamed.url()}).Dial(context.Background())
 	if err != nil {
 		t.Fatalf("a mainnet chain refused a server without network_id: %v", err)
 	}
 	_ = session.Close()
 	testnet.URL = unnamed.url()
-	if _, err := NewStreamDialer(testnet).Dial(context.Background()); err == nil {
+	if _, err := newTestStreamDialer(testnet).Dial(context.Background()); err == nil {
 		t.Fatal("a testnet chain accepted a server without network_id")
 	}
 }
 
 func TestStream_DialRefusesAPlainWebSocketOffTheLoopback(t *testing.T) {
 	for _, rawURL := range []string{"ws://s.altnet.rippletest.net:51233", "ws://10.0.0.5:6006", "https://s.altnet.rippletest.net:51234"} {
-		if _, err := NewStreamDialer(StreamConfig{URL: rawURL, IsTestnet: true}).Dial(context.Background()); err == nil {
+		if _, err := newTestStreamDialer(StreamConfig{URL: rawURL, IsTestnet: true}).Dial(context.Background()); err == nil {
 			t.Fatalf("%s was dialed", rawURL)
 		}
 	}
 	for _, rawURL := range []string{"ws://localhost:1/x", "ws://[::1]:1/x"} {
-		_, err := NewStreamDialer(StreamConfig{URL: rawURL}).Dial(context.Background())
+		_, err := newTestStreamDialer(StreamConfig{URL: rawURL}).Dial(context.Background())
 		if err == nil || strings.Contains(err.Error(), "loopback") {
 			t.Fatalf("%s: err %v, want it dialed (and refused by the closed port)", rawURL, err)
 		}
@@ -460,16 +465,70 @@ func TestStream_ACancelledContextEndsAWriteThePeerDoesNotRead(t *testing.T) {
 }
 
 func TestStream_DialRefusesAnotherSchemeAndNeverReportsTheURL(t *testing.T) {
-	if _, err := NewStreamDialer(StreamConfig{URL: "https://s.altnet.rippletest.net:51234"}).Dial(context.Background()); err == nil {
+	if _, err := newTestStreamDialer(StreamConfig{URL: "https://s.altnet.rippletest.net:51234"}).Dial(context.Background()); err == nil {
 		t.Fatal("an http URL was dialed as a WebSocket")
 	}
 	closed := httptest.NewServer(http.NotFoundHandler())
 	keyed := "ws" + strings.TrimPrefix(closed.URL, "http") + "/key-0123456789abcdef"
 	closed.Close()
 
-	_, err := NewStreamDialer(StreamConfig{URL: keyed}).Dial(context.Background())
+	_, err := newTestStreamDialer(StreamConfig{URL: keyed}).Dial(context.Background())
 
 	if err == nil || strings.Contains(err.Error(), "key-0123456789abcdef") {
 		t.Fatalf("err %v, want a dial error without the URL", err)
 	}
+}
+
+// testStreamGuard is the RPC guard the stream dials through in these tests: the
+// fixtures listen on the loopback, which the RPC policy allows.
+var testStreamGuard = egress.NewGuard(egress.RPCPolicy(false), nil)
+
+func newTestStreamDialer(cfg StreamConfig) *StreamDialer {
+	return NewStreamDialer(cfg, testStreamGuard.DialContext)
+}
+
+func TestStream_DialRefusesAnEndpointThatResolvesToAMetadataAddress(t *testing.T) {
+	f := newFakeXRPLSocket(t, emptySuccess)
+	dns := fakedns.Start(t, map[string][]string{"xrp.example.test": {"169.254.169.254"}})
+	guard := egress.NewGuard(egress.RPCPolicy(false), dns.Resolver())
+
+	const rawURL = "wss://xrp.example.test/?token=stream-secret"
+	_, err := NewStreamDialer(StreamConfig{ChainIDStr: models.ChainTXRP, URL: rawURL, IsTestnet: true}, guard.DialContext).Dial(context.Background())
+	if !errors.Is(err, egress.ErrRefused) {
+		t.Fatalf("err = %v, want the guard's refusal", err)
+	}
+	if strings.Contains(err.Error(), "stream-secret") || strings.Contains(err.Error(), rawURL) {
+		t.Fatalf("the refusal %q carries the URL", err)
+	}
+	select {
+	case <-f.accepted:
+		t.Fatal("a refused endpoint was connected to")
+	default:
+	}
+}
+
+func TestStream_DialGoesThroughTheGivenDial(t *testing.T) {
+	f := newFakeXRPLSocket(t, emptySuccess)
+	var dialed atomic.Int32
+	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
+		dialed.Add(1)
+		return testStreamGuard.DialContext(ctx, network, address)
+	}
+	session, err := NewStreamDialer(StreamConfig{ChainIDStr: models.ChainTXRP, NativeSymbol: models.NativeXRP, URL: f.url(), IsTestnet: true}, dial).Dial(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = session.Close()
+	if dialed.Load() != 1 {
+		t.Fatalf("dialed %d times through the given dial, want 1", dialed.Load())
+	}
+}
+
+func TestNew_StreamDialer_RequiresADial(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("a stream dialer without a dial was built")
+		}
+	}()
+	NewStreamDialer(StreamConfig{URL: "wss://xrp.example.test"}, nil)
 }

@@ -164,11 +164,13 @@ func registerVault() {
 			"rpc_allow_link_local":  envBool("RPC_ALLOW_LINK_LOCAL", false),
 		},
 		// The deployment the process runs in (ENV: dev, staging or prod; ENVIRONMENT:
-		// development, staging or production). On a production-like one APP_ENV=testing
-		// never allows loopback webhook receivers.
+		// development, staging or production; a Lambda function). On a production-like
+		// one APP_ENV=testing never allows loopback webhook receivers.
 		"deployment": map[string]any{
 			"env":         envString("ENV", ""),
 			"environment": envString("ENVIRONMENT", ""),
+			// Set by Lambda in every function it runs; the suites never run there.
+			"lambda_function": envString("AWS_LAMBDA_FUNCTION_NAME", ""),
 		},
 		"webhooks": map[string]any{
 			// ingest_base_url is the public https origin the push providers post to

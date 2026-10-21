@@ -29,7 +29,7 @@ func TestLive_Stream_Altnet(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	session, err := NewStreamDialer(StreamConfig{ChainIDStr: models.ChainTXRP, NativeSymbol: models.NativeXRP, URL: url, IsTestnet: true}).Dial(ctx)
+	session, err := newTestStreamDialer(StreamConfig{ChainIDStr: models.ChainTXRP, NativeSymbol: models.NativeXRP, URL: url, IsTestnet: true}).Dial(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

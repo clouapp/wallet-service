@@ -65,13 +65,20 @@ type StreamDialer struct {
 
 var _ xrpstream.Dialer = (*StreamDialer)(nil)
 
-// NewStreamDialer builds a dialer. It does not dial.
-func NewStreamDialer(cfg StreamConfig) *StreamDialer {
+// NewStreamDialer builds a dialer whose every TCP connection dial opens: the RPC
+// guard's DialContext, so a session never reaches a link-local or cloud metadata
+// address, whatever the endpoint's name resolves to. dial is required. It does not
+// dial.
+func NewStreamDialer(cfg StreamConfig, dial httpclient.DialFunc) *StreamDialer {
+	if dial == nil {
+		panic("xrp stream: dial is required")
+	}
 	if cfg.IdleTimeout <= 0 {
 		cfg.IdleTimeout = streamIdleTimeout
 	}
 	dialer := *websocket.DefaultDialer
 	dialer.HandshakeTimeout = streamDialTimeout
+	dialer.NetDialContext = dial
 	return &StreamDialer{cfg: cfg, dialer: &dialer}
 }
 
