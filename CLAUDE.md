@@ -264,7 +264,8 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   so the answer does not tell which internal record exists; a literal or a name rule keeps its
   own. Loopback is allowed only under `APP_ENV=testing` (the suites' httptest receivers, a local
   e2e run), never when `ENV`, `ENVIRONMENT` or `APP_ENV` is `prod`, `production`, `staging` or
-  `stage`, and a warning is logged at boot either way (`providers.webhookDestinationPolicy`). A
+  `stage` or the process runs on Lambda (`AWS_LAMBDA_FUNCTION_NAME`), and a warning is logged at
+  boot either way (`providers.webhookDestinationPolicy`). A
   name that does not resolve when it is registered is not refused there. The delivery client
   (`app/adapters/webhook/delivery`, registered by the webhook provider over the same guard)
   checks the URL again and opens every connection through `egress.Guard.DialContext`, never
@@ -836,12 +837,16 @@ family keeps its own list (next section): its list writes are refused.
   `169.254.169.254.nip.io` is refused), and every connection of the shared provider transport
   (`pkg/httpclient` `New`/`NewClient`: the RPC nodes and every chain and provider API) opens
   through the same guard (`providers.RPCDestinations`, installed with `httpclient.GuardConnections`
-  by the chain provider), so no endpoint reaches a refused address whatever its name resolves to
-  then. With `HTTPS_PROXY` set that guard sees the proxy, not the endpoint. — guarded by
+  by the chain provider), and so does every WebSocket client (the XRP deposit stream, the
+  CoinAPI quote socket: `NetDialContext`), so no endpoint reaches a refused address whatever its
+  name resolves to then. With `HTTPS_PROXY` set that guard sees the proxy, not the endpoint. —
+  guarded by
   `TestApply_RefusesALinkLocalOrMetadataEndpointBeforeAskingIt` (`app/services/rpcendpoints`),
   `TestUpdate_RPC_RefusesALinkLocalOrMetadataEndpointBeforeAskingIt` and
   `TestReplace_RPC_RefusesALinkLocalOrMetadataEndpointEvenWithoutANetworkCheck` (`app/services/chains`),
-  `TestGuardConnections_*` (`pkg/httpclient`) and `TestComposition_Root_GuardsEveryProviderConnection`.
+  `TestGuardConnections_*` (`pkg/httpclient`), `TestComposition_Root_GuardsEveryProviderConnection`,
+  `TestStream_DialRefusesAnEndpointThatResolvesToAMetadataAddress` (`app/adapters/chain/xrp`) and
+  `TestDial_RefusesAQuoteHostThatResolvesToAMetadataAddress` (`app/adapters/price/coinapi`).
 - **Every write checks the network.** Each endpoint a change adds or enables, and a new primary, must
   answer `eth_chainId` equal to `network_id` (EVM), `getGenesisHash` equal to its cluster's
   (`models.SolanaGenesisHash`, Solana), block 0's id equal to its network's (`/wallet/getblockbynum`
