@@ -152,30 +152,77 @@ func (s *Service) depositReceiptAllowsConfirmation(ctx context.Context, adapter 
 	if failureCode == "" {
 		return true
 	}
-	if err := s.failDeposit(ctx, tx, failureCode); err != nil {
+	if err := s.failDeposit(ctx, tx, failureCode); errors.Is(err, models.ErrTransactionSettled) {
+		slog.Info("deposit whose receipt failed was settled by another process meanwhile", "tx_id", tx.ID, "chain", tx.Chain)
+	} else if err != nil {
 		slog.Error("deposit whose receipt failed was not marked failed; retrying next pass", "tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "error", err)
 	}
 	return false
 }
 
-// failDeposit records a deposit whose transaction was mined and failed, so no
-// value reached the address: it publishes deposit.failed with failureCode, then
-// marks the row failed, last, so a failed publish leaves the row as it was and the
-// next pass (or run) tries again. The outbox keeps one deposit.failed per config
-// and deposit, so a retry never sends it twice. Without a deposit events publisher
-// the row is still marked failed, and no deposit webhook is sent at all.
+// depositEventStager records a deposit event inside the caller's database
+// transaction and returns the send to run after it commits (depositevents.Publisher).
+type depositEventStager interface {
+	Stage(ctx context.Context, eventType types.EventType, tx models.Transaction) (func(context.Context), error)
+}
+
+// failDeposit records a deposit that moved no value to the address (its
+// transaction was mined and failed, or its block was reorganized away and its
+// transaction can never land): deposit.failed with failureCode and the failed
+// status. The row is read again and failed only from the status the caller read: a
+// deposit another process settled meanwhile (the scan's confirmation step and the
+// tracker can both see it) is left as it is, with no event, and the error is
+// models.ErrTransactionSettled. With a publisher that can stage, the outbox rows of
+// deposit.failed and the guarded status write are one database transaction, queued
+// only once it commits, so a failure that loses the race leaves no deposit.failed;
+// otherwise deposit.failed is published first and the row marked last. Either way a
+// failure leaves the row as it was, the next pass (or run) tries again, and the
+// outbox keeps one deposit.failed per config and deposit. Without a deposit events
+// publisher the row is still marked failed, and no deposit webhook is sent at all.
 func (s *Service) failDeposit(ctx context.Context, tx models.Transaction, failureCode string) error {
+	read := tx.Status
 	tx.Status = string(types.TxStatusFailed)
 	tx.ErrorMessage = failureCode
-	if s.deposits == nil {
-		slog.Error("deposit webhook not sent: no deposit events publisher configured", "event_type", types.EventDepositFailed, "transaction_id", tx.ID)
-	} else if err := s.deposits.Publish(ctx, types.EventDepositFailed, tx); err != nil {
-		return fmt.Errorf("publish %s for deposit %s: %w", types.EventDepositFailed, tx.ID, err)
+	stager, staged := s.deposits.(depositEventStager)
+	var send func(context.Context)
+	write := func(ctx context.Context) error {
+		current, err := s.txRepo.FindByID(ctx, tx.ID)
+		if err != nil {
+			return fmt.Errorf("read deposit %s again: %w", tx.ID, err)
+		}
+		if current.Status != read {
+			return fmt.Errorf("deposit %s is %s, not %s: %w", tx.ID, current.Status, read, models.ErrTransactionSettled)
+		}
+		switch {
+		case s.deposits == nil:
+			slog.Error("deposit webhook not sent: no deposit events publisher configured", "event_type", types.EventDepositFailed, "transaction_id", tx.ID)
+		case staged:
+			if send, err = stager.Stage(ctx, types.EventDepositFailed, tx); err != nil {
+				return fmt.Errorf("stage %s for deposit %s: %w", types.EventDepositFailed, tx.ID, err)
+			}
+		default:
+			if err := s.deposits.Publish(ctx, types.EventDepositFailed, tx); err != nil {
+				return fmt.Errorf("publish %s for deposit %s: %w", types.EventDepositFailed, tx.ID, err)
+			}
+		}
+		if err := s.txRepo.MarkFailedFrom(ctx, tx.ID, failureCode, read); err != nil {
+			return fmt.Errorf("mark deposit %s failed: %w", tx.ID, err)
+		}
+		return nil
 	}
-	if err := s.txRepo.MarkFailed(ctx, tx.ID, failureCode); err != nil {
-		return fmt.Errorf("mark deposit %s failed: %w", tx.ID, err)
+	var err error
+	if staged {
+		err = s.txRepo.Within(ctx, write)
+	} else {
+		err = write(ctx)
 	}
-	slog.Warn("deposit failed on chain: its transaction was mined without moving its value",
+	if err != nil {
+		return err
+	}
+	if send != nil {
+		send(ctx)
+	}
+	slog.Warn("deposit failed: no value reached the address",
 		"tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "to", tx.ToAddress, "amount", tx.Amount, "failure_code", failureCode)
 	return nil
 }

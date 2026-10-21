@@ -134,6 +134,7 @@ func Commands() []console.Command {
 			Addresses: container.MustMake[*repositories.AddressRepository](),
 			Ledger:    container.MustMake[*repositories.TransactionRepository](),
 		})),
+		commands.NewDepositsReorgs(deposits),
 		commands.NewWithdrawalsReconcile(deposits),
 		commands.NewIngestSubscribe(container.MustMake[*ingestsubscription.Service]()),
 		commands.NewIngestSubscriptions(container.MustMake[*ingestsubscription.Service]()),

@@ -86,40 +86,55 @@ func configExistedAt(cfg models.WebhookConfig, at time.Time) bool {
 // already has an event of this type for the subject is skipped, so repeated tracker
 // runs and backfills never deliver the same event twice.
 func (s *Service) EnqueueScoped(ctx context.Context, event ScopedEvent) (int, error) {
+	send, enqueued, err := s.StageScoped(ctx, event)
+	if err != nil {
+		return 0, err
+	}
+	send(ctx)
+	return enqueued, nil
+}
+
+// StageScoped records the deliveries EnqueueScoped would, with ctx, so they join
+// the caller's database transaction, and returns the send that queues them, to run
+// only after that transaction commits (never nil): a delivery whose row is rolled
+// back is never queued.
+func (s *Service) StageScoped(ctx context.Context, event ScopedEvent) (func(context.Context), int, error) {
 	if err := event.validate(); err != nil {
-		return 0, fmt.Errorf("enqueue scoped event: %w", err)
+		return nil, 0, fmt.Errorf("enqueue scoped event: %w", err)
 	}
 
 	configs, err := s.webhookConfigRepo.FindActive(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("query webhook configs: %w", err)
+		return nil, 0, fmt.Errorf("query webhook configs: %w", err)
 	}
 
-	enqueued := 0
+	var staged []types.WebhookMessage
 	for _, cfg := range configs {
 		if !containsEvent(cfg.Events, string(event.EventType)) || !configCanSee(cfg, event.WalletID, event.AccountID) || !configExistedAt(cfg, event.OccurredAt) {
 			continue
 		}
-		created, err := s.enqueueForConfig(ctx, cfg, event)
+		msg, err := s.stageForConfig(ctx, cfg, event)
 		if err != nil {
 			slog.Error("enqueue scoped webhook", "error", err, "config_id", cfg.ID, "event_type", event.EventType, "subject_id", event.SubjectID)
 			continue
 		}
-		if created {
-			enqueued++
+		if msg != nil {
+			staged = append(staged, *msg)
 		}
 	}
-	return enqueued, nil
+	return func(sendCtx context.Context) { s.dispatchWebhooks(sendCtx, staged) }, len(staged), nil
 }
 
-func (s *Service) enqueueForConfig(ctx context.Context, cfg models.WebhookConfig, event ScopedEvent) (bool, error) {
+// stageForConfig records the delivery of event to cfg and returns its queue message,
+// nil when cfg already has one for the subject.
+func (s *Service) stageForConfig(ctx context.Context, cfg models.WebhookConfig, event ScopedEvent) (*types.WebhookMessage, error) {
 	exists, err := s.webhookEventRepo.ExistsForSubject(ctx, cfg.ID, string(event.EventType), event.SubjectID)
 	if err != nil {
-		return false, fmt.Errorf("check duplicate: %w", err)
+		return nil, fmt.Errorf("check duplicate: %w", err)
 	}
 	if exists {
 		slog.Info("webhook already enqueued for subject", "config_id", cfg.ID, "event_type", event.EventType, "subject_id", event.SubjectID)
-		return false, nil
+		return nil, nil
 	}
 
 	eventID := uuid.New()
@@ -130,7 +145,7 @@ func (s *Service) enqueueForConfig(ctx context.Context, cfg models.WebhookConfig
 		"data":       event.Data,
 	})
 	if err != nil {
-		return false, fmt.Errorf("marshal payload: %w", err)
+		return nil, fmt.Errorf("marshal payload: %w", err)
 	}
 
 	configID := cfg.ID
@@ -148,9 +163,9 @@ func (s *Service) enqueueForConfig(ctx context.Context, cfg models.WebhookConfig
 	}
 	if err := s.webhookEventRepo.Create(ctx, webhookEvent); err != nil {
 		if pgerr.IsUniqueViolation(err) {
-			return false, nil
+			return nil, nil
 		}
-		return false, fmt.Errorf("insert webhook event: %w", err)
+		return nil, fmt.Errorf("insert webhook event: %w", err)
 	}
 
 	msg := types.WebhookMessage{
@@ -164,12 +179,7 @@ func (s *Service) enqueueForConfig(ctx context.Context, cfg models.WebhookConfig
 	if event.TransactionID != nil {
 		msg.TransactionID = event.TransactionID.String()
 	}
-	if s.sqs != nil {
-		if err := s.sqs.SendWebhook(ctx, msg); err != nil {
-			slog.Error("sqs send webhook", "error", err, "event_id", eventID)
-		}
-	}
-	return true, nil
+	return &msg, nil
 }
 
 // DeliverPending is the local stand-in for the SQS webhook worker: it delivers stored

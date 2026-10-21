@@ -992,6 +992,13 @@ definitions:
     properties:
       error:
         type: string
+      reorg_unresolved:
+        additionalProperties:
+          type: integer
+        type: object
+      reorg_unresolved_total:
+        example: 0
+        type: integer
       stale:
         additionalProperties:
           type: integer

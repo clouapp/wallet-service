@@ -99,9 +99,17 @@ type transactionStore interface {
 	FindConfirmedDepositsMissingEvent(ctx context.Context, eventType string, from, to time.Time, chainIDs []string, limit int) ([]models.Transaction, error)
 	FindConfirmedNativeDeposits(ctx context.Context, chainID string, since time.Time, afterID uuid.UUID, limit int) ([]models.Transaction, error)
 	SetBlockNumber(ctx context.Context, id uuid.UUID, block uint64) error
+	// SetBlock records the block number, hash and transfer position of a deposit a
+	// reorganization moved, or one recorded without a hash.
+	SetBlock(ctx context.Context, id uuid.UUID, block uint64, blockHash string, position int) error
 	SetFee(ctx context.Context, id uuid.UUID, fee string) error
+	// RecordConfirmations writes a row still pending or confirming only
+	// (models.ErrTransactionSettled otherwise).
 	RecordConfirmations(ctx context.Context, id uuid.UUID, confirmations int, status string, confirmedAt *time.Time) error
 	MarkFailed(ctx context.Context, id uuid.UUID, reason string) error
+	// MarkFailedFrom fails a row still in fromStatus (models.ErrTransactionSettled otherwise).
+	MarkFailedFrom(ctx context.Context, id uuid.UUID, reason, fromStatus string) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Transaction, error)
 	// SetRawPayload rewrites raw_payload (what the tracker keeps between passes).
 	SetRawPayload(ctx context.Context, id uuid.UUID, rawPayload string) error
 }
@@ -332,7 +340,7 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		BlockHash:      transfer.BlockHash,
 		Direction:      models.TxDirectionInbound,
 		Source:         models.TxSourceChain,
-		RawPayload:     "{}",
+		RawPayload:     depositPayload(transfer),
 	}
 
 	outcome, err := depositrecord.Record(ctx, s.txRepo, tx, siblings)

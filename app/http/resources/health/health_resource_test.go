@@ -44,11 +44,11 @@ func TestNewHealth_Keeps_TheHealthWire(t *testing.T) {
 }
 
 var (
-	settled    = deposit.StaleOutboundHealth{Counts: map[string]int{}, After: 6 * time.Hour}
+	settled    = deposit.StaleOutboundHealth{Counts: map[string]int{}, After: 6 * time.Hour, Reorged: map[string]int{}}
 	noActivity = deposit.ScanActivityHealth{Chains: map[string]deposit.ChainActivity{}}
 )
 
-const settledTracker = `"confirmation_tracker":{"status":"ok","stale":{},"stale_total":0,"stale_after_hours":6}`
+const settledTracker = `"confirmation_tracker":{"status":"ok","stale":{},"stale_total":0,"stale_after_hours":6,"reorg_unresolved":{},"reorg_unresolved_total":0}`
 
 func TestNewHealth_ReportsOutboundTransfersLeftUnsettled(t *testing.T) {
 	nothingPending := deposit.PendingHealth{Counts: map[string]int{}}
@@ -57,12 +57,16 @@ func TestNewHealth_ReportsOutboundTransfersLeftUnsettled(t *testing.T) {
 		want  string
 	}{
 		"transfers left unsettled": {
-			deposit.StaleOutboundHealth{Counts: map[string]int{"eth": 2, "sol": 1}, Total: 3, After: 6 * time.Hour},
-			`"confirmation_tracker":{"status":"stale_transactions","stale":{"eth":2,"sol":1},"stale_total":3,"stale_after_hours":6}`,
+			deposit.StaleOutboundHealth{Counts: map[string]int{"eth": 2, "sol": 1}, Total: 3, After: 6 * time.Hour, Reorged: map[string]int{"eth": 1}, ReorgedTotal: 1},
+			`"confirmation_tracker":{"status":"stale_transactions","stale":{"eth":2,"sol":1},"stale_total":3,"stale_after_hours":6,"reorg_unresolved":{"eth":1},"reorg_unresolved_total":1}`,
+		},
+		"reorganized deposits unresolved": {
+			deposit.StaleOutboundHealth{Counts: map[string]int{}, After: 6 * time.Hour, Reorged: map[string]int{"btc": 2}, ReorgedTotal: 2},
+			`"confirmation_tracker":{"status":"reorg_unresolved","stale":{},"stale_total":0,"stale_after_hours":6,"reorg_unresolved":{"btc":2},"reorg_unresolved_total":2}`,
 		},
 		"store unreadable": {
 			deposit.StaleOutboundHealth{After: 6 * time.Hour, Err: errors.New("dial tcp 10.0.0.2:5432: connect: connection refused")},
-			`"confirmation_tracker":{"status":"transactions_store_unavailable","stale":null,"stale_total":0,"stale_after_hours":6,"error":"transactions store unavailable"}`,
+			`"confirmation_tracker":{"status":"transactions_store_unavailable","stale":null,"stale_total":0,"stale_after_hours":6,"reorg_unresolved":null,"reorg_unresolved_total":0,"error":"transactions store unavailable"}`,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -77,7 +78,9 @@ type spendNode struct {
 	receiptStatus string
 	gasUsed       string
 	stateFrom     uint64
-	countedAt     []uint64
+	// finalized is the block the "finalized" tag answers (a finalized_tag chain).
+	finalized uint64
+	countedAt []uint64
 }
 
 func (n *spendNode) serve(t *testing.T) *httptest.Server {
@@ -117,6 +120,10 @@ func (n *spendNode) serve(t *testing.T) *httptest.Server {
 			}
 			answer(fmt.Sprintf("0x%x", count))
 		case "eth_getBlockByNumber":
+			if string(req.Params[0]) == `"finalized"` {
+				answer(map[string]any{"number": fmt.Sprintf("0x%x", n.finalized), "hash": fmt.Sprintf("0x%064x", n.finalized)})
+				return
+			}
 			if blockParam(0) != n.spentAt {
 				answer(map[string]any{"hash": fmt.Sprintf("0x%064x", blockParam(0)), "transactions": []any{}})
 				return
@@ -233,4 +240,25 @@ func TestEVM_SearchTransactionBlock_AsksEveryEndpointForTheReceipt(t *testing.T)
 	var failed *chain.TransactionFailedError
 	require.ErrorAs(t, err, &failed)
 	assert.Equal(t, uint64(16), failed.Block)
+}
+
+// On a finalized_tag chain (Polygon, BSC) a spend is final once at or under the
+// finalized block, which may lag the head by more than the confirmation depth: a
+// spend above it proves nothing yet, and nothing above it is read.
+func TestEVM_NonceSpend_OnAFinalizedTagChainTheFinalizedBlockIsTheDepth(t *testing.T) {
+	adapter := func(node *spendNode) *EVMLive {
+		return NewEVMLive(EVMConfig{ChainIDStr: "amoy", RPCURL: node.serve(t).URL, Confirmations: 3, Finality: models.FinalityFinalizedTag})
+	}
+	notFinal := &spendNode{head: 1000, finalized: 960, from: spendSender, nonce: 41, spentAt: 975, spentBy: otherHash, receiptStatus: "0x1", gasUsed: "0x5208"}
+	got, err := adapter(notFinal).NonceSpend(context.Background(), ourHash, spendSender, 41, 900)
+	require.NoError(t, err)
+	assert.Equal(t, chain.NonceSpend{}, got, "a spend above the finalized block is not settled, however deep under the head")
+	for _, block := range notFinal.countedAt {
+		assert.LessOrEqual(t, block, uint64(960))
+	}
+
+	final := &spendNode{head: 1000, finalized: 960, from: spendSender, nonce: 41, spentAt: 950, spentBy: otherHash, receiptStatus: "0x1", gasUsed: "0x5208"}
+	got, err = adapter(final).NonceSpend(context.Background(), ourHash, spendSender, 41, 900)
+	require.NoError(t, err)
+	assert.Equal(t, chain.NonceSpend{Spent: true, Block: 950}, got)
 }

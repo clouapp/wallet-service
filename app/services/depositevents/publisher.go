@@ -43,6 +43,12 @@ type Enqueuer interface {
 	EnqueueScoped(ctx context.Context, event webhook.ScopedEvent) (int, error)
 }
 
+// Stager is an Enqueuer that records the deliveries inside the caller's database
+// transaction and returns the send to run after it commits (webhook.Service).
+type Stager interface {
+	StageScoped(ctx context.Context, event webhook.ScopedEvent) (func(context.Context), int, error)
+}
+
 type WalletStore interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Wallet, error)
 }
@@ -61,10 +67,11 @@ type AssetDecimals interface {
 // RequiredConfirmations), or the chain's own finality, "finalized_tag" (EVM) or
 // "solidified" (TRON), under which the deposit is confirmed once its block is final
 // and RequiredConfirmations is only the typical finality lag, for display.
-// FailureCode is set on deposit.failed only: the on-chain result of a transaction
-// that was mined and failed (onchain_out_of_gas, onchain_reverted), so it moved no
-// value. A deposit.failed whose ConfirmedAt is set had been confirmed (and
-// deposit.confirmed sent) before its failure was found.
+// FailureCode is set on deposit.failed only: why no value reached the address, the
+// on-chain result of a transaction that was mined and failed (onchain_out_of_gas,
+// onchain_reverted) or reorged_out, a block reorganized away whose transaction no
+// block holds any more. A deposit.failed whose ConfirmedAt is set had been
+// confirmed (and deposit.confirmed sent) before its failure was found.
 type Payload struct {
 	ID                    string  `json:"id"`
 	TransactionID         string  `json:"transaction_id"`
@@ -142,27 +149,59 @@ func (p *Publisher) publish(ctx context.Context, eventType types.EventType, tx m
 	if p.enqueuer == nil {
 		return errors.New("publish deposit webhook: no enqueuer configured")
 	}
+	event, err := p.event(ctx, eventType, tx, occurredAt)
+	if err != nil {
+		return err
+	}
+	enqueued, err := p.enqueuer.EnqueueScoped(ctx, event)
+	if err != nil {
+		return fmt.Errorf("publish %s: %w", eventType, err)
+	}
+	slog.Info("deposit webhook published", "event_type", eventType, "transaction_id", tx.ID, "deliveries", enqueued)
+	return nil
+}
+
+// Stage records the deliveries of Publish with ctx, so they join the caller's
+// database transaction (the deposit's own status write), and returns the send that
+// queues them, to run only after that transaction commits.
+func (p *Publisher) Stage(ctx context.Context, eventType types.EventType, tx models.Transaction) (func(context.Context), error) {
+	stager, ok := p.enqueuer.(Stager)
+	if !ok {
+		return nil, errors.New("stage deposit webhook: the enqueuer cannot stage")
+	}
+	event, err := p.event(ctx, eventType, tx, time.Time{})
+	if err != nil {
+		return nil, err
+	}
+	send, staged, err := stager.StageScoped(ctx, event)
+	if err != nil {
+		return nil, fmt.Errorf("stage %s: %w", eventType, err)
+	}
+	slog.Info("deposit webhook staged", "event_type", eventType, "transaction_id", tx.ID, "deliveries", staged)
+	return send, nil
+}
+
+// event is the scoped outbox event of a deposit event.
+func (p *Publisher) event(ctx context.Context, eventType types.EventType, tx models.Transaction, occurredAt time.Time) (webhook.ScopedEvent, error) {
 	if !depositEvents[eventType] {
-		return fmt.Errorf("publish %s: %w", eventType, ErrUnsupportedEvent)
+		return webhook.ScopedEvent{}, fmt.Errorf("publish %s: %w", eventType, ErrUnsupportedEvent)
 	}
 	if tx.ID == uuid.Nil || tx.WalletID == uuid.Nil {
-		return fmt.Errorf("publish %s: transaction and wallet ids are required", eventType)
+		return webhook.ScopedEvent{}, fmt.Errorf("publish %s: transaction and wallet ids are required", eventType)
 	}
 	if tx.TxType != models.TxTypeDeposit {
-		return fmt.Errorf("publish %s for transaction %s: %w", eventType, tx.ID, ErrNotADeposit)
+		return webhook.ScopedEvent{}, fmt.Errorf("publish %s for transaction %s: %w", eventType, tx.ID, ErrNotADeposit)
 	}
-
 	payload, err := p.payload(eventType, tx)
 	if err != nil {
-		return fmt.Errorf("publish %s for transaction %s: %w", eventType, tx.ID, err)
+		return webhook.ScopedEvent{}, fmt.Errorf("publish %s for transaction %s: %w", eventType, tx.ID, err)
 	}
 	accountID, err := p.walletAccount(ctx, tx.WalletID)
 	if err != nil {
-		return fmt.Errorf("publish %s for transaction %s: %w", eventType, tx.ID, err)
+		return webhook.ScopedEvent{}, fmt.Errorf("publish %s for transaction %s: %w", eventType, tx.ID, err)
 	}
-
 	transactionID := tx.ID
-	enqueued, err := p.enqueuer.EnqueueScoped(ctx, webhook.ScopedEvent{
+	return webhook.ScopedEvent{
 		EventType:     eventType,
 		SubjectID:     subjectOf(eventType, tx),
 		WalletID:      tx.WalletID,
@@ -170,12 +209,7 @@ func (p *Publisher) publish(ctx context.Context, eventType types.EventType, tx m
 		TransactionID: &transactionID,
 		Data:          payload,
 		OccurredAt:    occurredAt,
-	})
-	if err != nil {
-		return fmt.Errorf("publish %s: %w", eventType, err)
-	}
-	slog.Info("deposit webhook published", "event_type", eventType, "transaction_id", tx.ID, "deliveries", enqueued)
-	return nil
+	}, nil
 }
 
 // subjectOf is the outbox subject of a deposit event; the outbox keeps one row per

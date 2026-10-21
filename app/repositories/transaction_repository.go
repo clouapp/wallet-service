@@ -404,6 +404,15 @@ func (r *TransactionRepository) SetBlockNumber(ctx context.Context, id uuid.UUID
 	return r.updateColumns(ctx, id, map[string]any{"block_number": block}, "set transaction block number")
 }
 
+// SetBlock records the block a deposit is in, its number and hash, and its
+// transfer's position in it (log_index: a block-wide position, an EVM or TRON log
+// index, differs from one block to another): a deposit a reorganization moved to
+// another block, or one recorded without a hash. A position another deposit of the
+// transaction holds is a unique violation.
+func (r *TransactionRepository) SetBlock(ctx context.Context, id uuid.UUID, block uint64, blockHash string, position int) error {
+	return r.updateColumns(ctx, id, map[string]any{"block_number": block, "block_hash": blockHash, "log_index": position}, "set transaction block")
+}
+
 // MarkFailed sets the failed status and the reason (an on-chain result code or
 // "expired") in error_message, and releases the idempotency key so a retry of the
 // withdrawal with the same key can record its new transaction under it.
@@ -431,13 +440,72 @@ func (r *TransactionRepository) SetRawPayload(ctx context.Context, id uuid.UUID,
 	return r.updateColumns(ctx, id, map[string]any{"raw_payload": rawPayload}, "set transaction raw payload")
 }
 
-// RecordConfirmations stores the confirmation count, status, and confirmed_at together.
+// RecordConfirmations stores the confirmation count, the status and confirmed_at of
+// a row still pending or confirming; a row another process settled (confirmed or
+// failed) since it was read is left as it is: models.ErrTransactionSettled.
 func (r *TransactionRepository) RecordConfirmations(ctx context.Context, id uuid.UUID, confirmations int, status string, confirmedAt *time.Time) error {
-	return r.updateColumns(ctx, id, map[string]any{
+	return r.updateWhileIn(ctx, id, []any{string(types.TxStatusPending), string(types.TxStatusConfirming)}, map[string]any{
 		"confirmations": confirmations,
 		"status":        status,
 		"confirmed_at":  confirmedAt,
 	}, "record transaction confirmations")
+}
+
+// MarkFailedFrom is MarkFailed of a row still in fromStatus, the status the caller
+// read: a row another process settled meanwhile is left as it is
+// (models.ErrTransactionSettled).
+func (r *TransactionRepository) MarkFailedFrom(ctx context.Context, id uuid.UUID, reason, fromStatus string) error {
+	return r.updateWhileIn(ctx, id, []any{fromStatus}, map[string]any{
+		"status":          string(types.TxStatusFailed),
+		"error_message":   reason,
+		"idempotency_key": nil,
+	}, "mark transaction failed")
+}
+
+// reorgMarkPayloadKey is the raw_payload key the confirmation tracker sets on a
+// deposit whose block was reorganized away while it is unresolved.
+const reorgMarkPayloadKey = "reorg_seen_at"
+
+// CountUnresolvedReorgs counts, per chain, the pending or confirming deposits whose
+// block was reorganized away and that nothing has resolved yet.
+func (r *TransactionRepository) CountUnresolvedReorgs(ctx context.Context) (map[string]int, error) {
+	var rows []struct {
+		Chain string
+		Count int
+	}
+	if err := r.Query(ctx).Raw(
+		`SELECT chain, COUNT(*) AS count FROM transactions
+		 WHERE tx_type = ? AND status IN (?, ?) AND jsonb_exists(raw_payload, ?)
+		 GROUP BY chain`,
+		models.TxTypeDeposit, string(types.TxStatusPending), string(types.TxStatusConfirming), reorgMarkPayloadKey,
+	).Scan(&rows); err != nil {
+		return nil, fmt.Errorf("count unresolved reorganized deposits: %w", err)
+	}
+	counts := make(map[string]int, len(rows))
+	for _, row := range rows {
+		counts[row.Chain] = row.Count
+	}
+	return counts, nil
+}
+
+// FindUnresolvedReorgs lists the unresolved reorganized deposits of chainID (every
+// chain when empty), oldest first, at most limit.
+func (r *TransactionRepository) FindUnresolvedReorgs(ctx context.Context, chainID string, limit int) ([]models.Transaction, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("list unresolved reorganized deposits: limit is required")
+	}
+	query := r.Query(ctx).
+		Where("tx_type", models.TxTypeDeposit).
+		WhereIn("status", []any{string(types.TxStatusPending), string(types.TxStatusConfirming)}).
+		Where("jsonb_exists(raw_payload, ?)", reorgMarkPayloadKey)
+	if chainID != "" {
+		query = query.Where("chain", chainID)
+	}
+	var rows []models.Transaction
+	if err := query.Order("created_at ASC").Order("id ASC").Limit(limit).Find(&rows); err != nil {
+		return nil, fmt.Errorf("list unresolved reorganized deposits: %w", err)
+	}
+	return rows, nil
 }
 
 // SetConfirmations sets transactions.confirmations.
@@ -503,6 +571,22 @@ func (r *TransactionRepository) ListByWalletAndChain(ctx context.Context, wallet
 	countQuery := r.Query(ctx).Model(&models.Transaction{}).Where("wallet_id = ?", walletID).Where("chain = ?", chainID)
 	dataQuery := r.Query(ctx).Where("wallet_id = ?", walletID).Where("chain = ?", chainID)
 	return listTransactions(countQuery, dataQuery, limit, offset, "block_number DESC, created_at DESC")
+}
+
+// updateWhileIn writes columns to the row only while its status is one of statuses;
+// a row in another status is models.ErrTransactionSettled.
+func (r *TransactionRepository) updateWhileIn(ctx context.Context, id uuid.UUID, statuses []any, columns map[string]any, op string) error {
+	if id == uuid.Nil {
+		return fmt.Errorf("transaction id is required")
+	}
+	result, err := r.Query(ctx).Model(&models.Transaction{}).Where("id", id).WhereIn("status", statuses).Update(columns)
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("%s %s: %w", op, id, models.ErrTransactionSettled)
+	}
+	return nil
 }
 
 func (r *TransactionRepository) updateColumns(ctx context.Context, id uuid.UUID, columns map[string]any, op string) error {

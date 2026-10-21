@@ -386,15 +386,10 @@ func (p *electrumProvider) transactionBlock(ctx context.Context, txID string) (u
 			return 0, fmt.Errorf("electrum: tx %s has %d confirmations above tip %d", txID, tx.Confirmations, tip)
 		}
 		height := tip - tx.Confirmations + 1
-		var headerHex string
-		if err := s.call("blockchain.block.header", &headerHex, height); err != nil {
+		blockHash, err := headerHash(s, height)
+		if err != nil {
 			return 0, err
 		}
-		header, err := hex.DecodeString(headerHex)
-		if err != nil || len(header) != blockHeaderBytes {
-			return 0, fmt.Errorf("electrum: header %d is not %d bytes of hex", height, blockHeaderBytes)
-		}
-		blockHash := reversedHex(hash256(header))
 		if !strings.EqualFold(blockHash, tx.BlockHash) {
 			return 0, fmt.Errorf("electrum: header %d is block %s, tx %s is in %s; index and daemon disagree", height, blockHash, txID, tx.BlockHash)
 		}

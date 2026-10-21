@@ -18,6 +18,7 @@ const (
 
 	trackerSettled      = "ok"
 	trackerStale        = "stale_transactions"
+	trackerReorged      = "reorg_unresolved"
 	trackerUnobservable = "transactions_store_unavailable"
 )
 
@@ -57,14 +58,19 @@ type ScannedChain struct {
 
 // ConfirmationTracker reports, per chain, the outbound transfers (withdrawals,
 // sweeps, gas seeds) still pending or confirming stale_after_hours after they were
-// recorded: withdrawals:reconcile settles them. Status is ok, stale_transactions,
-// or transactions_store_unavailable.
+// recorded (withdrawals:reconcile settles them), and the deposits whose block was
+// reorganized away that nothing resolved yet (reorg_unresolved: no endpoint shows
+// their transaction and nothing proves it can never land; deposits:reorgs lists and
+// settles them). Status is ok, stale_transactions, reorg_unresolved (no stale
+// transfer, some unresolved deposit), or transactions_store_unavailable.
 type ConfirmationTracker struct {
-	Status          string         `json:"status" example:"ok"`
-	Stale           map[string]int `json:"stale"`
-	StaleTotal      int            `json:"stale_total" example:"0"`
-	StaleAfterHours int            `json:"stale_after_hours" example:"6"`
-	Error           string         `json:"error,omitempty"`
+	Status               string         `json:"status" example:"ok"`
+	Stale                map[string]int `json:"stale"`
+	StaleTotal           int            `json:"stale_total" example:"0"`
+	StaleAfterHours      int            `json:"stale_after_hours" example:"6"`
+	ReorgUnresolved      map[string]int `json:"reorg_unresolved"`
+	ReorgUnresolvedTotal int            `json:"reorg_unresolved_total" example:"0"`
+	Error                string         `json:"error,omitempty"`
 }
 
 // NewHealth projects the deposit scanner's pending blocks and scan activity, and
@@ -83,9 +89,13 @@ func NewHealth(pending deposit.PendingHealth, stale deposit.StaleOutboundHealth,
 	}
 	tracker := ConfirmationTracker{
 		Status: trackerSettled, Stale: stale.Counts, StaleTotal: stale.Total, StaleAfterHours: int(stale.After / time.Hour),
+		ReorgUnresolved: stale.Reorged, ReorgUnresolvedTotal: stale.ReorgedTotal,
 	}
-	if stale.Total > 0 {
+	switch {
+	case stale.Total > 0:
 		tracker.Status = trackerStale
+	case stale.ReorgedTotal > 0:
+		tracker.Status = trackerReorged
 	}
 	if stale.Err != nil {
 		tracker.Status = trackerUnobservable
