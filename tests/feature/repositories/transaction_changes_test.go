@@ -43,7 +43,9 @@ func (s *TransactionRepositoryTestSuite) TestUpdates_Move_UpdatedAt() {
 		},
 		"confirmation count": func(id uuid.UUID) error { return s.repo.SetConfirmations(ctx, id, 4) },
 		"failed":             func(id uuid.UUID) error { return s.repo.MarkFailed(ctx, id, "expired") },
+		"failed from":        func(id uuid.UUID) error { return s.repo.MarkFailedFrom(ctx, id, "reorged_out", "pending") },
 		"block number":       func(id uuid.UUID) error { return s.repo.SetBlockNumber(ctx, id, 123) },
+		"block and hash":     func(id uuid.UUID) error { return s.repo.SetBlock(ctx, id, 124, "0xmovedblock", 7) },
 		"fee":                func(id uuid.UUID) error { return s.repo.SetFee(ctx, id, "21000") },
 		"broadcast": func(id uuid.UUID) error {
 			return s.repo.RecordBroadcast(ctx, id, "0xnodehash", `{"broadcast_outcome":"unknown"}`)
@@ -72,6 +74,25 @@ func (s *TransactionRepositoryTestSuite) TestUpdates_Move_UpdatedAt() {
 			s.True(got.Before(time.Now().UTC().Add(2*time.Second)), "updated_at = %s is in the future", got)
 		})
 	}
+}
+
+// SetBlock moves a deposit to the block a reorganization put it in: the number,
+// the hash and its transfer's position there, and nothing else.
+func (s *TransactionRepositoryTestSuite) TestSetBlock_Records_TheBlockNumberHashAndPosition() {
+	ctx := context.Background()
+	tx := s.makeTx(s.insertWallet(), models.TxTypeDeposit, "confirming")
+	tx.BlockNumber, tx.BlockHash, tx.LogIndex = 100, "0xreorganizedaway", 3
+	s.Require().NoError(s.repo.Create(ctx, tx))
+
+	s.Require().NoError(s.repo.SetBlock(ctx, tx.ID, 101, "0xcanonical", 12))
+
+	got, err := s.repo.FindByID(ctx, tx.ID)
+	s.Require().NoError(err)
+	s.Equal(int64(101), got.BlockNumber)
+	s.Equal("0xcanonical", got.BlockHash)
+	s.Equal(12, got.LogIndex)
+	s.Equal("confirming", got.Status)
+	s.Equal(tx.Confirmations, got.Confirmations)
 }
 
 // changesFixture is one account with five transactions on two updated_at

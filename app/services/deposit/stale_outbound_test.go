@@ -110,6 +110,10 @@ func (g *gatedCounter) CountStaleOutbound(ctx context.Context, _ time.Time) (map
 	return g.counts, g.err
 }
 
+func (g *gatedCounter) CountUnresolvedReorgs(context.Context) (map[string]int, error) {
+	return map[string]int{}, nil
+}
+
 func TestStaleOutbound_Health_NeverWaitsOnACountInFlightAndServesTheLastOneOnError(t *testing.T) {
 	counter := &gatedCounter{sweepConfirmMemory: &sweepConfirmMemory{}, counts: map[string]int{"eth": 1}}
 	clock := &testClock{now: time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)}

@@ -77,6 +77,40 @@ func (s *Service) recordPending(ctx context.Context, chainID string, block uint6
 	return nil
 }
 
+// deferPending hands blocks to the pending retry, due now: a reorganization rescan
+// that ran out of time leaves the rest of the new fork to it (reason). A block that
+// already has an entry keeps it. It returns how many blocks it handed over.
+func (s *Service) deferPending(ctx context.Context, chainID string, blocks []uint64, reason string) (int, error) {
+	if len(blocks) == 0 {
+		return 0, nil
+	}
+	if s.pending == nil {
+		return 0, errNoPendingStore
+	}
+	entries, err := s.pending.List(ctx, chainID)
+	if err != nil {
+		return 0, fmt.Errorf("list pending %s blocks: %w", chainID, err)
+	}
+	kept := make(map[uint64]bool, len(entries))
+	for _, entry := range entries {
+		kept[entry.Block] = true
+	}
+	now := s.now()
+	handed := 0
+	for _, block := range blocks {
+		if kept[block] {
+			continue
+		}
+		entry := pending.Entry{Chain: chainID, Block: block, ErrorClass: pending.ClassUnknown, LastError: reason,
+			Attempts: 1, FirstFailedAt: now, LastFailedAt: now, NextRetryAt: now}
+		if err := s.pending.Put(ctx, entry); err != nil {
+			return handed, fmt.Errorf("keep %s block %d pending: %w", chainID, block, err)
+		}
+		handed++
+	}
+	return handed, nil
+}
+
 // resolvePending drops the entry of a block whose deposits are now all recorded.
 func (s *Service) resolvePending(ctx context.Context, chainID string, block uint64) error {
 	if s.pending == nil {

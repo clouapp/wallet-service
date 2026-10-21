@@ -71,10 +71,13 @@ Outbound webhooks are delivered **at least once**, never exactly once.
   (`withdrawalevents.Publisher.Backfill`). A new status-then-publish path adds its own
   backfill, keyed on the outbox row, and stamps the republished event with
   `ScopedEvent.OccurredAt` so a config created later is not sent history.
-- **An on-chain failure publishes before it writes its status, and needs no backfill.**
-  `withdrawal.failed` and `deposit.failed` (a deposit whose transaction failed on chain)
-  are published first and the row is marked failed last, so a failed publish leaves the
-  row as it was and the next tracker pass (or `deposits:verify-receipts` run) publishes
+- **An on-chain failure never writes its status without its event, and needs no backfill.**
+  `withdrawal.failed` is published first and the row is marked failed last.
+  `deposit.failed` (a deposit that moved no value: failed on chain, or reorganized out)
+  stages its outbox rows in the same database transaction as the guarded failed status
+  (`StageScoped`; the queue send runs after the commit), so a deposit another process
+  confirmed meanwhile keeps no `deposit.failed`. Either way a failed write leaves the
+  row as it was and the next tracker pass (or `deposits:verify-receipts` run) writes
   again; the outbox row keeps that a no-op for the configs that already got it.
 - **A final event supersedes the earlier ones of its subject at delivery.**
   `webhook.Service.Deliver` is the one path every delivery takes, so a rule about what

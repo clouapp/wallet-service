@@ -26,13 +26,23 @@ type staleOutboundCounter interface {
 	CountStaleOutbound(ctx context.Context, olderThan time.Time) (map[string]int, error)
 }
 
+// reorgCounter counts, per chain, the open deposits whose block was reorganized
+// away and that nothing has resolved yet (the transaction repository).
+type reorgCounter interface {
+	CountUnresolvedReorgs(ctx context.Context) (map[string]int, error)
+}
+
 // StaleOutboundHealth is what the health check reports of the outbound transfers
-// nothing settled after After. Err is set when they could not be counted.
+// nothing settled after After, and of the deposits whose block was reorganized
+// away that nothing resolved yet (Reorged, reorg.go). Err is set when they could not
+// be counted.
 type StaleOutboundHealth struct {
-	Counts map[string]int
-	Total  int
-	After  time.Duration
-	Err    error
+	Counts       map[string]int
+	Total        int
+	After        time.Duration
+	Reorged      map[string]int
+	ReorgedTotal int
+	Err          error
 }
 
 // SetStaleOutboundAfter sets how long an outbound transfer may stay unsettled; zero
@@ -97,11 +107,24 @@ func (s *Service) countStaleOutbound(ctx context.Context, now time.Time) StaleOu
 		health.Err = fmt.Errorf("stale outbound transactions cannot be counted")
 		return health
 	}
+	reorgs, ok := s.txRepo.(reorgCounter)
+	if !ok {
+		health.Err = fmt.Errorf("reorganized deposits cannot be counted")
+		return health
+	}
 	countCtx, cancel := context.WithTimeout(ctx, pendingHealthTimeout)
 	defer cancel()
-	health.Counts, health.Err = counter.CountStaleOutbound(countCtx, now.Add(-health.After))
+	if health.Counts, health.Err = counter.CountStaleOutbound(countCtx, now.Add(-health.After)); health.Err != nil {
+		return health
+	}
 	for _, count := range health.Counts {
 		health.Total += count
+	}
+	if health.Reorged, health.Err = reorgs.CountUnresolvedReorgs(countCtx); health.Err != nil {
+		return health
+	}
+	for _, count := range health.Reorged {
+		health.ReorgedTotal += count
 	}
 	return health
 }

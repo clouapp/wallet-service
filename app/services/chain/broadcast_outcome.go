@@ -27,8 +27,12 @@ const (
 	// retry re-sends these same bytes, never a new signature. They are dropped once
 	// the send is answered.
 	SignedTxPayloadKey = "signed_tx"
-	// SenderNoncePayloadKey is the nonce the signed transaction spends (EVM).
+	// SenderNoncePayloadKey is the nonce the signed transaction spends (EVM); a
+	// scanned deposit keeps it too, next to SenderPayloadKey.
 	SenderNoncePayloadKey = "sender_nonce"
+	// SenderPayloadKey is the account that signed a scanned deposit's transaction
+	// (EVM): with its nonce, it proves the transaction can never land.
+	SenderPayloadKey = "sender"
 	// BroadcastHeadPayloadKey is the chain head read just before the send (EVM): no
 	// block before it can hold the transfer.
 	BroadcastHeadPayloadKey = "broadcast_head"

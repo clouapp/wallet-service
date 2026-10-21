@@ -9,6 +9,7 @@ import (
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/macrowallets/waas/app/adapters/chain/rpc"
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -31,8 +32,9 @@ func (a *EVMLive) SenderNonce(signed *types.SignedTx) (uint64, error) {
 }
 
 // NonceSpend finds, by positive proof, the transaction that spent nonce of from
-// (chain.NonceSpendReader). The search starts at the block max(confirmations, 12)
-// under the head and walks back, doubling its step, to a block where the nonce was
+// (chain.NonceSpendReader). The search starts at the newest final block
+// (finalSpendBlock: the finalized block on a finalized_tag chain, max(confirmations,
+// 12) under the head otherwise) and walks back, doubling its step, to a block where the nonce was
 // still free, so the newest blocks (which a node without archive state still has)
 // are read first; a binary search then finds the block where the count passed
 // nonce. That block's transaction of from with that nonce is ours (its receipt,
@@ -44,12 +46,11 @@ func (a *EVMLive) NonceSpend(ctx context.Context, txHash, from string, nonce, fr
 	if strings.TrimSpace(txHash) == "" || strings.TrimSpace(from) == "" {
 		return chain.NonceSpend{}, fmt.Errorf("evm nonce spend: tx hash and sender are required")
 	}
-	head, err := a.GetLatestBlock(ctx)
+	spentAbove, err := a.finalSpendBlock(ctx)
 	if err != nil {
 		return chain.NonceSpend{}, err
 	}
-	depth := max(a.cfg.Confirmations, minSpendDepth)
-	if head < depth || head-depth <= fromBlock {
+	if spentAbove <= fromBlock {
 		return chain.NonceSpend{}, nil
 	}
 	spentAt := func(block uint64) (bool, error) {
@@ -66,7 +67,6 @@ func (a *EVMLive) NonceSpend(ctx context.Context, txHash, from string, nonce, fr
 		}
 		return !spent.IsUint64() || spent.Uint64() > nonce, nil
 	}
-	spentAbove := head - depth
 	if spent, err := spentAt(spentAbove); err != nil || !spent {
 		return chain.NonceSpend{}, err
 	}
@@ -102,6 +102,25 @@ func (a *EVMLive) NonceSpend(ctx context.Context, txHash, from string, nonce, fr
 		}
 	}
 	return a.spendInBlock(ctx, spentAbove, txHash, from, nonce)
+}
+
+// finalSpendBlock is the newest block a spend is believed at: the finalized block
+// on a finalized_tag chain (Polygon, BSC), whose finality may lag the head by more
+// than any count; max(confirmations, 12) under the head otherwise. 0 while the chain
+// is shorter than that.
+func (a *EVMLive) finalSpendBlock(ctx context.Context) (uint64, error) {
+	if a.cfg.Finality == models.FinalityFinalizedTag {
+		return a.FinalizedBlock(ctx)
+	}
+	head, err := a.GetLatestBlock(ctx)
+	if err != nil {
+		return 0, err
+	}
+	depth := max(a.cfg.Confirmations, minSpendDepth)
+	if head < depth {
+		return 0, nil
+	}
+	return head - depth, nil
 }
 
 // spendInBlock reads the transaction of from with nonce in block, which spent it.

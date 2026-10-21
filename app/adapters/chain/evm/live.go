@@ -826,6 +826,7 @@ func (a *EVMLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.Detec
 			From  string `json:"from"`
 			To    string `json:"to"`
 			Value string `json:"value"`
+			Nonce string `json:"nonce"`
 		} `json:"transactions"`
 	}
 	if err := a.rpc.Call(ctx, "eth_getBlockByNumber", &block, hexBlock, true); err != nil {
@@ -859,6 +860,25 @@ func (a *EVMLive) ScanBlock(ctx context.Context, blockNum uint64) ([]types.Detec
 	}
 	transfers = append(transfers, tokens...)
 
+	// The signer and nonce of each transfer's transaction (a token transfer's too):
+	// the confirmation tracker proves with them that a deposit whose block was
+	// reorganized away can never land.
+	signers := make(map[string]int, len(block.Transactions))
+	for i, tx := range block.Transactions {
+		signers[strings.ToLower(tx.Hash)] = i
+	}
+	for i := range transfers {
+		at, ok := signers[strings.ToLower(transfers[i].TxHash)]
+		if !ok || block.Transactions[at].From == "" || block.Transactions[at].Nonce == "" {
+			continue
+		}
+		nonce, err := parseHexQuantity(block.Transactions[at].Nonce, "nonce")
+		if err != nil || !nonce.IsUint64() {
+			continue
+		}
+		value := nonce.Uint64()
+		transfers[i].Sender, transfers[i].SenderNonce = block.Transactions[at].From, &value
+	}
 	return transfers, nil
 }
 
