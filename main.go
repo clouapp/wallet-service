@@ -22,6 +22,7 @@ import (
 	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
+	"github.com/macrowallets/waas/app/providers"
 	"github.com/macrowallets/waas/app/repositories"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit"
@@ -291,9 +292,10 @@ func xrpDepositStream(scanChains []string) (*xrpstream.Service, error) {
 	}
 	return xrpstream.NewService(xrpstream.Deps{
 		ChainID: chainID,
+		// Every session connects through the RPC guard, as the RPC nodes do.
 		Dialer: xrpchain.NewStreamDialer(xrpchain.StreamConfig{
 			ChainIDStr: chainID, NativeSymbol: adapter.NativeAsset(), URL: url, IsTestnet: live.IsTestnet(),
-		}),
+		}, providers.RPCDestinations().DialContext),
 		Addresses:      container.MustMake[*repositories.AddressRepository](),
 		Deposits:       deposits,
 		AddressRefresh: time.Duration(facades.Config().GetInt("vault.local_workers.xrp_stream_address_refresh_seconds")) * time.Second,

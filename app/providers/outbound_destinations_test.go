@@ -20,6 +20,7 @@ func TestWebhook_DestinationPolicy_AllowsLoopbackOnlyInTheTestSuites(t *testing.
 		{"testing on a production host", outboundSettings{AppEnv: "testing", Environment: "Production"}, false, "refused on a production-like deployment"},
 		{"testing on staging", outboundSettings{AppEnv: "testing", Environment: "staging"}, false, "refused on a production-like deployment"},
 		{"testing on stage", outboundSettings{AppEnv: "testing", Env: "stage"}, false, "refused on a production-like deployment"},
+		{"testing on Lambda", outboundSettings{AppEnv: "testing", Env: "dev", LambdaFunction: "vault-webhook-worker-dev"}, false, "refused on a production-like deployment"},
 		{"local", outboundSettings{AppEnv: "local", Env: "dev"}, false, ""},
 		{"production", outboundSettings{AppEnv: "production", Env: "prod", Environment: "production"}, false, ""},
 		{"no environment at all", outboundSettings{}, false, ""},

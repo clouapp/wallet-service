@@ -59,7 +59,7 @@ func TestStream_ListenerReadsTheLedgersOfStreamedDepositsAndOfAReconnectGap(t *t
 	ledgers := make(readLedgers, 16)
 	listener := xrpstream.NewService(xrpstream.Deps{
 		ChainID:   models.ChainTXRP,
-		Dialer:    NewStreamDialer(StreamConfig{ChainIDStr: models.ChainTXRP, NativeSymbol: models.NativeXRP, URL: f.url(), IsTestnet: true, IdleTimeout: 5 * time.Second}),
+		Dialer:    newTestStreamDialer(StreamConfig{ChainIDStr: models.ChainTXRP, NativeSymbol: models.NativeXRP, URL: f.url(), IsTestnet: true, IdleTimeout: 5 * time.Second}),
 		Addresses: watchedAddresses{taggedRecipient}, Deposits: ledgers,
 		AddressRefresh: time.Hour, ReconnectMin: time.Millisecond, ReconnectMax: time.Millisecond,
 	})

@@ -24,6 +24,7 @@ type outboundSettings struct {
 	AppEnv              string
 	Env                 string
 	Environment         string
+	LambdaFunction      string
 	WebhookAllowHTTP    bool
 	WebhookAllowedPorts string
 	RPCAllowLinkLocal   bool
@@ -35,6 +36,7 @@ func outboundSettingsFromConfig() outboundSettings {
 		AppEnv:              cfg.GetString("app.env"),
 		Env:                 cfg.GetString("vault.deployment.env"),
 		Environment:         cfg.GetString("vault.deployment.environment"),
+		LambdaFunction:      cfg.GetString("vault.deployment.lambda_function"),
 		WebhookAllowHTTP:    cfg.GetBool("vault.outbound.webhook_allow_http"),
 		WebhookAllowedPorts: cfg.GetString("vault.outbound.webhook_allowed_ports"),
 		RPCAllowLinkLocal:   cfg.GetBool("vault.outbound.rpc_allow_link_local"),
@@ -45,7 +47,8 @@ func outboundSettingsFromConfig() outboundSettings {
 // host; http too with WEBHOOK_ALLOW_HTTP; only the ports of WEBHOOK_ALLOWED_PORTS
 // when it is set; loopback only under APP_ENV=testing, and never on a
 // production-like deployment (ENV, ENVIRONMENT or APP_ENV prod, production,
-// staging or stage). The warnings are logged at boot.
+// staging or stage, or a process on Lambda: the suites never run there). The
+// warnings are logged at boot.
 func webhookDestinationPolicy(settings outboundSettings) (egress.Policy, []string) {
 	policy := egress.Policy{AllowHTTP: settings.WebhookAllowHTTP}
 	var warnings []string
@@ -54,7 +57,7 @@ func webhookDestinationPolicy(settings outboundSettings) (egress.Policy, []strin
 		return policy, warnings
 	}
 	if productionLike(settings) {
-		return policy, append(warnings, "APP_ENV=testing: loopback webhook receivers stay refused on a production-like deployment (ENV or ENVIRONMENT is prod, production, staging or stage)")
+		return policy, append(warnings, "APP_ENV=testing: loopback webhook receivers stay refused on a production-like deployment (ENV or ENVIRONMENT is prod, production, staging or stage, or the process runs on Lambda)")
 	}
 	policy.AllowLoopback = true
 	return policy, append(warnings, "APP_ENV=testing: loopback webhook receivers are allowed; never run a long-lived service with it")
@@ -88,6 +91,9 @@ func newWebhookDestinations() *egress.Guard {
 }
 
 func productionLike(settings outboundSettings) bool {
+	if strings.TrimSpace(settings.LambdaFunction) != "" {
+		return true
+	}
 	for _, value := range []string{settings.AppEnv, settings.Env, settings.Environment} {
 		if productionLikeEnvironments[normalizedEnvironment(value)] {
 			return true
