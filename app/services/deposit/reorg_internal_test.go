@@ -2,8 +2,10 @@ package deposit
 
 import (
 	"context"
+	"errors"
 	"math/big"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/goravel/framework/facades"
@@ -207,5 +209,90 @@ func TestRunConfirmationCheck_AnInternalTransferWhoseTransactionIsInNoBlockWaits
 
 	if got := reorgDeposit(t, reorgDepositTx); got.Status == string(types.TxStatusConfirmed) || got.Status == string(types.TxStatusFailed) || got.BlockHash != "" {
 		t.Fatalf("deposit status %s, hash %q; want it unconfirmed, unfailed and unmoved", got.Status, got.BlockHash)
+	}
+}
+
+// trackedState is what a tracker pass may write on a deposit row.
+type trackedState struct {
+	status, blockHash, rawPayload, errorMessage string
+	blockNumber                                 int64
+	confirmations, position                     int
+	confirmed                                   bool
+}
+
+func trackedStateOf(tx models.Transaction) trackedState {
+	return trackedState{
+		status: tx.Status, blockHash: tx.BlockHash, rawPayload: tx.RawPayload, errorMessage: tx.ErrorMessage,
+		blockNumber: tx.BlockNumber, confirmations: tx.Confirmations, position: tx.LogIndex, confirmed: tx.ConfirmedAt != nil,
+	}
+}
+
+func webhookEventCount(t *testing.T) int64 {
+	t.Helper()
+	count, err := facades.Orm().Query().Model(&models.WebhookEvent{}).Count()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
+// A deposit recorded without a hash, an internal transfer in its recorded block,
+// confirms only once its block's hash is recorded for it. When that fails (the hash
+// is not read, or another process changed the row after this pass read it), the
+// pass leaves the deposit unconfirmed, as it found it, and publishes nothing; a
+// later pass confirms it.
+func TestRunConfirmationCheck_AnInternalTransferWhoseBlockHashIsNotRecordedIsNotConfirmed(t *testing.T) {
+	cases := map[string]struct {
+		// hashErr fails the read of the block's hash; meanwhile is what another
+		// process writes on the row while the pass reads that hash.
+		hashErr   error
+		meanwhile map[string]any
+	}{
+		"its block's hash is not read": {hashErr: errors.Join(chain.ErrProviderUnavailable, errors.New("503"))},
+		"another pass recorded its block's hash meanwhile": {
+			meanwhile: map[string]any{"block_hash": reorgHash("a", reorgDepositBlock)},
+		},
+		"another pass counted its confirmations meanwhile": {
+			meanwhile: map[string]any{"status": string(types.TxStatusConfirming), "confirmations": reorgRequiredConfs - 1},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			f, _ := newEVMReorgFixture(t)
+			found := f.recordInternalDeposit(t, "")
+			f.chain.mine(reorgDepositBlock, "a", reorgContractCall())
+			f.chain.failHashReads(tc.hashErr)
+			if tc.meanwhile != nil {
+				var once sync.Once
+				f.chain.setOnHashRead(func(uint64) {
+					once.Do(func() {
+						if _, err := facades.Orm().Query().Model(&models.Transaction{}).Where("id = ?", found.ID).Update(tc.meanwhile); err != nil {
+							t.Error(err)
+						}
+						found = reorgDeposit(t, reorgDepositTx)
+					})
+				})
+			}
+			events := webhookEventCount(t)
+
+			f.pass(t, reorgDepositBlock+reorgRequiredConfs-1)
+
+			if got, want := trackedStateOf(reorgDeposit(t, reorgDepositTx)), trackedStateOf(found); got != want {
+				t.Fatalf("deposit %+v, want it unconfirmed as the pass found it %+v", got, want)
+			}
+			if found.Status == string(types.TxStatusConfirmed) {
+				t.Fatal("the deposit was confirmed before the pass wrote")
+			}
+			if n := webhookEventCount(t); n != events {
+				t.Fatalf("%d webhook events, want the %d there were: nothing published", n, events)
+			}
+
+			f.chain.failHashReads(nil)
+			f.chain.setOnHashRead(nil)
+			f.pass(t, reorgDepositBlock+reorgRequiredConfs-1)
+			if got := reorgDeposit(t, reorgDepositTx); got.Status != string(types.TxStatusConfirmed) || got.BlockHash != reorgHash("a", reorgDepositBlock) {
+				t.Fatalf("next pass: status %s hash %q, want confirmed in its block", got.Status, got.BlockHash)
+			}
+		})
 	}
 }

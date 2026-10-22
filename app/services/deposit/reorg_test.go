@@ -64,6 +64,8 @@ type reorgChain struct {
 	failedOnChain map[string]string
 	// onScan runs after each ScanBlock, from the scanning goroutine.
 	onScan func(height uint64)
+	// onHashRead runs during each BlockHashAt, before it answers.
+	onHashRead func(height uint64)
 }
 
 var _ chain.BlockHashReader = (*reorgChain)(nil)
@@ -113,16 +115,26 @@ func (c *reorgChain) GetLatestBlock(context.Context) (uint64, error) {
 
 func (c *reorgChain) BlockHashAt(_ context.Context, height uint64) (string, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.hashReads = append(c.hashReads, height)
-	if c.hashErr != nil {
-		return "", c.hashErr
-	}
+	hashErr, onHashRead := c.hashErr, c.onHashRead
 	block, ok := c.blocks[height]
+	c.mu.Unlock()
+	if onHashRead != nil {
+		onHashRead(height)
+	}
+	if hashErr != nil {
+		return "", hashErr
+	}
 	if !ok {
 		return "", fmt.Errorf("no block at %d", height)
 	}
 	return block.hash, nil
+}
+
+func (c *reorgChain) setOnHashRead(onHashRead func(height uint64)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onHashRead = onHashRead
 }
 
 func (c *reorgChain) GetTransactionBlock(_ context.Context, txHash string) (uint64, error) {
