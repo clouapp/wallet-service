@@ -1,12 +1,15 @@
 package deposit
 
 import (
+	"context"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/goravel/framework/facades"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/pkg/types"
 )
 
@@ -39,6 +42,95 @@ func (f reorgFixture) recordInternalDeposit(t *testing.T, blockHash string) mode
 		t.Fatal(err)
 	}
 	return reorgDeposit(t, reorgDepositTx)
+}
+
+// receiptReorgChain is evmReorgChain with the receipt port the EVM adapter has
+// (chain.ReceiptStatusReader), so the tracker reads a native deposit's receipt again
+// before it confirms it. A transaction failedOnChain holds has a failed receipt on
+// every read: the scan's, the lookups and GetTransactionBlock.
+type receiptReorgChain struct{ *evmReorgChain }
+
+var _ chain.ReceiptStatusReader = receiptReorgChain{}
+
+func (c receiptReorgChain) TransactionsSucceeded(_ context.Context, _ uint64, _ string, txHashes []string) (map[string]bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	statuses := make(map[string]bool, len(txHashes))
+	for _, hash := range txHashes {
+		_, failed := c.failedOnChain[hash]
+		statuses[strings.ToLower(hash)] = !failed
+	}
+	return statuses, nil
+}
+
+func newReceiptReorgFixture(t *testing.T) reorgFixture {
+	t.Helper()
+	adapter := receiptReorgChain{&evmReorgChain{reorgChain: newReorgChain()}}
+	return newReorgFixtureOver(t, adapter, adapter.reorgChain)
+}
+
+// internalTransferRecordings are the two ways the push records an internal
+// transfer: with its block's hash, or without one (checked by its transaction's block).
+var internalTransferRecordings = map[string]string{
+	"recorded with its block's hash": reorgHash("a", reorgDepositBlock),
+	"recorded without a hash":        "",
+}
+
+// The transaction that carried an internal transfer can be mined and fail: its
+// value never moved, and its block still holds it. Like a native deposit's, its
+// receipt decides, so the deposit fails with the on-chain code instead of confirming.
+func TestRunConfirmationCheck_AnInternalTransferWhoseReceiptFailedFailsOnChain(t *testing.T) {
+	for name, recordedHash := range internalTransferRecordings {
+		t.Run(name, func(t *testing.T) {
+			f := newReceiptReorgFixture(t)
+			f.recordInternalDeposit(t, recordedHash)
+			f.chain.mine(reorgDepositBlock, "a", reorgContractCall())
+			f.chain.failedOnChain[reorgDepositTx] = "reverted"
+
+			f.pass(t, reorgDepositBlock+reorgRequiredConfs-1)
+			f.pass(t, reorgDepositBlock+reorgRequiredConfs)
+
+			got := reorgDeposit(t, reorgDepositTx)
+			if got.Status != string(types.TxStatusFailed) || got.ErrorMessage != "onchain_reverted" || got.ConfirmedAt != nil {
+				t.Fatalf("status %s error %q confirmed_at %v, want failed with onchain_reverted and never confirmed", got.Status, got.ErrorMessage, got.ConfirmedAt)
+			}
+			failed, confirmed := depositEventsFor(t, types.EventDepositFailed, got.ID), depositEventsFor(t, types.EventDepositConfirmed, got.ID)
+			if len(failed) != 1 || len(confirmed) != 0 {
+				t.Fatalf("%d deposit.failed and %d deposit.confirmed, want exactly one deposit.failed", len(failed), len(confirmed))
+			}
+			if body := failed[0]; body.FailureCode == nil || *body.FailureCode != "onchain_reverted" || body.LogIndex != reorgInternalPosition {
+				t.Fatalf("deposit.failed payload %+v, want onchain_reverted at the internal position", body)
+			}
+		})
+	}
+}
+
+// One whose receipt succeeded confirms, its receipt read before it does.
+func TestRunConfirmationCheck_AnInternalTransferWhoseReceiptSucceededConfirms(t *testing.T) {
+	// The transaction reads of the pass: the receipt, after the lookup of the
+	// transaction's block for a deposit recorded without a hash.
+	reads := map[string]int{"recorded with its block's hash": 1, "recorded without a hash": 2}
+	for name, recordedHash := range internalTransferRecordings {
+		t.Run(name, func(t *testing.T) {
+			f := newReceiptReorgFixture(t)
+			f.recordInternalDeposit(t, recordedHash)
+			f.chain.mine(reorgDepositBlock, "a", reorgContractCall())
+			_, before := f.chain.reads()
+
+			f.pass(t, reorgDepositBlock+reorgRequiredConfs-1)
+
+			got := reorgDeposit(t, reorgDepositTx)
+			if got.Status != string(types.TxStatusConfirmed) || got.BlockHash != reorgHash("a", reorgDepositBlock) || got.LogIndex != reorgInternalPosition {
+				t.Fatalf("status %s hash %q position %d, want confirmed in its block at its position", got.Status, got.BlockHash, got.LogIndex)
+			}
+			if _, after := f.chain.reads(); after-before != reads[name] {
+				t.Fatalf("%d transaction reads, want %d: the receipt is read before the deposit confirms", after-before, reads[name])
+			}
+			if len(depositEventsFor(t, types.EventDepositConfirmed, got.ID)) != 1 || len(depositEventsFor(t, types.EventDepositFailed, got.ID)) != 0 {
+				t.Fatal("want exactly one deposit.confirmed and no deposit.failed")
+			}
+		})
+	}
 }
 
 // An internal transfer is in no block the scanner reads, so the push's deposit,
