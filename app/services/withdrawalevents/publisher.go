@@ -26,6 +26,12 @@ type Enqueuer interface {
 	EnqueueScoped(ctx context.Context, event webhook.ScopedEvent) (int, error)
 }
 
+// Stager is an Enqueuer that records the deliveries inside the caller's database
+// transaction and returns the send to run after it commits (webhook.Service).
+type Stager interface {
+	StageScoped(ctx context.Context, event webhook.ScopedEvent) (func(context.Context), int, error)
+}
+
 type WithdrawalStore interface {
 	FindByTransactionID(ctx context.Context, transactionID uuid.UUID) (*models.Withdrawal, error)
 	FindByIDAndWallet(ctx context.Context, withdrawalID, walletID uuid.UUID) (*models.Withdrawal, error)
@@ -190,29 +196,37 @@ func (p *Publisher) MarkConfirmed(ctx context.Context, tx *models.Transaction) e
 	return nil
 }
 
-// MarkFailed is called once a withdrawal transaction failed on chain (an XRP tec
-// result, or a payment past its LastLedgerSequence): it publishes withdrawal.failed
-// with failureCode and the transaction, then marks the withdrawal row failed. A row
-// already failed is left alone and nothing is published again; the per-subject
-// dedup keeps a retry after a crash in between from delivering twice.
-func (p *Publisher) MarkFailed(ctx context.Context, tx *models.Transaction, failureCode string) error {
+// StageFailed is called, with ctx bound to the database transaction that fails a
+// withdrawal transaction on chain (a failed EVM receipt, an XRP tec result, a
+// payment past its LastLedgerSequence, a transfer that can never land): it records
+// withdrawal.failed with failureCode and the transaction and marks the withdrawal
+// row failed, both in that transaction, and returns the send that queues the
+// event, to run only once it commits (nil: nothing to send). A failure that loses a
+// race is rolled back with them, so it leaves no withdrawal.failed. A withdrawal
+// already failed is left alone and nothing is staged again; the per-subject dedup
+// keeps one withdrawal.failed per config. The enqueuer must stage (Stager).
+func (p *Publisher) StageFailed(ctx context.Context, tx *models.Transaction, failureCode string) (func(context.Context), error) {
 	if tx == nil || tx.ID == uuid.Nil {
-		return errors.New("mark withdrawal failed: transaction is required")
+		return nil, errors.New("stage withdrawal failed: transaction is required")
 	}
 	if tx.TxType != models.TxTypeWithdrawal {
-		return fmt.Errorf("mark withdrawal failed: transaction %s is a %s", tx.ID, tx.TxType)
+		return nil, fmt.Errorf("stage withdrawal failed: transaction %s is a %s", tx.ID, tx.TxType)
 	}
 	code := strings.TrimSpace(failureCode)
 	if code == "" {
-		return errors.New("mark withdrawal failed: failure code is required")
+		return nil, errors.New("stage withdrawal failed: failure code is required")
+	}
+	stager, ok := p.enqueuer.(Stager)
+	if !ok {
+		return nil, errors.New("stage withdrawal failed: the enqueuer cannot stage")
 	}
 
 	withdrawal, err := p.withdrawalForTransaction(ctx, tx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if withdrawal != nil && withdrawal.Status == models.WithdrawalStatusFailed {
-		return nil
+		return nil, nil
 	}
 
 	var accountID *uuid.UUID
@@ -221,16 +235,18 @@ func (p *Publisher) MarkFailed(ctx context.Context, tx *models.Transaction, fail
 	}
 	payload := p.transactionPayload(withdrawal, tx, models.WithdrawalStatusFailed)
 	payload.FailureCode = &code
-	if err := p.publish(ctx, types.EventWithdrawalFailed, tx.WalletID, accountID, &tx.ID, payload); err != nil {
-		return err
+	send, staged, err := stager.StageScoped(ctx, p.scopedEvent(ctx, types.EventWithdrawalFailed, tx.WalletID, accountID, &tx.ID, payload))
+	if err != nil {
+		return nil, fmt.Errorf("stage %s: %w", types.EventWithdrawalFailed, err)
 	}
+	slog.Info("withdrawal webhook staged", "event_type", types.EventWithdrawalFailed, "withdrawal_id", payload.WithdrawalID, "deliveries", staged)
 	if withdrawal == nil {
-		return nil
+		return send, nil
 	}
 	if err := p.withdrawals.MarkFailed(ctx, withdrawal.ID, code); err != nil {
-		return fmt.Errorf("mark withdrawal %s failed: %w", withdrawal.ID, err)
+		return nil, fmt.Errorf("mark withdrawal %s failed: %w", withdrawal.ID, err)
 	}
-	return nil
+	return send, nil
 }
 
 // Backfill confirms withdrawals whose transaction the tracker confirmed but whose row
@@ -347,20 +363,25 @@ func (p *Publisher) publish(ctx context.Context, eventType types.EventType, wall
 	if p.enqueuer == nil {
 		return errors.New("publish withdrawal webhook: no enqueuer configured")
 	}
-	scopeAccount := p.walletAccount(ctx, walletID, accountID)
-	enqueued, err := p.enqueuer.EnqueueScoped(ctx, webhook.ScopedEvent{
-		EventType:     eventType,
-		SubjectID:     payload.WithdrawalID,
-		WalletID:      walletID,
-		AccountID:     scopeAccount,
-		TransactionID: transactionID,
-		Data:          payload,
-	})
+	enqueued, err := p.enqueuer.EnqueueScoped(ctx, p.scopedEvent(ctx, eventType, walletID, accountID, transactionID, payload))
 	if err != nil {
 		return fmt.Errorf("publish %s: %w", eventType, err)
 	}
 	slog.Info("withdrawal webhook published", "event_type", eventType, "withdrawal_id", payload.WithdrawalID, "deliveries", enqueued)
 	return nil
+}
+
+// scopedEvent is the outbox event of a withdrawal webhook, scoped to the wallet's
+// owning account.
+func (p *Publisher) scopedEvent(ctx context.Context, eventType types.EventType, walletID uuid.UUID, accountID *uuid.UUID, transactionID *uuid.UUID, payload Payload) webhook.ScopedEvent {
+	return webhook.ScopedEvent{
+		EventType:     eventType,
+		SubjectID:     payload.WithdrawalID,
+		WalletID:      walletID,
+		AccountID:     p.walletAccount(ctx, walletID, accountID),
+		TransactionID: transactionID,
+		Data:          payload,
+	}
 }
 
 // walletAccount scopes the event to the wallet's owning account; the withdrawal's

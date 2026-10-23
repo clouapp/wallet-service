@@ -11,6 +11,7 @@ import (
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/ingest"
+	"github.com/macrowallets/waas/app/services/queue"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/pkg/types"
@@ -20,7 +21,14 @@ import (
 )
 
 func newWebhookSvc() *webhook.Service {
+	return newQueuedWebhookSvc(nil)
+}
+
+// newQueuedWebhookSvc is the production webhook service on the test database,
+// sending its deliveries to sender (none when nil).
+func newQueuedWebhookSvc(sender queue.Sender) *webhook.Service {
 	return webhook.NewService(webhook.Deps{
+		SQS:     sender,
 		Configs: repositories.NewWebhookConfigRepository(nil, facades.Crypt()),
 		Events:  repositories.NewWebhookEventRepository(nil),
 	})
@@ -28,8 +36,13 @@ func newWebhookSvc() *webhook.Service {
 
 // newWithdrawalPublisher is the production withdrawal lifecycle publisher on the test database.
 func newWithdrawalPublisher() *withdrawalevents.Publisher {
+	return newWithdrawalPublisherOver(newWebhookSvc())
+}
+
+// newWithdrawalPublisherOver is newWithdrawalPublisher publishing through webhooks.
+func newWithdrawalPublisherOver(webhooks *webhook.Service) *withdrawalevents.Publisher {
 	return withdrawalevents.NewPublisher(withdrawalevents.PublisherDeps{
-		Enqueuer:     newWebhookSvc(),
+		Enqueuer:     webhooks,
 		Withdrawals:  repositories.NewWithdrawalRepository(nil),
 		Transactions: repositories.NewTransactionRepository(nil),
 		Wallets:      repositories.NewWalletRepository(nil),

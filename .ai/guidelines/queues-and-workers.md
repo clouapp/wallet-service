@@ -72,12 +72,16 @@ Outbound webhooks are delivered **at least once**, never exactly once.
   backfill, keyed on the outbox row, and stamps the republished event with
   `ScopedEvent.OccurredAt` so a config created later is not sent history.
 - **An on-chain failure never writes its status without its event, and needs no backfill.**
-  `withdrawal.failed` is published first and the row is marked failed last.
-  `deposit.failed` (a deposit that moved no value: failed on chain, or reorganized out)
-  stages its outbox rows in the same database transaction as the guarded failed status
-  (`StageScoped`; the queue send runs after the commit), so a deposit another process
-  confirmed meanwhile keeps no `deposit.failed`. Either way a failed write leaves the
-  row as it was and the next tracker pass (or `deposits:verify-receipts` run) writes
+  Both stage their outbox rows in the same database transaction as the guarded failed
+  status (`StageScoped`; the queue send runs after the commit). An outbound row
+  (withdrawal, sweep, gas_seed) is failed first, only from the status the pass read
+  (`MarkFailedFrom`), then its block, its fee, and for a withdrawal the `withdrawals`
+  row and `withdrawal.failed` (`withdrawalevents.Publisher.StageFailed`) are written
+  in that transaction. `deposit.failed` (a deposit that moved no value: failed on
+  chain, or reorganized out) is staged before its guarded failed status. So a row
+  another process confirmed or failed meanwhile keeps no `withdrawal.failed` or
+  `deposit.failed`. Either way a failed write leaves the row as it was and the next
+  tracker pass (or `deposits:verify-receipts` or `withdrawals:reconcile` run) writes
   again; the outbox row keeps that a no-op for the configs that already got it.
 - **A final event supersedes the earlier ones of its subject at delivery.**
   `webhook.Service.Deliver` is the one path every delivery takes, so a rule about what

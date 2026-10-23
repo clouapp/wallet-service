@@ -106,8 +106,8 @@ type transactionStore interface {
 	// RecordConfirmations writes a row still pending or confirming only
 	// (models.ErrTransactionSettled otherwise).
 	RecordConfirmations(ctx context.Context, id uuid.UUID, confirmations int, status string, confirmedAt *time.Time) error
-	MarkFailed(ctx context.Context, id uuid.UUID, reason string) error
-	// MarkFailedFrom fails a row still in fromStatus (models.ErrTransactionSettled otherwise).
+	// MarkFailedFrom fails a row still in fromStatus (models.ErrTransactionSettled
+	// otherwise): a failure never overwrites a row another process settled.
 	MarkFailedFrom(ctx context.Context, id uuid.UUID, reason, fromStatus string) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Transaction, error)
 	// SetRawPayload rewrites raw_payload (what the tracker keeps between passes).

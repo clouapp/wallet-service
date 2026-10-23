@@ -263,11 +263,13 @@ func (s *Service) confirmPending(ctx context.Context, adapter types.Chain, curre
 	return nil
 }
 
-// WithdrawalFailures publishes withdrawal.failed for a withdrawal whose transaction
-// failed on chain and marks the withdrawal row failed with failureCode. The
-// withdrawal lifecycle publisher implements it next to WithdrawalConfirmations.
+// WithdrawalFailures records withdrawal.failed for a withdrawal whose transaction
+// failed on chain and marks the withdrawal row failed with failureCode, both with
+// ctx (the caller's database transaction), and returns the send that queues the
+// event once that transaction commits (nil: nothing to send). The withdrawal
+// lifecycle publisher implements it next to WithdrawalConfirmations.
 type WithdrawalFailures interface {
-	MarkFailed(ctx context.Context, tx *models.Transaction, failureCode string) error
+	StageFailed(ctx context.Context, tx *models.Transaction, failureCode string) (func(context.Context), error)
 }
 
 // maxFailureCodeLength is withdrawals.failure_reason varchar(64).
@@ -600,46 +602,78 @@ func payloadUint64(tx models.Transaction, key string) uint64 {
 	return value
 }
 
-// failOnChain records a transaction that failed on chain: the fee a validated
-// failure still paid (block > 0), the block, withdrawal.failed and the withdrawal
-// row (through WithdrawalFailures), then the transaction's failed status, last, so
-// a failed publish leaves the row pending and the next cycle retries. It reports
-// whether the transaction is now failed.
+// failOnChain is failOutbound for the tracker and withdrawals:reconcile: a failure
+// that was not recorded is logged, and one another process settled meanwhile is
+// left to it. It reports whether this call failed the transaction.
 func (s *Service) failOnChain(ctx context.Context, adapter types.Chain, tx models.Transaction, failureCode string, block uint64) bool {
+	err := s.failOutbound(ctx, adapter, tx, failureCode, block)
+	switch {
+	case errors.Is(err, models.ErrTransactionSettled):
+		slog.Info("transaction that failed on chain was settled by another process meanwhile", "tx_id", tx.ID, "chain", tx.Chain, "error", err)
+	case err != nil:
+		slog.Error("transaction that failed on chain was not marked failed; retrying next pass", "tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "failure_code", failureCode, "error", err)
+	}
+	return err == nil
+}
+
+// failOutbound records an outbound transaction (withdrawal, sweep, gas_seed) that
+// failed on chain, from the status the caller read: its failed status, the fee a
+// validated failure still paid and its block (block > 0), and for a withdrawal
+// withdrawal.failed and the withdrawal row (WithdrawalFailures). The status write
+// comes first and only from that status, so a transaction another process settled
+// meanwhile (the tracker, the scan's confirmation step and withdrawals:reconcile can
+// all see it) is left as it is, with nothing published, and the error is
+// models.ErrTransactionSettled. Those writes and the outbox rows of withdrawal.failed
+// are one database transaction, queued only once it commits; any failure leaves the
+// row as it was for the next pass. Without a withdrawal lifecycle publisher, the
+// legacy withdrawal.failed is sent after the commit.
+func (s *Service) failOutbound(ctx context.Context, adapter types.Chain, tx models.Transaction, failureCode string, block uint64) error {
+	read, fee := tx.Status, ""
 	if block > 0 {
 		if needsPaidFee(tx) {
-			if fee, ok := paidFee(ctx, adapter, tx); ok {
-				if err := s.txRepo.SetFee(ctx, tx.ID, fee); err != nil {
-					slog.Error("persist failed transaction fee", "tx_id", tx.ID, "error", err)
-					return false
-				}
-				tx.Fee = fee
+			if got, ok := paidFee(ctx, adapter, tx); ok {
+				fee, tx.Fee = got, got
 			}
-		}
-		if err := s.txRepo.SetBlockNumber(ctx, tx.ID, block); err != nil {
-			slog.Error("persist failed transaction block", "tx_id", tx.ID, "error", err)
-			return false
 		}
 		tx.BlockNumber = int64(block)
 	}
 	tx.Status = string(types.TxStatusFailed)
-	if tx.TxType == models.TxTypeWithdrawal {
-		if failures, ok := s.withdrawals.(WithdrawalFailures); ok {
-			if err := failures.MarkFailed(ctx, &tx, failureCode); err != nil {
-				slog.Error("publish withdrawal failed on chain", "tx_id", tx.ID, "error", err)
-				return false
-			}
-		} else if s.webhookSvc != nil {
-			s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventWithdrawalFailed, tx)
+	failures, staged := s.withdrawals.(WithdrawalFailures)
+	var send func(context.Context)
+	err := s.txRepo.Within(ctx, func(ctx context.Context) error {
+		if err := s.txRepo.MarkFailedFrom(ctx, tx.ID, failureCode, read); err != nil {
+			return fmt.Errorf("mark transaction %s failed: %w", tx.ID, err)
 		}
+		if block > 0 {
+			if err := s.txRepo.SetBlockNumber(ctx, tx.ID, block); err != nil {
+				return fmt.Errorf("record the block of failed transaction %s: %w", tx.ID, err)
+			}
+		}
+		if fee != "" {
+			if err := s.txRepo.SetFee(ctx, tx.ID, fee); err != nil {
+				return fmt.Errorf("record the fee of failed transaction %s: %w", tx.ID, err)
+			}
+		}
+		if tx.TxType == models.TxTypeWithdrawal && staged {
+			var err error
+			if send, err = failures.StageFailed(ctx, &tx, failureCode); err != nil {
+				return fmt.Errorf("stage %s for transaction %s: %w", types.EventWithdrawalFailed, tx.ID, err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
-	if err := s.txRepo.MarkFailed(ctx, tx.ID, failureCode); err != nil {
-		slog.Error("mark transaction failed", "tx_id", tx.ID, "error", err)
-		return false
+	switch {
+	case send != nil:
+		send(ctx)
+	case tx.TxType == models.TxTypeWithdrawal && !staged && s.webhookSvc != nil:
+		s.webhookSvc.EnqueueEvent(ctx, tx.ID, types.EventWithdrawalFailed, tx)
 	}
 	s.forgetSignedBytes(ctx, tx)
 	slog.Warn("transaction failed on chain", "tx_id", tx.ID, "tx_hash", tx.TxHash, "chain", tx.Chain, "failure_code", failureCode)
-	return true
+	return nil
 }
 
 // persistSweepConfirmed writes the confirmation, the paid fee, and the
