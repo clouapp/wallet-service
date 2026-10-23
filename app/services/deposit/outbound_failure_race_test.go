@@ -358,3 +358,47 @@ func TestFail_Outbound_AFailureNotRecordedWholeLeavesTheRowForTheNextPass(t *tes
 		t.Fatalf("next pass: %d withdrawal.failed, want one", n)
 	}
 }
+
+// withdrawals:reconcile applies a failure verdict through failOnChain: on a row
+// another process confirmed after reconciliation read it, the verdict is not
+// applied and the row is left confirmed.
+func TestReconcile_Outbound_AFailureOnARowConfirmedMeanwhileIsNotApplied(t *testing.T) {
+	for _, txType := range outboundTxTypes {
+		t.Run(txType, func(t *testing.T) {
+			r := newOutboundRace(t)
+			stale, _ := r.broadcast(t, txType)
+			r.confirm(t, stale)
+			report := WithdrawalReconcileReport{Verdict: ReconcileFailed, FailureCode: outboundRaceCode, Block: outboundRaceBlock + 1}
+
+			r.svc.applyReconciliation(context.Background(), r.adapter, stale, &report)
+
+			if report.Applied {
+				t.Fatalf("report %+v, want the failure not applied", report)
+			}
+			if got := reloadTransaction(t, stale.ID); got.Status != string(types.TxStatusConfirmed) || got.ErrorMessage != "" {
+				t.Fatalf("status %s error %q, want it left confirmed", got.Status, got.ErrorMessage)
+			}
+		})
+	}
+}
+
+// Without a withdrawal lifecycle publisher, the legacy withdrawal.failed is sent
+// once, after the failure has committed.
+func TestFail_Outbound_WithoutALifecyclePublisherSendsTheLegacyWithdrawalFailedAfterCommit(t *testing.T) {
+	r := newOutboundRace(t)
+	stale, _ := r.broadcast(t, models.TxTypeWithdrawal)
+	r.svc.SetWithdrawalConfirmations(nil)
+
+	if err := r.fail(stale, outboundRaceBlock); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := reloadTransaction(t, stale.ID); got.Status != string(types.TxStatusFailed) || got.ErrorMessage != outboundRaceCode {
+		t.Fatalf("status %s error %q", got.Status, got.ErrorMessage)
+	}
+	r.queue.mu.Lock()
+	defer r.queue.mu.Unlock()
+	if len(r.queue.statusAtSend) != 1 || r.queue.statusAtSend[0] != string(types.TxStatusFailed) {
+		t.Fatalf("withdrawal.failed sent with its transaction %v, want once, after the failure committed", r.queue.statusAtSend)
+	}
+}
