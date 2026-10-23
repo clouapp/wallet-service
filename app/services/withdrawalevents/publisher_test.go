@@ -33,6 +33,8 @@ const (
 type fakeEnqueuer struct {
 	events []webhook.ScopedEvent
 	err    error
+	// sends counts the runs of the sends StageScoped returned.
+	sends int
 }
 
 func (f *fakeEnqueuer) EnqueueScoped(ctx context.Context, event webhook.ScopedEvent) (int, error) {
@@ -41,6 +43,21 @@ func (f *fakeEnqueuer) EnqueueScoped(ctx context.Context, event webhook.ScopedEv
 	}
 	f.events = append(f.events, event)
 	return 1, nil
+}
+
+func (f *fakeEnqueuer) StageScoped(ctx context.Context, event webhook.ScopedEvent) (func(context.Context), int, error) {
+	if f.err != nil {
+		return nil, 0, f.err
+	}
+	f.events = append(f.events, event)
+	return func(context.Context) { f.sends++ }, 1, nil
+}
+
+// enqueueOnly is an Enqueuer that cannot stage.
+type enqueueOnly struct{ inner *fakeEnqueuer }
+
+func (e enqueueOnly) EnqueueScoped(ctx context.Context, event webhook.ScopedEvent) (int, error) {
+	return e.inner.EnqueueScoped(ctx, event)
 }
 
 type fakeWithdrawals struct {
@@ -411,14 +428,22 @@ func TestBackfill_Confirms_BroadcastWithdrawalsWithConfirmedTransactions(t *test
 	}
 }
 
-func TestMarkFailed_PublishesOnceWithTheTransactionAndMarksTheRow(t *testing.T) {
+func TestStage_Failed_StagesOnceWithTheTransactionAndMarksTheRow(t *testing.T) {
 	f := newFixture()
 	tag := uint32(98765)
 	f.tx.DestinationTag = &tag
 	f.tx.Status = string(types.TxStatusFailed)
 
-	if err := f.publisher.MarkFailed(context.Background(), f.tx, "onchain_tecno_dst_insuf_xrp"); err != nil {
-		t.Fatalf("MarkFailed: %v", err)
+	send, err := f.publisher.StageFailed(context.Background(), f.tx, "onchain_tecno_dst_insuf_xrp")
+	if err != nil || send == nil {
+		t.Fatalf("StageFailed: send %v, err %v", send != nil, err)
+	}
+	if f.enqueuer.sends != 0 {
+		t.Fatal("withdrawal.failed was queued before the caller's transaction committed")
+	}
+	send(context.Background())
+	if f.enqueuer.sends != 1 {
+		t.Fatalf("the staged send queued %d times, want once", f.enqueuer.sends)
 	}
 	event, payload := onlyPayload(t, f.enqueuer)
 	if event.EventType != types.EventWithdrawalFailed || event.TransactionID == nil || *event.TransactionID != f.tx.ID || event.SubjectID != f.withdrawal.ID.String() {
@@ -434,25 +459,40 @@ func TestMarkFailed_PublishesOnceWithTheTransactionAndMarksTheRow(t *testing.T) 
 		t.Fatalf("row update = %v", update)
 	}
 
-	if err := f.publisher.MarkFailed(context.Background(), f.tx, "onchain_tecno_dst_insuf_xrp"); err != nil {
-		t.Fatalf("second MarkFailed: %v", err)
+	again, err := f.publisher.StageFailed(context.Background(), f.tx, "onchain_tecno_dst_insuf_xrp")
+	if err != nil || again != nil {
+		t.Fatalf("second StageFailed: send %v, err %v; want nothing to send", again != nil, err)
 	}
 	if len(f.enqueuer.events) != 1 {
-		t.Fatalf("withdrawal.failed published %d times", len(f.enqueuer.events))
+		t.Fatalf("withdrawal.failed staged %d times", len(f.enqueuer.events))
 	}
 }
 
-func TestMarkFailed_RefusesAnythingButAWithdrawalWithACode(t *testing.T) {
+func TestStage_Failed_RefusesAnythingButAWithdrawalWithACode(t *testing.T) {
 	f := newFixture()
-	if err := f.publisher.MarkFailed(context.Background(), f.tx, " "); err == nil {
+	if _, err := f.publisher.StageFailed(context.Background(), f.tx, " "); err == nil {
 		t.Fatal("an empty failure code was accepted")
 	}
 	f.tx.TxType = models.TxTypeSweep
-	if err := f.publisher.MarkFailed(context.Background(), f.tx, "expired"); err == nil {
+	if _, err := f.publisher.StageFailed(context.Background(), f.tx, "expired"); err == nil {
 		t.Fatal("a sweep was marked as a failed withdrawal")
 	}
-	if len(f.enqueuer.events) != 0 {
-		t.Fatalf("events = %d", len(f.enqueuer.events))
+	if len(f.enqueuer.events) != 0 || len(f.withdrawals.updates) != 0 {
+		t.Fatalf("events = %d, row updates = %v", len(f.enqueuer.events), f.withdrawals.updates)
+	}
+}
+
+// An enqueuer that queues at once cannot join the caller's transaction: nothing is
+// published and the withdrawal row is left as it is.
+func TestStage_Failed_RefusesAnEnqueuerThatCannotStage(t *testing.T) {
+	f := newFixture()
+	f.publisher.enqueuer = enqueueOnly{inner: f.enqueuer}
+
+	if _, err := f.publisher.StageFailed(context.Background(), f.tx, "onchain_reverted"); err == nil {
+		t.Fatal("an enqueuer that cannot stage was accepted")
+	}
+	if len(f.enqueuer.events) != 0 || len(f.withdrawals.updates) != 0 {
+		t.Fatalf("events = %d, row updates = %v", len(f.enqueuer.events), f.withdrawals.updates)
 	}
 }
 
