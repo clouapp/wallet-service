@@ -321,3 +321,40 @@ func valuesOf(values map[string]string) []string {
 	}
 	return out
 }
+
+func TestReset_Platform_ProvidersSectionClearsTheIngestBaseURL(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	store.PutPlatform(groupIngestPush, map[string]string{keyIngestBaseURL: ingestSettingBaseURL})
+	cache := &memoryCache{}
+	activity := &recordingActivity{}
+	service, actor := newIngestPushService(store, cache, activity)
+	ctx := context.Background()
+	if got, _ := service.EffectiveIngestBaseURL(ctx, ingestEnvBaseURL); got.Source != IngestBaseURLFromSetting {
+		t.Fatalf("before the reset = %+v", got)
+	}
+
+	if _, err := service.ResetPlatformSection(ctx, actor, sectionProviders); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+
+	if _, kept := store.rows[platformStoreKey(groupIngestPush)]; kept {
+		t.Fatal("a providers reset kept the ingest_push row")
+	}
+	if !containsAll(cache.keys, platformCacheKey(groupIngestPush)) {
+		t.Fatalf("forgotten keys = %v, want the ingest_push group among them", cache.keys)
+	}
+	var recorded bool
+	for _, row := range activity.rows {
+		if row.Metadata["group"] == groupIngestPush && row.TargetID == sectionProviders {
+			recorded = true
+		}
+	}
+	if !recorded {
+		t.Fatal("the reset of ingest_push was not recorded")
+	}
+	if got, err := service.EffectiveIngestBaseURL(ctx, ingestEnvBaseURL); err != nil || got != (IngestBaseURL{URL: ingestEnvBaseURL, Source: IngestBaseURLFromEnv}) {
+		t.Fatalf("after the reset = %+v, %v; want the environment value", got, err)
+	}
+}

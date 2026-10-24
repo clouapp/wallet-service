@@ -174,7 +174,8 @@ func registerVault() {
 		},
 		"webhooks": map[string]any{
 			// ingest_base_url is the public https origin the push providers post to
-			// (ingest:subscribe appends /v1/webhooks/ingest/{provider}/{chain}).
+			// (ingest:subscribe appends /v1/webhooks/ingest/{provider}/{chain}) when the
+			// ingest_push.base_url platform setting is blank, invalid or unreadable.
 			"ingest_base_url":    envString("WEBHOOK_INGEST_BASE_URL", ""),
 			"alchemy_auth_token": envString("ALCHEMY_AUTH_TOKEN", ""),
 			"helius_api_key":     envString("HELIUS_API_KEY", ""),

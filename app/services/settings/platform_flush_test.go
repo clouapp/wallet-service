@@ -150,3 +150,35 @@ func TestFlush_Platform_SectionRequiresActorAdminAndCache(t *testing.T) {
 		t.Fatalf("activity rows = %d, want 0", len(activity.rows))
 	}
 }
+
+func TestFlush_Platform_ProvidersSectionForgetsTheIngestBaseURL(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	store.PutPlatform(groupIngestPush, map[string]string{keyIngestBaseURL: ingestSettingBaseURL})
+	cache := &memoryCache{}
+	service, actor := newIngestPushService(store, cache, &recordingActivity{})
+	ctx := context.Background()
+	if got, _ := service.EffectiveIngestBaseURL(ctx, ingestEnvBaseURL); got.URL != ingestSettingBaseURL {
+		t.Fatalf("before the edit = %+v", got)
+	}
+	// An edit made outside the service: the cached group still holds the old value.
+	store.PutPlatform(groupIngestPush, map[string]string{keyIngestBaseURL: "https://moved.wallets.example.com"})
+	if got, _ := service.EffectiveIngestBaseURL(ctx, ingestEnvBaseURL); got.URL != ingestSettingBaseURL {
+		t.Fatalf("the cache did not hold the old value, so this test would not prove the flush: %+v", got)
+	}
+
+	if err := service.FlushPlatformSection(ctx, actor, sectionProviders); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	if !containsAll(cache.keys, platformCacheKey(groupIngestPush)) {
+		t.Fatalf("forgotten keys = %v, want the ingest_push group among them", cache.keys)
+	}
+	if got := store.rows[platformStoreKey(groupIngestPush)][keyIngestBaseURL]; got != "https://moved.wallets.example.com" {
+		t.Fatalf("stored base_url = %q, a flush keeps the row", got)
+	}
+	if got, err := service.EffectiveIngestBaseURL(ctx, ingestEnvBaseURL); err != nil || got.URL != "https://moved.wallets.example.com" {
+		t.Fatalf("after the flush = %+v, %v; want the edited value", got, err)
+	}
+}
