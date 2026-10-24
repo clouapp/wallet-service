@@ -26,6 +26,10 @@ const solanaSignaturePageLimit = 1000
 // account's data for the Token and the Token-2022 programs alike.
 const solanaMintAddressLength = 32
 
+// solanaTransactionNotFoundCode is Agave's answer to a getSignaturesForAddress whose
+// before or until it does not hold ("Transaction … not found").
+const solanaTransactionNotFoundCode = -32020
+
 // errSolanaTransactionNotReturned means a node answered null for a signature its
 // history lists: it does not serve that transaction yet (a lagging backend).
 var errSolanaTransactionNotReturned = errors.New("solana: the node returned no transaction for the signature")
@@ -268,10 +272,12 @@ type solanaSignatureInfo struct {
 // between the page and the confirmation answers instead of Until (a busy account):
 // the listing is then read again once, on the same endpoint, and its new short page
 // confirmed the same way; a second miss leaves the listing unended. A listing with
-// Before first asks the endpoint whether it holds Before (getSignatureStatuses,
-// searching the history): one that does not (a backend behind on the newest slots,
-// or without the old ledger) may answer an empty page, or its own newest signatures,
-// for a before it cannot place, so nothing it would list or say of the end below
+// Before reads its first page from right below query.Anchor (from the newest when
+// empty), and that page must start with Before itself, which is left out: only an
+// address index that holds Before right below the anchor passes, with no call of its
+// own. One that does not hold it (a backend behind on the newest slots, or without
+// the old ledger) may answer an empty page, its own newest signatures or, as Agave
+// does, -32020; whatever it answers, nothing it would list or say of the end below
 // Before is read, and the listing comes back empty and unended. Without Until
 // only an empty page ends a listing, and then the endpoint's first available block
 // (getFirstAvailableBlock) is LedgerStart: a node that does not hold an old ledger
@@ -289,16 +295,10 @@ func (a *SolanaLive) AccountSignatures(ctx context.Context, account string, quer
 	if err := a.rpc.Call(pinned, "getSlot", &history.Head, map[string]string{"commitment": solanaCommitmentFinalized}); err != nil {
 		return chain.SignatureHistory{}, fmt.Errorf("sol signatures of %s: head: %w", account, err)
 	}
-	if query.Before != "" {
-		held, err := a.holdsSignature(pinned, query.Before)
-		if err != nil {
-			return chain.SignatureHistory{}, fmt.Errorf("sol signatures of %s: the signature to list below: %w", account, err)
-		}
-		if !held {
-			return history, nil
-		}
+	before, placing := query.Before, query.Before != ""
+	if placing {
+		before = query.Anchor
 	}
-	before := query.Before
 	pages, relisted := 0, false
 	for {
 		if pages == query.MaxPages {
@@ -314,9 +314,20 @@ func (a *SolanaLive) AccountSignatures(ctx context.Context, account string, quer
 		}
 		var entries []solanaSignatureInfo
 		if err := a.rpc.Call(pinned, "getSignaturesForAddress", &entries, account, options); err != nil {
+			if placing && transactionNotFound(err) {
+				return chain.SignatureHistory{Head: history.Head}, nil
+			}
 			return chain.SignatureHistory{}, fmt.Errorf("sol signatures of %s: %w", account, err)
 		}
-		for _, entry := range entries {
+		page := entries
+		if placing {
+			placing = false
+			if len(entries) == 0 || entries[0].Signature != query.Before {
+				return chain.SignatureHistory{Head: history.Head}, nil
+			}
+			page = entries[1:]
+		}
+		for _, entry := range page {
 			if strings.TrimSpace(entry.Signature) == "" {
 				return chain.SignatureHistory{}, fmt.Errorf("sol signatures of %s: an entry has no signature", account)
 			}
@@ -346,7 +357,7 @@ func (a *SolanaLive) AccountSignatures(ctx context.Context, account string, quer
 			history.Ended = next == query.Until
 			return history, nil
 		}
-		if len(entries) == 0 {
+		if len(page) == 0 {
 			if err := a.rpc.Call(pinned, "getFirstAvailableBlock", &history.LedgerStart); err != nil {
 				return chain.SignatureHistory{}, fmt.Errorf("sol signatures of %s: first available block: %w", account, err)
 			}
@@ -359,18 +370,11 @@ func (a *SolanaLive) AccountSignatures(ctx context.Context, account string, quer
 	return history, nil
 }
 
-// holdsSignature reports whether the listing's endpoint (ctx pinned) holds signature:
-// getSignatureStatuses, searching the whole history, answers a status for it, failed
-// or not.
-func (a *SolanaLive) holdsSignature(ctx context.Context, signature string) (bool, error) {
-	var result struct {
-		Value []*solanaSignatureStatus `json:"value"`
-	}
-	if err := a.rpc.Call(ctx, "getSignatureStatuses", &result, []string{signature},
-		map[string]bool{"searchTransactionHistory": true}); err != nil {
-		return false, err
-	}
-	return len(result.Value) == 1 && result.Value[0] != nil, nil
+// transactionNotFound reports whether err is the endpoint's -32020: it does not hold
+// a signature the listing named.
+func transactionNotFound(err error) bool {
+	var rpcErr *rpc.RPCError
+	return errors.As(err, &rpcErr) && rpcErr.Code == solanaTransactionNotFoundCode
 }
 
 // signatureBelow is the signature right below below (the newest one when below is

@@ -46,4 +46,6 @@ func TestCreate_DepositSignatureCursors_KeepsOneRowPerChainAndAccountAndDropsThe
 	require.NoError(t, migration.Up())
 	require.NoError(t, migration.Up(), "Up must be repeatable")
 	assert.Equal(t, int64(11), depositSignatureCursorColumns(t))
+	// The table this test dropped held the later migration's columns too.
+	require.NoError(t, (&migrations.M00000000000690AddDepositSignatureCursorAnchors{}).Up())
 }

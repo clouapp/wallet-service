@@ -50,11 +50,14 @@ var sigUSDC = types.Token{Symbol: models.SymbolUSDC, Contract: sigUSDCMint, Deci
 // ended only when until is right below what it listed, as the adapter's confirmation
 // call proves). The endpoint can be made to show less: nothing above hideAbove (a
 // backend behind on the newest slots), nothing below hideBelow (a node without the
-// old ledger, whose first available block is then hideBelow). A before it does not
-// show lists nothing and ends nothing, as the adapter's check that the endpoint holds
-// the before makes it; with unknownErrs it fails an until it does not show, as Agave
-// does (-32020), else it answers as another provider may, with what it holds. With
-// raceMiss, an empty first page
+// old ledger, whose first available block is then hideBelow). A listing below a
+// before reads, as the adapter does, from right below its anchor (from the newest
+// when it has none) and lists and ends nothing unless the before comes first: an
+// anchor it does not show answers an empty page (or Agave's -32020, which the adapter
+// reads the same), or, with newestOnUnknown, its own newest signatures, as an index
+// that answers what it holds instead of failing may. With unknownErrs it fails an
+// until it does not show, as Agave does (-32020), else it answers as another provider
+// may, with what it holds. With raceMiss, an empty first page
 // above a cursor may stay unended, as when a signature lands between the page and its
 // confirmation twice in a row. ScanBlock reports the same transactions by slot, as the
 // block scan reads them.
@@ -70,17 +73,20 @@ type signatureChain struct {
 	hideAbove    uint64
 	hideBelow    uint64
 	unknownErrs  bool
-	raceMiss     func() bool
-	heads        map[string]uint64
-	transactions map[string]chain.TransactionTransfers
-	txErr        map[string]error
-	hashes       map[uint64]string
-	hashErr      map[uint64]error
-	queries      map[string][]chain.SignatureQuery
-	txReads      map[string]int
-	hashReads    map[uint64]int
-	duringRead   func()
-	onTx         func(ctx context.Context, signature string)
+	// newestOnUnknown answers a listing below an anchor it does not show from its own
+	// newest signature instead of with an empty page.
+	newestOnUnknown bool
+	raceMiss        func() bool
+	heads           map[string]uint64
+	transactions    map[string]chain.TransactionTransfers
+	txErr           map[string]error
+	hashes          map[uint64]string
+	hashErr         map[uint64]error
+	queries         map[string][]chain.SignatureQuery
+	txReads         map[string]int
+	hashReads       map[uint64]int
+	duringRead      func()
+	onTx            func(ctx context.Context, signature string)
 }
 
 func newSignatureChain() *signatureChain {
@@ -134,7 +140,7 @@ func (c *signatureChain) AccountSignatures(_ context.Context, account string, qu
 	c.mu.Lock()
 	c.queries[account] = append(c.queries[account], query)
 	history, during, pageSize, ledgerStart := c.histories[account], c.duringRead, c.pageSize, c.ledgerStart
-	hideAbove, hideBelow, unknownErrs, raceMiss := c.hideAbove, c.hideBelow, c.unknownErrs, c.raceMiss
+	hideAbove, hideBelow, unknownErrs, raceMiss, newestOnUnknown := c.hideAbove, c.hideBelow, c.unknownErrs, c.raceMiss, c.newestOnUnknown
 	head, ok := c.heads[account]
 	if !ok {
 		head = sigHead
@@ -158,9 +164,6 @@ func (c *signatureChain) AccountSignatures(_ context.Context, account string, qu
 		}
 		return false
 	}
-	if query.Before != "" && !shows(query.Before) {
-		return chain.SignatureHistory{Head: head}, nil
-	}
 	if unknownErrs && query.Until != "" && !shows(query.Until) {
 		return chain.SignatureHistory{}, errors.New("-32020 transaction not found")
 	}
@@ -177,12 +180,23 @@ func (c *signatureChain) AccountSignatures(_ context.Context, account string, qu
 	}
 	start := 0
 	if query.Before != "" {
-		start = len(newestFirst)
-		for i, signature := range newestFirst {
-			if signature.Signature == query.Before {
-				start = i + 1
+		at := 0
+		if query.Anchor != "" {
+			at = -1
+			for i, signature := range newestFirst {
+				if signature.Signature == query.Anchor {
+					at = i + 1
+				}
 			}
+			if at < 0 && !newestOnUnknown {
+				return listed, nil
+			}
+			at = max(at, 0)
 		}
+		if at >= len(newestFirst) || newestFirst[at].Signature != query.Before {
+			return listed, nil
+		}
+		start = at + 1
 	}
 	for _, signature := range newestFirst[start:] {
 		if query.Until != "" && signature.Signature == query.Until {
@@ -478,7 +492,7 @@ func TestSync_Signatures_RecordsTheDepositsOfEveryAccountOnceAndConfirmsThemInTh
 		"a new account is read from the head down to its floor")
 	assert.Equal(t, chain.SignatureQuery{Until: "sig-nobody", FloorSlot: 1103, HasFloor: true, MaxPages: signatureForwardPageCeiling}, queries[1],
 		"then above its cursor")
-	assert.Equal(t, chain.SignatureQuery{Before: "sig-native", FloorSlot: sigCheckpoint, HasFloor: true, MaxPages: signatureBackfillPages}, queries[2],
+	assert.Equal(t, chain.SignatureQuery{Before: "sig-native", Anchor: "sig-failed", FloorSlot: sigCheckpoint, HasFloor: true, MaxPages: signatureBackfillPages}, queries[2],
 		"and below it again, where the end shows a second time")
 	assert.Equal(t, chain.SignatureQuery{Until: "sig-nobody", FloorSlot: 1103, HasFloor: true, MaxPages: signatureForwardPageCeiling}, queries[3],
 		"a covered account is read above its cursor only")

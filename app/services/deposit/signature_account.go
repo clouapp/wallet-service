@@ -64,21 +64,26 @@ type accountSync struct {
 // oldest recorded one), the floor the backfill goes down to, whether it got there and
 // whether the last backfill read showed the end once (endSeen); and, after a burst,
 // the stretch recorded ahead of a gap above top, from ahead (at aheadSlot) down to
-// aheadBottom.
+// aheadBottom. bottomAnchor and aheadAnchor are the signatures recorded right above
+// bottom and aheadBottom (empty: the end is the only signature of its stretch, or the
+// cursor was saved before anchors were recorded): a listing below an end reads from
+// its anchor and must find the end first (chain.SignatureQuery.Anchor).
 type accountState struct {
-	account     string
-	top         string
-	topSlot     uint64
-	bottom      string
-	ahead       string
-	aheadSlot   uint64
-	aheadBottom string
-	floor       uint64
-	hasFloor    bool
-	covered     bool
-	endSeen     bool
-	stored      bool
-	unsaved     int
+	account      string
+	top          string
+	topSlot      uint64
+	bottom       string
+	bottomAnchor string
+	ahead        string
+	aheadSlot    uint64
+	aheadBottom  string
+	aheadAnchor  string
+	floor        uint64
+	hasFloor     bool
+	covered      bool
+	endSeen      bool
+	stored       bool
+	unsaved      int
 }
 
 func newAccountState(account string, row *models.DepositSignatureCursor, floor signatureFloor) *accountState {
@@ -86,8 +91,9 @@ func newAccountState(account string, row *models.DepositSignatureCursor, floor s
 		return &accountState{account: account, floor: floor.slot, hasFloor: floor.ok, topSlot: floor.slot}
 	}
 	return &accountState{account: account, top: row.Signature, topSlot: storedSlot(row.Slot), bottom: row.BackfillBefore,
-		ahead: row.AheadSignature, aheadSlot: storedSlot(row.AheadSlot), aheadBottom: row.AheadBefore,
-		floor: storedSlot(row.SyncedFromSlot), hasFloor: true, covered: row.Covered, endSeen: row.EndSeen, stored: true}
+		bottomAnchor: row.BackfillAnchor, ahead: row.AheadSignature, aheadSlot: storedSlot(row.AheadSlot), aheadBottom: row.AheadBefore,
+		aheadAnchor: row.AheadAnchor, floor: storedSlot(row.SyncedFromSlot), hasFloor: true, covered: row.Covered, endSeen: row.EndSeen,
+		stored: true}
 }
 
 // storedSlot is a slot read from the cursor store, which never returns a negative
@@ -152,8 +158,9 @@ func (c *signatureCycle) syncAccount(ctx context.Context, account string, row *m
 		if noFloor {
 			pages = c.settings.MaxPages
 		}
+		before, anchor := c.placeBottom(st)
 		history, err := c.reader.AccountSignatures(ctx, account, chain.SignatureQuery{
-			Before: st.bottom, FloorSlot: st.floor, HasFloor: st.hasFloor, MaxPages: pages,
+			Before: before, Anchor: anchor, FloorSlot: st.floor, HasFloor: st.hasFloor, MaxPages: pages,
 		})
 		if err != nil {
 			result.err = fmt.Errorf("read the history of %s: %w", account, err)
@@ -223,7 +230,7 @@ func (c *signatureCycle) readNew(ctx context.Context, st *accountState, stopAt t
 		// stretch: the one recorded ahead of that gap becomes part of the larger gap,
 		// read again (recording is idempotent), so no burst ever fails the account.
 		if st.ahead != "" {
-			st.ahead, st.aheadSlot, st.aheadBottom = "", 0, ""
+			st.ahead, st.aheadSlot, st.aheadBottom, st.aheadAnchor = "", 0, "", ""
 			st.unsaved++
 		}
 		slog.Warn("deposit signature sync: new signatures above an account's cursor not proven to reach it (a burst, or an endpoint that does not show them all); recorded as a stretch ahead of the cursor, the gap below it over the next cycles",
@@ -237,7 +244,8 @@ func (c *signatureCycle) readNew(ctx context.Context, st *accountState, stopAt t
 		return head, true, true
 	}
 
-	gapQuery := chain.SignatureQuery{Until: st.top, Before: st.aheadBottom, FloorSlot: st.topSlot, HasFloor: true, MaxPages: signatureBackfillPages}
+	gapBefore, gapAnchor := c.placeAheadBottom(st)
+	gapQuery := chain.SignatureQuery{Until: st.top, Before: gapBefore, Anchor: gapAnchor, FloorSlot: st.topSlot, HasFloor: true, MaxPages: signatureBackfillPages}
 	gap, err := c.reader.AccountSignatures(ctx, st.account, gapQuery)
 	if err != nil {
 		result.err = fmt.Errorf("read the gap above the cursor of %s: %w", st.account, err)
@@ -252,6 +260,38 @@ func (c *signatureCycle) readNew(ctx context.Context, st *accountState, stopAt t
 	}
 	st.closeGap()
 	return head, true, true
+}
+
+// placeBottom is the before and anchor of a listing below the account's oldest
+// recorded signature (both empty while nothing is recorded: the listing reads from
+// the newest signature). A stretch of one signature has nothing recorded above its
+// bottom: the anchor is empty and the listing reads from the newest signature, which
+// must then be the bottom. A stretch of several whose bottom has no anchor (a cursor
+// saved before anchors were recorded) is first shrunk to its newest signature: what
+// the cursor claims recorded only shrinks, and the signatures below it are read
+// again (recording is idempotent) from an end the address index can place.
+func (c *signatureCycle) placeBottom(st *accountState) (before, anchor string) {
+	if st.bottom != "" && st.bottom != st.top && st.bottomAnchor == "" {
+		slog.Info("deposit signature sync: an account's oldest recorded signature has no anchor; its history is read again from its newest recorded signature",
+			"chain", c.chainID, "account", st.account)
+		st.bottom, st.endSeen = st.top, false
+		st.unsaved++
+	}
+	return st.bottom, st.bottomAnchor
+}
+
+// placeAheadBottom is the before and anchor of the listing of the gap below the
+// stretch recorded ahead of the cursor, by the rule of placeBottom: a stretch of
+// several without an anchor is shrunk to its newest signature, and the gap below it
+// grows by what it gave up.
+func (c *signatureCycle) placeAheadBottom(st *accountState) (before, anchor string) {
+	if st.aheadBottom != st.ahead && st.aheadAnchor == "" {
+		slog.Info("deposit signature sync: the oldest signature of a stretch ahead of a gap has no anchor; the gap is read again from its newest signature",
+			"chain", c.chainID, "account", st.account)
+		st.aheadBottom = st.ahead
+		st.unsaved++
+	}
+	return st.aheadBottom, st.aheadAnchor
 }
 
 // reachedEnd reports whether a listing above an account's newest recorded signature
@@ -372,24 +412,35 @@ func (c *signatureCycle) process(ctx context.Context, st *accountState, signatur
 	return true
 }
 
-// advance moves the recorded stretches over signature, recorded.
+// advance moves the recorded stretches over signature, recorded, and keeps each end's
+// anchor: listings are contiguous runs of the history, so a signature recorded below
+// an end (moveDown, moveGapDown) is right below it, and the first one recorded above a
+// stretch of one signature (moveUp, oldest first) is right above it.
 func (st *accountState) advance(signature chain.AccountSignature, move stretchMove) {
 	switch move {
 	case moveUp:
 		if st.ahead != "" {
+			if st.aheadBottom == st.ahead && st.aheadAnchor == "" {
+				st.aheadAnchor = signature.Signature
+			}
 			st.ahead, st.aheadSlot = signature.Signature, signature.Slot
 			break
+		}
+		if st.top != "" && st.bottom == st.top && st.bottomAnchor == "" {
+			st.bottomAnchor = signature.Signature
 		}
 		st.top, st.topSlot = signature.Signature, signature.Slot
 		if st.bottom == "" {
 			st.bottom = signature.Signature
 		}
 	case moveDown:
+		st.bottomAnchor = st.bottom
 		st.bottom = signature.Signature
 		if st.top == "" {
 			st.top, st.topSlot = signature.Signature, signature.Slot
 		}
 	case moveGapDown:
+		st.aheadAnchor = st.aheadBottom
 		st.aheadBottom = signature.Signature
 		if st.ahead == "" {
 			st.ahead, st.aheadSlot = signature.Signature, signature.Slot
@@ -399,13 +450,18 @@ func (st *accountState) advance(signature chain.AccountSignature, move stretchMo
 }
 
 // closeGap joins the stretch recorded ahead of a gap to the cursor once the gap is
-// read: its newest signature becomes the account's newest recorded one.
+// read: its newest signature becomes the account's newest recorded one. The gap read
+// ended right above top, so the stretch's oldest signature is the anchor of a bottom
+// that was the cursor's only signature.
 func (st *accountState) closeGap() {
-	if st.bottom == "" {
-		st.bottom = st.aheadBottom
+	switch {
+	case st.bottom == "":
+		st.bottom, st.bottomAnchor = st.aheadBottom, st.aheadAnchor
+	case st.bottom == st.top && st.bottomAnchor == "":
+		st.bottomAnchor = st.aheadBottom
 	}
 	st.top, st.topSlot = st.ahead, st.aheadSlot
-	st.ahead, st.aheadSlot, st.aheadBottom = "", 0, ""
+	st.ahead, st.aheadSlot, st.aheadBottom, st.aheadAnchor = "", 0, "", ""
 	st.unsaved++
 }
 
@@ -436,8 +492,8 @@ func (c *signatureCycle) saveState(ctx context.Context, st *accountState) error 
 	defer cancel()
 	if err := c.svc.signatureCursors.Advance(saveCtx, models.DepositSignatureCursor{
 		Chain: c.chainID, Account: st.account, Signature: st.top, Slot: int64(st.topSlot),
-		BackfillBefore: st.bottom, SyncedFromSlot: int64(st.floor), Covered: st.covered, EndSeen: st.endSeen,
-		AheadSignature: st.ahead, AheadSlot: int64(st.aheadSlot), AheadBefore: st.aheadBottom,
+		BackfillBefore: st.bottom, BackfillAnchor: st.bottomAnchor, SyncedFromSlot: int64(st.floor), Covered: st.covered, EndSeen: st.endSeen,
+		AheadSignature: st.ahead, AheadSlot: int64(st.aheadSlot), AheadBefore: st.aheadBottom, AheadAnchor: st.aheadAnchor,
 	}); err != nil {
 		return fmt.Errorf("save the signature cursor of %s: %w", st.account, err)
 	}

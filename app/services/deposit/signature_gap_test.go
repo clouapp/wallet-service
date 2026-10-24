@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/goravel/framework/facades"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -49,8 +50,10 @@ func TestSync_Signatures_ReadsABurstLongerThanACycleListsOverSeveralCycles(t *te
 	queries := f.chain.queriesOf(sigBob)
 	assert.Equal(t, chain.SignatureQuery{Until: fmt.Sprintf("sig-%d", newest), FloorSlot: newest, HasFloor: true, MaxPages: signatureForwardPageCeiling},
 		queries[len(queries)-2], "new signatures are read above the stretch ahead of the gap")
-	assert.Equal(t, chain.SignatureQuery{Until: "sig-0", Before: aheadBefore, FloorSlot: 1100, HasFloor: true, MaxPages: signatureBackfillPages},
-		queries[len(queries)-1], "the gap is read below that stretch, down to the cursor")
+	aheadAnchor := fmt.Sprintf("sig-%d", newest-signatureForwardPageCeiling-signatureBackfillPages+2)
+	assert.Equal(t, aheadAnchor, cursor.AheadAnchor, "the signature recorded right above the stretch's oldest")
+	assert.Equal(t, chain.SignatureQuery{Until: "sig-0", Before: aheadBefore, Anchor: aheadAnchor, FloorSlot: 1100, HasFloor: true, MaxPages: signatureBackfillPages},
+		queries[len(queries)-1], "the gap is read below that stretch, from right below its anchor, down to the cursor")
 	assert.Equal(t, "sig-new", f.cursors(t)[sigBob].AheadSignature)
 
 	third := f.sync(t)
@@ -209,8 +212,12 @@ type signatureRun struct {
 	switching bool
 	// race: an empty first page above a cursor stays unended one time in three, as
 	// when signatures land between the page and its confirmations.
-	race      bool
-	endpoints signatureEndpoints
+	race bool
+	// newestOnUnknown: an endpoint answering a before it does not index answers from
+	// its own newest signature instead of with an empty page (whatever its status
+	// store holds: the sync asks only the index).
+	newestOnUnknown bool
+	endpoints       signatureEndpoints
 }
 
 // runSignatureProperty drives 30 cycles over two accounts with bursts above the
@@ -230,6 +237,7 @@ func runSignatureProperty(t *testing.T, seed int64, run signatureRun) (missing, 
 	f.chain.pageSize = 1 + rng.Intn(2)
 	ceiling := signatureForwardPageCeiling * f.chain.pageSize
 	f.chain.accounts[sigAlice] = []string{sigAlice}
+	f.chain.newestOnUnknown = run.newestOnUnknown
 	if run.race {
 		var raceMu sync.Mutex
 		f.chain.raceMiss = func() bool {
@@ -303,6 +311,17 @@ func runSignatureProperty(t *testing.T, seed int64, run signatureRun) (missing, 
 			top := indexOf(account, cursor.Signature)
 			span(indexOf(account, cursor.BackfillBefore), top, "stretch")
 			span(indexOf(account, cursor.AheadBefore), indexOf(account, cursor.AheadSignature), "stretch ahead of a gap")
+			anchored := func(end, anchor, what string) {
+				if anchor == "" {
+					return
+				}
+				if at := indexOf(account, end); at < 0 || indexOf(account, anchor) != at+1 {
+					t.Errorf("%s, seed %d: %s's %s anchor %s is not the signature right above %s", stage, seed, account, what, anchor, end)
+					violations++
+				}
+			}
+			anchored(cursor.BackfillBefore, cursor.BackfillAnchor, "oldest recorded signature's")
+			anchored(cursor.AheadBefore, cursor.AheadAnchor, "stretch ahead's oldest signature's")
 			if !cursor.Covered {
 				continue
 			}
@@ -399,6 +418,10 @@ func runSignatureProperty(t *testing.T, seed int64, run signatureRun) (missing, 
 // the switching runs are the review's (#130): before the adapter confirmed that an
 // endpoint holds the before of a listing, seeds 204 and 206 lost hundreds of
 // signatures; the races make a run differ from one time to the next, so 206 runs twice.
+// The runs of an index behind are the review's of the status check (501 to 505): an
+// index that does not hold a before its status store holds lost 3 to 449 deposits in
+// four of five seeds before listings were anchored. Each cycle also checks every
+// stored anchor is the signature right above its end.
 func TestProperty_SignatureSync_ReadsEveryHistoryWhateverTheEndpointShows(t *testing.T) {
 	for name, tc := range map[string]struct {
 		run   signatureRun
@@ -411,6 +434,12 @@ func TestProperty_SignatureSync_ReadsEveryHistoryWhateverTheEndpointShows(t *tes
 		"switching, mixed backends":                      {run: signatureRun{switching: true}, seeds: seedRange(101, 103)},
 		"switching, with confirmation races":             {run: signatureRun{switching: true, race: true}, seeds: append(seedRange(201, 206), 206)},
 		"failing, with confirmation races":               {run: signatureRun{unknownErrs: true, race: true}, seeds: seedRange(301, 301)},
+		// The review's index behind its status store (#130 follow-up): a lagging index
+		// that answers a before it does not hold with an empty page, or from its newest.
+		"an index behind, answering empty":               {run: signatureRun{endpoints: laggingEndpoints}, seeds: seedRange(501, 506)},
+		"an index behind, answering from its newest":     {run: signatureRun{endpoints: laggingEndpoints, newestOnUnknown: true}, seeds: seedRange(501, 506)},
+		"answering from its newest, mixed backends":      {run: signatureRun{newestOnUnknown: true}, seeds: seedRange(601, 602)},
+		"switching, from its newest, confirmation races": {run: signatureRun{switching: true, race: true, newestOnUnknown: true}, seeds: seedRange(701, 702)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			for i, seed := range tc.seeds {
@@ -482,5 +511,97 @@ func TestSync_Signatures_ABackendThatDoesNotHoldTheBeforeNeverCoversAnUnreadHist
 		}
 	}
 	assert.Empty(t, missing, "bob's history above the floor is recorded")
+	assert.True(t, f.cursors(t)[sigBob].Covered)
+}
+
+// An address index behind on the newest slots (its status store may hold more) that
+// answers a before it does not hold with an empty page, or from its own newest
+// signatures, instead of failing it: before listings were anchored, the empty answer
+// covered bob with 25 of his 30 deposits unread and the newest one skipped 5 (the
+// review of #130). Every listing below an end now starts right below its anchor and
+// needs the end first, so that backend reads nothing below it, and once a full index
+// serves every deposit above the floor is recorded.
+func TestSync_Signatures_AnIndexBehindItsStatusStoreNeverSkipsAnUnreadHistory(t *testing.T) {
+	for name, newest := range map[string]bool{"an empty page": false, "its own newest signatures": true} {
+		t.Run(name, func(t *testing.T) {
+			f := newSignatureFixture(t)
+			f.chain.pageSize = 1
+			f.chain.accounts[sigAlice] = []string{sigAlice}
+			var want []string
+			for _, run := range []struct {
+				prefix   string
+				from, to uint64
+			}{{"old", 1001, 1010}, {"mid", 4790, 4799}, {"new", 4900, 4909}} {
+				for slot := run.from; slot <= run.to; slot++ {
+					signature := fmt.Sprintf("%s-%d", run.prefix, slot)
+					f.chain.history(sigBob, f.chain.tx(signature, slot, lamports(sigBob, 1_000+int64(len(want)), 1)))
+					want = append(want, signature)
+				}
+			}
+			f.sync(t) // the five newest pages of one signature
+			first := f.cursors(t)[sigBob]
+			require.Equal(t, "new-4905", first.BackfillBefore)
+			require.Equal(t, "new-4906", first.BackfillAnchor, "the signature recorded right above the oldest")
+
+			f.chain.mu.Lock()
+			f.chain.hideAbove, f.chain.newestOnUnknown = 4800, newest // an index 100 slots behind
+			f.chain.mu.Unlock()
+			f.sync(t)
+			f.sync(t)
+			cursor := f.cursors(t)[sigBob]
+			assert.False(t, cursor.Covered, "nothing below an end the index does not place proves an end")
+			assert.Equal(t, "new-4905", cursor.BackfillBefore, "and nothing moves the oldest recorded signature down")
+
+			f.chain.mu.Lock()
+			f.chain.hideAbove, f.chain.newestOnUnknown = 0, false
+			f.chain.mu.Unlock()
+			for i := 0; i < 8; i++ {
+				f.sync(t)
+			}
+			recorded := map[string]bool{}
+			for _, row := range sigDeposits(t) {
+				recorded[row.TxHash] = true
+			}
+			var missing []string
+			for _, signature := range want {
+				if !recorded[signature] {
+					missing = append(missing, signature)
+				}
+			}
+			assert.Empty(t, missing, "bob's 30 deposits above the floor are recorded")
+			assert.True(t, f.cursors(t)[sigBob].Covered)
+		})
+	}
+}
+
+// A cursor saved before anchors were recorded holds a stretch of several signatures
+// with no anchor on its ends: its oldest recorded signature is first moved up to its
+// newest, the history below is read again (recording is idempotent), and the anchors
+// are known from then on; nothing is lost and no deposit is recorded twice.
+func TestSync_Signatures_ACursorSavedWithoutAnchorsIsReadAgainFromItsNewestSignature(t *testing.T) {
+	logs := captureLogs(t)
+	f := newSignatureFixture(t)
+	f.chain.pageSize = 1
+	f.chain.accounts[sigAlice] = []string{sigAlice}
+	for slot := uint64(1001); slot <= 1012; slot++ {
+		f.chain.history(sigBob, f.chain.tx(fmt.Sprintf("sig-%d", slot), slot, lamports(sigBob, int64(slot), 1)))
+	}
+	f.sync(t)
+	cursor := f.cursors(t)[sigBob]
+	require.Equal(t, "sig-1008", cursor.BackfillBefore)
+	_, err := facades.Orm().Query().Exec(`UPDATE deposit_signature_cursors SET backfill_anchor = '' WHERE chain = ? AND account = ?`, sigChain, sigBob)
+	require.NoError(t, err)
+
+	f.sync(t)
+	assert.Len(t, recordsOf(logs(), "INFO", "deposit signature sync: an account's oldest recorded signature has no anchor; its history is read again from its newest recorded signature"), 1)
+	reread := f.cursors(t)[sigBob]
+	assert.Equal(t, "sig-1007", reread.BackfillBefore, "read again from the newest: five pages of one signature below it")
+	assert.Equal(t, "sig-1008", reread.BackfillAnchor)
+
+	for i := 0; i < 4; i++ {
+		f.sync(t)
+	}
+	rows := sigDeposits(t)
+	assert.Len(t, rows, 12, "every deposit once")
 	assert.True(t, f.cursors(t)[sigBob].Covered)
 }
