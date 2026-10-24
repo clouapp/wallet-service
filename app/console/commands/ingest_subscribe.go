@@ -35,7 +35,7 @@ func (c *IngestSubscribe) Signature() string {
 }
 
 func (c *IngestSubscribe) Description() string {
-	return "Create the provider webhook that pushes a chain's deposits to WEBHOOK_INGEST_BASE_URL, store its subscription with the signing secret sealed and sync its addresses (dry run without --apply)"
+	return "Create the provider webhook that pushes a chain's deposits to the ingest base URL (the ingest_push.base_url platform setting, else WEBHOOK_INGEST_BASE_URL), store its subscription with the signing secret sealed and sync its addresses (dry run without --apply)"
 }
 
 func (c *IngestSubscribe) Extend() command.Extend {
@@ -73,6 +73,7 @@ func printSubscribePlan(ctx console.Context, plan ingestsubscription.Plan, apply
 	}
 	ctx.Info(fmt.Sprintf("%s subscription of %s: network %s (%s), webhook %s, %d watched addresses",
 		plan.Provider, plan.ChainID, plan.Network, plan.ProviderNetwork, plan.WebhookURL, plan.Addresses))
+	ctx.Info("base URL read from " + plan.BaseURLSource)
 	switch {
 	case plan.Applied:
 		ctx.Info(fmt.Sprintf("created subscription %s, provider webhook %s, signing secret stored sealed", plan.SubscriptionID, plan.ProviderWebhookID))

@@ -8,9 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/netip"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +17,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/pgerr"
+	"github.com/macrowallets/waas/pkg/publicurl"
 )
 
 var (
@@ -29,8 +28,9 @@ var (
 	// ErrMissingConfiguration is a setting the subscription needs that is not set;
 	// Plan.Missing names each one.
 	ErrMissingConfiguration = errors.New("ingestsubscription: configuration missing")
-	// ErrInvalidBaseURL is a base URL a provider cannot post to.
-	ErrInvalidBaseURL = errors.New("ingestsubscription: WEBHOOK_INGEST_BASE_URL must be an https URL without credentials, query or fragment")
+	// ErrInvalidBaseURL is a base URL a provider cannot post to; the error names where
+	// the base URL was read, never its value.
+	ErrInvalidBaseURL = errors.New("ingestsubscription: the ingest base URL must be a public https URL without credentials, query or fragment")
 	// ErrChainSubscribed is a chain another provider already pushes.
 	ErrChainSubscribed = errors.New("ingestsubscription: the chain already has an active subscription with another provider")
 	// ErrNoSigningSecret is a provider webhook created without a secret to verify its calls.
@@ -56,7 +56,27 @@ var providerKeySettings = map[string]string{
 	providers.ProviderQuickNode: "QUICKNODE_API_KEY (vault.webhooks.quicknode_api_key) or the provider_quicknode platform setting",
 }
 
-const baseURLSetting = "WEBHOOK_INGEST_BASE_URL (vault.webhooks.ingest_base_url): the public https origin the providers post to"
+const baseURLSetting = "WEBHOOK_INGEST_BASE_URL (vault.webhooks.ingest_base_url) or the ingest_push.base_url platform setting: the public https origin the providers post to"
+
+const (
+	// BaseURLFromSetting is a base URL read from the ingest_push.base_url platform setting.
+	BaseURLFromSetting = "setting"
+	// BaseURLFromEnv is a base URL read from WEBHOOK_INGEST_BASE_URL.
+	BaseURLFromEnv = "env"
+)
+
+// baseURLSources names, per source, where the base URL of a run was read.
+var baseURLSources = map[string]string{
+	BaseURLFromSetting: "the ingest_push.base_url platform setting",
+	BaseURLFromEnv:     "WEBHOOK_INGEST_BASE_URL (vault.webhooks.ingest_base_url)",
+}
+
+// BaseURL is the origin the providers post to for one run, and where it was read
+// (BaseURLFromSetting or BaseURLFromEnv). An empty URL is no base URL configured.
+type BaseURL struct {
+	URL    string
+	Source string
+}
 
 // Creator creates and deletes one provider's push webhook.
 type Creator interface {
@@ -101,8 +121,10 @@ type Deps struct {
 	// ChainNetwork names the network the chain record serves (a models.Network*
 	// name); a chain that does not exist is models.ErrRepositoryNotFound.
 	ChainNetwork func(ctx context.Context, chainID string) (string, error)
-	// BaseURL is WEBHOOK_INGEST_BASE_URL.
-	BaseURL string
+	// BaseURLAtUse reads the base URL at each run, so a changed setting applies to
+	// the next run without a restart: the ingest_push.base_url platform setting,
+	// else WEBHOOK_INGEST_BASE_URL.
+	BaseURLAtUse func(ctx context.Context) BaseURL
 	// Seal seals the signing secret as every stored secret is (settings.Seal).
 	Seal func(plaintext string) (string, error)
 }
@@ -124,14 +146,16 @@ type Request struct {
 	Apply    bool
 }
 
-// Plan is what a run found and did. Missing names the settings to set; Existing is a
-// subscription already there (nothing is done); Applied is a subscription created.
+// Plan is what a run found and did. Missing names the settings to set; BaseURLSource
+// names where the base URL of WebhookURL was read; Existing is a subscription already
+// there (nothing is done); Applied is a subscription created.
 type Plan struct {
 	Provider          string
 	ChainID           string
 	Network           string
 	ProviderNetwork   string
 	WebhookURL        string
+	BaseURLSource     string
 	Addresses         int
 	Missing           []string
 	Existing          *Listed
@@ -175,10 +199,13 @@ func (s *Service) Subscribe(ctx context.Context, req Request) (Plan, error) {
 	}
 	plan.ProviderNetwork = providerNetwork
 
-	if strings.TrimSpace(s.deps.BaseURL) == "" {
+	if base := s.baseURL(ctx); strings.TrimSpace(base.URL) == "" {
 		plan.Missing = append(plan.Missing, baseURLSetting)
-	} else if plan.WebhookURL, err = webhookURL(s.deps.BaseURL, plan.Provider, plan.ChainID); err != nil {
-		return plan, err
+	} else {
+		plan.BaseURLSource = baseURLSourceName(base.Source)
+		if plan.WebhookURL, err = webhookURL(base.URL, plan.Provider, plan.ChainID); err != nil {
+			return plan, fmt.Errorf("%w; read from %s", err, plan.BaseURLSource)
+		}
 	}
 	if strings.TrimSpace(s.deps.ProviderKey(ctx, plan.Provider)) == "" {
 		plan.Missing = append(plan.Missing, providerKeySettings[plan.Provider])
@@ -210,6 +237,22 @@ func (s *Service) Subscribe(ctx context.Context, req Request) (Plan, error) {
 		return plan, nil
 	}
 	return s.create(ctx, creator, plan, addresses)
+}
+
+// baseURL is the base URL in effect for this run; none when no source is wired.
+func (s *Service) baseURL(ctx context.Context) BaseURL {
+	if s.deps.BaseURLAtUse == nil {
+		return BaseURL{}
+	}
+	return s.deps.BaseURLAtUse(ctx)
+}
+
+// baseURLSourceName is where a base URL was read, as an operator names it.
+func baseURLSourceName(source string) string {
+	if name, ok := baseURLSources[source]; ok {
+		return name
+	}
+	return "an unknown source"
 }
 
 // activate starts the webhook of a provider that creates its webhooks paused; for
@@ -344,46 +387,11 @@ func listed(sub models.WebhookSubscription) Listed {
 }
 
 // webhookURL is the ingest route of provider and chain under base, which must be a
-// public https origin (publicHost), with an optional path prefix.
+// public https origin (publicurl.ParseBase), with an optional path prefix.
 func webhookURL(base, provider, chainID string) (string, error) {
-	parsed, err := url.Parse(strings.TrimSpace(base))
-	if err != nil || parsed.Scheme != "https" || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery ||
-		parsed.Fragment != "" || strings.Contains(base, "#") || !publicHost(parsed) {
+	parsed, err := publicurl.ParseBase(base)
+	if err != nil {
 		return "", ErrInvalidBaseURL
 	}
 	return strings.TrimRight(parsed.String(), "/") + ingestRoute + url.PathEscape(provider) + "/" + url.PathEscape(chainID), nil
 }
-
-// publicHost reports whether the URL names a host a provider can post to: a name or
-// a public IP, with a valid port when one is given; never localhost, a private,
-// loopback, link-local (the cloud metadata address included), unspecified or shared
-// address.
-func publicHost(parsed *url.URL) bool {
-	host := strings.ToLower(parsed.Hostname())
-	if host == "" || host == "localhost" || strings.HasSuffix(host, ".localhost") {
-		return false
-	}
-	if port := parsed.Port(); port != "" {
-		number, err := strconv.Atoi(port)
-		if err != nil || number < 1 || number > 65535 {
-			return false
-		}
-	} else if strings.HasSuffix(parsed.Host, ":") {
-		return false
-	}
-	ip, err := netip.ParseAddr(host)
-	if err != nil {
-		return true
-	}
-	return !internalAddress(ip)
-}
-
-// internalAddress reports an IP a provider on the internet cannot reach: loopback,
-// private, link-local (the cloud metadata address), unspecified, multicast or shared.
-func internalAddress(ip netip.Addr) bool {
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsUnspecified() || ip.IsMulticast() || sharedAddressSpace.Contains(ip.Unmap())
-}
-
-// sharedAddressSpace is 100.64.0.0/10 (carrier-grade NAT), reachable only inside a network.
-var sharedAddressSpace = netip.MustParsePrefix("100.64.0.0/10")

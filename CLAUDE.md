@@ -541,8 +541,9 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `deposit_scan`, `webhook_delivery`, `sweep_limits`, the mail groups (`mail_smtp`, `mail_delivery`,
   `mail_ses`, `mail_mailgun`, `mail_resend`, `mail_postmark`), the price groups (`price_lookup`,
   `price_coingecko`, `price_coinmarketcap`, `price_coinapi`) and the provider groups
-  (`provider_alchemy`, `provider_helius`, `provider_quicknode`, `provider_etherscan`). A secret
-  (a signing secret, an API key, a password) is written sealed and redacted on read
+  (`ingest_push`, `provider_alchemy`, `provider_helius`, `provider_quicknode`, `provider_etherscan`).
+  `ingest_push.base_url` is the ingest base URL (not a secret, see "Provider push subscriptions").
+  A secret (a signing secret, an API key, a password) is written sealed and redacted on read
   (`<field>Set` tells whether one is stored).
 - `GET /v1/accounts/{accountId}/settings` is `settings.view` (owner, admin,
   auditor). `PATCH /v1/accounts/{accountId}/settings/{group}` is
@@ -1130,12 +1131,25 @@ go run . artisan ingest:subscribe alchemy teth --apply    # create the webhook, 
 go run . artisan ingest:subscriptions                     # provider, chain, status, last sync, webhook host
 ```
 
-- `ingest:subscribe` needs `WEBHOOK_INGEST_BASE_URL` (`vault.webhooks.ingest_base_url`: a public https
-  origin, a path prefix allowed; no credentials, query or fragment, a valid port, and never localhost or
-  a loopback, private, link-local (the cloud metadata address), unspecified, multicast or shared
-  (100.64.0.0/10) IP) and the provider's API key (`ALCHEMY_AUTH_TOKEN`, `HELIUS_API_KEY`,
-  `QUICKNODE_API_KEY` as `vault.webhooks.*`, or the `provider_<name>` platform setting). Each missing
-  one is named and the command exits 1, dry run or not.
+- `ingest:subscribe` needs the ingest base URL (a public https origin, a path prefix allowed; no
+  credentials, query or fragment, a valid port, and never localhost or a loopback, private, link-local
+  (the cloud metadata address), unspecified, multicast or shared (100.64.0.0/10) IP: `publicurl.ParseBase`)
+  and the provider's API key (the `provider_<name>` platform setting, else `ALCHEMY_AUTH_TOKEN`,
+  `HELIUS_API_KEY`, `QUICKNODE_API_KEY` as `vault.webhooks.*`). Each missing one is named and the
+  command exits 1, dry run or not.
+- The base URL is the `ingest_push.base_url` platform setting, else `WEBHOOK_INGEST_BASE_URL`
+  (`vault.webhooks.ingest_base_url`, read only by `providers.ingestBaseURL`). Both are read on every run
+  (`settings.EffectiveIngestBaseURL`), so a value saved through `PUT /v1/platform/settings/ingest_push`
+  applies to the next run without a restart (the save forgets the group cache; an edit made outside the
+  service waits for the 10-minute cache or a section flush). A write the rule refuses is 422 and not
+  stored; blank hands the URL back to the environment. A missing or blank row, a stored value the rule
+  refuses, or a failed read uses the environment value, which the run checks itself
+  (`ErrInvalidBaseURL`, naming the source, never the value). The plan says where the base URL was read
+  (`base URL read from the ingest_push.base_url platform setting`, or from `WEBHOOK_INGEST_BASE_URL`).
+  The env value is not seeded into the setting. — guarded by `app/services/settings/ingest_base_url_test.go`,
+  `pkg/publicurl`, `TestSubscribe_ReadsTheBaseURLAtEachRunSoAChangedSettingAppliesWithoutARebuild`,
+  `TestIngest_BaseURL_*` (`app/providers`), `TestPlatform_Ingest_PushSuite` and
+  `TestComposition_Root_ReadsTheIngestBaseURLAndProviderKeyFromThePlatformSettingsAtEachRun` (`bootstrap`).
 - The chain's network (`models.Chain.ResolveNetwork` with its RPC URL) must be one the provider pushes
   (`providers.SubscriptionNetwork`): Alchemy Ethereum, Polygon, Base, Arbitrum and BSC, mainnet and
   testnet (`ETH_SEPOLIA`, `MATIC_AMOY`, ...); Helius Solana mainnet and devnet; QuickNode Bitcoin mainnet

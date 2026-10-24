@@ -13,12 +13,17 @@ import (
 
 	"github.com/macrowallets/waas/app/container"
 	appfacades "github.com/macrowallets/waas/app/facades"
+	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/chainregistry"
+	"github.com/macrowallets/waas/app/services/ingestsubscription"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/pkg/egress"
 	"github.com/macrowallets/waas/pkg/httpclient"
+	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
 // The providers key every service by its type (a typed nil pointer); the
@@ -103,4 +108,61 @@ func TestComposition_Root_GuardsEveryProviderConnection(t *testing.T) {
 		_, err := httpclient.NewClient(time.Second).Do(context.Background(), httpclient.Request{Method: httpclient.MethodGet, URL: url})
 		assert.ErrorIs(t, err, egress.ErrRefused, url)
 	}
+}
+
+// The bound subscription service reads the ingest base URL and the provider key on
+// every run, the platform settings before the environment: a value saved through the
+// settings service after the service was built applies to the next run, and
+// WEBHOOK_INGEST_BASE_URL is read again once the setting is cleared.
+func TestComposition_Root_ReadsTheIngestBaseURLAndProviderKeyFromThePlatformSettingsAtEachRun(t *testing.T) {
+	fixtures.TestDB(t)
+	setConfig(t, "vault.webhooks.ingest_base_url", "https://env.wallets.example.com")
+	setConfig(t, "vault.webhooks.helius_api_key", "")
+	ctx := context.Background()
+	require.NoError(t, container.MustMake[*repositories.ChainRepository]().Create(ctx, &models.Chain{
+		ID: "tsol", Name: "tsol", AdapterType: models.AdapterTypeSolana, NativeSymbol: "SOL", NativeDecimals: 9,
+		RpcURL: "enc", RequiredConfirmations: 1, IsTestnet: true, Status: "active", DisplayOrder: 1,
+	}))
+	admin := fixtures.InsertUser(t)
+	_, err := appfacades.Orm().Query().Exec(`INSERT INTO platform_admins (user_id, created_at, updated_at) VALUES (?, NOW(), NOW())`, admin.ID)
+	require.NoError(t, err)
+	subscriptions := container.MustMake[*ingestsubscription.Service]()
+	platform := container.MustMake[*settings.Service]()
+	dryRun := ingestsubscription.Request{Provider: "helius", ChainID: "tsol"}
+	const fromEnv = "WEBHOOK_INGEST_BASE_URL (vault.webhooks.ingest_base_url)"
+
+	plan, err := subscriptions.Subscribe(ctx, dryRun)
+	require.ErrorIs(t, err, ingestsubscription.ErrMissingConfiguration, "no Helius key is configured yet")
+	assert.Equal(t, "https://env.wallets.example.com/v1/webhooks/ingest/helius/tsol", plan.WebhookURL)
+	assert.Equal(t, fromEnv, plan.BaseURLSource)
+	require.Len(t, plan.Missing, 1)
+	assert.Contains(t, plan.Missing[0], "HELIUS_API_KEY")
+
+	_, err = platform.SavePlatform(ctx, admin.ID, "ingest_push", map[string]any{"base_url": "https://push.wallets.example.com/waas"})
+	require.NoError(t, err)
+	_, err = platform.SavePlatform(ctx, admin.ID, "provider_helius", map[string]any{"enabled": true, "api_key": "helius-composition-key"})
+	require.NoError(t, err)
+
+	plan, err = subscriptions.Subscribe(ctx, dryRun)
+	require.NoError(t, err)
+	assert.Equal(t, "https://push.wallets.example.com/waas/v1/webhooks/ingest/helius/tsol", plan.WebhookURL)
+	assert.Equal(t, "the ingest_push.base_url platform setting", plan.BaseURLSource)
+	assert.Empty(t, plan.Missing, "the provider_helius key stands in for HELIUS_API_KEY")
+	assert.False(t, plan.Applied, "a dry run calls no provider")
+
+	_, err = platform.SavePlatform(ctx, admin.ID, "ingest_push", map[string]any{"base_url": ""})
+	require.NoError(t, err)
+	plan, err = subscriptions.Subscribe(ctx, dryRun)
+	require.NoError(t, err)
+	assert.Equal(t, "https://env.wallets.example.com/v1/webhooks/ingest/helius/tsol", plan.WebhookURL)
+	assert.Equal(t, fromEnv, plan.BaseURLSource)
+}
+
+// setConfig sets one configuration value for the test and puts the previous one back.
+func setConfig(t *testing.T, key, value string) {
+	t.Helper()
+	cfg := appfacades.Config()
+	previous := cfg.GetString(key)
+	cfg.Add(key, value)
+	t.Cleanup(func() { cfg.Add(key, previous) })
 }

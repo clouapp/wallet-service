@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/macrowallets/waas/app/policies"
@@ -101,6 +102,7 @@ func TestAccount_Sections_DoNotShareNamesWithGroups(t *testing.T) {
 	assertPriceGroups(t)
 	assertWebhookProviderGroups(t)
 	assertEtherscanProviderGroup(t)
+	assertIngestPushGroup(t)
 }
 
 func knownPlatformGroup(name string) bool {
@@ -108,7 +110,7 @@ func knownPlatformGroup(name string) bool {
 	case groupDepositScan, groupWebhookDelivery, groupSweepLimits, groupMailSMTP, groupMailDelivery,
 		groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark,
 		groupPriceLookup, groupPriceCoinGecko, groupPriceCoinMarketCap, groupPriceCoinAPI,
-		groupProviderAlchemy, groupProviderHelius, groupProviderQuickNode, groupProviderEtherscan:
+		groupIngestPush, groupProviderAlchemy, groupProviderHelius, groupProviderQuickNode, groupProviderEtherscan:
 		return true
 	default:
 		return false
@@ -245,6 +247,23 @@ func assertWebhookProviderGroups(t *testing.T) {
 		if _, tokenOK := Find(name, keyProviderAuthToken); tokenOK {
 			t.Fatalf("%s declares an auth token", name)
 		}
+	}
+}
+
+func assertIngestPushGroup(t *testing.T) {
+	t.Helper()
+	group, found := FindGroup(groupIngestPush)
+	if !found || group.Scope != ScopePlatform || group.SectionName() != sectionProviders ||
+		group.Block != blockWebhookProviders || !providerCredentialPermissions(group) ||
+		len(group.Settings) != 1 || len(group.CredentialGroups) != 0 || group.Validate == nil {
+		t.Fatalf("ingest push group = %+v present %v", group, found)
+	}
+	baseURL, ok := Find(groupIngestPush, keyIngestBaseURL)
+	if !ok || baseURL.Secret || baseURL.Destination || baseURL.Type != TypeString || baseURL.Default() != "" {
+		t.Fatalf("ingest base url = %+v present %v", baseURL, ok)
+	}
+	if strings.HasPrefix(groupIngestPush, "provider_") || platformSeedGroup(groupIngestPush) {
+		t.Fatal("ingest_push must stay out of the provider credential rule and the env seed: WEBHOOK_INGEST_BASE_URL is its fallback, not a copy")
 	}
 }
 

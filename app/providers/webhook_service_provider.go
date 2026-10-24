@@ -181,7 +181,7 @@ func newWebhookSyncService(app foundation.Application) (*webhooksync.Service, er
 
 // newIngestSubscriptionService creates provider subscriptions with the catalog's
 // provider instances, which read their key at the call, and syncs their addresses
-// through the subscription sync.
+// through the subscription sync. The base URL is read at each run as well.
 func newIngestSubscriptionService(app foundation.Application) (*ingestsubscription.Service, error) {
 	catalog, err := resolve[*ingest.Catalog](app)
 	if err != nil {
@@ -222,9 +222,33 @@ func newIngestSubscriptionService(app foundation.Application) (*ingestsubscripti
 		Creators:      creators,
 		ProviderKey:   ingestProviderKey(accountSettings),
 		ChainNetwork:  chainNetwork(chainRows),
-		BaseURL:       facades.Config().GetString("vault.webhooks.ingest_base_url"),
+		BaseURLAtUse:  ingestBaseURL(accountSettings, facades.Config()),
 		Seal:          secrets.Seal,
 	}), nil
+}
+
+// ingestBaseURLConfigKey is WEBHOOK_INGEST_BASE_URL, the fallback of the
+// ingest_push.base_url platform setting.
+const ingestBaseURLConfigKey = "vault.webhooks.ingest_base_url"
+
+// configStringReader is the part of the framework configuration the ingest base URL reads.
+type configStringReader interface {
+	GetString(path string, defaultValue ...string) string
+}
+
+// ingestBaseURL reads the origin the push providers post to on each run: the
+// ingest_push.base_url platform setting when it holds a valid URL, else
+// WEBHOOK_INGEST_BASE_URL, read from the configuration at the same call. It is
+// the one reader of vault.webhooks.ingest_base_url.
+func ingestBaseURL(accountSettings *settings.Service, cfg configStringReader) func(ctx context.Context) ingestsubscription.BaseURL {
+	return func(ctx context.Context) ingestsubscription.BaseURL {
+		effective := accountSettings.EffectiveIngestBaseURL(ctx, cfg.GetString(ingestBaseURLConfigKey))
+		source := ingestsubscription.BaseURLFromEnv
+		if effective.Source == settings.IngestBaseURLFromSetting {
+			source = ingestsubscription.BaseURLFromSetting
+		}
+		return ingestsubscription.BaseURL{URL: effective.URL, Source: source}
+	}
 }
 
 // chainNetwork names the network a chain record serves, read with its RPC URL so a

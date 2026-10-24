@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -36,6 +37,7 @@ var subscriptionID = uuid.MustParse("3b9c2f10-4d2e-4a8b-9c61-0f2d4e6a8b1c")
 var tethPlan = ingestsubscription.Plan{
 	Provider: "alchemy", ChainID: "teth", Network: "ethereum-sepolia", ProviderNetwork: "ETH_SEPOLIA",
 	WebhookURL: "https://wallets.example.com/v1/webhooks/ingest/alchemy/teth", Addresses: 2,
+	BaseURLSource: "the ingest_push.base_url platform setting",
 }
 
 func subscribeContext(t *testing.T, apply bool) *mocksconsole.Context {
@@ -64,10 +66,22 @@ func TestIngest_Subscribe_DryRunPrintsThePlan(t *testing.T) {
 	subscriber := &fakeSubscriber{plan: tethPlan}
 	ctx := subscribeContext(t, false)
 	ctx.EXPECT().Info("alchemy subscription of teth: network ethereum-sepolia (ETH_SEPOLIA), webhook https://wallets.example.com/v1/webhooks/ingest/alchemy/teth, 2 watched addresses").Return()
+	ctx.EXPECT().Info("base URL read from the ingest_push.base_url platform setting").Return()
 	ctx.EXPECT().Info("dry run: nothing created (pass --apply)").Return()
 
 	require.NoError(t, NewIngestSubscribe(subscriber).Handle(ctx))
 	assert.Equal(t, []ingestsubscription.Request{{Provider: "alchemy", ChainID: "teth"}}, subscriber.requests)
+}
+
+func TestIngest_Subscribe_DryRunSaysTheBaseURLCameFromTheEnvironment(t *testing.T) {
+	plan := tethPlan
+	plan.BaseURLSource = "WEBHOOK_INGEST_BASE_URL (vault.webhooks.ingest_base_url)"
+	ctx := subscribeContext(t, false)
+	ctx.EXPECT().Info(mock.MatchedBy(func(line string) bool { return strings.HasPrefix(line, "alchemy subscription of teth:") })).Return()
+	ctx.EXPECT().Info("base URL read from WEBHOOK_INGEST_BASE_URL (vault.webhooks.ingest_base_url)").Return()
+	ctx.EXPECT().Info("dry run: nothing created (pass --apply)").Return()
+
+	require.NoError(t, NewIngestSubscribe(&fakeSubscriber{plan: plan}).Handle(ctx))
 }
 
 func TestIngest_Subscribe_ApplyReportsTheSubscription(t *testing.T) {
@@ -75,7 +89,7 @@ func TestIngest_Subscribe_ApplyReportsTheSubscription(t *testing.T) {
 	plan.Applied, plan.SubscriptionID, plan.ProviderWebhookID = true, subscriptionID, "wh_123"
 	subscriber := &fakeSubscriber{plan: plan}
 	ctx := subscribeContext(t, true)
-	ctx.EXPECT().Info(mock.Anything).Return().Once()
+	ctx.EXPECT().Info(mock.Anything).Return().Twice()
 	ctx.EXPECT().Info("created subscription 3b9c2f10-4d2e-4a8b-9c61-0f2d4e6a8b1c, provider webhook wh_123, signing secret stored sealed").Return()
 
 	require.NoError(t, NewIngestSubscribe(subscriber).Handle(ctx))
@@ -109,7 +123,7 @@ func TestIngest_Subscribe_AFailedSyncAfterTheRowIsStoredExitsNonZero(t *testing.
 	plan := tethPlan
 	plan.Applied, plan.SubscriptionID, plan.ProviderWebhookID = true, subscriptionID, "wh_123"
 	ctx := subscribeContext(t, true)
-	ctx.EXPECT().Info(mock.Anything).Return().Twice()
+	ctx.EXPECT().Info(mock.Anything).Return().Times(3)
 	ctx.EXPECT().Error(mock.Anything).Return()
 
 	err := NewIngestSubscribe(&fakeSubscriber{plan: plan, err: ingestsubscription.ErrAddressSyncFailed}).Handle(ctx)

@@ -125,6 +125,11 @@ type fixture struct {
 	creator *fakeCreator
 	sync    *fakeSync
 	keys    map[string]string
+	// base is what BaseURLAtUse answers; a test changes it between runs as an
+	// operator changes the setting, without rebuilding the service.
+	base BaseURL
+	// baseReads counts the BaseURLAtUse calls.
+	baseReads int
 }
 
 func newFixture(t *testing.T, mutate func(*Deps)) *fixture {
@@ -134,6 +139,7 @@ func newFixture(t *testing.T, mutate func(*Deps)) *fixture {
 		creator: &fakeCreator{webhook: &providers.ProviderWebhook{ProviderWebhookID: "wh_123", SigningSecret: testSecret}},
 		sync:    &fakeSync{},
 		keys:    map[string]string{providers.ProviderAlchemy: testProviderKey},
+		base:    BaseURL{URL: testBaseURL, Source: BaseURLFromSetting},
 	}
 	deps := Deps{
 		Subscriptions: f.store,
@@ -152,8 +158,11 @@ func newFixture(t *testing.T, mutate func(*Deps)) *fixture {
 			}
 			return "", fmt.Errorf("chain %s: %w", chainID, models.ErrRepositoryNotFound)
 		},
-		BaseURL: testBaseURL,
-		Seal:    func(plaintext string) (string, error) { return "enc:v1:sealed(" + plaintext + ")", nil },
+		BaseURLAtUse: func(context.Context) BaseURL {
+			f.baseReads++
+			return f.base
+		},
+		Seal: func(plaintext string) (string, error) { return "enc:v1:sealed(" + plaintext + ")", nil },
 	}
 	if mutate != nil {
 		mutate(&deps)
@@ -182,7 +191,8 @@ func TestSubscribe_DryRun_PlansWithoutCallingTheProvider(t *testing.T) {
 
 	assert.Equal(t, Plan{
 		Provider: "alchemy", ChainID: "teth", Network: models.NetworkEthereumSepolia, ProviderNetwork: "ETH_SEPOLIA",
-		WebhookURL: testBaseURL + "/v1/webhooks/ingest/alchemy/teth", Addresses: 2,
+		WebhookURL: testBaseURL + "/v1/webhooks/ingest/alchemy/teth", BaseURLSource: "the ingest_push.base_url platform setting",
+		Addresses: 2,
 	}, plan)
 	assert.Empty(t, f.creator.configs)
 	assert.Empty(t, f.store.rows)
@@ -218,7 +228,8 @@ func TestSubscribe_Apply_CreatesTheSubscriptionStoresItSealedAndSyncsTheAddresse
 
 func TestSubscribe_ExplainsEveryMissingSettingAndCallsNothing(t *testing.T) {
 	for _, apply := range []bool{false, true} {
-		f := newFixture(t, func(d *Deps) { d.BaseURL = "" })
+		f := newFixture(t, nil)
+		f.base = BaseURL{Source: BaseURLFromEnv}
 		f.keys = map[string]string{}
 
 		plan, err := subscribe(f, "alchemy", "teth", apply)
@@ -227,6 +238,8 @@ func TestSubscribe_ExplainsEveryMissingSettingAndCallsNothing(t *testing.T) {
 		require.Len(t, plan.Missing, 2)
 		assert.Contains(t, plan.Missing[0], "WEBHOOK_INGEST_BASE_URL")
 		assert.Contains(t, plan.Missing[0], "vault.webhooks.ingest_base_url")
+		assert.Contains(t, plan.Missing[0], "ingest_push.base_url platform setting")
+		assert.Empty(t, plan.BaseURLSource, "no base URL was read")
 		assert.Contains(t, plan.Missing[1], "ALCHEMY_AUTH_TOKEN")
 		assert.Contains(t, plan.Missing[1], "vault.webhooks.alchemy_auth_token")
 		assert.Contains(t, plan.Missing[1], "provider_alchemy")
@@ -248,15 +261,21 @@ func TestSubscribe_NamesTheKeyOfEachProvider(t *testing.T) {
 
 func TestSubscribe_RefusesABaseURLAProviderCannotPostTo(t *testing.T) {
 	for _, base := range []string{"http://wallets.example.com", "wallets.example.com", "https://", "https://user:pass@wallets.example.com", "https://wallets.example.com/?a=1"} {
-		f := newFixture(t, func(d *Deps) { d.BaseURL = base })
+		f := newFixture(t, nil)
+		f.base = BaseURL{URL: base, Source: BaseURLFromEnv}
 
 		_, err := subscribe(f, "alchemy", "teth", false)
 		assert.ErrorIs(t, err, ErrInvalidBaseURL, base)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "read from WEBHOOK_INGEST_BASE_URL", "the error names where the URL was read")
+		assert.NotContains(t, err.Error(), base, "the error never carries the URL")
+		assert.Empty(t, f.creator.configs)
 	}
 }
 
 func TestSubscribe_KeepsTheBaseURLPath(t *testing.T) {
-	f := newFixture(t, func(d *Deps) { d.BaseURL = "https://wallets.example.com/waas/" })
+	f := newFixture(t, nil)
+	f.base.URL = "https://wallets.example.com/waas/"
 
 	plan, err := subscribe(f, "alchemy", "teth", false)
 	require.NoError(t, err)
@@ -507,13 +526,48 @@ func TestSubscribe_RefusesABaseURLThatIsNotAPublicHost(t *testing.T) {
 		"https://0.0.0.0", "https://100.64.0.1", "https://wallets.example.com:99999", "https://wallets.example.com:http",
 		"https://wallets.example.com#x", "https://wallets.example.com#", "https://wallets.example.com?",
 	} {
-		f := newFixture(t, func(d *Deps) { d.BaseURL = base })
+		f := newFixture(t, nil)
+		f.base.URL = base
 		_, err := subscribe(f, "alchemy", "teth", false)
 		assert.ErrorIs(t, err, ErrInvalidBaseURL, base)
 	}
 
-	f := newFixture(t, func(d *Deps) { d.BaseURL = "https://wallets.example.com:8443" })
+	f := newFixture(t, nil)
+	f.base.URL = "https://wallets.example.com:8443"
 	plan, err := subscribe(f, "alchemy", "teth", false)
 	require.NoError(t, err)
 	assert.Equal(t, "https://wallets.example.com:8443/v1/webhooks/ingest/alchemy/teth", plan.WebhookURL)
+}
+
+func TestSubscribe_ReadsTheBaseURLAtEachRunSoAChangedSettingAppliesWithoutARebuild(t *testing.T) {
+	f := newFixture(t, nil)
+	f.base = BaseURL{URL: "https://env.wallets.example.com", Source: BaseURLFromEnv}
+
+	plan, err := subscribe(f, "alchemy", "teth", false)
+	require.NoError(t, err)
+	assert.Equal(t, "https://env.wallets.example.com/v1/webhooks/ingest/alchemy/teth", plan.WebhookURL)
+	assert.Equal(t, "WEBHOOK_INGEST_BASE_URL (vault.webhooks.ingest_base_url)", plan.BaseURLSource)
+
+	// The operator saves the platform setting; the same service runs again.
+	f.base = BaseURL{URL: "https://push.wallets.example.com/waas", Source: BaseURLFromSetting}
+	plan, err = subscribe(f, "alchemy", "teth", true)
+	require.NoError(t, err)
+	assert.Equal(t, "https://push.wallets.example.com/waas/v1/webhooks/ingest/alchemy/teth", plan.WebhookURL)
+	assert.Equal(t, "the ingest_push.base_url platform setting", plan.BaseURLSource)
+	require.Len(t, f.creator.configs, 1)
+	assert.Equal(t, plan.WebhookURL, f.creator.configs[0].WebhookURL, "the provider is pointed at the URL of this run")
+	require.Len(t, f.store.rows, 1)
+	assert.Equal(t, plan.WebhookURL, f.store.rows[0].WebhookURL)
+	assert.Equal(t, 2, f.baseReads, "the base URL is read once per run, never kept from construction")
+}
+
+func TestSubscribe_WithoutABaseURLSourceNamesTheBaseURLMissing(t *testing.T) {
+	f := newFixture(t, func(d *Deps) { d.BaseURLAtUse = nil })
+
+	plan, err := subscribe(f, "alchemy", "teth", false)
+
+	require.ErrorIs(t, err, ErrMissingConfiguration)
+	require.Len(t, plan.Missing, 1)
+	assert.Contains(t, plan.Missing[0], "WEBHOOK_INGEST_BASE_URL")
+	assert.Empty(t, plan.WebhookURL)
 }
