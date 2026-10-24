@@ -14,17 +14,27 @@ const ReasonBaseURL = "the url must be an https origin with an optional path, wi
 // name or password, a public host, never a numeric-form, internal, metadata,
 // loopback, private, link-local or reserved one, a valid port other than 22 and
 // 25), and an origin with an optional path, without a query, a fragment (an empty
-// one included) or an empty port. Unlike a webhook receiver it takes none of a
-// deployment's relaxations (WEBHOOK_ALLOW_HTTP, the APP_ENV=testing loopback,
-// WEBHOOK_ALLOWED_PORTS): it is where a provider on the internet posts, in every
-// environment. It resolves nothing. Every refusal matches ErrRefused and names the
-// rule, never the URL.
+// one included) or an empty port.
+//
+// It is where a provider on the internet posts to this service, in every
+// environment, so the outbound webhook settings do not apply to it: neither their
+// relaxations (WEBHOOK_ALLOW_HTTP, the APP_ENV=testing loopback) nor the
+// restriction WEBHOOK_ALLOWED_PORTS, which limits the ports this service posts its
+// own webhooks to. The base URL's port is the one the deployment's public listener
+// serves, chosen by whoever runs it; this service never connects to it.
+//
+// It resolves nothing: a caller with a context checks what the host resolves to
+// with Guard.CheckDestination over the zero Policy. Every refusal matches
+// ErrRefused and names the rule, never the URL.
 func ParsePublicBase(raw string) (*url.URL, error) {
 	trimmed := strings.TrimSpace(raw)
-	if err := (Policy{}).CheckURL(trimmed); err != nil {
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return nil, refuse(ReasonInvalidURL)
+	}
+	if err := (Policy{}).checkParsedURL(parsed); err != nil {
 		return nil, err
 	}
-	parsed, _ := url.Parse(trimmed) // CheckURL refused a URL that does not parse
 	if parsed.RawQuery != "" || parsed.ForceQuery || strings.Contains(trimmed, "#") || strings.HasSuffix(parsed.Host, ":") {
 		return nil, refuse(ReasonBaseURL)
 	}

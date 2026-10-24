@@ -329,7 +329,7 @@ func TestReset_Platform_ProvidersSectionClearsTheIngestBaseURL(t *testing.T) {
 	store.PutPlatform(groupIngestPush, map[string]string{keyIngestBaseURL: ingestSettingBaseURL})
 	cache := &memoryCache{}
 	activity := &recordingActivity{}
-	service, actor := newIngestPushService(store, cache, activity)
+	service, actor := newIngestPushService(t, store, cache, activity)
 	ctx := context.Background()
 	if got, _ := service.EffectiveIngestBaseURL(ctx, ingestEnvBaseURL); got.Source != IngestBaseURLFromSetting {
 		t.Fatalf("before the reset = %+v", got)

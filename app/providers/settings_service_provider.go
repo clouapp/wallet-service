@@ -33,7 +33,7 @@ func (p *SettingsServiceProvider) Register(app foundation.Application) {
 			return nil, err
 		}
 		return settings.NewService(settings.Deps{Store: store, Sealer: settings.CryptSealer{}, Cache: settings.FacadeCache{}, Activity: activityLog,
-			Fallback: platformSettingsFallback(facades.Config())}).
+			Fallback: platformSettingsFallback(facades.Config()), IngestBaseDestinations: ingestBaseDestinations()}).
 			WithPlatformAdmins(admins).
 			WithAccounts(accounts).
 			WithPlatformTestMailer(NewPlatformTestMailer()), nil

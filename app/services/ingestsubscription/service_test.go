@@ -15,12 +15,20 @@ import (
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/egress"
+	"github.com/macrowallets/waas/tests/fakedns"
 )
 
 const (
 	testBaseURL     = "https://wallets.example.com"
 	testProviderKey = "alchemy-key-7f3a"
 	testSecret      = "whsec-signing-91bd"
+
+	// The names the fixture's DNS answers: a public origin, and two names whose
+	// records point inside (a private address, the cloud metadata address). Any other
+	// name does not resolve, which the base URL rule does not refuse.
+	publicBaseHost   = "wallets.example.com"
+	internalBaseHost = "internal.wallets.example.com"
+	metadataBaseHost = "169.254.169.254.nip.io"
 )
 
 type memoryStore struct {
@@ -132,6 +140,8 @@ type fixture struct {
 	baseErr error
 	// baseReads counts the BaseURLAtUse calls.
 	baseReads int
+	// dns answers the base URL lookups of the destination guard.
+	dns *fakedns.Server
 }
 
 func newFixture(t *testing.T, mutate func(*Deps)) *fixture {
@@ -142,6 +152,11 @@ func newFixture(t *testing.T, mutate func(*Deps)) *fixture {
 		sync:    &fakeSync{},
 		keys:    map[string]string{providers.ProviderAlchemy: testProviderKey},
 		base:    BaseURL{URL: testBaseURL, Source: BaseURLFromSetting},
+		dns: fakedns.Start(t, map[string][]string{
+			publicBaseHost:   {"93.184.215.14"},
+			internalBaseHost: {"10.0.0.5"},
+			metadataBaseHost: {"169.254.169.254"},
+		}),
 	}
 	deps := Deps{
 		Subscriptions: f.store,
@@ -164,7 +179,8 @@ func newFixture(t *testing.T, mutate func(*Deps)) *fixture {
 			f.baseReads++
 			return f.base, f.baseErr
 		},
-		Seal: func(plaintext string) (string, error) { return "enc:v1:sealed(" + plaintext + ")", nil },
+		Seal:         func(plaintext string) (string, error) { return "enc:v1:sealed(" + plaintext + ")", nil },
+		Destinations: egress.NewGuard(egress.Policy{}, f.dns.Resolver()),
 	}
 	if mutate != nil {
 		mutate(&deps)
@@ -619,16 +635,109 @@ func TestSubscribe_DryRunFallsBackToTheEnvironmentAndSaysTheSettingWasNotRead(t 
 	assert.Empty(t, f.creator.configs)
 }
 
-func TestSubscribe_NamesAnInvalidSettingLeftForTheEnvironment(t *testing.T) {
-	for _, apply := range []bool{false, true} {
+func TestSubscribe_DryRunNamesAnInvalidSettingLeftForTheEnvironment(t *testing.T) {
+	f := newFixture(t, nil)
+	f.base = BaseURL{URL: "https://env.wallets.example.com", Source: BaseURLFromEnv, SettingInvalid: true}
+
+	plan, err := subscribe(f, "alchemy", "teth", false)
+
+	require.NoError(t, err)
+	assert.Equal(t, "https://env.wallets.example.com/v1/webhooks/ingest/alchemy/teth", plan.WebhookURL)
+	assert.Contains(t, plan.BaseURLNote, "is not a public https URL and is ignored")
+	assert.Contains(t, plan.BaseURLNote, "--apply refuses to run until the setting is fixed or cleared")
+	assert.Empty(t, f.creator.configs)
+}
+
+// A stored setting the rule refuses (an edit outside the service, a rule tightened
+// since it was saved) is the value the operator meant: --apply refuses to create a
+// webhook on the environment value instead, and touches no provider, also for a
+// subscription that exists. The error names the setting, never a URL.
+func TestSubscribe_ApplyRefusesToRunOnAStoredSettingTheRuleRefuses(t *testing.T) {
+	f := newFixture(t, nil)
+	f.base = BaseURL{URL: "https://env.wallets.example.com", Source: BaseURLFromEnv, SettingInvalid: true}
+
+	plan, err := subscribe(f, "alchemy", "teth", true)
+
+	require.ErrorIs(t, err, ErrBaseURLSettingInvalid)
+	assert.Contains(t, err.Error(), "ingest_push.base_url platform setting")
+	assert.NotContains(t, err.Error(), "env.wallets.example.com")
+	assert.Empty(t, plan.WebhookURL)
+	assert.Empty(t, f.creator.configs, "no provider webhook is created on the environment value")
+	assert.Empty(t, f.store.rows)
+	assert.Empty(t, f.sync.chains)
+
+	quick, activating := newQuickNodeFixture(t)
+	quick.store.rows = append(quick.store.rows, models.WebhookSubscription{ID: uuid.New(), ChainID: "btc", Provider: "quicknode", ProviderWebhookID: "stream-1", Status: models.WebhookSubscriptionActive})
+	quick.base = BaseURL{URL: "https://env.wallets.example.com", Source: BaseURLFromEnv, SettingInvalid: true}
+
+	_, err = subscribe(quick, "quicknode", "btc", true)
+
+	require.ErrorIs(t, err, ErrBaseURLSettingInvalid)
+	assert.Empty(t, activating.activated, "nothing is touched at the provider")
+}
+
+// A base URL whose name resolves to an internal or metadata address passes the
+// static rule; --apply resolves it before any provider call and refuses it, with the
+// one resolved-name sentence and where it was read, never the URL or its host.
+func TestSubscribe_ApplyRefusesABaseURLWhoseHostResolvesToARefusedAddress(t *testing.T) {
+	for _, host := range []string{internalBaseHost, metadataBaseHost} {
+		for _, source := range []string{BaseURLFromSetting, BaseURLFromEnv} {
+			f := newFixture(t, nil)
+			f.base = BaseURL{URL: "https://" + host + "/waas", Source: source}
+
+			plan, err := subscribe(f, "alchemy", "teth", true)
+
+			require.ErrorIs(t, err, ErrInvalidBaseURL, host)
+			require.ErrorIs(t, err, egress.ErrRefused, host)
+			assert.Contains(t, err.Error(), egress.ReasonResolved, host)
+			assert.Contains(t, err.Error(), "read from "+baseURLSourceName(source), host)
+			assert.NotContains(t, err.Error(), host)
+			assert.Empty(t, plan.BaseURLWarning)
+			assert.Empty(t, f.creator.configs, "%s: no provider webhook points at an internal address", host)
+			assert.Empty(t, f.store.rows, host)
+			assert.Contains(t, f.dns.Queries(), host, "the name was looked up")
+		}
+	}
+
+	quick, activating := newQuickNodeFixture(t)
+	quick.store.rows = append(quick.store.rows, models.WebhookSubscription{ID: uuid.New(), ChainID: "btc", Provider: "quicknode", ProviderWebhookID: "stream-1", Status: models.WebhookSubscriptionActive})
+	quick.base = BaseURL{URL: "https://" + metadataBaseHost, Source: BaseURLFromSetting}
+
+	_, err := subscribe(quick, "quicknode", "btc", true)
+
+	require.ErrorIs(t, err, ErrInvalidBaseURL)
+	assert.Empty(t, activating.activated, "nothing is touched at the provider")
+}
+
+// A dry run resolves the base URL too and warns that --apply refuses it, planning
+// the rest as usual.
+func TestSubscribe_DryRunWarnsThatTheBaseURLResolvesToARefusedAddress(t *testing.T) {
+	f := newFixture(t, nil)
+	f.base = BaseURL{URL: "https://" + metadataBaseHost, Source: BaseURLFromSetting}
+
+	plan, err := subscribe(f, "alchemy", "teth", false)
+
+	require.NoError(t, err)
+	assert.Equal(t, "https://"+metadataBaseHost+"/v1/webhooks/ingest/alchemy/teth", plan.WebhookURL)
+	assert.Equal(t, egress.ReasonResolved+" (base URL read from the ingest_push.base_url platform setting): --apply refuses it", plan.BaseURLWarning)
+	assert.NotContains(t, plan.BaseURLWarning, metadataBaseHost)
+	assert.Equal(t, 2, plan.Addresses)
+	assert.Empty(t, f.creator.configs)
+}
+
+// A name that resolves to public addresses only, and one that does not resolve now
+// (the guard leaves that to the provider's own delivery), are no refusal.
+func TestSubscribe_ApplyCreatesOnABaseURLThatResolvesToPublicAddressesOrNotAtAll(t *testing.T) {
+	for _, base := range []string{"https://" + publicBaseHost, "https://unlisted.wallets.example.com"} {
 		f := newFixture(t, nil)
-		f.base = BaseURL{URL: "https://env.wallets.example.com", Source: BaseURLFromEnv, SettingInvalid: true}
+		f.base = BaseURL{URL: base, Source: BaseURLFromSetting}
 
-		plan, err := subscribe(f, "alchemy", "teth", apply)
+		plan, err := subscribe(f, "alchemy", "teth", true)
 
-		require.NoError(t, err)
-		assert.Equal(t, "https://env.wallets.example.com/v1/webhooks/ingest/alchemy/teth", plan.WebhookURL)
-		assert.Contains(t, plan.BaseURLNote, "is not a public https URL and is ignored")
+		require.NoError(t, err, base)
+		assert.True(t, plan.Applied, base)
+		assert.Empty(t, plan.BaseURLWarning, base)
+		require.Len(t, f.creator.configs, 1, base)
 	}
 }
 

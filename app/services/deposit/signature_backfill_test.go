@@ -823,8 +823,8 @@ func TestSync_Signatures_RecordsItsCycleForTheHealthCheck(t *testing.T) {
 
 	record, ok := activity.syncOf(sigChain)
 	require.True(t, ok)
-	assert.Equal(t, SignatureSyncRecord{Accounts: 3, FailedAccounts: 1, BackfillingAccounts: 2, Head: sigHead, At: activityNow}, record,
-		"alice's two accounts, whose end showed once, and bob, whose accounts were not listed")
+	assert.Equal(t, SignatureSyncRecord{Accounts: 3, FailedAccounts: 1, BackfillingAccounts: 2, Head: sigHead, BackfillingSince: activityNow, At: activityNow}, record,
+		"alice's two accounts, whose end showed once, and bob, whose accounts were not listed; the first cycle that left accounts backfilling")
 }
 
 func pendingEntryDue(block uint64, now time.Time) pending.Entry {

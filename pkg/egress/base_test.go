@@ -29,6 +29,16 @@ func TestParsePublicBase_AcceptsAPublicHTTPSOrigin(t *testing.T) {
 	}
 }
 
+// A URL that does not parse is refused by its own rule, never read past.
+func TestParsePublicBase_RefusesAURLThatDoesNotParse(t *testing.T) {
+	for _, raw := range []string{"https://%zz", "https://wallets example.com", "://wallets.example.com", "https://[::1", "https://wallets.example.com/%zz"} {
+		parsed, err := ParsePublicBase(raw)
+		if !errors.Is(err, ErrRefused) || parsed != nil || err.Error() != ReasonInvalidURL {
+			t.Errorf("ParsePublicBase(%q) = %v, %v; want the %q refusal", raw, parsed, err, ReasonInvalidURL)
+		}
+	}
+}
+
 func TestParsePublicBase_RefusesWhatAProviderCannotPostTo(t *testing.T) {
 	cases := []struct {
 		raw    string

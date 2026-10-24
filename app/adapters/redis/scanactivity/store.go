@@ -71,6 +71,7 @@ type signatureRecord struct {
 	Head                uint64    `json:"head"`
 	CoveredHead         uint64    `json:"covered_head"`
 	ReadEveryAccount    bool      `json:"read_every_account,omitempty"`
+	BackfillingSince    time.Time `json:"backfilling_since,omitzero"`
 	At                  time.Time `json:"at"`
 }
 
@@ -111,9 +112,13 @@ func (s *Store) RecordSignatureSync(ctx context.Context, chainID string, sync de
 	if s == nil || s.client == nil {
 		return nil
 	}
-	payload, err := json.Marshal(signatureRecord{Accounts: sync.Accounts, FailedAccounts: sync.FailedAccounts,
+	record := signatureRecord{Accounts: sync.Accounts, FailedAccounts: sync.FailedAccounts,
 		BackfillingAccounts: sync.BackfillingAccounts, SkippedMints: sync.SkippedMints,
-		Head: sync.Head, CoveredHead: sync.CoveredHead, ReadEveryAccount: sync.ReadEveryAccount, At: sync.At.UTC()})
+		Head: sync.Head, CoveredHead: sync.CoveredHead, ReadEveryAccount: sync.ReadEveryAccount, At: sync.At.UTC()}
+	if !sync.BackfillingSince.IsZero() {
+		record.BackfillingSince = sync.BackfillingSince.UTC()
+	}
+	payload, err := json.Marshal(record)
 	if err != nil {
 		return fmt.Errorf("encode %s signature sync activity: %w", chainID, err)
 	}
@@ -253,9 +258,13 @@ func decodeSignatureSync(value any) (*deposit.SignatureSyncRecord, error) {
 	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
 		return nil, fmt.Errorf("signature sync record: %w", err)
 	}
-	return &deposit.SignatureSyncRecord{Accounts: stored.Accounts, FailedAccounts: stored.FailedAccounts,
+	record := &deposit.SignatureSyncRecord{Accounts: stored.Accounts, FailedAccounts: stored.FailedAccounts,
 		BackfillingAccounts: stored.BackfillingAccounts, SkippedMints: stored.SkippedMints,
-		Head: stored.Head, CoveredHead: stored.CoveredHead, ReadEveryAccount: stored.ReadEveryAccount, At: stored.At.UTC()}, nil
+		Head: stored.Head, CoveredHead: stored.CoveredHead, ReadEveryAccount: stored.ReadEveryAccount, At: stored.At.UTC()}
+	if !stored.BackfillingSince.IsZero() {
+		record.BackfillingSince = stored.BackfillingSince.UTC()
+	}
+	return record, nil
 }
 
 // decodeMode reads one MGET value of a mode key; a missing key is nil.

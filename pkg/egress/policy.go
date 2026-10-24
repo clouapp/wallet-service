@@ -51,7 +51,15 @@ func RPCPolicy(allowLinkLocal bool) Policy {
 // resolves nothing: Guard.CheckDestination and Guard.DialContext look names up.
 func (p Policy) CheckURL(rawURL string) error {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
-	if err != nil || parsed.Opaque != "" || parsed.Host == "" || !validPort(parsed.Port()) {
+	if err != nil {
+		return refuse(ReasonInvalidURL)
+	}
+	return p.checkParsedURL(parsed)
+}
+
+// checkParsedURL is CheckURL on a URL already parsed.
+func (p Policy) checkParsedURL(parsed *url.URL) error {
+	if parsed.Opaque != "" || parsed.Host == "" || !validPort(parsed.Port()) {
 		return refuse(ReasonInvalidURL)
 	}
 	scheme := strings.ToLower(parsed.Scheme)

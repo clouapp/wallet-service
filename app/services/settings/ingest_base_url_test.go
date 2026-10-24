@@ -10,16 +10,39 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/pkg/egress"
+	"github.com/macrowallets/waas/tests/fakedns"
 )
 
 const (
 	ingestSettingBaseURL = "https://push.wallets.example.com/waas"
 	ingestEnvBaseURL     = "https://env.wallets.example.com"
+
+	// The names whose records point inside: a private address and the cloud metadata
+	// address. Both pass the static base URL rule.
+	ingestInternalHost = "internal.wallets.example.com"
+	ingestMetadataHost = "169.254.169.254.nip.io"
 )
 
-func newIngestPushService(store Store, cache Cache, activity *recordingActivity) (*Service, uuid.UUID) {
+// ingestBaseDNS answers the base URL lookups of the ingest push tests: the saved
+// host is public, two names point inside, any other name does not resolve.
+func ingestBaseDNS(t *testing.T) *fakedns.Server {
+	t.Helper()
+	return fakedns.Start(t, map[string][]string{
+		"push.wallets.example.com": {"93.184.215.14"},
+		ingestInternalHost:         {"10.0.0.5"},
+		ingestMetadataHost:         {"169.254.169.254"},
+	})
+}
+
+func newIngestPushService(t *testing.T, store Store, cache Cache, activity *recordingActivity) (*Service, uuid.UUID) {
+	t.Helper()
+	return newIngestPushServiceOver(ingestBaseDNS(t), store, cache, activity)
+}
+
+func newIngestPushServiceOver(dns *fakedns.Server, store Store, cache Cache, activity *recordingActivity) (*Service, uuid.UUID) {
 	actor := uuid.New()
-	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: cache, Activity: activity}).
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: cache, Activity: activity,
+		IngestBaseDestinations: egress.NewGuard(egress.Policy{}, dns.Resolver())}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 	return service, actor
 }
@@ -29,7 +52,7 @@ func TestSave_IngestPush_StoresAPublicHTTPSBaseURLInTheClear(t *testing.T) {
 
 	store := newMemoryStore()
 	activity := &recordingActivity{}
-	service, actor := newIngestPushService(store, &memoryCache{}, activity)
+	service, actor := newIngestPushService(t, store, &memoryCache{}, activity)
 
 	saved, err := service.SavePlatform(context.Background(), actor, groupIngestPush, map[string]any{
 		keyIngestBaseURL: "  " + ingestSettingBaseURL + "  ",
@@ -93,7 +116,7 @@ func TestSave_IngestPush_RefusesABaseURLAProviderCannotPostTo(t *testing.T) {
 	for base, reason := range cases {
 		store := newMemoryStore()
 		activity := &recordingActivity{}
-		service, actor := newIngestPushService(store, &memoryCache{}, activity)
+		service, actor := newIngestPushService(t, store, &memoryCache{}, activity)
 
 		_, err := service.SavePlatform(context.Background(), actor, groupIngestPush, map[string]any{keyIngestBaseURL: base})
 
@@ -110,6 +133,67 @@ func TestSave_IngestPush_RefusesABaseURLAProviderCannotPostTo(t *testing.T) {
 		if len(activity.rows) != 0 {
 			t.Fatalf("%q: a refused write was recorded", base)
 		}
+	}
+}
+
+// A name that passes the static rule but resolves to an internal or metadata
+// address is refused at the write, as ingest:subscribe --apply refuses it, with the
+// one resolved-name sentence: nothing is stored or recorded, and the URL is not in
+// the error.
+func TestSave_IngestPush_RefusesABaseURLWhoseHostResolvesToARefusedAddress(t *testing.T) {
+	t.Parallel()
+
+	for _, host := range []string{ingestInternalHost, ingestMetadataHost} {
+		store := newMemoryStore()
+		activity := &recordingActivity{}
+		dns := ingestBaseDNS(t)
+		service, actor := newIngestPushServiceOver(dns, store, &memoryCache{}, activity)
+
+		_, err := service.SavePlatform(context.Background(), actor, groupIngestPush, map[string]any{keyIngestBaseURL: "https://" + host + "/waas"})
+
+		var validation *ValidationError
+		if !errors.As(err, &validation) {
+			t.Fatalf("%s: error = %v, want a validation error", host, err)
+		}
+		if messages := validation.Fields[keyIngestBaseURL]; len(messages) != 1 || messages[0] != egress.ReasonResolved {
+			t.Fatalf("%s: fields = %#v, want the rule %q", host, validation.Fields, egress.ReasonResolved)
+		}
+		if strings.Contains(err.Error(), host) {
+			t.Fatalf("%s: the error names the host: %v", host, err)
+		}
+		if _, stored := store.rows[platformStoreKey(groupIngestPush)]; stored {
+			t.Fatalf("%s: a base_url that resolves inside was stored", host)
+		}
+		if len(activity.rows) != 0 {
+			t.Fatalf("%s: a refused write was recorded", host)
+		}
+		if queries := dns.Queries(); !containsAll(queries, host) {
+			t.Fatalf("%s: queries = %v, want the name looked up", host, queries)
+		}
+	}
+}
+
+// Blank hands the URL back to the environment and looks nothing up; a name that
+// does not resolve now is not refused at the write (the run checks it again).
+func TestSave_IngestPush_LooksUpOnlyAWrittenHost(t *testing.T) {
+	t.Parallel()
+
+	dns := ingestBaseDNS(t)
+	store := newMemoryStore()
+	service, actor := newIngestPushServiceOver(dns, store, &memoryCache{}, &recordingActivity{})
+	ctx := context.Background()
+
+	if _, err := service.SavePlatform(ctx, actor, groupIngestPush, map[string]any{keyIngestBaseURL: "  "}); err != nil {
+		t.Fatalf("blank save: %v", err)
+	}
+	if queries := dns.Queries(); len(queries) != 0 {
+		t.Fatalf("a blank save looked up %v", queries)
+	}
+	if _, err := service.SavePlatform(ctx, actor, groupIngestPush, map[string]any{keyIngestBaseURL: "https://unlisted.wallets.example.com"}); err != nil {
+		t.Fatalf("a name that does not resolve now: %v", err)
+	}
+	if got := store.rows[platformStoreKey(groupIngestPush)][keyIngestBaseURL]; got != "https://unlisted.wallets.example.com" {
+		t.Fatalf("stored base_url = %q", got)
 	}
 }
 
@@ -223,7 +307,7 @@ func TestEffective_IngestBaseURL_ASavedValueAppliesToTheNextRead(t *testing.T) {
 
 	store := newMemoryStore()
 	cache := &memoryCache{}
-	service, actor := newIngestPushService(store, cache, &recordingActivity{})
+	service, actor := newIngestPushService(t, store, cache, &recordingActivity{})
 	ctx := context.Background()
 
 	if got, err := service.EffectiveIngestBaseURL(ctx, ingestEnvBaseURL); err != nil || got.Source != IngestBaseURLFromEnv {

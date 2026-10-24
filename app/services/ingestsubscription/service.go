@@ -35,6 +35,12 @@ var (
 	// not be read: the environment value may be stale, so no provider webhook is
 	// created on it. A dry run falls back to the environment value and says so.
 	ErrBaseURLUnread = errors.New("ingestsubscription: --apply needs the ingest_push.base_url platform setting to be readable; nothing was created")
+	// ErrBaseURLSettingInvalid is a run with --apply whose stored ingest_push.base_url
+	// platform setting the base URL rule refuses (an edit made outside the service, or
+	// a rule tightened since it was saved): the operator meant that value, so no
+	// provider webhook is created on the environment value instead. A dry run falls
+	// back to the environment value and says so. It never carries the stored value.
+	ErrBaseURLSettingInvalid = errors.New("ingestsubscription: --apply refuses to run while the stored ingest_push.base_url platform setting is not a public https URL a provider can post to; fix or clear the setting; nothing was created")
 	// ErrChainSubscribed is a chain another provider already pushes.
 	ErrChainSubscribed = errors.New("ingestsubscription: the chain already has an active subscription with another provider")
 	// ErrNoSigningSecret is a provider webhook created without a secret to verify its calls.
@@ -67,7 +73,7 @@ const baseURLSetting = "the ingest_push.base_url platform setting or WEBHOOK_ING
 // The notes a plan carries when the platform setting was not used.
 const (
 	baseURLUnreadNote  = "the ingest_push.base_url platform setting could not be read: this dry run uses WEBHOOK_INGEST_BASE_URL, and --apply refuses to run until the setting can be read"
-	baseURLInvalidNote = "the stored ingest_push.base_url platform setting is not a public https URL and is ignored: WEBHOOK_INGEST_BASE_URL is used"
+	baseURLInvalidNote = "the stored ingest_push.base_url platform setting is not a public https URL and is ignored: this dry run uses WEBHOOK_INGEST_BASE_URL, and --apply refuses to run until the setting is fixed or cleared"
 )
 
 const (
@@ -91,6 +97,12 @@ type BaseURL struct {
 	URL            string
 	Source         string
 	SettingInvalid bool
+}
+
+// destinationGuard decides whether a URL's host name resolves now only to addresses
+// its policy allows; *egress.Guard is one.
+type destinationGuard interface {
+	CheckDestination(ctx context.Context, rawURL string) error
 }
 
 // Creator creates and deletes one provider's push webhook.
@@ -143,6 +155,10 @@ type Deps struct {
 	BaseURLAtUse func(ctx context.Context) (BaseURL, error)
 	// Seal seals the signing secret as every stored secret is (settings.Seal).
 	Seal func(plaintext string) (string, error)
+	// Destinations checks what the base URL's host resolves to, by the base URL rule
+	// (the zero egress.Policy, see egress.ParsePublicBase); nil is that guard over the
+	// system resolver.
+	Destinations destinationGuard
 }
 
 // Service creates and lists provider push subscriptions.
@@ -152,6 +168,9 @@ type Service struct {
 
 // NewService wires the subscription service from Deps.
 func NewService(deps Deps) *Service {
+	if deps.Destinations == nil {
+		deps.Destinations = egress.NewGuard(egress.Policy{}, nil)
+	}
 	return &Service{deps: deps}
 }
 
@@ -164,8 +183,10 @@ type Request struct {
 
 // Plan is what a run found and did. Missing names the settings to set; BaseURLSource
 // names where the base URL of WebhookURL was read, and BaseURLNote why the platform
-// setting was not used when it was not read or is invalid; Existing is a subscription
-// already there (nothing is done); Applied is a subscription created.
+// setting was not used when it was not read or is invalid; BaseURLWarning is a dry
+// run's base URL whose host resolves to an address the rule refuses, which --apply
+// refuses; Existing is a subscription already there (nothing is done); Applied is a
+// subscription created.
 type Plan struct {
 	Provider          string
 	ChainID           string
@@ -174,6 +195,7 @@ type Plan struct {
 	WebhookURL        string
 	BaseURLSource     string
 	BaseURLNote       string
+	BaseURLWarning    string
 	Addresses         int
 	Missing           []string
 	Existing          *Listed
@@ -199,7 +221,11 @@ type Listed struct {
 // the provider's webhook pointed at the ingest route, the row with its sealed
 // signing secret, then an address sync. It fails when a setting is missing
 // (ErrMissingConfiguration), when the provider or the chain is not served, and
-// when the provider's webhook cannot be stored, after deleting it.
+// when the provider's webhook cannot be stored, after deleting it. Before any
+// provider call, Apply also refuses a platform setting that could not be read
+// (ErrBaseURLUnread) or that the base URL rule refuses (ErrBaseURLSettingInvalid),
+// and a base URL whose host resolves now to an address the rule refuses
+// (ErrInvalidBaseURL, egress.ReasonResolved); a dry run notes each instead.
 func (s *Service) Subscribe(ctx context.Context, req Request) (Plan, error) {
 	plan := Plan{Provider: strings.ToLower(strings.TrimSpace(req.Provider)), ChainID: strings.TrimSpace(req.ChainID)}
 	creator, known := s.deps.Creators[plan.Provider]
@@ -221,6 +247,8 @@ func (s *Service) Subscribe(ctx context.Context, req Request) (Plan, error) {
 	switch {
 	case unread != nil && req.Apply:
 		return plan, fmt.Errorf("%w: %w", ErrBaseURLUnread, unread)
+	case base.SettingInvalid && req.Apply:
+		return plan, ErrBaseURLSettingInvalid
 	case unread != nil:
 		plan.BaseURLNote = baseURLUnreadNote
 	case base.SettingInvalid:
@@ -232,6 +260,12 @@ func (s *Service) Subscribe(ctx context.Context, req Request) (Plan, error) {
 		plan.BaseURLSource = baseURLSourceName(base.Source)
 		if plan.WebhookURL, err = webhookURL(base.URL, plan.Provider, plan.ChainID); err != nil {
 			return plan, fmt.Errorf("%w; read from %s", err, plan.BaseURLSource)
+		}
+		if resolveErr := s.deps.Destinations.CheckDestination(ctx, strings.TrimSpace(base.URL)); resolveErr != nil {
+			if req.Apply {
+				return plan, fmt.Errorf("%w: %w; read from %s", ErrInvalidBaseURL, resolveErr, plan.BaseURLSource)
+			}
+			plan.BaseURLWarning = fmt.Sprintf("%s (base URL read from %s): --apply refuses it", refusalReason(resolveErr), plan.BaseURLSource)
 		}
 	}
 	if strings.TrimSpace(s.deps.ProviderKey(ctx, plan.Provider)) == "" {
@@ -411,6 +445,16 @@ func listed(sub models.WebhookSubscription) Listed {
 		ID: sub.ID, Provider: sub.Provider, ChainID: sub.ChainID, ProviderWebhookID: sub.ProviderWebhookID,
 		Host: host, Status: sub.Status, SyncStatus: sub.SyncStatus, LastSyncedAt: sub.LastSyncedAt,
 	}
+}
+
+// refusalReason is the rule a refused base URL broke, a sentence that never carries
+// the URL.
+func refusalReason(err error) string {
+	var refusal *egress.Refusal
+	if errors.As(err, &refusal) && refusal.Reason != "" {
+		return refusal.Reason
+	}
+	return ErrInvalidBaseURL.Error()
 }
 
 // webhookURL is the ingest route of provider and chain under base, which must be a

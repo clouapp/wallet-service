@@ -43,6 +43,9 @@ func (r ScanRecord) LagBlocks() uint64 {
 // did); ReadEveryAccount says this cycle is that cycle. Only then are the deposits to
 // every watched address up to CoveredHead known recorded, which makes it the slot the
 // block scan may resume after: a carried one predates the accounts listed since.
+// BackfillingSince is when the first of the cycles in a row that left an account
+// backfilling ended, carried from cycle to cycle like CoveredHead (zero while none
+// is), so the tracker can tell an account that never settles from a long first read.
 type SignatureSyncRecord struct {
 	Accounts            int
 	FailedAccounts      int
@@ -51,6 +54,7 @@ type SignatureSyncRecord struct {
 	Head                uint64
 	CoveredHead         uint64
 	ReadEveryAccount    bool
+	BackfillingSince    time.Time
 	At                  time.Time
 }
 
@@ -143,8 +147,10 @@ func (s *Service) recordScan(ctx context.Context, chainID string, head, checkpoi
 }
 
 // recordSignatureSync notes a completed signature sync cycle of chainID, carrying the
-// covered head of the last cycle that read every account when this one did not. A
-// record that fails is logged and never fails the cycle: its work is already saved.
+// covered head of the last cycle that read every account when this one did not, and,
+// while accounts stay backfilling, when the first cycle of that run ended (a previous
+// record that cannot be read starts it again). A record that fails is logged and never
+// fails the cycle: its work is already saved.
 func (s *Service) recordSignatureSync(ctx context.Context, chainID string, summary SignatureSyncSummary) {
 	if s.activity == nil {
 		return
@@ -157,7 +163,13 @@ func (s *Service) recordSignatureSync(ctx context.Context, chainID string, summa
 	if record.CoveredHead == 0 {
 		if previous, err := s.chainActivity(recordCtx, chainID); err == nil && previous.Signatures != nil {
 			record.CoveredHead = previous.Signatures.CoveredHead
+			if record.BackfillingAccounts > 0 && previous.Signatures.BackfillingAccounts > 0 {
+				record.BackfillingSince = previous.Signatures.BackfillingSince
+			}
 		}
+	}
+	if record.BackfillingAccounts > 0 && record.BackfillingSince.IsZero() {
+		record.BackfillingSince = record.At
 	}
 	if err := s.activity.RecordSignatureSync(recordCtx, chainID, record); err != nil {
 		slog.Warn("deposit signature sync activity not recorded", "chain", chainID, "accounts", record.Accounts, "failed_accounts", record.FailedAccounts, "error", err)

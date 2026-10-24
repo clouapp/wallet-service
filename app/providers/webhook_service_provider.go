@@ -224,6 +224,7 @@ func newIngestSubscriptionService(app foundation.Application) (*ingestsubscripti
 		ChainNetwork:  chainNetwork(chainRows),
 		BaseURLAtUse:  ingestBaseURL(accountSettings, facades.Config()),
 		Seal:          secrets.Seal,
+		Destinations:  ingestBaseDestinations(),
 	}), nil
 }
 
