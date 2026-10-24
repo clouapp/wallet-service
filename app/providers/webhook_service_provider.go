@@ -211,6 +211,10 @@ func newIngestSubscriptionService(app foundation.Application) (*ingestsubscripti
 	if err != nil {
 		return nil, err
 	}
+	baseURLs, err := resolve[*egress.PublicBaseGuard](app)
+	if err != nil {
+		return nil, err
+	}
 	creators := make(map[string]ingestsubscription.Creator, len(catalog.Lookup()))
 	for name, provider := range catalog.Lookup() {
 		creators[name] = provider
@@ -224,6 +228,7 @@ func newIngestSubscriptionService(app foundation.Application) (*ingestsubscripti
 		ChainNetwork:  chainNetwork(chainRows),
 		BaseURLAtUse:  ingestBaseURL(accountSettings, facades.Config()),
 		Seal:          secrets.Seal,
+		Destinations:  baseURLs,
 	}), nil
 }
 

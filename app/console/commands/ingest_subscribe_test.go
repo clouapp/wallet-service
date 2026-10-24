@@ -185,3 +185,30 @@ func TestIngest_Subscribe_ApplyFailsWhenTheSettingCannotBeRead(t *testing.T) {
 
 	assert.ErrorIs(t, err, ingestsubscription.ErrBaseURLUnread)
 }
+
+func TestIngest_Subscribe_DryRunWarnsThatTheBaseURLResolvesToARefusedAddress(t *testing.T) {
+	plan := tethPlan
+	plan.BaseURLWarning = "the url host resolves to an address that is not allowed (base URL read from the ingest_push.base_url platform setting): --apply refuses it"
+	ctx := subscribeContext(t, false)
+	ctx.EXPECT().Warning(plan.BaseURLWarning).Return()
+	ctx.EXPECT().Info(mock.MatchedBy(func(line string) bool { return strings.HasPrefix(line, "alchemy subscription of teth:") })).Return()
+	ctx.EXPECT().Info("base URL read from the ingest_push.base_url platform setting").Return()
+	ctx.EXPECT().Info("dry run: nothing created (pass --apply)").Return()
+
+	require.NoError(t, NewIngestSubscribe(&fakeSubscriber{plan: plan}).Handle(ctx))
+}
+
+func TestIngest_Subscribe_ApplyFailsOnAStoredSettingTheRuleRefuses(t *testing.T) {
+	subscriber := &fakeSubscriber{
+		plan: ingestsubscription.Plan{Provider: "alchemy", ChainID: "teth", Network: "ethereum-sepolia", ProviderNetwork: "ETH_SEPOLIA"},
+		err:  ingestsubscription.ErrBaseURLSettingInvalid,
+	}
+	ctx := subscribeContext(t, true)
+	ctx.EXPECT().Error(mock.MatchedBy(func(line string) bool {
+		return strings.Contains(line, "ingest_push.base_url") && strings.Contains(line, "nothing was created")
+	})).Return()
+
+	err := NewIngestSubscribe(subscriber).Handle(ctx)
+
+	assert.ErrorIs(t, err, ingestsubscription.ErrBaseURLSettingInvalid)
+}

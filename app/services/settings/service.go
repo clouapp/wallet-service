@@ -73,6 +73,9 @@ type Service struct {
 	accounts accountDirectory
 	testMail PlatformTestMailer
 	fallback PlatformFallback
+	// ingestBase checks what a written ingest_push.base_url's host resolves to; nil
+	// is the base URL guard over the system resolver (ingestBaseGuard).
+	ingestBase baseURLGuard
 }
 
 // PlatformFallback is the value a platform field takes while no row stores it, when
@@ -91,6 +94,10 @@ type Deps struct {
 	// Fallback shows, on the platform views, the environment value of a field no
 	// row stores (nil: the definitions' defaults).
 	Fallback PlatformFallback
+	// IngestBaseDestinations checks, when ingest_push.base_url is written, what its
+	// host resolves to, by the base URL rule (egress.PublicBaseGuard); nil is that
+	// guard over the system resolver.
+	IngestBaseDestinations baseURLGuard
 }
 
 // NewService builds the account settings service.
@@ -108,7 +115,8 @@ func NewService(deps Deps) *Service {
 	if cache == nil {
 		cache = nopCache{}
 	}
-	return &Service{store: deps.Store, sealer: deps.Sealer, cache: cache, activity: deps.Activity, fallback: deps.Fallback}
+	return &Service{store: deps.Store, sealer: deps.Sealer, cache: cache, activity: deps.Activity, fallback: deps.Fallback,
+		ingestBase: deps.IngestBaseDestinations}
 }
 
 // WithPlatformAdmins sets the gate for platform groups. A nil reader leaves

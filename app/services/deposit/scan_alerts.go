@@ -15,6 +15,14 @@ const (
 	// scanAlertReminder is how often a raised alert is logged again while it lasts.
 	scanAlertReminder = 30 * time.Minute
 
+	// signatureSettleIntervals is how many sync intervals an account of a chain in
+	// signature mode may stay unread up to the head before the tracker warns: the lag
+	// past the index margin, or the time accounts have been backfilling.
+	signatureSettleIntervals = 3
+	// signatureSlotTime is the slot time of the chains the signature sync reads (Solana,
+	// 400 ms), in which its index margin and lag are counted.
+	signatureSlotTime = 400 * time.Millisecond
+
 	scanLagMessage              = "deposit scan lag above the alert threshold"
 	scanLagClearedMessage       = "deposit scan lag back within the alert threshold"
 	scanStaleMessage            = "deposit scan has not completed a cycle within the alert threshold"
@@ -28,6 +36,8 @@ const (
 	signatureFailedClearedMessage = "deposit signature sync reads every account again"
 	signatureMintsMessage         = "deposit signature sync skips registered tokens the chain's node does not hold as token mints"
 	signatureMintsClearedMessage  = "deposit signature sync reads every registered token again"
+	signatureUnsettledMessage     = "deposit signature sync has not read every account up to the head within the alert threshold"
+	signatureSettledMessage       = "deposit signature sync reads every account up to the head again"
 )
 
 // AlertTransition is what raising an alert did: raised it, reminded of it (it was
@@ -185,12 +195,18 @@ func (s *Service) warnScanActivity(ctx context.Context) map[string]bool {
 // sync reads it: its last completed sync cycle (or, without one since, the start of
 // that mode) ended longer ago than its stale threshold plus the sync's interval (the
 // sync stopped, or every cycle fails), the cycle left accounts failed (their deposits
-// wait for a later cycle), or it skipped registered tokens the node does not hold as
-// token mints. Its block scan records no cycle meanwhile, so that scan's alerts are
-// cleared rather than raised forever.
+// wait for a later cycle), it skipped registered tokens the node does not hold as
+// token mints, or an account does not settle: the slot every account was read up to
+// trails the head the last cycle confirmed at by more than the index margin plus
+// signatureSettleIntervals intervals of slots, or accounts have been backfilling for
+// longer than signatureSettleIntervals intervals (an account never read up to the
+// head with proof keeps the covered slot back, with no covered slot at all while
+// none ever was). Its block scan records no cycle meanwhile, so that scan's alerts
+// are cleared rather than raised forever.
 func (s *Service) warnSignatureSync(ctx context.Context, chainID string, activity ChainActivity, now time.Time) {
 	thresholds := s.scanAlertThresholdsFor(ctx, chainID)
-	staleAfter := thresholds.StaleAfter + s.SignatureSettings(ctx).Interval
+	interval := s.SignatureSettings(ctx).Interval
+	staleAfter := thresholds.StaleAfter + interval
 	var sync SignatureSyncRecord
 	last := activity.Mode.Since
 	if activity.Signatures != nil {
@@ -223,6 +239,21 @@ func (s *Service) warnSignatureSync(ctx context.Context, chainID string, activit
 	}, func() {
 		slog.Info(signatureMintsClearedMessage, "chain", chainID)
 	})
+	lag, lagThreshold := sync.LagBlocks(), signatureLagThreshold(interval)
+	backfilling, backfillThreshold := time.Duration(0), signatureSettleIntervals*interval
+	if sync.BackfillingAccounts > 0 && !sync.BackfillingSince.IsZero() {
+		backfilling = now.Sub(sync.BackfillingSince)
+	}
+	s.alert(ctx, "signature-unsettled:"+chainID, lag > lagThreshold || backfilling > backfillThreshold, func(reminder bool) {
+		slog.Warn(signatureUnsettledMessage,
+			"chain", chainID, "lag_blocks", lag, "threshold_blocks", lagThreshold, "covered_slot", sync.CoveredHead, "head", sync.Head,
+			"backfilling_accounts", sync.BackfillingAccounts, "minutes_backfilling", int(backfilling/time.Minute),
+			"threshold_minutes", int(backfillThreshold/time.Minute), "last_synced_at", lastSyncedAt,
+			"hint", "each cycle reads them again from their cursors and logs every account whose listing an endpoint did not prove; deposits:sync-signatures "+chainID+" runs one now",
+			"reminder", reminder, "remind_every_minutes", int(scanAlertReminder/time.Minute))
+	}, func() {
+		slog.Info(signatureSettledMessage, "chain", chainID, "lag_blocks", lag, "backfilling_accounts", sync.BackfillingAccounts)
+	})
 	quiet := func(bool) {}
 	s.alert(ctx, "scan-lag:"+chainID, false, quiet, func() {
 		slog.Info(scanLagClearedMessage, "chain", chainID, "reason", "the signature sync reads the chain")
@@ -245,6 +276,21 @@ func (s *Service) clearSignatureAlerts(ctx context.Context, chainID string) {
 	s.alert(ctx, "signature-mints:"+chainID, false, quiet, func() {
 		slog.Info(signatureMintsClearedMessage, "chain", chainID, "reason", "the block scan reads the chain")
 	})
+	s.alert(ctx, "signature-unsettled:"+chainID, false, quiet, func() {
+		slog.Info(signatureSettledMessage, "chain", chainID, "reason", "the block scan reads the chain")
+	})
+}
+
+// signatureLagThreshold is the lag, in slots, past which an account of a chain in
+// signature mode does not settle: the index margin, which every covered slot trails
+// the head by, plus signatureSettleIntervals sync intervals of slots (6000 slots,
+// about 40 minutes, at the default 600 s).
+func signatureLagThreshold(interval time.Duration) uint64 {
+	slots := signatureSettleIntervals * interval / signatureSlotTime
+	if slots <= 0 {
+		return signatureIndexMargin
+	}
+	return signatureIndexMargin + uint64(slots)
 }
 
 // warnPendingBlocks alerts on the pending blocks of the scanned chains (every
