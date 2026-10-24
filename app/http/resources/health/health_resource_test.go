@@ -117,3 +117,55 @@ func TestNewHealth_ReportsHowFarEachChainsDepositDetectionGot(t *testing.T) {
 		})
 	}
 }
+
+// A chain whose scan records that the signature sync reads it has no block scan cycle
+// any more: its lag would only grow. It reports its last sync, its accounts and the
+// slot they were all read up to instead, and the statuses keep their meaning. The
+// mode is the one the scan recorded, never the newest record: a one-off sync of a
+// chain the block scan reads keeps that scan's lag on the wire, and a chain with only
+// that is left out.
+func TestNewHealth_ReportsAChainTheSignatureSyncReadsByItsSyncInsteadOfItsLag(t *testing.T) {
+	scannedAt := time.Date(2026, 10, 23, 7, 40, 0, 0, time.UTC)
+	syncedAt := time.Date(2026, 10, 23, 9, 30, 0, 750_000_000, time.UTC)
+	pushedAt := time.Date(2026, 10, 23, 9, 29, 12, 0, time.UTC)
+	signatures := &deposit.ScanModeRecord{Mode: deposit.ScanModeSignatures, Since: scannedAt, At: syncedAt}
+	blocks := &deposit.ScanModeRecord{Mode: deposit.ScanModeBlocks, Since: scannedAt, At: syncedAt}
+	activity := deposit.ScanActivityHealth{Chains: map[string]deposit.ChainActivity{
+		// The block scan stalled 225000 slots behind, then the sync took the chain over.
+		"sol": {Scan: &deposit.ScanRecord{Head: 1_000_000, Checkpoint: 775_000, At: scannedAt}, Mode: signatures,
+			Signatures: &deposit.SignatureSyncRecord{Accounts: 36, Head: 1_000_400, CoveredHead: 1_000_100, At: syncedAt}, PushedAt: pushedAt},
+		"tsol": {Mode: signatures, Signatures: &deposit.SignatureSyncRecord{Accounts: 4, FailedAccounts: 2, BackfillingAccounts: 1,
+			SkippedMints: []string{"mint-a"}, At: syncedAt}},
+		// A one-off sync of a chain the block scan reads: the scan's lag stays.
+		"eth": {Scan: &deposit.ScanRecord{Head: 3000, Checkpoint: 2990, At: scannedAt}, Mode: blocks,
+			Signatures: &deposit.SignatureSyncRecord{Accounts: 1, At: syncedAt}},
+		// Just switched, no completed sync yet.
+		"sol2": {Mode: signatures},
+		// The block scan reads it and has not completed a cycle yet; a sync record of
+		// it alone says nothing about its scan either.
+		"btc":  {Mode: blocks},
+		"tron": {Mode: blocks, Signatures: &deposit.SignatureSyncRecord{Accounts: 1, At: syncedAt}},
+	}}
+	chains := `"chains":{"eth":{"lag_blocks":10,"last_scanned_at":"2026-10-23T07:40:00Z"},` +
+		`"sol":{"mode":"signatures","lag_blocks":300,"last_synced_at":"2026-10-23T09:30:00Z","accounts":36,"failed_accounts":0,"backfilling_accounts":0,"skipped_mints":0,"covered_slot":1000100,"last_push_at":"2026-10-23T09:29:12Z"},` +
+		`"sol2":{"mode":"signatures"},` +
+		`"tsol":{"mode":"signatures","last_synced_at":"2026-10-23T09:30:00Z","accounts":4,"failed_accounts":2,"backfilling_accounts":1,"skipped_mints":1}}`
+	for name, tc := range map[string]struct {
+		pending deposit.PendingHealth
+		scanner string
+	}{
+		"nothing pending": {deposit.PendingHealth{Counts: map[string]int{}}, `"status":"ok","pending":{},"pending_total":0,`},
+		"blocks pending":  {deposit.PendingHealth{Counts: map[string]int{"sol": 3}, Total: 3}, `"status":"pending_blocks","pending":{"sol":3},"pending_total":3,`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			raw, err := json.Marshal(NewHealth(tc.pending, settled, activity))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := `{"status":"ok","version":"0.1.0","deposit_scanner":{` + tc.scanner + chains + `},` + settledTracker + `}`
+			if string(raw) != want {
+				t.Fatalf("wire = %s\nwant   %s", raw, want)
+			}
+		})
+	}
+}

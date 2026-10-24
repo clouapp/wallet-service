@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/macrowallets/waas/app/services/deposit"
+	"github.com/macrowallets/waas/app/services/settings"
 )
 
 type intConfig map[string]int
@@ -61,5 +62,54 @@ func TestScan_AlertThresholds_ReadTheGlobalAndTheChainEntries(t *testing.T) {
 	}
 	if got := perChain("eth"); got != (deposit.ScanAlertThresholds{}) {
 		t.Fatalf("a chain without its own entry keeps the global thresholds, got %+v", got)
+	}
+}
+
+// signatureConfig is the configuration the signature sync reads: integers and the
+// chain list.
+type signatureConfig struct {
+	intConfig
+	chains string
+}
+
+func (c signatureConfig) GetString(path string, defaultValue ...string) string {
+	if path == "vault.deposit_signatures.chains" {
+		return c.chains
+	}
+	if len(defaultValue) > 0 {
+		return defaultValue[0]
+	}
+	return ""
+}
+
+func TestSignature_SettingsFromEnv_ReadsDepositSignatures(t *testing.T) {
+	got := signatureSettingsFromEnv(signatureConfig{chains: " sol, ,tsol", intConfig: intConfig{
+		"vault.deposit_signatures.interval_seconds": 900,
+		"vault.deposit_signatures.concurrency":      3,
+		"vault.deposit_signatures.max_pages":        25,
+	}})
+
+	want := deposit.SignatureSyncSettings{Chains: []string{"sol", "tsol"}, Interval: 15 * time.Minute, Concurrency: 3, MaxPages: 25}
+	if len(got.Chains) != 2 || got.Chains[0] != "sol" || got.Chains[1] != "tsol" || got.Interval != want.Interval ||
+		got.Concurrency != want.Concurrency || got.MaxPages != want.MaxPages {
+		t.Fatalf("settings %+v, want %+v", got, want)
+	}
+	if empty := signatureSettingsFromEnv(signatureConfig{intConfig: intConfig{}}); len(empty.Chains) != 0 {
+		t.Fatalf("an empty DEPOSIT_SIGNATURE_CHAINS lists %v, want no chain", empty.Chains)
+	}
+}
+
+func TestPlatform_SettingsFallback_ShowsTheEnvironmentChainsOfDepositSignaturesOnly(t *testing.T) {
+	fallback := platformSettingsFallback(signatureConfig{chains: "sol", intConfig: intConfig{}})
+
+	chains, ok := fallback(settings.GroupDepositSignatures, settings.KeySignatureChains)
+	if !ok || len(chains.([]string)) != 1 || chains.([]string)[0] != "sol" {
+		t.Fatalf("chains %v (ok %v), want DEPOSIT_SIGNATURE_CHAINS", chains, ok)
+	}
+	if _, ok := fallback(settings.GroupDepositSignatures, "interval_seconds"); ok {
+		t.Fatal("only the chain list falls back to the environment on the views")
+	}
+	if _, ok := fallback("deposit_scan", settings.KeySignatureChains); ok {
+		t.Fatal("another group keeps its defaults")
 	}
 }

@@ -98,64 +98,105 @@ func isSolanaSkippedSlot(err error) bool {
 		strings.Contains(strings.ToLower(rpcErr.Message), "skipped")
 }
 
-// solanaBlockCredits returns, per successful transaction in block order, its lamport
-// credits (account order, credited from the fee payer) and then its credits of the
-// tokens keyed by mint. Failed transactions only move fees. A registered token balance
-// that cannot be read fails the block.
+// solanaBlockCredits returns the credits of every successful transaction of the
+// block, in block order (solanaTransactionCredits). A registered token balance that
+// cannot be read fails the block.
 func solanaBlockCredits(slot uint64, block *solanaBlockAccounts, nativeAsset string, tokens map[string]types.Token) ([]types.DetectedTransfer, error) {
-	var blockTime time.Time
-	if block.BlockTime != nil {
-		blockTime = time.Unix(*block.BlockTime, 0).UTC()
-	}
-
+	at := solanaSlotOf(slot, block.Blockhash, block.BlockTime)
 	var transfers []types.DetectedTransfer
 	for _, entry := range block.Transactions {
-		meta := entry.Meta
-		keys := entry.Transaction.AccountKeys
-		if meta == nil || meta.Err != nil || len(entry.Transaction.Signatures) == 0 || len(keys) == 0 {
-			continue
+		var signature string
+		if len(entry.Transaction.Signatures) > 0 {
+			signature = entry.Transaction.Signatures[0]
 		}
-		signature := entry.Transaction.Signatures[0]
-		if len(meta.PreBalances) != len(keys) || len(meta.PostBalances) != len(keys) {
-			slog.Warn("solana block: balances do not line up with account keys", "slot", slot, "tx", signature)
-			continue
+		keys := make([]string, len(entry.Transaction.AccountKeys))
+		for i, key := range entry.Transaction.AccountKeys {
+			keys[i] = key.Pubkey
 		}
-		credit := func(from, to string, amount *big.Int, asset string, token *types.Token, logIndex int) {
-			transfers = append(transfers, types.DetectedTransfer{
-				TxHash:      signature,
-				BlockNumber: slot,
-				BlockHash:   block.Blockhash,
-				From:        from,
-				To:          to,
-				Amount:      amount,
-				Asset:       asset,
-				Token:       token,
-				LogIndex:    logIndex,
-				Timestamp:   blockTime,
-			})
-		}
-		feePayer := keys[0].Pubkey
-		accounts := make([]string, len(keys))
-		lamports := make([]*big.Int, len(keys))
-		for i, key := range keys {
-			accounts[i] = key.Pubkey
-			lamports[i] = new(big.Int).Sub(new(big.Int).SetUint64(meta.PostBalances[i]), new(big.Int).SetUint64(meta.PreBalances[i]))
-		}
-		for _, c := range solanacredit.Lamports(accounts, lamports) {
-			credit(feePayer, c.Account, c.Amount, nativeAsset, nil, c.Index)
-		}
-		tokenCredits, err := solanaTokenCredits(meta, len(keys), tokens)
+		credits, err := solanaTransactionCredits(at, solanaBalanceTransaction{Signature: signature, Keys: keys, Meta: entry.Meta}, nativeAsset, tokens)
 		if err != nil {
-			return nil, fmt.Errorf("sol slot %d tx %s: %w", slot, signature, err)
+			return nil, err
 		}
-		for _, c := range tokenCredits {
-			from := c.from
-			if from == "" {
-				from = feePayer
-			}
-			token := c.token
-			credit(from, c.owner, c.amount, token.Symbol, &token, solanacredit.TokenPosition(c.accountIndex))
+		transfers = append(transfers, credits...)
+	}
+	return transfers, nil
+}
+
+// solanaSlot is where a transaction was read: its slot, the slot's blockhash (empty
+// when the reader does not have it) and its block time (zero when the node has none).
+type solanaSlot struct {
+	slot      uint64
+	blockhash string
+	blockTime time.Time
+}
+
+func solanaSlotOf(slot uint64, blockhash string, blockTime *int64) solanaSlot {
+	at := solanaSlot{slot: slot, blockhash: blockhash}
+	if blockTime != nil {
+		at.blockTime = time.Unix(*blockTime, 0).UTC()
+	}
+	return at
+}
+
+// solanaBalanceTransaction is one transaction as its balances read it: its first
+// signature, its account keys in balance order (static, then the lookup-table loaded
+// writable ones, then the readonly ones) and its meta.
+type solanaBalanceTransaction struct {
+	Signature string
+	Keys      []string
+	Meta      *solanaTransactionMeta
+}
+
+// solanaTransactionCredits returns the credits of one transaction: its lamport credits
+// (account order, credited from the fee payer), then its credits of the registered
+// tokens keyed by mint. The block scan and the signature sync both read a transaction
+// through it, so they report the same credits at the same positions. A failed
+// transaction only moved fees and credits nothing; one whose balances do not line up
+// with its keys is logged and skipped. A registered token balance that cannot be read
+// is an error.
+func solanaTransactionCredits(at solanaSlot, tx solanaBalanceTransaction, nativeAsset string, tokens map[string]types.Token) ([]types.DetectedTransfer, error) {
+	meta, keys := tx.Meta, tx.Keys
+	if meta == nil || meta.Err != nil || tx.Signature == "" || len(keys) == 0 {
+		return nil, nil
+	}
+	if len(meta.PreBalances) != len(keys) || len(meta.PostBalances) != len(keys) {
+		slog.Warn("solana block: balances do not line up with account keys", "slot", at.slot, "tx", tx.Signature)
+		return nil, nil
+	}
+	var transfers []types.DetectedTransfer
+	credit := func(from, to string, amount *big.Int, asset string, token *types.Token, logIndex int) {
+		transfers = append(transfers, types.DetectedTransfer{
+			TxHash:      tx.Signature,
+			BlockNumber: at.slot,
+			BlockHash:   at.blockhash,
+			From:        from,
+			To:          to,
+			Amount:      amount,
+			Asset:       asset,
+			Token:       token,
+			LogIndex:    logIndex,
+			Timestamp:   at.blockTime,
+		})
+	}
+	feePayer := keys[0]
+	lamports := make([]*big.Int, len(keys))
+	for i := range keys {
+		lamports[i] = new(big.Int).Sub(new(big.Int).SetUint64(meta.PostBalances[i]), new(big.Int).SetUint64(meta.PreBalances[i]))
+	}
+	for _, c := range solanacredit.Lamports(keys, lamports) {
+		credit(feePayer, c.Account, c.Amount, nativeAsset, nil, c.Index)
+	}
+	tokenCredits, err := solanaTokenCredits(meta, len(keys), tokens)
+	if err != nil {
+		return nil, fmt.Errorf("sol slot %d tx %s: %w", at.slot, tx.Signature, err)
+	}
+	for _, c := range tokenCredits {
+		from := c.from
+		if from == "" {
+			from = feePayer
 		}
+		token := c.token
+		credit(from, c.owner, c.amount, token.Symbol, &token, solanacredit.TokenPosition(c.accountIndex))
 	}
 	return transfers, nil
 }

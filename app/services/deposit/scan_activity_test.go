@@ -16,17 +16,53 @@ import (
 // memoryActivity is a ScanActivityStore in memory; recordErr fails every record and
 // readErr every read.
 type memoryActivity struct {
-	mu        sync.Mutex
-	scans     map[string]ScanRecord
-	pushes    map[string]time.Time
-	recordErr error
-	readErr   error
-	reads     atomic.Int32
-	asked     [][]string
+	mu         sync.Mutex
+	scans      map[string]ScanRecord
+	signatures map[string]SignatureSyncRecord
+	modes      map[string]ScanModeRecord
+	pushes     map[string]time.Time
+	recordErr  error
+	readErr    error
+	reads      atomic.Int32
+	asked      [][]string
 }
 
 func newMemoryActivity() *memoryActivity {
-	return &memoryActivity{scans: map[string]ScanRecord{}, pushes: map[string]time.Time{}}
+	return &memoryActivity{scans: map[string]ScanRecord{}, signatures: map[string]SignatureSyncRecord{}, modes: map[string]ScanModeRecord{}, pushes: map[string]time.Time{}}
+}
+
+func (m *memoryActivity) RecordMode(_ context.Context, chainID string, mode ScanModeRecord) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.recordErr != nil {
+		return m.recordErr
+	}
+	m.modes[chainID] = mode
+	return nil
+}
+
+func (m *memoryActivity) modeOf(chainID string) (ScanModeRecord, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	mode, ok := m.modes[chainID]
+	return mode, ok
+}
+
+func (m *memoryActivity) syncOf(chainID string) (SignatureSyncRecord, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	sync, ok := m.signatures[chainID]
+	return sync, ok
+}
+
+func (m *memoryActivity) RecordSignatureSync(_ context.Context, chainID string, sync SignatureSyncRecord) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.recordErr != nil {
+		return m.recordErr
+	}
+	m.signatures[chainID] = sync
+	return nil
 }
 
 func (m *memoryActivity) RecordScan(_ context.Context, chainID string, scan ScanRecord) error {
@@ -54,8 +90,16 @@ func (m *memoryActivity) ReadActivity(_ context.Context, chainIDs []string) (map
 			copied := scan
 			found.Scan = &copied
 		}
+		if sync, ok := m.signatures[chainID]; ok {
+			copied := sync
+			found.Signatures = &copied
+		}
+		if mode, ok := m.modes[chainID]; ok {
+			copied := mode
+			found.Mode = &copied
+		}
 		found.PushedAt = m.pushes[chainID]
-		if found.Scan != nil || !found.PushedAt.IsZero() {
+		if found.Scan != nil || found.Signatures != nil || found.Mode != nil || !found.PushedAt.IsZero() {
 			activity[chainID] = found
 		}
 	}

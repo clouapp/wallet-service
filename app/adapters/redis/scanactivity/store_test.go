@@ -2,6 +2,7 @@ package scanactivity
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +23,12 @@ func TestNew_Returns_NilForANilClientThatRecordsAndReadsNothing(t *testing.T) {
 	if err := store.RecordPush(ctx, "eth", time.Now()); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.RecordSignatureSync(ctx, "sol", deposit.SignatureSyncRecord{Accounts: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordMode(ctx, "sol", deposit.ScanModeRecord{Mode: deposit.ScanModeSignatures}); err != nil {
+		t.Fatal(err)
+	}
 	if activity, err := store.ReadActivity(ctx, []string{"eth"}); err != nil || len(activity) != 0 {
 		t.Fatalf("activity %+v, err %v", activity, err)
 	}
@@ -38,7 +45,7 @@ func testChains(t *testing.T, names ...string) []string {
 	}
 	t.Cleanup(func() {
 		for _, chainID := range chains {
-			_ = client.Del(context.Background(), ScanKeyPrefix+chainID, PushKeyPrefix+chainID).Err()
+			_ = client.Del(context.Background(), ScanKeyPrefix+chainID, PushKeyPrefix+chainID, SignatureKeyPrefix+chainID, ModeKeyPrefix+chainID).Err()
 		}
 	})
 	return chains
@@ -151,5 +158,63 @@ func TestAlert_State_RaisesRemindsAndClearsAcrossPasses(t *testing.T) {
 	}
 	if got, err := store.RaiseAlert(ctx, key, time.Minute); err != nil || got != deposit.AlertRaised {
 		t.Fatalf("raised again after it cleared: %v (err %v)", got, err)
+	}
+}
+
+func TestRecord_SignatureSync_ReadsBackBesideTheScanAndThePushWithATTL(t *testing.T) {
+	client := testenv.TestRedis(t)
+	chains := testChains(t, "sol", "tsol", "eth")
+	sol, tsol, eth := chains[0], chains[1], chains[2]
+	store := New(client)
+	ctx := context.Background()
+	syncedAt := time.Date(2026, 10, 23, 9, 30, 0, 123, time.FixedZone("CEST", 2*3600))
+	scannedAt := time.Date(2026, 10, 23, 5, 40, 0, 0, time.UTC)
+
+	if err := store.RecordScan(ctx, sol, deposit.ScanRecord{Head: 1_000_000, Checkpoint: 775_000, At: scannedAt}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordSignatureSync(ctx, sol, deposit.SignatureSyncRecord{Accounts: 36, FailedAccounts: 1, BackfillingAccounts: 2,
+		SkippedMints: []string{"mint-a"}, Head: 1_000_400, CoveredHead: 1_000_100, ReadEveryAccount: true, At: syncedAt}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordMode(ctx, sol, deposit.ScanModeRecord{Mode: deposit.ScanModeSignatures, Since: scannedAt, At: syncedAt}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordSignatureSync(ctx, tsol, deposit.SignatureSyncRecord{Accounts: 4, At: syncedAt}); err != nil {
+		t.Fatal(err)
+	}
+
+	activity, err := store.ReadActivity(ctx, []string{sol, tsol, eth})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(activity) != 2 {
+		t.Fatalf("activity %+v, want sol and tsol only", activity)
+	}
+	solActivity := activity[sol]
+	wantSync := deposit.SignatureSyncRecord{Accounts: 36, FailedAccounts: 1, BackfillingAccounts: 2, SkippedMints: []string{"mint-a"},
+		Head: 1_000_400, CoveredHead: 1_000_100, ReadEveryAccount: true, At: syncedAt.UTC()}
+	if solActivity.Scan == nil || solActivity.Scan.Checkpoint != 775_000 || solActivity.Signatures == nil ||
+		!reflect.DeepEqual(*solActivity.Signatures, wantSync) || !solActivity.SignatureMode() ||
+		solActivity.Mode.Since != scannedAt || solActivity.Mode.At != syncedAt.UTC() {
+		t.Fatalf("sol %+v (signatures %+v, mode %+v), want the three records", solActivity, solActivity.Signatures, solActivity.Mode)
+	}
+	if tsolActivity := activity[tsol]; tsolActivity.Scan != nil || tsolActivity.Signatures == nil || tsolActivity.Signatures.Accounts != 4 ||
+		tsolActivity.SignatureMode() {
+		t.Fatalf("tsol %+v, want its sync only, and no signature mode without the scan's record of it", tsolActivity)
+	}
+	for _, key := range []string{SignatureKeyPrefix + sol, ModeKeyPrefix + sol} {
+		ttl, ttlErr := client.TTL(ctx, key).Result()
+		if ttlErr != nil || ttl <= recordTTL-time.Minute || ttl > recordTTL {
+			t.Fatalf("%s ttl %s (err %v), want about %s", key, ttl, ttlErr, recordTTL)
+		}
+	}
+
+	if setErr := client.Set(ctx, SignatureKeyPrefix+eth, "not json", time.Minute).Err(); setErr != nil {
+		t.Fatal(setErr)
+	}
+	activity, err = store.ReadActivity(ctx, []string{sol, eth})
+	if err == nil || !strings.Contains(err.Error(), eth) || len(activity) != 1 || activity[sol].Signatures == nil {
+		t.Fatalf("activity %+v err %v, want sol read and eth's record reported", activity, err)
 	}
 }

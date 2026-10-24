@@ -40,6 +40,8 @@ type SolanaLive struct {
 	// blockhashes keeps the last valid block height of the blockhashes this process
 	// built transfers on (expiry.go).
 	blockhashes *blockhashHeights
+	// mints caches the token program of each registered mint (signatures.go).
+	mints *mintPrograms
 }
 
 var _ types.Chain = (*SolanaLive)(nil)
@@ -56,6 +58,7 @@ func NewSolanaLive(cfg SolanaConfig) *SolanaLive {
 		tokens:      tokens,
 		tokensErr:   tokensErr,
 		blockhashes: newBlockhashHeights(),
+		mints:       newMintPrograms(),
 	}
 }
 

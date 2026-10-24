@@ -78,6 +78,25 @@ func (s *DurableStore) List(ctx context.Context, chain string) ([]Entry, error) 
 	return liveEntries(merged), nil
 }
 
+// ListComplete lists the chain's entries like List, but fails when any backend failed:
+// a reading that misses a backend's entries could leave out the lowest pending block,
+// which a caller deciding how far back to read must never do.
+func (s *DurableStore) ListComplete(ctx context.Context, chain string) ([]Entry, error) {
+	merged := map[uint64]Entry{}
+	for _, backend := range s.backends {
+		entries, err := backend.store.List(ctx, chain)
+		if err != nil {
+			return nil, fmt.Errorf("pending store list %s: %s backend failed: %w", chain, backend.name, err)
+		}
+		for _, entry := range entries {
+			if current, ok := merged[entry.Block]; !ok || isNewer(entry, current) {
+				merged[entry.Block] = entry
+			}
+		}
+	}
+	return liveEntries(merged), nil
+}
+
 func (s *DurableStore) everyBackend(operation, chain string, run func(Store) error) error {
 	var failures []error
 	for _, backend := range s.backends {

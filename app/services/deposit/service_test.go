@@ -60,6 +60,21 @@ func newDepositSvc(registry *chain.Registry, webhookSvc *webhook.Service) *Servi
 	})
 }
 
+// newSignatureDepositSvc is newDepositSvc with the production signature cursor
+// repository on the test database and the signature sync settings settings reads.
+func newSignatureDepositSvc(registry *chain.Registry, webhookSvc *webhook.Service, settings func(context.Context) SignatureSyncSettings) *Service {
+	return NewService(Deps{
+		Registry:          registry,
+		Webhook:           webhookSvc,
+		Addresses:         repositories.NewAddressRepository(nil),
+		Transactions:      repositories.NewTransactionRepository(nil),
+		Checkpoints:       repositories.NewDepositScanCheckpointRepository(nil),
+		Cache:             memcache.New(),
+		SignatureCursors:  repositories.NewDepositSignatureCursorRepository(nil),
+		SignatureSettings: settings,
+	})
+}
+
 // repositoryOf is the production transaction repository on the test database.
 func repositoryOf(t *testing.T) *repositories.TransactionRepository {
 	t.Helper()

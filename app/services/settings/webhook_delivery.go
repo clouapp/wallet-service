@@ -179,5 +179,16 @@ func (s *Service) platformGroupView(ctx context.Context, group Group) (GroupView
 	if err != nil {
 		return GroupView{}, err
 	}
-	return renderStoredGroup(group, rows, true), nil
+	view := renderStoredGroup(group, rows, true)
+	if s.fallback != nil {
+		for i, field := range view.Fields {
+			if field.IsSet || field.Secret {
+				continue
+			}
+			if value, ok := s.fallback(group.Name, field.Key); ok {
+				view.Fields[i].Value = value
+			}
+		}
+	}
+	return view, nil
 }

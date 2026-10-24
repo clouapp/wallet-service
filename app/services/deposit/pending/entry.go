@@ -69,6 +69,21 @@ type Store interface {
 	List(ctx context.Context, chain string) ([]Entry, error)
 }
 
+// completeLister is a store that can list a chain's entries only when every one of
+// its backends answered (DurableStore).
+type completeLister interface {
+	ListComplete(ctx context.Context, chain string) ([]Entry, error)
+}
+
+// ListComplete lists the chain's entries through the store's ListComplete when it has
+// one (a degraded reading is an error), else its List (a store of one backend).
+func ListComplete(ctx context.Context, store Store, chain string) ([]Entry, error) {
+	if complete, ok := store.(completeLister); ok {
+		return complete.ListComplete(ctx, chain)
+	}
+	return store.List(ctx, chain)
+}
+
 // Get returns the stored entry for a block, if any.
 func Get(ctx context.Context, store Store, chain string, block uint64) (Entry, bool, error) {
 	entries, err := store.List(ctx, chain)

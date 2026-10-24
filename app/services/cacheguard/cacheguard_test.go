@@ -140,3 +140,71 @@ func TestAcquireHold_ReportsAnOutageInsteadOfContention(t *testing.T) {
 	assert.False(t, got)
 	require.ErrorIs(t, err, cacheguard.ErrUnavailable)
 }
+
+func TestAcquireHold_ReportsAHoldAnotherHolderTook(t *testing.T) {
+	cache := memcache.New()
+	hold, got, err := cacheguard.AcquireHold(cache, "lock:key", time.Minute)
+	require.NoError(t, err)
+	require.True(t, got)
+	assert.True(t, hold.Held())
+	select {
+	case <-hold.Lost():
+		t.Fatal("a kept hold is not lost")
+	default:
+	}
+
+	require.NoError(t, cache.Put("lock:key", "another-holder", time.Minute))
+
+	assert.False(t, hold.Held(), "the key holds another token")
+	select {
+	case <-hold.Lost():
+	default:
+		t.Fatal("a hold found lost closes Lost")
+	}
+	hold.Release()
+	assert.Equal(t, "another-holder", cache.GetString("lock:key"))
+}
+
+func TestAcquireHold_ARenewalThatFindsAnotherTokenClosesLost(t *testing.T) {
+	cache := memcache.New()
+	hold, got, err := cacheguard.AcquireHold(cache, "lock:key", 90*time.Millisecond)
+	require.NoError(t, err)
+	require.True(t, got)
+	require.NoError(t, cache.Put("lock:key", "another-holder", time.Minute))
+
+	select {
+	case <-hold.Lost():
+	case <-time.After(time.Second):
+		t.Fatal("the renewal must close Lost when another holder has the key")
+	}
+	hold.Release()
+	assert.Equal(t, "another-holder", cache.GetString("lock:key"))
+}
+
+// refusingPut is a cache that keeps what it holds but refuses every write after the
+// first Add.
+type refusingPut struct {
+	*memcache.Cache
+}
+
+func (r refusingPut) Put(string, any, time.Duration) error {
+	return errors.New("the cache refused the write")
+}
+
+// A renewal the cache refuses has lost the hold at once, while the key still holds
+// the token: the holder learns it before the key lapses, not once another holder may
+// have taken it.
+func TestAcquireHold_ARenewalTheCacheRefusesClosesLostBeforeTheKeyLapses(t *testing.T) {
+	cache := refusingPut{Cache: memcache.New()}
+	hold, got, err := cacheguard.AcquireHold(cache, "lock:key", 600*time.Millisecond)
+	require.NoError(t, err)
+	require.True(t, got)
+	defer hold.Release()
+
+	select {
+	case <-hold.Lost():
+		assert.True(t, cache.Has("lock:key"), "lost on the refused renewal, before the key lapsed")
+	case <-time.After(450 * time.Millisecond):
+		t.Fatal("the renewal the cache refused must close Lost")
+	}
+}
