@@ -238,16 +238,17 @@ type configStringReader interface {
 
 // ingestBaseURL reads the origin the push providers post to on each run: the
 // ingest_push.base_url platform setting when it holds a valid URL, else
-// WEBHOOK_INGEST_BASE_URL, read from the configuration at the same call. It is
-// the one reader of vault.webhooks.ingest_base_url.
-func ingestBaseURL(accountSettings *settings.Service, cfg configStringReader) func(ctx context.Context) ingestsubscription.BaseURL {
-	return func(ctx context.Context) ingestsubscription.BaseURL {
-		effective := accountSettings.EffectiveIngestBaseURL(ctx, cfg.GetString(ingestBaseURLConfigKey))
+// WEBHOOK_INGEST_BASE_URL, read from the configuration at the same call. A setting
+// that could not be read comes back as an error beside the environment value, which
+// only a dry run uses. It is the one reader of vault.webhooks.ingest_base_url.
+func ingestBaseURL(accountSettings *settings.Service, cfg configStringReader) func(ctx context.Context) (ingestsubscription.BaseURL, error) {
+	return func(ctx context.Context) (ingestsubscription.BaseURL, error) {
+		effective, err := accountSettings.EffectiveIngestBaseURL(ctx, cfg.GetString(ingestBaseURLConfigKey))
 		source := ingestsubscription.BaseURLFromEnv
 		if effective.Source == settings.IngestBaseURLFromSetting {
 			source = ingestsubscription.BaseURLFromSetting
 		}
-		return ingestsubscription.BaseURL{URL: effective.URL, Source: source}
+		return ingestsubscription.BaseURL{URL: effective.URL, Source: source, SettingInvalid: effective.SettingInvalid}, err
 	}
 }
 

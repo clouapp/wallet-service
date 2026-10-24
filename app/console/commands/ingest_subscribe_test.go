@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -157,4 +158,30 @@ func TestIngest_Subscriptions_FailsWhenTheListCannotBeRead(t *testing.T) {
 
 	err := NewIngestSubscriptions(&fakeSubscriber{err: errors.New("connection refused")}).Handle(ctx)
 	assert.Error(t, err)
+}
+
+func TestIngest_Subscribe_DryRunWarnsThatTheSettingWasNotRead(t *testing.T) {
+	plan := tethPlan
+	plan.BaseURLSource = "WEBHOOK_INGEST_BASE_URL (vault.webhooks.ingest_base_url)"
+	plan.BaseURLNote = "the ingest_push.base_url platform setting could not be read: this dry run uses WEBHOOK_INGEST_BASE_URL, and --apply refuses to run until the setting can be read"
+	ctx := subscribeContext(t, false)
+	ctx.EXPECT().Warning(plan.BaseURLNote).Return()
+	ctx.EXPECT().Info(mock.MatchedBy(func(line string) bool { return strings.HasPrefix(line, "alchemy subscription of teth:") })).Return()
+	ctx.EXPECT().Info("base URL read from WEBHOOK_INGEST_BASE_URL (vault.webhooks.ingest_base_url)").Return()
+	ctx.EXPECT().Info("dry run: nothing created (pass --apply)").Return()
+
+	require.NoError(t, NewIngestSubscribe(&fakeSubscriber{plan: plan}).Handle(ctx))
+}
+
+func TestIngest_Subscribe_ApplyFailsWhenTheSettingCannotBeRead(t *testing.T) {
+	subscriber := &fakeSubscriber{
+		plan: ingestsubscription.Plan{Provider: "alchemy", ChainID: "teth", Network: "ethereum-sepolia", ProviderNetwork: "ETH_SEPOLIA"},
+		err:  fmt.Errorf("%w: connection refused", ingestsubscription.ErrBaseURLUnread),
+	}
+	ctx := subscribeContext(t, true)
+	ctx.EXPECT().Error(mock.MatchedBy(func(line string) bool { return strings.Contains(line, "nothing was created") })).Return()
+
+	err := NewIngestSubscribe(subscriber).Handle(ctx)
+
+	assert.ErrorIs(t, err, ingestsubscription.ErrBaseURLUnread)
 }

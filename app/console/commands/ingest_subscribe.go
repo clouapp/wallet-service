@@ -61,6 +61,9 @@ func (c *IngestSubscribe) Handle(ctx console.Context) error {
 }
 
 func printSubscribePlan(ctx console.Context, plan ingestsubscription.Plan, apply bool) {
+	if plan.BaseURLNote != "" {
+		ctx.Warning(plan.BaseURLNote)
+	}
 	for _, missing := range plan.Missing {
 		ctx.Warning("missing: " + missing)
 	}

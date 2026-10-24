@@ -14,6 +14,7 @@ import (
 
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
+	"github.com/macrowallets/waas/pkg/egress"
 )
 
 const (
@@ -125,9 +126,10 @@ type fixture struct {
 	creator *fakeCreator
 	sync    *fakeSync
 	keys    map[string]string
-	// base is what BaseURLAtUse answers; a test changes it between runs as an
-	// operator changes the setting, without rebuilding the service.
-	base BaseURL
+	// base and baseErr are what BaseURLAtUse answers; a test changes them between
+	// runs as an operator changes the setting, without rebuilding the service.
+	base    BaseURL
+	baseErr error
 	// baseReads counts the BaseURLAtUse calls.
 	baseReads int
 }
@@ -158,9 +160,9 @@ func newFixture(t *testing.T, mutate func(*Deps)) *fixture {
 			}
 			return "", fmt.Errorf("chain %s: %w", chainID, models.ErrRepositoryNotFound)
 		},
-		BaseURLAtUse: func(context.Context) BaseURL {
+		BaseURLAtUse: func(context.Context) (BaseURL, error) {
 			f.baseReads++
-			return f.base
+			return f.base, f.baseErr
 		},
 		Seal: func(plaintext string) (string, error) { return "enc:v1:sealed(" + plaintext + ")", nil },
 	}
@@ -238,11 +240,13 @@ func TestSubscribe_ExplainsEveryMissingSettingAndCallsNothing(t *testing.T) {
 		require.Len(t, plan.Missing, 2)
 		assert.Contains(t, plan.Missing[0], "WEBHOOK_INGEST_BASE_URL")
 		assert.Contains(t, plan.Missing[0], "vault.webhooks.ingest_base_url")
-		assert.Contains(t, plan.Missing[0], "ingest_push.base_url platform setting")
+		assert.True(t, strings.HasPrefix(plan.Missing[0], "the ingest_push.base_url platform setting or WEBHOOK_INGEST_BASE_URL"),
+			"the setting is named first, since it wins: %s", plan.Missing[0])
 		assert.Empty(t, plan.BaseURLSource, "no base URL was read")
 		assert.Contains(t, plan.Missing[1], "ALCHEMY_AUTH_TOKEN")
 		assert.Contains(t, plan.Missing[1], "vault.webhooks.alchemy_auth_token")
-		assert.Contains(t, plan.Missing[1], "provider_alchemy")
+		assert.True(t, strings.HasPrefix(plan.Missing[1], "the provider_alchemy platform setting (enabled"),
+			"the setting is named first, since it wins: %s", plan.Missing[1])
 		assert.Empty(t, f.creator.configs)
 		assert.Empty(t, f.store.rows)
 	}
@@ -570,4 +574,90 @@ func TestSubscribe_WithoutABaseURLSourceNamesTheBaseURLMissing(t *testing.T) {
 	require.Len(t, plan.Missing, 1)
 	assert.Contains(t, plan.Missing[0], "WEBHOOK_INGEST_BASE_URL")
 	assert.Empty(t, plan.WebhookURL)
+}
+
+func TestSubscribe_ApplyRefusesToRunWhenTheSettingCannotBeRead(t *testing.T) {
+	f := newFixture(t, nil)
+	f.base = BaseURL{URL: "https://stale.wallets.example.com", Source: BaseURLFromEnv}
+	f.baseErr = errors.New("the ingest_push platform setting could not be read: connection refused")
+
+	plan, err := subscribe(f, "alchemy", "teth", true)
+
+	require.ErrorIs(t, err, ErrBaseURLUnread)
+	assert.Contains(t, err.Error(), "connection refused", "the cause is kept")
+	assert.NotContains(t, err.Error(), "stale.wallets.example.com")
+	assert.Empty(t, plan.WebhookURL)
+	assert.Empty(t, f.creator.configs, "no provider webhook is created on a possibly stale environment value")
+	assert.Empty(t, f.creator.deleted)
+	assert.Empty(t, f.store.rows)
+	assert.Empty(t, f.sync.chains)
+}
+
+func TestSubscribe_ApplyOnAnExistingSubscriptionRefusesToRunWhenTheSettingCannotBeRead(t *testing.T) {
+	f, activating := newQuickNodeFixture(t)
+	f.store.rows = append(f.store.rows, models.WebhookSubscription{ID: uuid.New(), ChainID: "btc", Provider: "quicknode", ProviderWebhookID: "stream-1", Status: models.WebhookSubscriptionActive})
+	f.baseErr = errors.New("read failed")
+
+	_, err := subscribe(f, "quicknode", "btc", true)
+
+	require.ErrorIs(t, err, ErrBaseURLUnread)
+	assert.Empty(t, activating.activated, "nothing is touched at the provider")
+}
+
+func TestSubscribe_DryRunFallsBackToTheEnvironmentAndSaysTheSettingWasNotRead(t *testing.T) {
+	f := newFixture(t, nil)
+	f.base = BaseURL{URL: "https://env.wallets.example.com", Source: BaseURLFromEnv}
+	f.baseErr = errors.New("read failed")
+
+	plan, err := subscribe(f, "alchemy", "teth", false)
+
+	require.NoError(t, err)
+	assert.Equal(t, "https://env.wallets.example.com/v1/webhooks/ingest/alchemy/teth", plan.WebhookURL)
+	assert.Equal(t, "WEBHOOK_INGEST_BASE_URL (vault.webhooks.ingest_base_url)", plan.BaseURLSource)
+	assert.Contains(t, plan.BaseURLNote, "could not be read")
+	assert.Contains(t, plan.BaseURLNote, "--apply refuses to run")
+	assert.Empty(t, f.creator.configs)
+}
+
+func TestSubscribe_NamesAnInvalidSettingLeftForTheEnvironment(t *testing.T) {
+	for _, apply := range []bool{false, true} {
+		f := newFixture(t, nil)
+		f.base = BaseURL{URL: "https://env.wallets.example.com", Source: BaseURLFromEnv, SettingInvalid: true}
+
+		plan, err := subscribe(f, "alchemy", "teth", apply)
+
+		require.NoError(t, err)
+		assert.Equal(t, "https://env.wallets.example.com/v1/webhooks/ingest/alchemy/teth", plan.WebhookURL)
+		assert.Contains(t, plan.BaseURLNote, "is not a public https URL and is ignored")
+	}
+}
+
+func TestSubscribe_AReadSettingCarriesNoNote(t *testing.T) {
+	f := newFixture(t, nil)
+
+	plan, err := subscribe(f, "alchemy", "teth", false)
+
+	require.NoError(t, err)
+	assert.Empty(t, plan.BaseURLNote)
+}
+
+func TestSubscribe_AnInvalidBaseURLNamesTheRuleAndNeverTheURL(t *testing.T) {
+	for base, rule := range map[string]string{
+		"https://169.254.169.254.":         "link-local or cloud metadata",
+		"https://2130706433":               "numeric-form",
+		"https://localhost.":               "loopback",
+		"https://metadata.google.internal": "cloud metadata service",
+		"https://[64:ff9b::a9fe:a9fe]":     "link-local or cloud metadata",
+		"https://wallets.example.com/?a=1": "without a query",
+	} {
+		f := newFixture(t, nil)
+		f.base = BaseURL{URL: base, Source: BaseURLFromEnv}
+
+		_, err := subscribe(f, "alchemy", "teth", true)
+
+		require.ErrorIs(t, err, ErrInvalidBaseURL, base)
+		assert.Contains(t, err.Error(), rule, base)
+		assert.NotContains(t, err.Error(), egress.Host(base), base)
+		assert.Empty(t, f.creator.configs, base)
+	}
 }

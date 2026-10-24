@@ -9,6 +9,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/pkg/egress"
 	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
@@ -18,7 +19,8 @@ const ingestPushPath = "/v1/platform/settings/ingest_push"
 // PlatformIngestPushTestSuite is PUT /v1/platform/settings/ingest_push: the base
 // URL Alchemy, Helius and QuickNode post deposits to. A platform_admins row is
 // the gate. The value is not a secret and is returned in the clear; one a provider
-// cannot post to is 422 and is not stored.
+// cannot post to (egress.ParsePublicBase) is 422 with the rule's sentence and is
+// not stored.
 type PlatformIngestPushTestSuite struct {
 	authSuite
 }
@@ -59,14 +61,28 @@ func (s *PlatformIngestPushTestSuite) TestA_BaseURLAProviderCannotPostToIsRefuse
 	s.grantPlatformAdmin(admin.ID)
 	session := s.signIn(admin.Email)
 
-	for _, base := range []string{"http://push.wallets.example.com", "https://user:pass@push.wallets.example.com", "https://push.wallets.example.com/?a=1", "https://169.254.169.254"} {
+	for base, reason := range map[string]string{
+		"http://push.wallets.example.com":            egress.ReasonScheme,
+		"https://user:pass@push.wallets.example.com": egress.ReasonUserinfo,
+		"https://push.wallets.example.com/?a=1":      egress.ReasonBaseURL,
+		"https://169.254.169.254":                    egress.ReasonLinkLocal,
+		"https://169.254.169.254.":                   egress.ReasonLinkLocal,
+		"https://2130706433":                         egress.ReasonHostName,
+		"https://localhost.":                         egress.ReasonLoopback,
+		"https://metadata.google.internal":           egress.ReasonMetadata,
+		"https://[64:ff9b::a9fe:a9fe]":               egress.ReasonLinkLocal,
+		"https://push.wallets.example.com:25":        egress.ReasonPort,
+	} {
 		rejected := s.Put(ingestPushPath, support.Session{AccessToken: session.AccessToken}, `{"base_url":"`+base+`"}`)
 		s.AssertError(rejected, 422, responses.CodeValidationFailed, "validation failed")
 		var body struct {
 			Errors map[string][]string `json:"errors"`
 		}
 		s.decode(rejected, &body)
-		s.Equal([]string{"must be a public https URL without credentials, query or fragment"}, body.Errors["base_url"], base)
+		s.Equal([]string{reason}, body.Errors["base_url"], base)
+		raw, err := rejected.Content()
+		s.Require().NoError(err)
+		s.NotContains(raw, egress.Host(base), "the answer names the rule, never the URL")
 	}
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM settings WHERE account_id IS NULL AND "group" = 'ingest_push'`))
 	s.Equal(int64(0), s.count(`SELECT count(*) FROM account_activity WHERE target_id = 'ingest_push'`))
