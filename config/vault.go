@@ -151,6 +151,19 @@ func registerVault() {
 			"max_new_pending_per_cycle": envInt("DEPOSIT_SCAN_MAX_NEW_PENDING_PER_CYCLE", 0),
 			"pending_dir":               envString("DEPOSIT_PENDING_DIR", ""),
 		},
+		// The deposit signature sync, the platform deposit_signatures setting's fallback:
+		// the chains (comma-separated, e.g. "sol"; empty: none) whose deposits are read
+		// account by account (getSignaturesForAddress) instead of block by block, which
+		// pauses their block scan; how often (seconds, at least 15); how many accounts are
+		// read at once; and how many pages of 1000 signatures of an account's history are
+		// read when the chain has no scan checkpoint. The local workers sync a listed
+		// chain only where it is also in LOCAL_DEPOSIT_SCAN_CHAINS.
+		"deposit_signatures": map[string]any{
+			"chains":           envString("DEPOSIT_SIGNATURE_CHAINS", ""),
+			"interval_seconds": envInt("DEPOSIT_SIGNATURE_INTERVAL_SECONDS", 600),
+			"concurrency":      envInt("DEPOSIT_SIGNATURE_CONCURRENCY", 2),
+			"max_pages":        envInt("DEPOSIT_SIGNATURE_MAX_PAGES", 10),
+		},
 		// Outbound destinations a customer or a platform admin stores. A webhook URL is
 		// https to a public host; WEBHOOK_ALLOW_HTTP also accepts http:// (a dev or test
 		// receiver, still on a public host), off by default; WEBHOOK_ALLOWED_PORTS

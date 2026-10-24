@@ -222,7 +222,7 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 |---|---|---|
 | Goravel queue, `sync` connection (`QUEUE_CONNECTION`, default `sync`; `config/queue.go`) | credential mail (`jobs.SendCredentialMailJob`, always `DispatchSync`) | runs in the dispatching process. The `database` connection (queue `blockchain`) is configured but nothing runs `queue:work` and no job uses it |
 | AWS SQS (`app/adapters/queue/sqs`, port `queue.Sender`) | outbound webhook delivery | `webhook_worker` Lambda, or on a host without Lambda the `webhook_poller` process (same handler) |
-| `app/services/localworkers` | local stand-in for `confirmation_tracker` and `webhook_worker` (with a webhook queue, the outbox re-dispatch instead of local delivery), the wallet balance refresh loop (and optional deposit scan, with the deposit event backfill of the scanned chains), the MPC keygen pre-parameters pool, and the optional real-time XRP deposit stream (`app/services/xrpstream`, off by default, see "XRP deposits") | started from `main.go` in local mode only |
+| `app/services/localworkers` | local stand-in for `confirmation_tracker` and `webhook_worker` (with a webhook queue, the outbox re-dispatch instead of local delivery), the wallet balance refresh loop (and optional deposit scan, with the deposit event backfill of the scanned chains), the deposit signature sync of the scanned chains `deposit_signatures` lists (see "Solana deposits"), the MPC keygen pre-parameters pool, and the optional real-time XRP deposit stream (`app/services/xrpstream`, off by default, see "XRP deposits") | started from `main.go` in local mode only |
 
 - Local webhook delivery from the outbox runs only when no SQS webhook queue is
   configured, so a message is never drained twice. — guarded by
@@ -411,10 +411,11 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `app/services/chainregistry/align_checkpoints_test.go` and
   `app/console/commands/scan_deposits_test.go`.
 - Each completed scan cycle (one that found nothing new, and the first one, included) records the
-  head it read, the checkpoint it left and when it ended (`vault:scan-activity:<chain>`), and the
-  inbound ingest records when a provider webhook of a known chain arrived (`vault:ingest-push:<chain>`),
-  both in Redis with a 7-day TTL, after the work is saved: a record that fails is logged and never
-  fails the scan or the webhook. A failed cycle and a checkpoint far ahead of the head record
+  head it read, the checkpoint it left and when it ended (`vault:scan-activity:<chain>`), each
+  completed signature sync cycle the accounts it read, how many failed and when it ended
+  (`vault:signature-sync:<chain>`), and the inbound ingest records when a provider webhook of a known
+  chain arrived (`vault:ingest-push:<chain>`), all in Redis with a 7-day TTL, after the work is saved:
+  a record that fails is logged and never fails the scan, the sync or the webhook. A failed cycle and a checkpoint far ahead of the head record
   nothing, so the scan time ages. `GET /health` and the tracker's alerts read these records only,
   never a chain. — guarded by `app/services/deposit/scan_activity_test.go`,
   `app/services/ingest/push_test.go` and `app/adapters/redis/scanactivity/store_test.go`.
@@ -424,8 +425,12 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   token and no renewal, and a local scan cycle has no deadline: a cycle longer than the TTL
   loses it, so a deployment runs one scanning process (`docs/PRODUCTION_RUNTIME.md` §5).
   `scan:deposits --block|--tx|--pending|--retry-pending` take no lock and never move the checkpoint;
-  `--set-checkpoint --apply` takes it and refuses while a scan holds it. —
-  guarded by `app/services/deposit/scan_lock_test.go`.
+  `--set-checkpoint --apply` takes it and refuses while a scan holds it. A signature sync cycle
+  (`SyncSignatures`, see "Solana deposits") takes the same key under an owner token, renewed while it
+  runs (`cacheguard.AcquireHold`), so it never runs beside a block scan of the chain and a long first
+  sync keeps the chain; a held lock skips the sync cycle. — guarded by
+  `app/services/deposit/scan_lock_test.go`, `TestSync_Signatures_HoldsTheChainsScanLockForTheWholeCycle`
+  and `TestSync_Signatures_SkipsTheCycleWhileAnotherScanHoldsTheChain`.
 - A block is never marked scanned while its deposits are not all read and recorded: it is
   retried, then kept in the pending-blocks store. On every EVM chain a failed `eth_getLogs`
   fails the block, and so does a receipt of a native transfer to a watched address that cannot
@@ -529,8 +534,8 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   cache keys (`*settings:*`, in the worker's Redis index) because the settings service caches
   groups under `settings:platform:<group>` and `settings:account:<uuid>:<group>`, which would
   outlive the truncated rows and leak a value into the next test, and the scan activity keys
-  (`vault:scan-activity:*`, `vault:ingest-push:*`), which would add a chain to the next test's
-  `GET /health`. A test that changes the schema uses `fixtures.TestDBFreshSchema(t)`. — guarded by
+  (`vault:scan-activity:*`, `vault:ingest-push:*`, `vault:signature-sync:*`), which would add a chain
+  to the next test's `GET /health`. A test that changes the schema uses `fixtures.TestDBFreshSchema(t)`. — guarded by
   `tests/feature/support/fixtures/reset_test.go`.
 
 ### 10. Settings
@@ -538,7 +543,7 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 - Account settings are the registry in `app/services/settings`. Account-managed
   groups are `account_security` and `account_webhooks`. `account_sweep_limits`
   is platform-managed and inherited. The platform groups (`groups_platform.go`) are
-  `deposit_scan`, `webhook_delivery`, `sweep_limits`, the mail groups (`mail_smtp`, `mail_delivery`,
+  `deposit_scan`, `deposit_signatures`, `webhook_delivery`, `sweep_limits`, the mail groups (`mail_smtp`, `mail_delivery`,
   `mail_ses`, `mail_mailgun`, `mail_resend`, `mail_postmark`), the price groups (`price_lookup`,
   `price_coingecko`, `price_coinmarketcap`, `price_coinapi`) and the provider groups
   (`provider_alchemy`, `provider_helius`, `provider_quicknode`, `provider_etherscan`). A secret
@@ -798,6 +803,10 @@ WEBHOOK_ALLOWED_PORTS=           # e.g. 443,8443: the only ports a webhook may u
 RPC_ALLOW_LINK_LOCAL=false       # true also accepts link-local and cloud metadata RPC endpoints
 DEPOSIT_SCAN_ALERT_LAG_BLOCKS=0  # tracker warns when a scan trails the head by more (0: the chain's catch-up window)
 DEPOSIT_SCAN_ALERT_STALE_MINUTES=10  # tracker warns when a scanned chain has no completed cycle for longer
+DEPOSIT_SIGNATURE_CHAINS=        # e.g. sol: chains read account by account instead of block by block (deposit_signatures)
+DEPOSIT_SIGNATURE_INTERVAL_SECONDS=600  # how often the signature sync reads a listed chain (at least 15)
+DEPOSIT_SIGNATURE_CONCURRENCY=2  # accounts read at once (1-16)
+DEPOSIT_SIGNATURE_MAX_PAGES=10   # pages of 1000 signatures read per account when the chain has no scan checkpoint
 ```
 
 Redis is the cache driver (rate limits, locks including the per-chain deposit scan lock, settings
@@ -1118,6 +1127,77 @@ guarded by `app/adapters/chain/solana/scan_spl_test.go` (devnet slots 512232469 
 `TestRegister_ActiveChains_SolanaScansTheRegisteredSPLTokens`,
 `TestSolana_Deposit_RecordsAnSPLCreditWithItsSymbolAndMint` and `pkg/solanacredit/credits_test.go`.
 
+**Signature sync** (`deposit.Service.SyncSignatures`, off by default). A chain the platform
+`deposit_signatures` setting lists (`chains`, else `DEPOSIT_SIGNATURE_CHAINS`; only `sol` and `tsol`
+can be stored) is read account by account instead of block by block: a block scan reads every
+finalized slot (about 4 `getBlock` a second, 350 000 a day), which on 2026-10-23 used up the dev
+Helius key and stalled on the public devnet limit. The provider push stays the fast path where it is
+on; the sync is its safety net, and the only detector where it is not.
+
+- **Accounts** (`chain.SignatureReader.SignatureAccounts`): for each active address of the chain,
+  the address, its associated token account of each registered token, derived under the mint's own
+  program (Token or Token-2022, read once per mint with `getAccountInfo` and cached in the process),
+  and every token account of a registered mint that `getTokenAccountsByOwner` lists for the token
+  programs in use (the mint read from a 32-byte data slice), without repeats. An address whose
+  accounts cannot be listed is skipped that cycle and counts as one failed account.
+- **Signatures**: `getSignaturesForAddress` (finalized, 1000 a page, newest first) back to the
+  account's cursor (`until`) or, for an account without one, to the floor: the chain's scan
+  checkpoint, lowered to its lowest pending block, so the first cycle recovers what the block scan
+  left (slots at the floor included). A chain with neither reads at most `max_pages` pages of each
+  history (`DEPOSIT_SIGNATURE_MAX_PAGES`, default 10) and logs the cut. All the pages of one account
+  come from one endpoint (`rpc.PinEndpoint`: a node that does not know the signature a page starts
+  before answers an empty page). A history above a floor longer than 100 pages is never cut: the
+  account fails and keeps its cursor. Signatures are processed oldest first; a failed transaction
+  (`err`) is passed over unread.
+- **Credits**: `getTransaction` (json, finalized, version 1) read through `solanaTransactionCredits`,
+  the per-transaction rule of `ScanBlock`, with the keys in balance order (`message.accountKeys`,
+  then `meta.loadedAddresses.writable`, then `readonly`: the order of `getBlock`'s `accounts`
+  details, checked on recorded devnet version-0 transactions with lookup tables), so each credit has
+  the position the block scan gives it and a transfer the block scan, the push and the sync all see
+  is one row. The slot is the `block_number`, the block time the timestamp and the slot's
+  `BlockHashAt` the `block_hash` (read once per slot per cycle, only for a slot that credits a watched
+  address). A transaction is read and recorded once per cycle however many of its accounts list it.
+  One a node does not return, whose keys do not line up with its balances, or whose slot hash is not
+  read fails its account.
+- **Recording** goes through the scanner's path (`recordTransfers`: watched addresses only, the
+  sweeps and gas seeds of the wallet left out, `depositrecord.Record`). An account's cursor
+  (`deposit_signature_cursors`, migration 680: chain, account, the newest signature whose transfers
+  were all recorded and its slot, and the slot its history was first read from) moves past a
+  signature only once its transfers are all recorded and never back; a failure stops the account
+  before it, and the next cycle reads it again.
+- **Confirmation**: a finalized slot is final, so every cycle ends with the chain's confirmation step
+  at the head (deposits, withdrawals, sweeps, gas seeds), under the lock; the balances of the wallets
+  it confirmed are refreshed once the lock is released.
+- **Pending blocks**: once every account of the chain was read in one cycle, the chain's pending
+  blocks at or above the highest slot an account's history was first read from are dropped (the
+  histories cover them); older ones stay for the block scan's retry. A deposit to a token account
+  that is not an associated one and was closed before the sync read its owner is not found.
+- **Block scan off**: while a chain is listed (and its adapter reads signatures), `ScanLatestBlocks`
+  (the local loops and the `deposit_scanner` Lambda) and the due pending retry do nothing for it,
+  logged once when that changes; `scan:deposits <chain>` refuses with a hint, `--block`, `--tx` and
+  `--retry-pending` still run. Taking it off the list resumes the block scan from its checkpoint,
+  which did not move meanwhile.
+- **Where it runs**: the local workers' signature loop ticks every 15 s and syncs each listed chain
+  that the process scans (`LOCAL_DEPOSIT_SCAN_CHAINS`), once its interval (`interval_seconds`,
+  `DEPOSIT_SIGNATURE_INTERVAL_SECONDS`, default 600, at least 15) elapsed since its last sync started,
+  `concurrency` accounts at once (`DEPOSIT_SIGNATURE_CONCURRENCY`, default 2); a changed setting
+  applies on the next tick. The `deposit_scanner` Lambda runs one cycle of a listed chain.
+  `go run . artisan deposits:sync-signatures <chain>` runs one now, listed or not (exit 1 when an
+  account failed or another scan holds the chain). Health and alerts: "Deposit detection
+  observability".
+
+— guarded by `app/adapters/chain/solana/signatures_test.go` (devnet slot 514235140 and the
+transactions 2yMCe5… and 634Fzh… recorded in `testdata/solana`, `TestSolana_TransactionTransfers_*`,
+`TestSolana_AccountSignatures_*`, `TestSolana_SignatureAccounts_*`), `app/services/deposit/signatures_test.go`
+(`TestSync_Signatures_*`, `TestScan_LatestBlocks_PausesWhileTheSignatureSyncReadsTheChainAndResumesFromItsCheckpoint`),
+`app/services/deposit/signature_settings_test.go`, `app/services/settings/deposit_signatures_test.go`,
+`TestDeposit_Signature_CursorRepositorySuite`, `tests/migrations/create_deposit_signature_cursors_test.go`,
+`TestSignature_Schedule_*` and `TestStart_Syncs_TheListedScanChainsOnTheSignatureTickAndAppliesASettingsChangeWithoutARestart`
+(`app/services/localworkers`) and `app/console/commands/deposits_sync_signatures_test.go`. Read-only check
+against devnet (accounts, a page of history, and the credits of live transactions compared with
+`ScanBlock` in their slot, about ten calls): `go test -tags solana_signatures_live -run TestLive_
+./app/adapters/chain/solana/` (`SOLANA_LIVE_RPC_URL` for another endpoint).
+
 ### Provider push subscriptions (ingest)
 
 Alchemy (EVM), Helius (Solana) and QuickNode (Bitcoin) push deposits to
@@ -1193,11 +1273,15 @@ of their own, so a slow chain never holds up `eth`, `polygon` and `btc`. — gua
 
 ### Deposit detection observability
 
-- **`GET /health`** (public): `deposit_scanner.chains` has one entry per chain a scan cycle or a
-  provider push touched in the last 7 days: `lag_blocks` (head − checkpoint at the end of its last
-  completed scan cycle, 0 when the checkpoint is ahead of a lagging node) and `last_scanned_at` (when
-  that cycle ended), both absent for a chain only pushed to, and `last_push_at` (the last inbound
-  provider webhook received), absent when none. Times are UTC, to the second; no address or id;
+- **`GET /health`** (public): `deposit_scanner.chains` has one entry per chain a scan cycle, a
+  signature sync cycle or a provider push touched in the last 7 days: `lag_blocks` (head − checkpoint
+  at the end of its last completed scan cycle, 0 when the checkpoint is ahead of a lagging node) and
+  `last_scanned_at` (when that cycle ended), both absent for a chain only pushed to, and
+  `last_push_at` (the last inbound provider webhook received), absent when none. A chain whose last
+  signature sync cycle is not older than its last scan cycle (the signature sync reads it) has
+  `mode: "signatures"`, `last_synced_at`, `accounts` and `failed_accounts` of that sync cycle instead
+  of `lag_blocks` and `last_scanned_at` (its block scan is paused, so its lag would only grow); `mode`
+  is absent for the others, and the statuses keep their meaning. Times are UTC, to the second; no address or id;
   `chains_error` says when the store cannot be read and no earlier reading exists, and
   `deposit_scanner.status` does not depend on it. Every reading of the check (pending counts and scan
   activity, reused 15 s; stale outbound counts, 1 min) goes through one single-flight snapshot
@@ -1207,8 +1291,11 @@ of their own, so a slow chain never holds up `eth`, `polygon` and `btc`. — gua
   socket timeout: `pkg/deadline`), and after a failed reading the checks are answered from it for
   10 s without reading again (pending counts as they failed, so `pending_store_unavailable` stays on
   the wire; the other two from the last good reading). — guarded by
-  `app/services/deposit/health_snapshot_test.go` and `tests/feature/health` (a Redis that accepts and
-  never answers: about 2 s for the first check, immediate during the backoff).
+  `app/services/deposit/health_snapshot_test.go`, `tests/feature/health` (a Redis that accepts and
+  never answers: about 2 s for the first check, immediate during the backoff),
+  `TestNewHealth_ReportsAChainTheSignatureSyncReadsByItsSyncInsteadOfItsLag`
+  (`app/http/resources/health`) and `TestRecord_SignatureSync_ReadsBackBesideTheScanAndThePushWithATTL`
+  (`app/adapters/redis/scanactivity`).
 - **Alerts** (structured warnings; the repository has no metrics abstraction): every tracker pass
   (`confirmation_tracker`, and the local confirmation loop) checks the chains a scanner records
   (those with scan activity) and warns `deposit scan lag above the alert threshold` for one whose
@@ -1217,6 +1304,10 @@ of their own, so a slow chain never holds up `eth`, `polygon` and `btc`. — gua
   cycle within the alert threshold` when that cycle ended more than `DEPOSIT_SCAN_ALERT_STALE_MINUTES`
   ago (default 10: the scanner stopped, or every cycle fails), and `deposit blocks pending a retry`
   when it has pending blocks (every registered chain's when the scan activity cannot be read). A
+  chain the signature sync reads raises neither scan alert (one raised before is cleared); it warns
+  `deposit signature sync has not completed a cycle within the alert threshold` when its last sync
+  cycle ended longer ago than the stale threshold plus the sync's interval, and `deposit signature
+  sync left accounts failed` while its last cycle left any. A
   value equal to its threshold is no alert. An alert is logged when raised, again every 30 minutes
   while it lasts (`reminder: true`), and once at info level when it clears: the raised alerts live in
   Redis (`vault:scan-alert:<key>`, SET NX, a reminder key with a 30-minute TTL); a store that fails
@@ -1225,7 +1316,7 @@ of their own, so a slow chain never holds up `eth`, `polygon` and `btc`. — gua
   0 keeps the global value). On Lambda the `confirmation_tracker` function reads them (template
   parameters `DepositScanAlertLagBlocks`, `DepositScanAlertStaleMinutes`). A chain taken out of
   scanning stops alerting when its record expires (7 days) or is deleted. — guarded by
-  `app/services/deposit/scan_activity_test.go`, `app/adapters/redis/scanactivity/store_test.go`,
+  `app/services/deposit/scan_activity_test.go`, `TestScan_Alerts_AChainInSignatureModeAlertsOnItsSyncNotOnItsPausedScan`, `app/adapters/redis/scanactivity/store_test.go`,
   `app/providers/deposit_scan_overrides_test.go`, `config/vault_test.go` and
   `TestConfirmation_Tracker_ReadsTheScanAlertThresholds` (`tests/architecture`).
 - **Webhook DLQ alarm**: `template.yaml` and `template.dev.yaml` declare `vault-webhooks-dlq-not-empty-<env>`,

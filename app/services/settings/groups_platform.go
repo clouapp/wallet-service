@@ -7,11 +7,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/policies"
 )
 
 const (
 	groupDepositScan        = "deposit_scan"
+	groupDepositSignatures  = "deposit_signatures"
 	groupWebhookDelivery    = "webhook_delivery"
 	groupSweepLimits        = "sweep_limits"
 	groupMailSMTP           = "mail_smtp"
@@ -38,6 +40,18 @@ const (
 	keyScanConcurrency = "concurrency"
 	keyMaxAttempts     = "max_attempts"
 	keyTimeoutSeconds  = "timeout_seconds"
+
+	keySignatureChains      = "chains"
+	keySignatureInterval    = "interval_seconds"
+	keySignatureConcurrency = "concurrency"
+	keySignatureMaxPages    = "max_pages"
+
+	// The deposit_signatures bounds match deposit.MinSignatureSyncInterval,
+	// deposit.MaxSignatureSyncConcurrency and deposit.MaxSignatureSyncMaxPages. A stored
+	// value outside them is invalid and the sync keeps the environment value.
+	minSignatureIntervalSeconds = 15
+	maxSignatureConcurrency     = 16
+	maxSignatureMaxPages        = 1000
 
 	// maxDepositScanConcurrency matches deposit.MaxScanConcurrency. A stored
 	// value above it is invalid and the scanner keeps the environment window.
@@ -87,6 +101,7 @@ func platformGroups() []Group {
 			},
 			Validate: validateDepositScan,
 		},
+		depositSignaturesGroup(),
 		{
 			Name:    groupWebhookDelivery,
 			Scope:   ScopePlatform,
@@ -205,4 +220,69 @@ func nonNegativeSetting(raw string) (int, bool) {
 		return 0, false
 	}
 	return parsed, true
+}
+
+// depositSignaturesGroup is the deposit signature sync: the chains whose deposits
+// are read account by account instead of block by block (their block scan pauses),
+// how often, how many accounts at once, and how much history without a floor. Each
+// field left unset keeps its DEPOSIT_SIGNATURE_* environment value.
+func depositSignaturesGroup() Group {
+	return Group{
+		Name:    groupDepositSignatures,
+		Scope:   ScopePlatform,
+		Section: sectionScanning,
+		Block:   "Signature sync",
+		Settings: []Definition{
+			{
+				Key:   keySignatureChains,
+				Label: "Chains",
+				Help: "Chains whose deposits are read account by account (getSignaturesForAddress) instead of block by block; " +
+					"their block scan pauses while they are listed, and resumes from its checkpoint when they are not. " +
+					"Unset keeps DEPOSIT_SIGNATURE_CHAINS; an empty list turns the sync off.",
+				Type:    TypeStringList,
+				Options: []string{models.ChainSOL, models.ChainTSOL},
+				Default: func() any { return []string{} },
+			},
+			{
+				Key:     keySignatureInterval,
+				Label:   "Interval",
+				Help:    "Seconds between two syncs of a chain, at least 15. 0 keeps the environment default (600).",
+				Type:    TypeInt,
+				Default: func() any { return 0 },
+			},
+			{
+				Key:     keySignatureConcurrency,
+				Label:   "RPC concurrency",
+				Help:    "How many accounts are read at once, from 1 to 16. 0 keeps the environment default (2).",
+				Type:    TypeInt,
+				Default: func() any { return 0 },
+			},
+			{
+				Key:   keySignatureMaxPages,
+				Label: "History pages",
+				Help: "Pages of 1000 signatures read at most from an account's history when the chain has no scan checkpoint, " +
+					"from 1 to 1000. 0 keeps the environment default (10).",
+				Type:    TypeInt,
+				Default: func() any { return 0 },
+			},
+		},
+		Validate: validateDepositSignatures,
+	}
+}
+
+func validateDepositSignatures(effective map[string]string) error {
+	fields := map[string][]string{}
+	if interval, ok := nonNegativeSetting(effective[keySignatureInterval]); !ok || (interval > 0 && interval < minSignatureIntervalSeconds) {
+		fields[keySignatureInterval] = []string{fmt.Sprintf("must be 0 or at least %d", minSignatureIntervalSeconds)}
+	}
+	if concurrency, ok := nonNegativeSetting(effective[keySignatureConcurrency]); !ok || concurrency > maxSignatureConcurrency {
+		fields[keySignatureConcurrency] = []string{fmt.Sprintf("must be between 0 and %d", maxSignatureConcurrency)}
+	}
+	if pages, ok := nonNegativeSetting(effective[keySignatureMaxPages]); !ok || pages > maxSignatureMaxPages {
+		fields[keySignatureMaxPages] = []string{fmt.Sprintf("must be between 0 and %d", maxSignatureMaxPages)}
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	return &ValidationError{Fields: fields}
 }

@@ -3,12 +3,14 @@ package localworkers
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/refresh"
 )
 
@@ -750,5 +752,139 @@ func TestStart_Rejects_ADepositStreamTheLedgerScanDoesNotCover(t *testing.T) {
 	case <-stream.started:
 		t.Fatal("a refused configuration started the deposit stream")
 	default:
+	}
+}
+
+// settingsSyncer is the signature sync with settings a test changes between ticks.
+type settingsSyncer struct {
+	mu       sync.Mutex
+	settings deposit.SignatureSyncSettings
+	synced   []string
+	err      error
+	progress chan struct{}
+}
+
+func (s *settingsSyncer) SignatureSettings(context.Context) deposit.SignatureSyncSettings {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.settings
+}
+
+func (s *settingsSyncer) SyncSignatures(ctx context.Context, chainID string) (deposit.SignatureSyncSummary, error) {
+	s.mu.Lock()
+	s.synced = append(s.synced, chainID)
+	err := s.err
+	s.mu.Unlock()
+	notify(ctx, s.progress)
+	return deposit.SignatureSyncSummary{Accounts: 2, FailedAccounts: 1}, err
+}
+
+func (s *settingsSyncer) set(settings deposit.SignatureSyncSettings) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.settings = settings
+}
+
+func (s *settingsSyncer) syncs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.synced...)
+}
+
+func TestSignature_Schedule_SyncsAListedChainAtOnceThenOnceItsIntervalElapsed(t *testing.T) {
+	schedule := newSignatureSchedule([]string{"eth", "sol", "tsol"})
+	settings := deposit.SignatureSyncSettings{Chains: []string{"tsol", "sol"}, Interval: 10 * time.Minute}
+	start := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+
+	if got := schedule.due(start, settings); !slices.Equal(got, []string{"tsol", "sol"}) {
+		t.Fatalf("first tick %v, want both listed chains at once, in the settings' order", got)
+	}
+	if got := schedule.due(start.Add(15*time.Second), settings); len(got) != 0 {
+		t.Fatalf("tick before the interval %v, want none", got)
+	}
+	if got := schedule.due(start.Add(10*time.Minute-time.Second), settings); len(got) != 0 {
+		t.Fatalf("a second before the interval %v, want none", got)
+	}
+	if got := schedule.due(start.Add(10*time.Minute), settings); !slices.Equal(got, []string{"tsol", "sol"}) {
+		t.Fatalf("tick at the interval %v, want both again", got)
+	}
+}
+
+func TestSignature_Schedule_AppliesAChangedSettingOnTheNextTick(t *testing.T) {
+	schedule := newSignatureSchedule([]string{"sol", "tsol"})
+	start := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+	schedule.due(start, deposit.SignatureSyncSettings{Chains: []string{"sol"}, Interval: 10 * time.Minute})
+
+	got := schedule.due(start.Add(time.Minute), deposit.SignatureSyncSettings{Chains: []string{"sol", "tsol"}, Interval: time.Minute})
+
+	if !slices.Equal(got, []string{"sol", "tsol"}) {
+		t.Fatalf("got %v: a shorter interval and a newly listed chain apply on the next tick", got)
+	}
+	if got := schedule.due(start.Add(2*time.Minute), deposit.SignatureSyncSettings{Interval: time.Minute}); len(got) != 0 {
+		t.Fatalf("got %v after the list was emptied, want none", got)
+	}
+}
+
+func TestSignature_Schedule_LeavesAChainThisProcessDoesNotScanToTheOneThatDoes(t *testing.T) {
+	schedule := newSignatureSchedule([]string{"eth"})
+	start := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+	settings := deposit.SignatureSyncSettings{Chains: []string{"sol"}, Interval: time.Minute}
+
+	for tick := 0; tick < 3; tick++ {
+		if got := schedule.due(start.Add(time.Duration(tick)*time.Hour), settings); len(got) != 0 {
+			t.Fatalf("tick %d synced %v: a chain this process does not scan is never synced here", tick, got)
+		}
+	}
+}
+
+func TestStart_Syncs_TheListedScanChainsOnTheSignatureTickAndAppliesASettingsChangeWithoutARestart(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	syncer := &settingsSyncer{err: errors.New("rpc down"), progress: progressChan(),
+		settings: deposit.SignatureSyncSettings{Chains: []string{"sol", "btc"}, Interval: time.Hour}}
+	cfg := Config{ConfirmationInterval: time.Hour, DepositScanChains: []string{"sol", "eth"}, DepositScanInterval: time.Hour, SignatureSyncTick: MinInterval}
+
+	if _, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: &recordingScanner{}, Signatures: syncer}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	time.Sleep(MinInterval / 2)
+	if got := syncer.syncs(); len(got) != 0 {
+		t.Fatalf("synced %v before the first tick", got)
+	}
+	waitUntil(t, 3*MinInterval, syncer.progress, func() bool { return len(syncer.syncs()) >= 1 })
+	if got := syncer.syncs(); !slices.Equal(got, []string{"sol"}) {
+		t.Fatalf("syncs %v, want sol on the first tick and never btc (not scanned here)", got)
+	}
+
+	syncer.set(deposit.SignatureSyncSettings{Chains: []string{"sol", "eth"}, Interval: time.Hour})
+	waitUntil(t, 3*MinInterval, syncer.progress, func() bool { return slices.Contains(syncer.syncs(), "eth") })
+
+	if got := syncer.syncs(); !slices.Equal(got, []string{"sol", "eth"}) {
+		t.Fatalf("syncs %v, want eth on the tick after it was listed, despite sol's error, and sol not again within its interval", got)
+	}
+}
+
+func TestStart_No_SignatureSyncWithoutScanChainsOrSyncer(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	syncer := &settingsSyncer{settings: deposit.SignatureSyncSettings{Chains: []string{"sol"}, Interval: MinInterval}}
+	cfg := Config{ConfirmationInterval: time.Hour, SignatureSyncTick: MinInterval}
+	if _, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Signatures: syncer}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	cfg.DepositScanChains, cfg.DepositScanInterval = []string{"sol"}, time.Hour
+	if _, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: &recordingScanner{}}); err != nil {
+		t.Fatalf("Start without a syncer: %v", err)
+	}
+	time.Sleep(MinInterval + MinInterval/2)
+	if got := syncer.syncs(); len(got) != 0 {
+		t.Fatalf("a process that scans no chain synced %v", got)
+	}
+}
+
+func TestStart_Rejects_ASignatureTickBelowOneSecond(t *testing.T) {
+	cfg := Config{ConfirmationInterval: MinInterval, SignatureSyncTick: time.Millisecond}
+	if _, err := Start(context.Background(), cfg, Workers{Checker: &countingChecker{}}); err == nil {
+		t.Fatal("expected a configuration error")
 	}
 }

@@ -131,7 +131,9 @@ func handleAPIGateway(ctx context.Context, req events.APIGatewayV2HTTPRequest) (
 }
 
 // handleDepositScan scans new blocks, then retries the chain's pending blocks whose
-// backoff elapsed, in the same invocation, as the local scan loop does.
+// backoff elapsed, in the same invocation, as the local scan loop does. For a chain
+// deposit_signatures lists, both do nothing (its block scan pauses) and one signature
+// sync cycle reads it instead.
 func handleDepositScan(ctx context.Context, event types.DepositScanEvent) error {
 	slog.Info("deposit scan triggered", "chain", event.Chain)
 	scanErr := deposits.ScanLatestBlocks(ctx, event.Chain)
@@ -139,7 +141,11 @@ func handleDepositScan(ctx context.Context, event types.DepositScanEvent) error 
 	if resolved > 0 {
 		slog.Info("pending deposit blocks recovered", "chain", event.Chain, "count", resolved)
 	}
-	return errors.Join(scanErr, pendingErr)
+	var syncErr error
+	if deposits.SignatureSettings(ctx).Enabled(event.Chain) {
+		_, syncErr = deposits.SyncSignatures(ctx, event.Chain)
+	}
+	return errors.Join(scanErr, pendingErr, syncErr)
 }
 
 // handleConfirmationTracker sends to the webhook queue again the outbox rows whose
@@ -261,6 +267,7 @@ func startLocalWorkers(ctx context.Context) lifecycle.Workers {
 		Balances:      container.MustMake[*refresh.WalletRefresher](),
 		PreParams:     container.MustMake[*mpc.PreParamsPool](),
 		DepositStream: stream,
+		Signatures:    deposits,
 	})
 	if err != nil {
 		slog.Error("local workers not started", "error", err)

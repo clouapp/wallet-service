@@ -105,7 +105,7 @@ func TestAccount_Sections_DoNotShareNamesWithGroups(t *testing.T) {
 
 func knownPlatformGroup(name string) bool {
 	switch name {
-	case groupDepositScan, groupWebhookDelivery, groupSweepLimits, groupMailSMTP, groupMailDelivery,
+	case groupDepositScan, groupDepositSignatures, groupWebhookDelivery, groupSweepLimits, groupMailSMTP, groupMailDelivery,
 		groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark,
 		groupPriceLookup, groupPriceCoinGecko, groupPriceCoinMarketCap, groupPriceCoinAPI,
 		groupProviderAlchemy, groupProviderHelius, groupProviderQuickNode, groupProviderEtherscan:

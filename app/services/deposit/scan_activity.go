@@ -34,20 +34,40 @@ func (r ScanRecord) LagBlocks() uint64 {
 	return r.Head - r.Checkpoint
 }
 
+// SignatureSyncRecord is one completed signature sync cycle of a chain: how many
+// accounts it read, how many of them failed, and when it ended.
+type SignatureSyncRecord struct {
+	Accounts       int
+	FailedAccounts int
+	At             time.Time
+}
+
 // ChainActivity is what is known of a chain's deposit detection: its last
-// completed scan cycle (nil when none was recorded) and when an inbound provider
-// webhook for it was last received (zero when none was).
+// completed scan cycle (nil when none was recorded), its last completed signature
+// sync cycle (nil when none was) and when an inbound provider webhook for it was
+// last received (zero when none was).
 type ChainActivity struct {
-	Scan     *ScanRecord
-	PushedAt time.Time
+	Scan       *ScanRecord
+	Signatures *SignatureSyncRecord
+	PushedAt   time.Time
+}
+
+// SignatureMode reports whether the chain's deposits are read by the signature sync
+// now: its last signature sync cycle is not older than its last block scan cycle (the
+// block scan records no cycle while the sync reads the chain, and records one again
+// as soon as it resumes).
+func (a ChainActivity) SignatureMode() bool {
+	return a.Signatures != nil && (a.Scan == nil || !a.Signatures.At.Before(a.Scan.At))
 }
 
 // ScanActivityStore keeps, per chain, the last completed scan cycle (written by
-// the scanner, at scan time) and the last provider push (written by the ingest),
-// so the health check and the tracker read them without asking the chain. It holds
-// heights and times only. ReadActivity leaves out a chain with neither.
+// the scanner, at scan time), the last completed signature sync cycle (written by
+// the sync) and the last provider push (written by the ingest), so the health check
+// and the tracker read them without asking the chain. It holds counts, heights and
+// times only. ReadActivity leaves out a chain with none of them.
 type ScanActivityStore interface {
 	RecordScan(ctx context.Context, chainID string, scan ScanRecord) error
+	RecordSignatureSync(ctx context.Context, chainID string, sync SignatureSyncRecord) error
 	ReadActivity(ctx context.Context, chainIDs []string) (map[string]ChainActivity, error)
 }
 
@@ -78,6 +98,20 @@ func (s *Service) recordScan(ctx context.Context, chainID string, head, checkpoi
 	scan := ScanRecord{Head: head, Checkpoint: checkpoint, At: s.now().UTC()}
 	if err := s.activity.RecordScan(recordCtx, chainID, scan); err != nil {
 		slog.Warn(scanActivityNotRecordedMessage, "chain", chainID, "head", head, "checkpoint", checkpoint, "error", err)
+	}
+}
+
+// recordSignatureSync notes a completed signature sync cycle of chainID. A record
+// that fails is logged and never fails the cycle: its work is already saved.
+func (s *Service) recordSignatureSync(ctx context.Context, chainID string, summary SignatureSyncSummary) {
+	if s.activity == nil {
+		return
+	}
+	recordCtx, cancel := context.WithTimeout(ctx, scanActivityWriteTimeout)
+	defer cancel()
+	record := SignatureSyncRecord{Accounts: summary.Accounts, FailedAccounts: summary.FailedAccounts, At: s.now().UTC()}
+	if err := s.activity.RecordSignatureSync(recordCtx, chainID, record); err != nil {
+		slog.Warn("deposit signature sync activity not recorded", "chain", chainID, "accounts", record.Accounts, "failed_accounts", record.FailedAccounts, "error", err)
 	}
 }
 

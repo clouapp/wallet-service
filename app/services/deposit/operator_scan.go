@@ -99,6 +99,9 @@ func (s *Service) RunOperator(ctx context.Context, req OperatorScan) (OperatorOu
 			if errors.Is(err, ErrScanInProgress) {
 				return out, fmt.Errorf("deposit scan skipped, run it again once the other scan of %s ends: %w", chainID, err)
 			}
+			if errors.Is(err, ErrSignatureMode) {
+				return out, fmt.Errorf("deposit scan not run: %s is in deposit_signatures, run deposits:sync-signatures %s instead: %w", chainID, chainID, err)
+			}
 			return out, fmt.Errorf("deposit scan failed: %w", err)
 		}
 		out.Info = append(out.Info, "deposit scan complete: chain="+chainID)

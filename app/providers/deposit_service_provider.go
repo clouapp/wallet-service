@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/goravel/framework/contracts/foundation"
@@ -42,6 +43,9 @@ type DepositServiceProvider struct{}
 func (p *DepositServiceProvider) Register(app foundation.Application) {
 	app.Singleton((*repositories.DepositScanCheckpointRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewDepositScanCheckpointRepository(nil), nil
+	})
+	app.Singleton((*repositories.DepositSignatureCursorRepository)(nil), func(foundation.Application) (any, error) {
+		return repositories.NewDepositSignatureCursorRepository(nil), nil
 	})
 	app.Singleton((*depositevents.Publisher)(nil), func(app foundation.Application) (any, error) {
 		return newDepositEvents(app)
@@ -108,6 +112,10 @@ func newDepositService(app foundation.Application) (*deposit.Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	signatureCursors, err := resolve[*repositories.DepositSignatureCursorRepository](app)
+	if err != nil {
+		return nil, err
+	}
 	accountSettings, err := resolve[*settings.Service](app)
 	if err != nil {
 		return nil, fmt.Errorf("vault: account settings: %w", err)
@@ -153,6 +161,14 @@ func newDepositService(app foundation.Application) (*deposit.Service, error) {
 			Testnet4:       mempooltip.New(),
 			Solana:         solanatip.New(),
 		}),
+		SignatureCursors: signatureCursors,
+		// Each use reads deposit_signatures over DEPOSIT_SIGNATURE_*: a stored field
+		// wins, a missing or invalid one or a failed read keeps the environment value.
+		SignatureSettings: func(ctx context.Context) deposit.SignatureSyncSettings {
+			stored, readErr := accountSettings.EffectiveDepositSignatures(ctx)
+			return deposit.SignatureSettingsForRun(signatureSettingsFromEnv(facades.Config()),
+				stored.Chains, stored.ChainsStored, stored.IntervalSeconds, stored.Concurrency, stored.MaxPages, readErr)
+		},
 	})
 	service.SetWithdrawalConfirmations(withdrawalEvents)
 	service.SetDepositEvents(depositEvents)
@@ -206,6 +222,30 @@ func newDepositService(app foundation.Application) (*deposit.Service, error) {
 // configIntReader is the part of the framework configuration the scan overrides read.
 type configIntReader interface {
 	GetInt(path string, defaultValue ...int) int
+}
+
+// configReader is the part of the framework configuration the signature sync reads.
+type configReader interface {
+	configIntReader
+	GetString(path string, defaultValue ...string) string
+}
+
+// signatureSettingsFromEnv reads vault.deposit_signatures (DEPOSIT_SIGNATURE_CHAINS,
+// _INTERVAL_SECONDS, _CONCURRENCY and _MAX_PAGES), the values the deposit_signatures
+// setting overrides field by field.
+func signatureSettingsFromEnv(cfg configReader) deposit.SignatureSyncSettings {
+	var chains []string
+	for _, part := range strings.Split(cfg.GetString("vault.deposit_signatures.chains"), ",") {
+		if chainID := strings.TrimSpace(part); chainID != "" {
+			chains = append(chains, chainID)
+		}
+	}
+	return deposit.SignatureSyncSettings{
+		Chains:      chains,
+		Interval:    time.Duration(cfg.GetInt("vault.deposit_signatures.interval_seconds")) * time.Second,
+		Concurrency: cfg.GetInt("vault.deposit_signatures.concurrency"),
+		MaxPages:    cfg.GetInt("vault.deposit_signatures.max_pages"),
+	}
 }
 
 // chainScanOverrides reads vault.deposit_scan.chains.<chain> (DEPOSIT_SCAN_BATCH_BLOCKS_,

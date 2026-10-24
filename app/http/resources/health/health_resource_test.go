@@ -117,3 +117,42 @@ func TestNewHealth_ReportsHowFarEachChainsDepositDetectionGot(t *testing.T) {
 		})
 	}
 }
+
+// A chain whose deposits the signature sync reads has no block scan cycle any more:
+// its lag would only grow. It reports its last sync and its accounts instead, and the
+// statuses keep their meaning.
+func TestNewHealth_ReportsAChainTheSignatureSyncReadsByItsSyncInsteadOfItsLag(t *testing.T) {
+	scannedAt := time.Date(2026, 10, 23, 7, 40, 0, 0, time.UTC)
+	syncedAt := time.Date(2026, 10, 23, 9, 30, 0, 750_000_000, time.UTC)
+	pushedAt := time.Date(2026, 10, 23, 9, 29, 12, 0, time.UTC)
+	activity := deposit.ScanActivityHealth{Chains: map[string]deposit.ChainActivity{
+		// The block scan stalled 225000 slots behind, then the sync took the chain over.
+		"sol": {Scan: &deposit.ScanRecord{Head: 1_000_000, Checkpoint: 775_000, At: scannedAt},
+			Signatures: &deposit.SignatureSyncRecord{Accounts: 36, At: syncedAt}, PushedAt: pushedAt},
+		"tsol": {Signatures: &deposit.SignatureSyncRecord{Accounts: 4, FailedAccounts: 2, At: syncedAt}},
+		// The sync was turned off: the block scan's newer cycle is what reads the chain.
+		"eth": {Scan: &deposit.ScanRecord{Head: 3000, Checkpoint: 2990, At: syncedAt},
+			Signatures: &deposit.SignatureSyncRecord{Accounts: 1, At: scannedAt}},
+	}}
+	chains := `"chains":{"eth":{"lag_blocks":10,"last_scanned_at":"2026-10-23T09:30:00Z"},` +
+		`"sol":{"mode":"signatures","last_synced_at":"2026-10-23T09:30:00Z","accounts":36,"failed_accounts":0,"last_push_at":"2026-10-23T09:29:12Z"},` +
+		`"tsol":{"mode":"signatures","last_synced_at":"2026-10-23T09:30:00Z","accounts":4,"failed_accounts":2}}`
+	for name, tc := range map[string]struct {
+		pending deposit.PendingHealth
+		scanner string
+	}{
+		"nothing pending": {deposit.PendingHealth{Counts: map[string]int{}}, `"status":"ok","pending":{},"pending_total":0,`},
+		"blocks pending":  {deposit.PendingHealth{Counts: map[string]int{"sol": 3}, Total: 3}, `"status":"pending_blocks","pending":{"sol":3},"pending_total":3,`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			raw, err := json.Marshal(NewHealth(tc.pending, settled, activity))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := `{"status":"ok","version":"0.1.0","deposit_scanner":{` + tc.scanner + chains + `},` + settledTracker + `}`
+			if string(raw) != want {
+				t.Fatalf("wire = %s\nwant   %s", raw, want)
+			}
+		})
+	}
+}

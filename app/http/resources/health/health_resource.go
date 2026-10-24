@@ -45,15 +45,27 @@ type DepositScanner struct {
 	ChainsError  string                  `json:"chains_error,omitempty"`
 }
 
-// ScannedChain is one chain a scanner or a provider push touched in the last week.
-// LagBlocks is head − checkpoint at the end of the last completed scan cycle and
-// LastScannedAt when it ended (both absent for a chain only pushed to); LastPushAt
-// is when an inbound provider webhook for the chain was last received (absent when
-// none was). Times are UTC, to the second.
+// signatureMode is the Mode of a chain whose deposits the signature sync reads.
+const signatureMode = "signatures"
+
+// ScannedChain is one chain a scanner, the signature sync or a provider push touched
+// in the last week. LagBlocks is head − checkpoint at the end of the last completed
+// scan cycle and LastScannedAt when it ended (both absent for a chain only pushed to);
+// LastPushAt is when an inbound provider webhook for the chain was last received
+// (absent when none was). A chain whose deposits the signature sync reads (its last
+// sync is not older than its last scan cycle) has Mode "signatures" and, instead of
+// the block scan's fields, LastSyncedAt (when its last completed sync cycle ended),
+// Accounts (how many it read) and FailedAccounts (how many of them failed, read again
+// on the next cycle); Mode is absent for a chain the block scan reads. Times are UTC,
+// to the second.
 type ScannedChain struct {
-	LagBlocks     *uint64    `json:"lag_blocks,omitempty" example:"3"`
-	LastScannedAt *time.Time `json:"last_scanned_at,omitempty" example:"2026-10-20T09:30:00Z"`
-	LastPushAt    *time.Time `json:"last_push_at,omitempty" example:"2026-10-20T09:29:12Z"`
+	Mode           string     `json:"mode,omitempty" example:"signatures"`
+	LagBlocks      *uint64    `json:"lag_blocks,omitempty" example:"3"`
+	LastScannedAt  *time.Time `json:"last_scanned_at,omitempty" example:"2026-10-20T09:30:00Z"`
+	LastSyncedAt   *time.Time `json:"last_synced_at,omitempty" example:"2026-10-20T09:30:00Z"`
+	Accounts       *int       `json:"accounts,omitempty" example:"36"`
+	FailedAccounts *int       `json:"failed_accounts,omitempty" example:"0"`
+	LastPushAt     *time.Time `json:"last_push_at,omitempty" example:"2026-10-20T09:29:12Z"`
 }
 
 // ConfirmationTracker reports, per chain, the outbound transfers (withdrawals,
@@ -109,7 +121,13 @@ func scannedChains(activity map[string]deposit.ChainActivity) map[string]Scanned
 	chains := make(map[string]ScannedChain, len(activity))
 	for chainID, chain := range activity {
 		var scanned ScannedChain
-		if chain.Scan != nil {
+		switch {
+		case chain.SignatureMode():
+			accounts, failed := chain.Signatures.Accounts, chain.Signatures.FailedAccounts
+			scanned.Mode = signatureMode
+			scanned.LastSyncedAt = wireTime(chain.Signatures.At)
+			scanned.Accounts, scanned.FailedAccounts = &accounts, &failed
+		case chain.Scan != nil:
 			lag := chain.Scan.LagBlocks()
 			scanned.LagBlocks = &lag
 			scanned.LastScannedAt = wireTime(chain.Scan.At)

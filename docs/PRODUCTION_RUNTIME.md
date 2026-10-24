@@ -86,6 +86,7 @@ All of them are the same binary (`main.go`, CLAUDE.md §1). "Local workers" mean
 | HTTP API (`/v1`, `/api/v1`, ingest, `/health`) | `runLocal` | requests; hard cut at `HTTP_REQUEST_TIMEOUT` (30 s, `bootstrap.RequestTimeoutHandler`) | everything a request writes; signs and broadcasts withdrawals and sweeps inside the request (`withdraw.Service.Request` → `sweep.ExecutePlan`) | no, but see §5.4 (nonce floor) |
 | MPC pre-parameters pool | local workers (`mpc.PreParamsPool.Run`) | refills one set at a time, on one goroutine (`GeneratePreParamsWithContext(ctx, 1)`) | process memory only (CLAUDE.md §6) | per process, by design |
 | Deposit scan loops | local workers, `LOCAL_DEPOSIT_SCAN_CHAINS` | every `LOCAL_DEPOSIT_SCAN_INTERVAL_SECONDS` (5). One shared loop for eth, polygon, btc, ltc, xrp and their t-records; one loop each for sol, base, arbitrum, bsc and tron (`dedicatedScanChains`) | deposits, checkpoints (Postgres + Redis copy), pending blocks (Redis + `DEPOSIT_PENDING_DIR`), deposit webhooks; confirmations of the chain's pending rows after each successful cycle (`updateConfirmations`) | **yes**, per chain (§5.1) |
+| Deposit signature sync loop | local workers, the chains of `LOCAL_DEPOSIT_SCAN_CHAINS` that the platform `deposit_signatures` setting lists (`DEPOSIT_SIGNATURE_CHAINS` without a stored row; none by default) | ticks every 15 s; syncs a listed chain once `interval_seconds` (`DEPOSIT_SIGNATURE_INTERVAL_SECONDS`, 600) elapsed since its last sync started, read on each tick | deposits (the scanner's path), `deposit_signature_cursors`, pending blocks the histories cover (dropped), deposit webhooks; the chain's confirmation step at the end of each cycle. The chain's block scan and pending retry pause meanwhile (CLAUDE.md "Solana deposits") | **yes**, per chain: the same lock as the scan, renewed (§5.1) |
 | Confirmation loop | local workers | every `LOCAL_CONFIRMATION_INTERVAL_SECONDS` (30) | withdrawals only (`RunWithdrawalConfirmationCheck`), plus the deposit event backfill of the scanned chains | should be one |
 | Outbox re-dispatch | local workers, when `WEBHOOK_QUEUE_URL` is set | same interval as confirmations | claims stale `webhook_events` rows (`FOR UPDATE SKIP LOCKED`) and sends them to SQS | safe concurrently |
 | Local outbox delivery | local workers, only when `WEBHOOK_QUEUE_URL` is empty | `LOCAL_WEBHOOK_DELIVERY_INTERVAL_SECONDS` (5) | posts webhooks | never beside a queue consumer (`main.go` `DeliverOutbox`) |
@@ -217,6 +218,12 @@ The ECS services run tasks for as long as they live; the scheduled tasks run onc
 - **On stop.** SIGTERM stops the loops within `SHUTDOWN_TIMEOUT_SECONDS`. A cycle cut there
   leaves its lock until the TTL ends, and the next task logs `deposit scan skipped, another
   scanner holds the chain` for at most 2 minutes. That gap is accepted.
+- **The signature sync** (`deposit.Service.SyncSignatures`) takes the same key under an owner
+  token and renews it while its cycle runs (`cacheguard.AcquireHold`, every 40 s), so a long first
+  sync (the history since the scan stalled) keeps the chain, and a release never frees another
+  holder's lock. A held lock skips the sync cycle (`deposit signature sync skipped, another scan
+  holds the chain`). It runs where the chain is in `LOCAL_DEPOSIT_SCAN_CHAINS`, so the one
+  scanning process is also the one syncing.
 
 ### 5.2 One consumer per queue
 

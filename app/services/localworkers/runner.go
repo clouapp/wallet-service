@@ -1,7 +1,8 @@
 // Package localworkers runs, inside the local HTTP server, the jobs that the
 // deposit_scanner, confirmation_tracker and webhook_worker Lambdas run in production,
-// plus the periodic wallet balance refresh that keeps the read model current and,
-// when it is enabled, the real-time XRP deposit stream.
+// plus the periodic wallet balance refresh that keeps the read model current, the
+// deposit signature sync of the chains deposit_signatures lists and, when it is
+// enabled, the real-time XRP deposit stream.
 package localworkers
 
 import (
@@ -9,11 +10,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/refresh"
 )
 
@@ -22,6 +25,10 @@ const (
 	DeliveryBatchSize = 25
 	// RedispatchBatchSize bounds the outbox rows one re-dispatch run sends to the queue.
 	RedispatchBatchSize = 50
+	// DefaultSignatureSyncTick is how often the signature loop reads the signature
+	// sync's settings: a listed chain is synced once its interval elapsed since its
+	// last sync started, so a changed setting applies on the next tick, no restart.
+	DefaultSignatureSyncTick = 15 * time.Second
 )
 
 // dedicatedScanChains produce blocks too fast (Arbitrum about every 0.25 s, Solana a
@@ -78,6 +85,13 @@ type DepositScanner interface {
 	BackfillDepositEvents(ctx context.Context, chainIDs []string) (int, error)
 }
 
+// SignatureSyncer is the deposit signature sync: its settings at the moment of use
+// (the chains it reads and how often) and one cycle of a chain.
+type SignatureSyncer interface {
+	SignatureSettings(ctx context.Context) deposit.SignatureSyncSettings
+	SyncSignatures(ctx context.Context, chainID string) (deposit.SignatureSyncSummary, error)
+}
+
 // BalanceRefresher re-reads every wallet's balances from the chain into the read model.
 type BalanceRefresher interface {
 	RefreshAll(ctx context.Context) (refresh.PassSummary, error)
@@ -97,7 +111,8 @@ type DepositStream interface {
 
 // Workers are the jobs Start runs; Deliverer, Redispatcher, Scanner, Balances and
 // DepositStream are only needed when the configuration enables them. PreParams is
-// optional.
+// optional, and so is Signatures, which syncs the deposit scan chains that
+// deposit_signatures lists (their block scan pauses meanwhile).
 type Workers struct {
 	Checker       WithdrawalConfirmationChecker
 	Deliverer     OutboxDeliverer
@@ -106,6 +121,7 @@ type Workers struct {
 	Balances      BalanceRefresher
 	PreParams     PreParamsFiller
 	DepositStream DepositStream
+	Signatures    SignatureSyncer
 }
 
 type Config struct {
@@ -129,6 +145,10 @@ type Config struct {
 	// It must be one of DepositScanChains: the ledger scan stays the guarantee and
 	// confirms what the stream recorded when a scan holds the chain.
 	DepositStreamChain string
+	// SignatureSyncTick paces the signature loop (0: DefaultSignatureSyncTick). It
+	// syncs only DepositScanChains: the process that scans a chain is the one that
+	// reads it by signatures instead, so two processes never both read it.
+	SignatureSyncTick time.Duration
 }
 
 func (c Config) validate() error {
@@ -146,6 +166,9 @@ func (c Config) validate() error {
 	}
 	if c.BalanceRefreshInterval != 0 && c.BalanceRefreshInterval < MinInterval {
 		return errors.New("balance refresh interval must be at least one second, or 0 to turn it off")
+	}
+	if c.SignatureSyncTick != 0 && c.SignatureSyncTick < MinInterval {
+		return errors.New("signature sync tick must be at least one second, or 0 for the default")
 	}
 	seen := make(map[string]bool, len(c.DepositScanChains))
 	for _, chainID := range c.DepositScanChains {
@@ -278,6 +301,22 @@ func Start(ctx context.Context, cfg Config, workers Workers) (*Loops, error) {
 		}
 	}
 
+	signatureTick := cfg.SignatureSyncTick
+	if signatureTick == 0 {
+		signatureTick = DefaultSignatureSyncTick
+	}
+	if workers.Signatures != nil && len(scanChains) > 0 {
+		schedule := newSignatureSchedule(scanChains)
+		loops.every(ctx, signatureTick, func() {
+			for _, chainID := range schedule.due(time.Now(), workers.Signatures.SignatureSettings(ctx)) {
+				if ctx.Err() != nil {
+					return
+				}
+				syncSignatures(ctx, workers.Signatures, chainID)
+			}
+		})
+	}
+
 	if cfg.BalanceRefreshInterval > 0 {
 		loops.every(ctx, cfg.BalanceRefreshInterval, func() {
 			summary, err := workers.Balances.RefreshAll(ctx)
@@ -298,8 +337,59 @@ func Start(ctx context.Context, cfg Config, workers Workers) (*Loops, error) {
 		"deposit_scan_interval", cfg.DepositScanInterval.String(),
 		"balance_refresh_interval", cfg.BalanceRefreshInterval.String(),
 		"deposit_stream_chain", cfg.DepositStreamChain,
+		"signature_sync", workers.Signatures != nil && len(scanChains) > 0,
+		"signature_sync_tick", signatureTick.String(),
 	)
 	return loops, nil
+}
+
+// signatureSchedule decides, on each tick of the signature loop, which chains to
+// sync: those the settings list that this process scans, once their interval elapsed
+// since their last sync started (at once the first time). It is used by the loop's
+// goroutine only.
+type signatureSchedule struct {
+	scanned []string
+	last    map[string]time.Time
+	ignored map[string]bool
+}
+
+func newSignatureSchedule(scanned []string) *signatureSchedule {
+	return &signatureSchedule{scanned: scanned, last: map[string]time.Time{}, ignored: map[string]bool{}}
+}
+
+// due returns the chains to sync at now, in the settings' order, and marks them
+// started. A listed chain this process does not scan is logged once and left to the
+// process that scans it.
+func (s *signatureSchedule) due(now time.Time, settings deposit.SignatureSyncSettings) []string {
+	var due []string
+	for _, chainID := range settings.Chains {
+		if !slices.Contains(s.scanned, chainID) {
+			if !s.ignored[chainID] {
+				s.ignored[chainID] = true
+				slog.Info("deposit signature sync of a chain this process does not scan is left to the process that scans it",
+					"chain", chainID, "hint", "list it in LOCAL_DEPOSIT_SCAN_CHAINS of the process that should read it")
+			}
+			continue
+		}
+		if last, ran := s.last[chainID]; ran && now.Sub(last) < settings.Interval {
+			continue
+		}
+		s.last[chainID] = now
+		due = append(due, chainID)
+	}
+	return due
+}
+
+func syncSignatures(ctx context.Context, syncer SignatureSyncer, chainID string) {
+	summary, err := syncer.SyncSignatures(ctx, chainID)
+	if err != nil {
+		slog.Error("local deposit signature sync failed", "chain", chainID, "error", err)
+		return
+	}
+	if summary.FailedAccounts > 0 {
+		slog.Warn("local deposit signature sync left accounts for the next cycle", "chain", chainID,
+			"failed_accounts", summary.FailedAccounts, "accounts", summary.Accounts)
+	}
 }
 
 // backfillDepositEvents repairs only the chains this machine confirms deposits for;

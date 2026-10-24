@@ -82,6 +82,12 @@ type Service struct {
 	// reads (withdrawal_reconcile.go).
 	reconcileWithdrawals  WithdrawalFinder
 	reconcileTransactions TransactionFinder
+	// signatureCursors and signatureSettings are the signature sync's cursors and its
+	// settings at the moment of use; signatureModes remembers, per chain, whether its
+	// block scan was last seen paused, so the change is logged once (signatures.go).
+	signatureCursors  SignatureCursorStore
+	signatureSettings signatureSettingsSource
+	signatureModes    sync.Map
 }
 
 // transactionStore is the deposit rows the scanner writes and the tracker updates.
@@ -153,7 +159,9 @@ func (s *Service) SetWithdrawalConfirmations(withdrawals WithdrawalConfirmations
 }
 
 // Deps is everything the deposit service needs. A nil field means that
-// dependency is absent; without Checkpoints or Cache ScanLatestBlocks refuses to scan.
+// dependency is absent; without Checkpoints or Cache ScanLatestBlocks refuses to scan,
+// and without SignatureCursors SyncSignatures refuses to sync. SignatureSettings reads
+// the signature sync's settings at the moment of use (nil: the defaults, no chain).
 type Deps struct {
 	Store                RedisStore
 	Checkpoints          CheckpointStore
@@ -163,6 +171,8 @@ type Deps struct {
 	Addresses            *repositories.AddressRepository
 	Transactions         *repositories.TransactionRepository
 	BlockHeightProviders map[string]blockheight.Provider
+	SignatureCursors     SignatureCursorStore
+	SignatureSettings    func(ctx context.Context) SignatureSyncSettings
 }
 
 // NewService wires the deposit service from Deps.
@@ -176,6 +186,8 @@ func NewService(deps Deps) *Service {
 		addressRepo:          deps.Addresses,
 		txRepo:               deps.Transactions,
 		blockHeightProviders: deps.BlockHeightProviders,
+		signatureCursors:     deps.SignatureCursors,
+		signatureSettings:    deps.SignatureSettings,
 		heightFailures:       make(map[string]int),
 		scan:                 DefaultScanOptions(),
 		scanFallback:         DefaultScanOptions(),
@@ -187,26 +199,35 @@ func NewService(deps Deps) *Service {
 
 // ScanLatestBlocks is the Lambda entry point. Scans new blocks for a chain.
 // Called by EventBridge on schedule (every 5-60s depending on chain). A cycle that
-// finds another scanner on the chain is skipped and returns nil; one whose checkpoint
-// is far past the head fails with ErrCheckpointAheadOfHead and scans nothing.
+// finds another scanner on the chain is skipped and returns nil, and so is a cycle of
+// a chain whose deposits the signature sync reads (its block scan pauses, the change
+// logged once); one whose checkpoint is far past the head fails with
+// ErrCheckpointAheadOfHead and scans nothing.
 func (s *Service) ScanLatestBlocks(ctx context.Context, chainID string) error {
 	err := s.scanLatestBlocks(ctx, chainID)
 	if errors.Is(err, ErrScanInProgress) {
 		slog.Info("deposit scan skipped, another scanner holds the chain", "chain", chainID)
 		return nil
 	}
+	if errors.Is(err, ErrSignatureMode) {
+		return nil
+	}
 	return err
 }
 
 // scanLatestBlocks runs one cycle under the chain's scan lock, or returns
-// ErrScanInProgress when another scanner holds it. A checkpoint that cannot be read
-// skips the cycle with an error and moves nothing.
+// ErrScanInProgress when another scanner holds it, or ErrSignatureMode, scanning and
+// moving nothing, while the signature sync reads the chain. A checkpoint that cannot
+// be read skips the cycle with an error and moves nothing.
 func (s *Service) scanLatestBlocks(ctx context.Context, chainID string) error {
 	opts := s.scanOptionsFor(ctx, chainID)
 
 	adapter, err := s.registry.Chain(chainID)
 	if err != nil {
 		return err
+	}
+	if s.blockScanPaused(ctx, chainID, adapter) {
+		return ErrSignatureMode
 	}
 
 	release, err := s.lockChain(chainID)

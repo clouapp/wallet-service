@@ -181,8 +181,21 @@ func (s *Service) ReprocessPending(ctx context.Context, chainID string, force bo
 	return result, nil
 }
 
-// ReprocessDuePending is the scan loop's pass over pending blocks whose backoff elapsed.
+// ReprocessDuePending is the scan loop's pass over pending blocks whose backoff
+// elapsed. It does nothing for a chain whose deposits the signature sync reads: the
+// sync drops the pending blocks its histories cover (resolveCoveredPending), and the
+// block scan's retry resumes with the block scan.
 func (s *Service) ReprocessDuePending(ctx context.Context, chainID string) (int, error) {
+	if s.pending == nil {
+		return 0, nil
+	}
+	adapter, err := s.registry.Chain(chainID)
+	if err != nil {
+		return 0, err
+	}
+	if s.blockScanPaused(ctx, chainID, adapter) {
+		return 0, nil
+	}
 	result, err := s.ReprocessPending(ctx, chainID, false)
 	return result.Resolved, err
 }

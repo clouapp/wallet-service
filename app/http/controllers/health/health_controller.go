@@ -24,7 +24,7 @@ func NewHealthController(deposits *deposit.Service) *HealthController {
 // Show godoc
 //
 //	@Summary		Health check
-//	@Description	Returns service status and version, how many deposit blocks per chain wait for a retry, how far each chain's deposit detection got (lag_blocks and last_scanned_at of the last completed scan cycle, last_push_at of the last inbound provider webhook; read from what the scanner and the ingest recorded, never from the chain), and how many outbound transfers per chain are still unsettled after WITHDRAWAL_STALE_AFTER_HOURS (settle them with artisan withdrawals:reconcile)
+//	@Description	Returns service status and version, how many deposit blocks per chain wait for a retry, how far each chain's deposit detection got (lag_blocks and last_scanned_at of the last completed scan cycle; for a chain whose deposits the signature sync reads, mode "signatures" with last_synced_at, accounts and failed_accounts of its last completed sync cycle instead; last_push_at of the last inbound provider webhook; read from what the scanner, the sync and the ingest recorded, never from the chain), and how many outbound transfers per chain are still unsettled after WITHDRAWAL_STALE_AFTER_HOURS (settle them with artisan withdrawals:reconcile)
 //	@Tags			System
 //	@Produce		json
 //	@Success		200	{object}	resources.Health
