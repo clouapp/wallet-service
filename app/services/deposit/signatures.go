@@ -66,8 +66,9 @@ type SignatureCursorStore interface {
 // mints the node does not hold as token mints, and the pending blocks it found
 // covered. CoveredHead is the slot every account was read up to when this cycle read
 // them all (0 otherwise: a failed, unlisted or backfilling account, or a skipped
-// mint, whose accounts were not read); Head the slot it confirmed at. Skipped is a
-// cycle that found another scan holding the chain and did nothing.
+// mint, whose accounts were not read); ListedHead the head read before the addresses
+// were listed; Head the slot it confirmed at. Skipped is a cycle that found another
+// scan holding the chain and did nothing.
 type SignatureSyncSummary struct {
 	Accounts            int
 	NewSignatures       int
@@ -77,6 +78,7 @@ type SignatureSyncSummary struct {
 	SkippedMints        []string
 	ResolvedPending     int
 	CoveredHead         uint64
+	ListedHead          uint64
 	Head                uint64
 	Skipped             bool
 }
@@ -193,6 +195,7 @@ func (s *Service) syncSignatures(ctx context.Context, chainID string, adapter ty
 	if err != nil {
 		return summary, fmt.Errorf("deposit signature sync of %s: head: %w", chainID, err)
 	}
+	summary.ListedHead = listedAt
 	owners, err := s.addressRepo.PluckActiveAddresses(ctx, chainID)
 	if err != nil {
 		return summary, fmt.Errorf("deposit signature sync of %s: %w", chainID, err)

@@ -174,7 +174,7 @@ func TestRecord_SignatureSync_ReadsBackBesideTheScanAndThePushWithATTL(t *testin
 		t.Fatal(err)
 	}
 	if err := store.RecordSignatureSync(ctx, sol, deposit.SignatureSyncRecord{Accounts: 36, FailedAccounts: 1, BackfillingAccounts: 2,
-		SkippedMints: []string{"mint-a"}, Head: 1_000_400, CoveredHead: 1_000_100, ReadEveryAccount: true,
+		SkippedMints: []string{"mint-a"}, Head: 1_000_400, CoveredHead: 1_000_100, ListedHead: 1_001_600, ReadEveryAccount: true,
 		BackfillingSince: syncedAt.Add(-time.Hour), At: syncedAt}); err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestRecord_SignatureSync_ReadsBackBesideTheScanAndThePushWithATTL(t *testin
 	}
 	solActivity := activity[sol]
 	wantSync := deposit.SignatureSyncRecord{Accounts: 36, FailedAccounts: 1, BackfillingAccounts: 2, SkippedMints: []string{"mint-a"},
-		Head: 1_000_400, CoveredHead: 1_000_100, ReadEveryAccount: true, BackfillingSince: syncedAt.Add(-time.Hour).UTC(), At: syncedAt.UTC()}
+		Head: 1_000_400, CoveredHead: 1_000_100, ListedHead: 1_001_600, ReadEveryAccount: true, BackfillingSince: syncedAt.Add(-time.Hour).UTC(), At: syncedAt.UTC()}
 	if solActivity.Scan == nil || solActivity.Scan.Checkpoint != 775_000 || solActivity.Signatures == nil ||
 		!reflect.DeepEqual(*solActivity.Signatures, wantSync) || !solActivity.SignatureMode() ||
 		solActivity.Mode.Since != scannedAt || solActivity.Mode.At != syncedAt.UTC() {
@@ -204,8 +204,8 @@ func TestRecord_SignatureSync_ReadsBackBesideTheScanAndThePushWithATTL(t *testin
 		!tsolActivity.Signatures.BackfillingSince.IsZero() || tsolActivity.SignatureMode() {
 		t.Fatalf("tsol %+v, want its sync only, and no signature mode without the scan's record of it", tsolActivity)
 	}
-	if raw, rawErr := client.Get(ctx, SignatureKeyPrefix+tsol).Result(); rawErr != nil || strings.Contains(raw, "backfilling_since") {
-		t.Fatalf("tsol record %s (err %v), want no backfilling_since while no account is backfilling", raw, rawErr)
+	if raw, rawErr := client.Get(ctx, SignatureKeyPrefix+tsol).Result(); rawErr != nil || strings.Contains(raw, "backfilling_since") || strings.Contains(raw, "listed_head") {
+		t.Fatalf("tsol record %s (err %v), want no backfilling_since while no account is backfilling and no listed_head unset", raw, rawErr)
 	}
 	for _, key := range []string{SignatureKeyPrefix + sol, ModeKeyPrefix + sol} {
 		ttl, ttlErr := client.TTL(ctx, key).Result()

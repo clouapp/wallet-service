@@ -267,7 +267,12 @@ type solanaSignatureInfo struct {
 // page without Before is confirmed from the newest signature, so one that landed
 // between the page and the confirmation answers instead of Until (a busy account):
 // the listing is then read again once, on the same endpoint, and its new short page
-// confirmed the same way; a second miss leaves the listing unended. Without Until
+// confirmed the same way; a second miss leaves the listing unended. A listing with
+// Before first asks the endpoint whether it holds Before (getSignatureStatuses,
+// searching the history): one that does not (a backend behind on the newest slots,
+// or without the old ledger) may answer an empty page, or its own newest signatures,
+// for a before it cannot place, so nothing it would list or say of the end below
+// Before is read, and the listing comes back empty and unended. Without Until
 // only an empty page ends a listing, and then the endpoint's first available block
 // (getFirstAvailableBlock) is LedgerStart: a node that does not hold an old ledger
 // answers short pages with no error, which must never read as the start of the
@@ -283,6 +288,15 @@ func (a *SolanaLive) AccountSignatures(ctx context.Context, account string, quer
 	pinned := rpc.PinEndpoint(ctx)
 	if err := a.rpc.Call(pinned, "getSlot", &history.Head, map[string]string{"commitment": solanaCommitmentFinalized}); err != nil {
 		return chain.SignatureHistory{}, fmt.Errorf("sol signatures of %s: head: %w", account, err)
+	}
+	if query.Before != "" {
+		held, err := a.holdsSignature(pinned, query.Before)
+		if err != nil {
+			return chain.SignatureHistory{}, fmt.Errorf("sol signatures of %s: the signature to list below: %w", account, err)
+		}
+		if !held {
+			return history, nil
+		}
 	}
 	before := query.Before
 	pages, relisted := 0, false
@@ -343,6 +357,20 @@ func (a *SolanaLive) AccountSignatures(ctx context.Context, account string, quer
 		pages++
 	}
 	return history, nil
+}
+
+// holdsSignature reports whether the listing's endpoint (ctx pinned) holds signature:
+// getSignatureStatuses, searching the whole history, answers a status for it, failed
+// or not.
+func (a *SolanaLive) holdsSignature(ctx context.Context, signature string) (bool, error) {
+	var result struct {
+		Value []*solanaSignatureStatus `json:"value"`
+	}
+	if err := a.rpc.Call(ctx, "getSignatureStatuses", &result, []string{signature},
+		map[string]bool{"searchTransactionHistory": true}); err != nil {
+		return false, err
+	}
+	return len(result.Value) == 1 && result.Value[0] != nil, nil
 }
 
 // signatureBelow is the signature right below below (the newest one when below is

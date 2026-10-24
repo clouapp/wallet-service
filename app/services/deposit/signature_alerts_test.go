@@ -33,19 +33,20 @@ func TestSignature_LagThreshold_IsTheIndexMarginPlusAFewIntervalsOfSlots(t *test
 	assert.Equal(t, uint64(signatureIndexMargin), signatureLagThreshold(0), "no interval: the margin alone")
 }
 
-// An account that never settles keeps the covered slot back (a growing lag) or, when
-// no cycle ever read every account, stays backfilling: past the index margin plus
-// three intervals of slots, or three intervals of backfilling, the tracker warns. A
-// value equal to its threshold is no alert, and the alert clears once every account
-// is read up to the head again, or once the block scan reads the chain.
+// An account that never settles keeps the covered slot back (a growing lag behind the
+// head each cycle reads before listing the addresses) or, when no cycle ever read
+// every account, stays backfilling: past the index margin plus three intervals of
+// slots, or three intervals of backfilling, the tracker warns. A value equal to its
+// threshold is no alert, and the alert clears once every account is read up to the
+// head again, or once the block scan reads the chain.
 func TestScan_Alerts_WarnWhenAnAccountOfAChainInSignatureModeNeverSettles(t *testing.T) {
 	logs := captureLogs(t)
 	clock := &testClock{now: activityNow}
 	activity := newMemoryActivity()
 	synced := activityNow.Add(-time.Minute)
 	// eth trails by exactly the threshold, btc by one slot more.
-	activity.signatures["eth"] = SignatureSyncRecord{Accounts: 36, Head: 1_006_000, CoveredHead: 1_000_000, At: synced}
-	activity.signatures["btc"] = SignatureSyncRecord{Accounts: 36, BackfillingAccounts: 1, Head: 1_006_001, CoveredHead: 1_000_000,
+	activity.signatures["eth"] = SignatureSyncRecord{Accounts: 36, ListedHead: 1_006_000, Head: 1_006_200, CoveredHead: 1_000_000, At: synced}
+	activity.signatures["btc"] = SignatureSyncRecord{Accounts: 36, BackfillingAccounts: 1, ListedHead: 1_006_001, Head: 1_006_200, CoveredHead: 1_000_000,
 		BackfillingSince: activityNow.Add(-5 * time.Minute), At: synced}
 	// sol never read every account and has been backfilling for 31 minutes; tron for
 	// exactly 30.
@@ -62,6 +63,7 @@ func TestScan_Alerts_WarnWhenAnAccountOfAChainInSignatureModeNeverSettles(t *tes
 	assert.Equal(t, float64(6001), unsettled["btc"]["lag_blocks"])
 	assert.Equal(t, float64(6000), unsettled["btc"]["threshold_blocks"])
 	assert.Equal(t, float64(1_000_000), unsettled["btc"]["covered_slot"])
+	assert.Equal(t, float64(1_006_001), unsettled["btc"]["listed_head"])
 	assert.Equal(t, float64(2), unsettled["sol"]["backfilling_accounts"])
 	assert.Equal(t, float64(31), unsettled["sol"]["minutes_backfilling"])
 	assert.Equal(t, float64(30), unsettled["sol"]["threshold_minutes"])
@@ -73,7 +75,7 @@ func TestScan_Alerts_WarnWhenAnAccountOfAChainInSignatureModeNeverSettles(t *tes
 	clock.advance(time.Minute)
 	activity.signatures["tron"] = SignatureSyncRecord{Accounts: 36, BackfillingAccounts: 1, Head: 1_000_150,
 		BackfillingSince: clock.Now().Add(-30 * time.Minute), At: clock.Now()}
-	activity.signatures["btc"] = SignatureSyncRecord{Accounts: 36, Head: 1_007_600, CoveredHead: 1_006_100, ReadEveryAccount: true, At: clock.Now()}
+	activity.signatures["btc"] = SignatureSyncRecord{Accounts: 36, ListedHead: 1_007_600, Head: 1_007_800, CoveredHead: 1_006_100, ReadEveryAccount: true, At: clock.Now()}
 	activity.modes["sol"] = ScanModeRecord{Mode: ScanModeBlocks, Since: clock.Now(), At: clock.Now()}
 	activity.scans["sol"] = ScanRecord{Head: 1_000_100, Checkpoint: 1_000_100, At: clock.Now()}
 	require.NoError(t, svc.RunWithdrawalConfirmationCheck(context.Background()))
@@ -95,6 +97,7 @@ func TestScan_Alerts_WarnWhenAnAccountOfAChainInSignatureModeNeverSettles(t *tes
 func TestRecord_SignatureSync_CarriesWhenAccountsStartedBackfilling(t *testing.T) {
 	clock := &testClock{now: activityNow}
 	activity := newMemoryActivity()
+	activity.modes["sol"] = ScanModeRecord{Mode: ScanModeSignatures, Since: activityNow.Add(-time.Hour), At: activityNow}
 	svc := activityService(activity, nil, clock)
 	record := func(summary SignatureSyncSummary) SignatureSyncRecord {
 		t.Helper()
@@ -164,4 +167,93 @@ func TestSync_Signatures_AnAccountThatNeverSettlesRaisesTheAlertAfterAFewInterva
 	require.Equal(t, uint64(sigCovered), summary.CoveredHead, "the endpoint showed the end of every history twice")
 	assert.Len(t, recordsOf(logs(), "INFO", signatureSettledMessage), 1)
 	assert.Len(t, recordsOf(logs(), "WARN", signatureUnsettledMessage), 1, "warned once, cleared once")
+}
+
+// sol left signature mode two days ago with accounts still backfilling and a covered
+// slot far behind, and was listed again a minute ago: no cycle of the new period has
+// completed yet. That record says nothing of the accounts now, so it raises no
+// unsettled, failed or skipped-mint alert; the stale check counts from the mode's
+// start.
+func TestScan_Alerts_ARecordFromAnEarlierSignaturePeriodRaisesNoAlert(t *testing.T) {
+	logs := captureLogs(t)
+	clock := &testClock{now: activityNow}
+	activity := newMemoryActivity()
+	svc := signatureAlertService(activity, clock)
+	activity.signatures["sol"] = SignatureSyncRecord{Accounts: 36, FailedAccounts: 3, BackfillingAccounts: 2, SkippedMints: []string{"mint-x"},
+		ListedHead: 1_000_000, Head: 1_000_000, CoveredHead: 560_000,
+		BackfillingSince: activityNow.Add(-50 * time.Hour), At: activityNow.Add(-48 * time.Hour)}
+	activity.modes["sol"] = ScanModeRecord{Mode: ScanModeSignatures, Since: activityNow.Add(-time.Minute), At: activityNow}
+
+	require.NoError(t, svc.RunWithdrawalConfirmationCheck(context.Background()))
+
+	records := logs()
+	for _, message := range []string{signatureUnsettledMessage, signatureFailedMessage, signatureMintsMessage, signatureStaleMessage} {
+		assert.NotContains(t, warnings(records, message), "sol", message)
+	}
+
+	// Twenty-one minutes into the period with no cycle: stale, counted from the start.
+	clock.advance(20 * time.Minute)
+	activity.modes["sol"] = ScanModeRecord{Mode: ScanModeSignatures, Since: activityNow.Add(-time.Minute), At: clock.Now()}
+	require.NoError(t, svc.RunWithdrawalConfirmationCheck(context.Background()))
+	stale := warnings(logs(), signatureStaleMessage)["sol"]
+	require.NotNil(t, stale)
+	assert.Equal(t, activityNow.Add(-time.Minute).UTC().Format(time.RFC3339), stale["last_synced_at"])
+}
+
+// The first backfilling cycle of a new period starts its own run and carries no
+// covered slot from a record of an earlier period: one backfilling cycle of the new
+// period is no unsettled account. A record of this period is carried as before.
+func TestRecord_SignatureSync_CarriesNothingFromAnEarlierSignaturePeriod(t *testing.T) {
+	logs := captureLogs(t)
+	clock := &testClock{now: activityNow}
+	activity := newMemoryActivity()
+	svc := signatureAlertService(activity, clock)
+	activity.signatures["sol"] = SignatureSyncRecord{Accounts: 36, BackfillingAccounts: 2, ListedHead: 1_000_000, Head: 1_000_000, CoveredHead: 990_000,
+		BackfillingSince: activityNow.Add(-50 * time.Hour), At: activityNow.Add(-48 * time.Hour)}
+	activity.modes["sol"] = ScanModeRecord{Mode: ScanModeSignatures, Since: activityNow.Add(-2 * time.Minute), At: activityNow}
+
+	svc.recordSignatureSync(context.Background(), "sol", SignatureSyncSummary{Accounts: 36, BackfillingAccounts: 1, ListedHead: 1_430_000, Head: 1_430_100})
+	first, _ := activity.syncOf("sol")
+	assert.Equal(t, activityNow, first.BackfillingSince, "the run starts at the first cycle of the period")
+	assert.Zero(t, first.CoveredHead, "no covered slot is carried from the earlier period")
+	require.NoError(t, svc.RunWithdrawalConfirmationCheck(context.Background()))
+	assert.NotContains(t, warnings(logs(), signatureUnsettledMessage), "sol")
+
+	clock.advance(10 * time.Minute)
+	svc.recordSignatureSync(context.Background(), "sol", SignatureSyncSummary{Accounts: 36, BackfillingAccounts: 1, ListedHead: 1_431_500, Head: 1_431_600})
+	second, _ := activity.syncOf("sol")
+	assert.Equal(t, activityNow, second.BackfillingSince, "carried within the period")
+
+	clock.advance(10 * time.Minute)
+	svc.recordSignatureSync(context.Background(), "sol", SignatureSyncSummary{Accounts: 36, ListedHead: 1_433_000, Head: 1_433_100, CoveredHead: 1_431_500})
+	clock.advance(10 * time.Minute)
+	svc.recordSignatureSync(context.Background(), "sol", SignatureSyncSummary{Accounts: 36, FailedAccounts: 1, ListedHead: 1_434_500, Head: 1_434_600})
+	fourth, _ := activity.syncOf("sol")
+	assert.Equal(t, uint64(1_431_500), fourth.CoveredHead, "the covered slot of this period is carried")
+}
+
+// At the shortest interval the settings accept (15 s), a cycle that reads every
+// account but takes a minute (150 slots) on a rate-limited endpoint confirms at a head
+// 1650 slots past the covered slot: the lag is measured from the head read before the
+// addresses were listed, which such a cycle leaves at most the 1500-slot margin
+// behind, so it raises nothing. Cycles that leave accounts unread for longer than
+// three intervals still do.
+func TestScan_Alerts_AHealthyCycleAtTheShortestIntervalRaisesNoAlert(t *testing.T) {
+	logs := captureLogs(t)
+	clock := &testClock{now: activityNow}
+	activity := newMemoryActivity()
+	svc := signatureAlertService(activity, clock)
+	svc.signatureSettings = func(context.Context) SignatureSyncSettings { return SignatureSyncSettings{Interval: 15 * time.Second} }
+	activity.signatures["eth"] = SignatureSyncRecord{Accounts: 36, ListedHead: 1_001_500, Head: 1_001_650, CoveredHead: 1_000_000,
+		ReadEveryAccount: true, At: activityNow.Add(-10 * time.Second)}
+	// btc's last full read was several cycles ago: its covered slot is carried.
+	activity.signatures["btc"] = SignatureSyncRecord{Accounts: 36, BackfillingAccounts: 1, ListedHead: 1_001_650, Head: 1_001_800,
+		CoveredHead: 1_000_000, BackfillingSince: activityNow.Add(-40 * time.Second), At: activityNow.Add(-10 * time.Second)}
+
+	require.NoError(t, svc.RunWithdrawalConfirmationCheck(context.Background()))
+
+	unsettled := warnings(logs(), signatureUnsettledMessage)
+	assert.NotContains(t, unsettled, "eth", "every account was read up to the head by the last cycle")
+	require.Contains(t, unsettled, "btc", "1650 slots is past 1500 + 3 × 37 at a 15 s interval")
+	assert.Equal(t, float64(signatureLagThreshold(15*time.Second)), unsettled["btc"]["threshold_blocks"])
 }

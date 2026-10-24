@@ -423,7 +423,8 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 - Each completed scan cycle (one that found nothing new, and the first one, included) records the
   head it read, the checkpoint it left and when it ended (`vault:scan-activity:<chain>`), each
   completed signature sync cycle what it read (accounts, failed, backfilling, skipped mints, the head
-  it confirmed at, the covered slot and since when accounts are backfilling) and when it ended
+  it read before listing the addresses and the one it confirmed at, the covered slot and since when
+  accounts are backfilling) and when it ended
   (`vault:signature-sync:<chain>`), each scan
   cycle that starts the chain's detection mode (`vault:scan-mode:<chain>`, `blocks` or `signatures`,
   written when it changes and hourly), and the inbound ingest records when a provider webhook of a
@@ -1204,6 +1205,13 @@ on; the sync is its safety net, and the only detector where it is not.
   answers another signature, the listing is read again once on the same pinned endpoint (it lists the
   new signature, and its confirmation, below it, must still be the cursor itself); a second miss leaves
   the account for the next cycle. The empty page read again does not count against the page limit.
+  A listing below a `before` (a backfill read, or the gap below a stretch ahead of the cursor) first asks
+  the same pinned endpoint whether it holds that signature (`getSignatureStatuses`, searching the
+  history): a backend behind on the newest slots, or one without the old ledger, may answer an empty
+  page or its own newest signatures for a `before` it cannot place instead of failing it as Agave does,
+  and twice in a row that read as the end of a history and covered the account with its older history
+  unread (a loss in v0.14.0, found by the review of #130). One that does not hold it lists nothing and
+  ends nothing: the account stays backfilling until an endpoint that holds it reads on.
   Otherwise only a signature below the floor, or an empty page together with the endpoint's first
   available block (`getFirstAvailableBlock`) at or below the floor, proves there is nothing older. The
   first covers an account at once; the second only when two backfill reads in a row show it and the
@@ -1228,10 +1236,16 @@ on; the sync is its safety net, and the only detector where it is not.
   `getSignaturesForAddress` page, then either the confirmation `getSignaturesForAddress` (an account
   with a recorded signature) or `getFirstAvailableBlock` (an account known empty). Each new signature
   adds one `getTransaction`, each slot that credits a watched address one `getBlock` without
-  transactions, and a confirmation race two more `getSignaturesForAddress`. At 18 addresses with one
-  token (36 accounts) and the default 600 s: 2 + 18 + 36 × 3 = 128 calls a cycle, about 18 400 a day
-  (144 cycles), of which at most 10 400 `getSignaturesForAddress`; the confirmation call is at most one
-  per account and cycle, about 5 200 a day. The block scan reads about 350 000 `getBlock` a day.
+  transactions, a confirmation race two more `getSignaturesForAddress`, and each listing below a
+  `before` (backfill and gap reads only, none in steady state) one `getSignatureStatuses`. At 18
+  addresses with one token (36 accounts) and the default 600 s: 2 + 18 + 36 × 3 = 128 calls a cycle,
+  about 18 400 a day (144 cycles), of which at most 10 400 `getSignaturesForAddress`; the confirmation
+  call is at most one per account and cycle, about 5 200 a day. Beside the cycles, the paused block
+  scan's confirmation step runs on every scan tick (5 s) and reads the head (`getSlot`) only while a
+  transaction of the chain is pending, with one `getSignatureStatuses` per outbound transaction without
+  a block: up to about 17 300 `getSlot` a day more while a withdrawal or a sweep stays in flight (a
+  Solana transfer usually settles within a few ticks). The block scan reads about 350 000 `getBlock` a
+  day.
 - **Recording** goes through the scanner's path (`recordTransfers`: watched addresses only, the
   sweeps and gas seeds of the wallet left out, `depositrecord.Record`). The stretch moves over a
   signature only once its transfers are all recorded, and never back; a failure stops the account
@@ -1473,13 +1487,19 @@ of their own, so a slow chain never holds up `eth`, `polygon` and `btc`. — gua
   than the stale threshold plus the sync's interval, `deposit signature sync left accounts failed`
   while its last cycle left any, `deposit signature sync skips registered tokens the chain's node
   does not hold as token mints` while it skips any, and `deposit signature sync has not read every
-  account up to the head within the alert threshold` when an account does not settle: the lag of its
-  last cycle (`lag_blocks`, the head it confirmed at − the covered slot) is above the 1500-slot index
-  margin plus three sync intervals of 400 ms slots (6000 slots at the default 600 s), or accounts have
-  been backfilling for longer than three intervals in a row (`backfilling_since` of the record: when
-  the first cycle of the run that left one backfilling ended; it covers a chain no cycle ever read in
-  full, whose covered slot is unknown). `DEPOSIT_SCAN_ALERT_LAG_BLOCKS` is the block scan's and does not
-  apply to it. A
+  account up to the head within the alert threshold` when an account does not settle: the head its
+  last cycle read before listing the addresses (`listed_head`) is past the covered slot by more than
+  the 1500-slot index margin plus three sync intervals of 400 ms slots (6000 slots at the default 600
+  s), or accounts have been backfilling for longer than three intervals in a row (`backfilling_since`
+  of the record: when the first cycle of the run that left one backfilling ended; it covers a chain no
+  cycle ever read in full, whose covered slot is unknown). The lag is counted from the listed head, not
+  from the head the cycle confirmed at (`/health`'s `lag_blocks`): a cycle that read every account
+  leaves it at most the margin however long it took, so a healthy cycle at a short interval raises
+  nothing. These three alerts read only a record of this period of signature mode (written at or after
+  the mode record's `since`): a record left from an earlier period raises none of them, the stale check
+  counts from the mode's start, and the covered slot and `backfilling_since` are carried only from a
+  record of the same period. `DEPOSIT_SCAN_ALERT_LAG_BLOCKS` is the block scan's and does not apply to
+  it. A
   value equal to its threshold is no alert. An alert is logged when raised, again every 30 minutes
   while it lasts (`reminder: true`), and once at info level when it clears: the raised alerts live in
   Redis (`vault:scan-alert:<key>`, SET NX, a reminder key with a 30-minute TTL); a store that fails
@@ -1490,6 +1510,9 @@ of their own, so a slow chain never holds up `eth`, `polygon` and `btc`. — gua
   scanning stops alerting when its record expires (7 days) or is deleted. — guarded by
   `app/services/deposit/scan_activity_test.go`, `TestScan_Alerts_FollowTheRecordedModeNotTheNewestRecord`,
   `app/services/deposit/signature_alerts_test.go` (`TestScan_Alerts_WarnWhenAnAccountOfAChainInSignatureModeNeverSettles`,
+  `TestScan_Alerts_ARecordFromAnEarlierSignaturePeriodRaisesNoAlert`,
+  `TestRecord_SignatureSync_CarriesNothingFromAnEarlierSignaturePeriod`,
+  `TestScan_Alerts_AHealthyCycleAtTheShortestIntervalRaisesNoAlert`,
   `TestSync_Signatures_AnAccountThatNeverSettlesRaisesTheAlertAfterAFewIntervals`), `app/adapters/redis/scanactivity/store_test.go`,
   `app/providers/deposit_scan_overrides_test.go`, `config/vault_test.go` and
   `TestConfirmation_Tracker_ReadsTheScanAlertThresholds` (`tests/architecture`).

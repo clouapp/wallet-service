@@ -70,6 +70,7 @@ type signatureRecord struct {
 	SkippedMints        []string  `json:"skipped_mints,omitempty"`
 	Head                uint64    `json:"head"`
 	CoveredHead         uint64    `json:"covered_head"`
+	ListedHead          uint64    `json:"listed_head,omitempty"`
 	ReadEveryAccount    bool      `json:"read_every_account,omitempty"`
 	BackfillingSince    time.Time `json:"backfilling_since,omitzero"`
 	At                  time.Time `json:"at"`
@@ -114,7 +115,7 @@ func (s *Store) RecordSignatureSync(ctx context.Context, chainID string, sync de
 	}
 	record := signatureRecord{Accounts: sync.Accounts, FailedAccounts: sync.FailedAccounts,
 		BackfillingAccounts: sync.BackfillingAccounts, SkippedMints: sync.SkippedMints,
-		Head: sync.Head, CoveredHead: sync.CoveredHead, ReadEveryAccount: sync.ReadEveryAccount, At: sync.At.UTC()}
+		Head: sync.Head, CoveredHead: sync.CoveredHead, ListedHead: sync.ListedHead, ReadEveryAccount: sync.ReadEveryAccount, At: sync.At.UTC()}
 	if !sync.BackfillingSince.IsZero() {
 		record.BackfillingSince = sync.BackfillingSince.UTC()
 	}
@@ -260,7 +261,7 @@ func decodeSignatureSync(value any) (*deposit.SignatureSyncRecord, error) {
 	}
 	record := &deposit.SignatureSyncRecord{Accounts: stored.Accounts, FailedAccounts: stored.FailedAccounts,
 		BackfillingAccounts: stored.BackfillingAccounts, SkippedMints: stored.SkippedMints,
-		Head: stored.Head, CoveredHead: stored.CoveredHead, ReadEveryAccount: stored.ReadEveryAccount, At: stored.At.UTC()}
+		Head: stored.Head, CoveredHead: stored.CoveredHead, ListedHead: stored.ListedHead, ReadEveryAccount: stored.ReadEveryAccount, At: stored.At.UTC()}
 	if !stored.BackfillingSince.IsZero() {
 		record.BackfillingSince = stored.BackfillingSince.UTC()
 	}

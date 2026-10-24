@@ -192,13 +192,15 @@ func (s *Service) warnScanActivity(ctx context.Context) map[string]bool {
 }
 
 // warnSignatureSync alerts on a chain whose scan last recorded that the signature
-// sync reads it: its last completed sync cycle (or, without one since, the start of
-// that mode) ended longer ago than its stale threshold plus the sync's interval (the
-// sync stopped, or every cycle fails), the cycle left accounts failed (their deposits
-// wait for a later cycle), it skipped registered tokens the node does not hold as
-// token mints, or an account does not settle: the slot every account was read up to
-// trails the head the last cycle confirmed at by more than the index margin plus
-// signatureSettleIntervals intervals of slots, or accounts have been backfilling for
+// sync reads it: its last completed sync cycle of this period of the mode (or,
+// without one, the start of that mode) ended longer ago than its stale threshold plus
+// the sync's interval (the sync stopped, or every cycle fails), that cycle left
+// accounts failed (their deposits wait for a later cycle), it skipped registered
+// tokens the node does not hold as token mints, or an account does not settle: the
+// slot every account was read up to trails the head that cycle read before listing
+// the addresses by more than the index margin plus signatureSettleIntervals intervals
+// of slots (a cycle that read every account leaves the margin at most, however long
+// it took), or accounts have been backfilling for
 // longer than signatureSettleIntervals intervals (an account never read up to the
 // head with proof keeps the covered slot back, with no covered slot at all while
 // none ever was). Its block scan records no cycle meanwhile, so that scan's alerts
@@ -207,13 +209,14 @@ func (s *Service) warnSignatureSync(ctx context.Context, chainID string, activit
 	thresholds := s.scanAlertThresholdsFor(ctx, chainID)
 	interval := s.SignatureSettings(ctx).Interval
 	staleAfter := thresholds.StaleAfter + interval
+	// Only a cycle of this period of signature mode speaks for the accounts now: a
+	// record left from an earlier period is neither failed accounts, skipped mints nor
+	// an unsettled account, and the stale check counts from the mode's start.
 	var sync SignatureSyncRecord
 	last := activity.Mode.Since
-	if activity.Signatures != nil {
-		sync = *activity.Signatures
-		if sync.At.After(last) {
-			last = sync.At
-		}
+	if current := activity.CurrentSync(); current != nil {
+		sync = *current
+		last = sync.At
 	}
 	lastSyncedAt := last.UTC().Format(time.RFC3339)
 	age := now.Sub(last)
@@ -239,14 +242,14 @@ func (s *Service) warnSignatureSync(ctx context.Context, chainID string, activit
 	}, func() {
 		slog.Info(signatureMintsClearedMessage, "chain", chainID)
 	})
-	lag, lagThreshold := sync.LagBlocks(), signatureLagThreshold(interval)
+	lag, lagThreshold := sync.SettleLag(), signatureLagThreshold(interval)
 	backfilling, backfillThreshold := time.Duration(0), signatureSettleIntervals*interval
 	if sync.BackfillingAccounts > 0 && !sync.BackfillingSince.IsZero() {
 		backfilling = now.Sub(sync.BackfillingSince)
 	}
 	s.alert(ctx, "signature-unsettled:"+chainID, lag > lagThreshold || backfilling > backfillThreshold, func(reminder bool) {
 		slog.Warn(signatureUnsettledMessage,
-			"chain", chainID, "lag_blocks", lag, "threshold_blocks", lagThreshold, "covered_slot", sync.CoveredHead, "head", sync.Head,
+			"chain", chainID, "lag_blocks", lag, "threshold_blocks", lagThreshold, "covered_slot", sync.CoveredHead, "listed_head", sync.ListedHead,
 			"backfilling_accounts", sync.BackfillingAccounts, "minutes_backfilling", int(backfilling/time.Minute),
 			"threshold_minutes", int(backfillThreshold/time.Minute), "last_synced_at", lastSyncedAt,
 			"hint", "each cycle reads them again from their cursors and logs every account whose listing an endpoint did not prove; deposits:sync-signatures "+chainID+" runs one now",
