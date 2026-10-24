@@ -43,9 +43,18 @@ type SignatureAccounts struct {
 // by page: below Before (from the newest signature when empty) and above Until (both
 // left out; empty for none). With HasFloor, the listing stops at the first signature
 // below FloorSlot. MaxPages pages are read at most.
+//
+// A Before must be placed by the endpoint's address index: Anchor is the signature
+// recorded right above Before (empty: Before is the newest the caller knows of), the
+// listing reads from right below Anchor (from the newest signature when empty), and
+// its first entry must be Before itself, which is then left out. An index that does
+// not hold Before there (one behind on the newest slots, or without the old ledger,
+// answering an empty page, its own newest signatures or an error instead) yields an
+// empty, unended listing: nothing is read below a signature it cannot place.
 type SignatureQuery struct {
 	Until     string
 	Before    string
+	Anchor    string
 	FloorSlot uint64
 	HasFloor  bool
 	MaxPages  int
@@ -68,8 +77,9 @@ type AccountSignature struct {
 // either, an empty page, with LedgerStart the endpoint's first available block: only
 // a ledger that starts at or below the floor proves there is nothing older to read. A
 // listing with Until that is neither Ended nor More did not prove it reached Until. A
-// listing below a Before the endpoint does not hold is empty and unended: nothing an
-// endpoint lists or says of the end below a signature it cannot place is evidence.
+// listing below a Before the endpoint's index does not place (SignatureQuery.Anchor)
+// is empty and unended: nothing an endpoint lists or says of the end below a
+// signature it cannot place is evidence.
 type SignatureHistory struct {
 	Signatures   []AccountSignature
 	Head         uint64

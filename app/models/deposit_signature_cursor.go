@@ -20,18 +20,27 @@ import "time"
 // gap between AheadBefore and Signature is read newest first over the next cycles;
 // once it is read the two stretches join (Signature becomes AheadSignature) and the
 // Ahead fields are empty again.
+//
+// BackfillAnchor and AheadAnchor are the signatures recorded right above
+// BackfillBefore and AheadBefore: a listing below either end starts right below its
+// anchor and must find the end itself first, which proves the endpoint's address
+// index holds it there. Empty: the end is the only recorded signature of its stretch
+// (the listing then starts at the newest signature), or the row was saved before the
+// anchors were recorded.
 type DepositSignatureCursor struct {
 	Chain          string    `gorm:"column:chain;primaryKey"`
 	Account        string    `gorm:"column:account;primaryKey"`
 	Signature      string    `gorm:"column:signature"`
 	Slot           int64     `gorm:"column:slot"`
 	BackfillBefore string    `gorm:"column:backfill_before"`
+	BackfillAnchor string    `gorm:"column:backfill_anchor"`
 	SyncedFromSlot int64     `gorm:"column:synced_from_slot"`
 	Covered        bool      `gorm:"column:covered"`
 	EndSeen        bool      `gorm:"column:end_seen"`
 	AheadSignature string    `gorm:"column:ahead_signature"`
 	AheadSlot      int64     `gorm:"column:ahead_slot"`
 	AheadBefore    string    `gorm:"column:ahead_before"`
+	AheadAnchor    string    `gorm:"column:ahead_anchor"`
 	CreatedAt      time.Time `gorm:"column:created_at"`
 	UpdatedAt      time.Time `gorm:"column:updated_at"`
 }

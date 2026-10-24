@@ -82,7 +82,8 @@ func TestSync_Signatures_ReadsAHistoryLongerThanACycleOverSeveralCycles(t *testi
 	sameCursor(t, f.cursors(t)[sigBob], "sig-new", 1500, "sig-1003", sigCheckpoint, false)
 	queries := f.chain.queriesOf(sigBob)
 	assert.Equal(t, chain.SignatureQuery{Until: "sig-1012", FloorSlot: 1012, HasFloor: true, MaxPages: signatureForwardPageCeiling}, queries[1])
-	assert.Equal(t, chain.SignatureQuery{Before: "sig-1008", FloorSlot: sigCheckpoint, HasFloor: true, MaxPages: signatureBackfillPages}, queries[2])
+	assert.Equal(t, chain.SignatureQuery{Before: "sig-1008", Anchor: "sig-1009", FloorSlot: sigCheckpoint, HasFloor: true, MaxPages: signatureBackfillPages}, queries[2],
+		"below the oldest recorded signature, from the one recorded right above it")
 
 	third := f.sync(t)
 

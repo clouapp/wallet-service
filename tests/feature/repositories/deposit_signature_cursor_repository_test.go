@@ -118,6 +118,27 @@ func (s *DepositSignatureCursorRepositoryTestSuite) TestAdvance_KeepsTheStretchA
 	s.False(row.EndSeen, "an end the next read contradicted is forgotten")
 }
 
+// The anchors of the two stretch ends (the signatures recorded right above them) are
+// stored and move with them.
+func (s *DepositSignatureCursorRepositoryTestSuite) TestAdvance_KeepsTheAnchorOfEachStretchEnd() {
+	ctx := context.Background()
+	s.Require().NoError(s.repo.Advance(ctx, models.DepositSignatureCursor{Chain: models.ChainTSOL, Account: cursorOwner,
+		Signature: "sig-top", Slot: 200, BackfillBefore: "sig-150", BackfillAnchor: "sig-151", SyncedFromSlot: 100,
+		AheadSignature: "sig-900", AheadSlot: 900, AheadBefore: "sig-800", AheadAnchor: "sig-801"}))
+
+	row := s.cursorsOf(models.ChainTSOL)[cursorOwner]
+	s.Equal("sig-151", row.BackfillAnchor)
+	s.Equal("sig-801", row.AheadAnchor)
+
+	s.Require().NoError(s.repo.Advance(ctx, models.DepositSignatureCursor{Chain: models.ChainTSOL, Account: cursorOwner,
+		Signature: "sig-900", Slot: 900, BackfillBefore: "sig-120", BackfillAnchor: "sig-121", SyncedFromSlot: 100}))
+
+	row = s.cursorsOf(models.ChainTSOL)[cursorOwner]
+	s.Equal("sig-120", row.BackfillBefore)
+	s.Equal("sig-121", row.BackfillAnchor, "the anchor moves down with the oldest recorded signature")
+	s.Empty(row.AheadAnchor, "the stretches joined: no anchor ahead")
+}
+
 func (s *DepositSignatureCursorRepositoryTestSuite) TestAdvance_Never_MovesACursorBack() {
 	ctx := context.Background()
 	s.Require().NoError(s.repo.Advance(ctx, models.DepositSignatureCursor{Chain: models.ChainTSOL, Account: cursorOwner, Signature: "sig-new", Slot: 500}))

@@ -1177,7 +1177,10 @@ on; the sync is its safety net, and the only detector where it is not.
   block scan resumed after the sync rescans it once, and a known-empty account lists it each cycle. An
   index further behind than that could still drop a first deposit. After a burst, or a listing whose end
   is not proven, `ahead_signature` (at `ahead_slot`) down to `ahead_before` is a second stretch above a
-  gap (below).
+  gap (below). `backfill_anchor` and `ahead_anchor` (migration 690) are the signatures recorded right
+  above `backfill_before` and `ahead_before`, kept as the stretches move (a listing is a contiguous run,
+  so what is recorded below an end is right below it, and the first signature recorded above a stretch
+  of one is right above it); empty while an end is the only signature of its stretch.
 - **Reading**: `getSignaturesForAddress` (finalized, 1000 a page, newest first), every call of one
   listing on one endpoint (`rpc.PinEndpoint`: its finalized slot first, then the pages, then the
   evidence of the end). Each cycle reads an account's new signatures above its cursor (`until`, at most
@@ -1205,13 +1208,31 @@ on; the sync is its safety net, and the only detector where it is not.
   answers another signature, the listing is read again once on the same pinned endpoint (it lists the
   new signature, and its confirmation, below it, must still be the cursor itself); a second miss leaves
   the account for the next cycle. The empty page read again does not count against the page limit.
-  A listing below a `before` (a backfill read, or the gap below a stretch ahead of the cursor) first asks
-  the same pinned endpoint whether it holds that signature (`getSignatureStatuses`, searching the
-  history): a backend behind on the newest slots, or one without the old ledger, may answer an empty
-  page or its own newest signatures for a `before` it cannot place instead of failing it as Agave does,
-  and twice in a row that read as the end of a history and covered the account with its older history
-  unread (a loss in v0.14.0, found by the review of #130). One that does not hold it lists nothing and
-  ends nothing: the account stays backfilling until an endpoint that holds it reads on.
+  A listing below an end (a backfill read below `backfill_before`, or the gap read below `ahead_before`)
+  is anchored in the address index itself: its first page is read from right below the end's anchor
+  (from the newest signature while the end is the only one of its stretch) and must start with the end,
+  which is left out (`chain.SignatureQuery.Anchor`). Only an index that holds the end right where it was
+  recorded passes, and nothing else is asked. An index that does not (one behind on the newest slots, or
+  without the old ledger) may answer an empty page, its own newest signatures or, as Agave does, -32020;
+  whatever it answers, nothing is listed or ended below that end and the account stays backfilling until
+  an index that places it reads on. Before anchoring, two such empty answers in a row read as the end of a
+  history and covered the account with its older history unread, and an answer from the index's newest
+  moved the oldest recorded signature down over unread ones (v0.14.0; v0.14.1 asked the status store,
+  `getSignatureStatuses`, which an index behind it does not follow: both found by the reviews of #130). A
+  cursor saved before migration 690 has no anchor on a stretch of several signatures: its end is first
+  moved up to the stretch's newest signature (what the cursor claims recorded only shrinks), and the
+  history below is read again once, idempotently.
+- **Provider requirement**: `getSignaturesForAddress` must fail for a `before` or an `until` its address
+  index does not hold (Agave: -32020 `Transaction … not found`; devnet does, checked 2026-10-24), and
+  agree with that index otherwise. A provider that answers an empty page or other signatures instead
+  costs no deposit where the anchor and the `until` confirmation apply (every listing below an end, every
+  listing above a cursor): it only keeps accounts backfilling, or unended above their cursor, until a
+  conforming answer comes. Not covered by either: an index with a hole inside a range it claims to hold
+  (it lists around signatures it is missing), and how far up a listing above a cursor proves the account
+  read (the head less the 1500-slot margin), which rests on the index trailing its head by less than the
+  margin. One-line check of a provider (`$RPC` its URL; a
+  conforming one answers an error, a non-conforming one a result):
+  `curl -s "$RPC" -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"getSignaturesForAddress","params":["HaomqGZ9epXsBwmcpGKrJAy2kg8CiCPrWtbCWpFymyfp",{"before":"1111111111111111111111111111111111111111111111111111111111111111","limit":1}]}'`.
   Otherwise only a signature below the floor, or an empty page together with the endpoint's first
   available block (`getFirstAvailableBlock`) at or below the floor, proves there is nothing older. The
   first covers an account at once; the second only when two backfill reads in a row show it and the
@@ -1236,8 +1257,8 @@ on; the sync is its safety net, and the only detector where it is not.
   `getSignaturesForAddress` page, then either the confirmation `getSignaturesForAddress` (an account
   with a recorded signature) or `getFirstAvailableBlock` (an account known empty). Each new signature
   adds one `getTransaction`, each slot that credits a watched address one `getBlock` without
-  transactions, a confirmation race two more `getSignaturesForAddress`, and each listing below a
-  `before` (backfill and gap reads only, none in steady state) one `getSignatureStatuses`. At 18
+  transactions and a confirmation race two more `getSignaturesForAddress`; the anchor of a listing below
+  an end is its own first page (one signature fewer of the history on it), no call. At 18
   addresses with one token (36 accounts) and the default 600 s: 2 + 18 + 36 × 3 = 128 calls a cycle,
   about 18 400 a day (144 cycles), of which at most 10 400 `getSignaturesForAddress`; the confirmation
   call is at most one per account and cycle, about 5 200 a day. Beside the cycles, the paused block
@@ -1308,10 +1329,12 @@ transactions 2yMCe5… and 634Fzh… recorded in `testdata/solana`, `TestSolana_
 `app/services/settings/deposit_signatures_test.go`, `app/services/cacheguard` (`TestAcquireHold_*`),
 `app/services/deposit/pending` (`TestDurable_Store_ListCompleteRefusesADegradedReadingThatListKeeps`),
 `TestDeposit_Signature_CursorRepositorySuite`, `tests/migrations/create_deposit_signature_cursors_test.go`,
+`tests/migrations/add_deposit_signature_cursor_anchors_test.go`, `app/adapters/chain/solana/signatures_property_test.go`,
 `TestSignature_Schedule_*` and `TestStart_Syncs_TheListedScanChainsOnTheSignatureTickAndAppliesASettingsChangeWithoutARestart`
 (`app/services/localworkers`) and `app/console/commands/deposits_sync_signatures_test.go`. Read-only check
-against devnet (accounts, a page of history, and the credits of live transactions compared with
-`ScanBlock` in their slot, about ten calls): `go test -tags solana_signatures_live -run TestLive_
+against devnet (accounts, a page of history, a listing above a cursor and one anchored below a
+signature, an unknown `before` the endpoint must fail, and the credits of live transactions compared with
+`ScanBlock` in their slot, about a dozen calls): `go test -tags solana_signatures_live -run TestLive_
 ./app/adapters/chain/solana/` (`SOLANA_LIVE_RPC_URL` for another endpoint).
 
 ### Provider push subscriptions (ingest)

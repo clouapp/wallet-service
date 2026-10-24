@@ -190,30 +190,6 @@ func (h *accountHistory) page(t *testing.T, req solanaRequest) string {
 	return `"result":` + string(body)
 }
 
-// statuses answers getSignatureStatuses as a node does: a status for each signature
-// the history holds, null for any other.
-func (h *accountHistory) statuses(t *testing.T, req solanaRequest) string {
-	t.Helper()
-	var signatures []string
-	req.param(t, 0, &signatures)
-	var options struct {
-		SearchTransactionHistory bool `json:"searchTransactionHistory"`
-	}
-	req.param(t, 1, &options)
-	if !options.SearchTransactionHistory {
-		t.Errorf("getSignatureStatuses without searchTransactionHistory: a cursor is older than the recent status cache")
-	}
-	values := make([]any, len(signatures))
-	for i, signature := range signatures {
-		if at := h.index(signature); at < len(h.signatures) {
-			values[i] = map[string]any{"slot": h.signatures[at].Slot, "err": nil, "confirmationStatus": solanaCommitmentFinalized}
-		}
-	}
-	body, err := json.Marshal(map[string]any{"context": map[string]any{"slot": 1}, "value": values})
-	require.NoError(t, err)
-	return `"result":` + string(body)
-}
-
 func (h *accountHistory) index(signature string) int {
 	for i, entry := range h.signatures {
 		if entry.Signature == signature {
@@ -234,8 +210,6 @@ func historyNode(t *testing.T, history *accountHistory, head, ledgerStart uint64
 			return fmt.Sprintf(`"result":%d`, ledgerStart)
 		case "getSignaturesForAddress":
 			return history.page(t, req)
-		case "getSignatureStatuses":
-			return history.statuses(t, req)
 		}
 		return `"error":{"code":-32601,"message":"Method not found"}`
 	})
@@ -322,16 +296,20 @@ func TestSolana_AccountSignatures_ClosesAnEmptyGapBelowBefore(t *testing.T) {
 	node := historyNode(t, newAccountHistory(10, 9000), 9100, 0)
 
 	got, err := liveOn(node.server.URL).AccountSignatures(context.Background(), ataFixtureOwner,
-		chain.SignatureQuery{Until: "sig-00004", Before: "sig-00005", MaxPages: 10})
+		chain.SignatureQuery{Until: "sig-00004", Before: "sig-00005", Anchor: "sig-00006", MaxPages: 10})
 
 	require.NoError(t, err)
-	assert.Empty(t, got.Signatures)
+	assert.Empty(t, got.Signatures, "the before itself is not returned")
 	assert.True(t, got.Ended, "the signature below before is the cursor")
-	_, confirmations := node.pageCalls(t)
+	pages, confirmations := node.pageCalls(t)
+	require.Len(t, pages, 1)
+	var page struct{ Before string }
+	pages[0].param(t, 1, &page)
+	assert.Equal(t, "sig-00006", page.Before, "read from right below the anchor, which places the before first")
 	require.Len(t, confirmations, 1)
 	var confirm struct{ Before string }
 	confirmations[0].param(t, 1, &confirm)
-	assert.Equal(t, "sig-00005", confirm.Before, "below the query's before when nothing was listed")
+	assert.Equal(t, "sig-00005", confirm.Before, "below the before when nothing else was listed")
 }
 
 // The confirmation of a cursor is asked of the endpoint that served the listing: when
@@ -527,17 +505,19 @@ func TestSolana_AccountSignatures_ListsAgainOnlyOnceAndStillNeedsTheCursorItself
 	}
 }
 
-// A listing below a before starts by asking the endpoint whether it holds that
-// signature. One that does not (behind on the newest slots, or without the old
-// ledger) may answer an empty page, its own newest signatures or an error for a
-// before it cannot place: whatever it would answer, nothing is listed or ended, so
-// an empty page never reads as the end of a history and nothing older than the
-// before is skipped.
-func TestSolana_AccountSignatures_ListsNothingBelowABeforeTheEndpointDoesNotHold(t *testing.T) {
+// A listing below a before reads its first page from right below the anchor (the
+// signature recorded right above the before) and must find the before itself first.
+// An address index that does not hold the before there may answer an empty page, its
+// own newest signatures, a page where another signature follows the anchor, or
+// Agave's -32020: whatever it answers, nothing is listed or ended, so an empty page
+// never reads as the end of a history and nothing older than the before is skipped,
+// and no other call is made.
+func TestSolana_AccountSignatures_ListsNothingBelowABeforeItsIndexDoesNotPlace(t *testing.T) {
 	for name, listing := range map[string]string{
-		"an empty page":            `"result":[]`,
-		"its own newest signature": `"result":[{"signature":"sig-older","slot":4700,"err":null}]`,
-		"Agave's -32020":           `"error":{"code":-32020,"message":"Transaction not found"}`,
+		"an empty page":                      `"result":[]`,
+		"its own newest signature":           `"result":[{"signature":"sig-older","slot":4700,"err":null}]`,
+		"another signature below the anchor": `"result":[{"signature":"sig-between","slot":4950,"err":null},{"signature":"sig-before","slot":4940,"err":null}]`,
+		"Agave's -32020":                     `"error":{"code":-32020,"message":"Transaction sig-anchor not found"}`,
 	} {
 		for _, until := range []string{"", "sig-cursor"} {
 			t.Run(fmt.Sprintf("%s, until %q", name, until), func(t *testing.T) {
@@ -547,8 +527,6 @@ func TestSolana_AccountSignatures_ListsNothingBelowABeforeTheEndpointDoesNotHold
 						return `"result":9100`
 					case "getFirstAvailableBlock":
 						return `"result":0`
-					case "getSignatureStatuses":
-						return `"result":{"context":{"slot":9100},"value":[null]}`
 					case "getSignaturesForAddress":
 						return listing
 					}
@@ -556,61 +534,120 @@ func TestSolana_AccountSignatures_ListsNothingBelowABeforeTheEndpointDoesNotHold
 				})
 
 				got, err := liveOn(node.server.URL).AccountSignatures(context.Background(), ataFixtureOwner,
-					chain.SignatureQuery{Before: "sig-the-endpoint-does-not-hold", Until: until, FloorSlot: 1000, HasFloor: true, MaxPages: 5})
+					chain.SignatureQuery{Before: "sig-before", Anchor: "sig-anchor", Until: until, FloorSlot: 1000, HasFloor: true, MaxPages: 5})
 
 				require.NoError(t, err)
 				assert.Empty(t, got.Signatures)
-				assert.False(t, got.Ended, "nothing proves the end below a before the endpoint does not hold")
+				assert.False(t, got.Ended, "nothing proves the end below a before the index does not place")
 				assert.False(t, got.More)
 				assert.False(t, got.FloorCrossed)
 				assert.Equal(t, uint64(9100), got.Head)
-				assert.Empty(t, node.calls("getSignaturesForAddress"), "nothing is listed below it")
+				listings := node.calls("getSignaturesForAddress")
+				require.Len(t, listings, 1, "the first page decides; nothing is listed below it")
+				var options struct{ Before string }
+				listings[0].param(t, 1, &options)
+				assert.Equal(t, "sig-anchor", options.Before, "read from right below the anchor")
 				assert.Empty(t, node.calls("getFirstAvailableBlock"))
-				statuses := node.calls("getSignatureStatuses")
-				require.Len(t, statuses, 1)
-				var asked []string
-				statuses[0].param(t, 0, &asked)
-				assert.Equal(t, []string{"sig-the-endpoint-does-not-hold"}, asked)
+				assert.Empty(t, node.calls("getSignatureStatuses"), "the index itself is the proof; no status is asked")
 			})
 		}
 	}
 }
 
-// The endpoint that serves the listing is the one asked whether it holds the before:
-// when it fails that, the listing fails, and no other endpoint answers it.
-func TestSolana_AccountSignatures_AsksTheListingsEndpointWhetherItHoldsTheBefore(t *testing.T) {
-	history := newAccountHistory(40, 9000)
-	primary := newMethodNode(t, func(req solanaRequest) string {
-		switch req.Method {
-		case "getGenesisHash":
-			return devnetGenesisResult
-		case "getSlot":
-			return `"result":9100`
-		case "getSignaturesForAddress":
-			return history.page(t, req)
-		}
-		return ""
-	})
-	fallback := newMethodNode(t, func(req solanaRequest) string {
-		switch req.Method {
-		case "getGenesisHash":
-			return devnetGenesisResult
-		case "getSlot":
-			return `"result":9100`
-		case "getSignatureStatuses":
-			return history.statuses(t, req)
-		case "getSignaturesForAddress":
-			return history.page(t, req)
-		}
-		return `"result":0`
-	})
-	live := devnetWithFallbacks(primary.server.URL, fallback.server.URL)
+// A placed before is left out, and the listing goes on below it page by page, each
+// page from below the last signature the index listed, down to the end of the
+// history: one fewer new signature on the first page, no call of its own.
+func TestSolana_AccountSignatures_PagesDownBelowAPlacedBefore(t *testing.T) {
+	history := newAccountHistory(3000, 9000)
+	node := historyNode(t, history, 9100, 0)
 
-	_, err := live.AccountSignatures(context.Background(), ataFixtureOwner, chain.SignatureQuery{Before: "sig-00020", MaxPages: 10})
+	got, err := liveOn(node.server.URL).AccountSignatures(context.Background(), ataFixtureOwner,
+		chain.SignatureQuery{Before: "sig-02500", Anchor: "sig-02501", MaxPages: 10})
 
-	require.Error(t, err, "the endpoint that serves the listing did not answer whether it holds the before")
-	assert.Empty(t, fallback.calls("getSignatureStatuses"), "no other endpoint answers for it")
-	assert.Empty(t, fallback.calls("getSignaturesForAddress"))
+	require.NoError(t, err)
+	require.Len(t, got.Signatures, 2500)
+	assert.Equal(t, "sig-02499", got.Signatures[0].Signature)
+	assert.Equal(t, "sig-00000", got.Signatures[2499].Signature)
+	for i := 1; i < len(got.Signatures); i++ {
+		require.GreaterOrEqual(t, got.Signatures[i-1].Slot, got.Signatures[i].Slot)
+	}
+	assert.True(t, got.Ended, "the empty page below the oldest")
+	pages, _ := node.pageCalls(t)
+	require.Len(t, pages, 4, "1000 (the before and 999), 1000, 501, then the empty page")
+	for i, want := range []string{"sig-02501", "sig-01501", "sig-00501", "sig-00000"} {
+		var options struct{ Before string }
+		pages[i].param(t, 1, &options)
+		assert.Equal(t, want, options.Before, "page %d", i)
+	}
+	assert.Len(t, node.calls("getFirstAvailableBlock"), 1)
+}
+
+// A before recorded without an anchor (the only signature of its stretch) is read
+// from the newest signature, which must be that before: an index whose newest is
+// another signature places nothing.
+func TestSolana_AccountSignatures_ABeforeWithoutAnAnchorMustBeTheNewestSignature(t *testing.T) {
+	history := newAccountHistory(10, 9000)
+	node := historyNode(t, history, 9100, 0)
+
+	got, err := liveOn(node.server.URL).AccountSignatures(context.Background(), ataFixtureOwner,
+		chain.SignatureQuery{Before: "sig-00009", FloorSlot: 8000, HasFloor: true, MaxPages: 5})
+	require.NoError(t, err)
+	require.Len(t, got.Signatures, 9, "everything below the newest, which is the before")
+	assert.Equal(t, "sig-00008", got.Signatures[0].Signature)
+	var options struct{ Before string }
+	node.calls("getSignaturesForAddress")[0].param(t, 1, &options)
+	assert.Empty(t, options.Before, "read from the newest signature")
+
+	moved, err := liveOn(node.server.URL).AccountSignatures(context.Background(), ataFixtureOwner,
+		chain.SignatureQuery{Before: "sig-00005", FloorSlot: 8000, HasFloor: true, MaxPages: 5})
+	require.NoError(t, err)
+	assert.Empty(t, moved.Signatures, "newer signatures sit above the before: it is not placed")
+	assert.False(t, moved.Ended)
+}
+
+// A failed first page of a listing below a before is the error it is, never a
+// placed before; on a client with fallbacks it stays on the endpoint the listing is
+// pinned to, and no other endpoint answers for it.
+func TestSolana_AccountSignatures_AFailedAnchoredPageIsAnErrorNotAPlacedBefore(t *testing.T) {
+	for name, failure := range map[string]string{
+		"an internal error": `"error":{"code":-32603,"message":"Internal error"}`,
+		"HTTP 503":          "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			history := newAccountHistory(40, 9000)
+			primary := newMethodNode(t, func(req solanaRequest) string {
+				switch req.Method {
+				case "getGenesisHash":
+					return devnetGenesisResult
+				case "getSlot":
+					return `"result":9100`
+				case "getSignaturesForAddress":
+					return failure
+				}
+				return ""
+			})
+			fallback := newMethodNode(t, func(req solanaRequest) string {
+				switch req.Method {
+				case "getGenesisHash":
+					return devnetGenesisResult
+				case "getSlot":
+					return `"result":9100`
+				case "getSignaturesForAddress":
+					return history.page(t, req)
+				}
+				return `"result":0`
+			})
+			live := devnetWithFallbacks(primary.server.URL, fallback.server.URL)
+
+			got, err := live.AccountSignatures(context.Background(), ataFixtureOwner,
+				chain.SignatureQuery{Before: "sig-00020", Anchor: "sig-00021", FloorSlot: 8000, HasFloor: true, MaxPages: 10})
+
+			require.Error(t, err, "a failed page is no proof that the index holds the before")
+			assert.Empty(t, got.Signatures)
+			assert.False(t, got.Ended)
+			assert.Empty(t, fallback.calls("getSignaturesForAddress"), "no other endpoint answers for the pinned listing")
+		})
+	}
 }
 
 func TestSolana_AccountSignatures_ContinuesBelowBefore(t *testing.T) {
@@ -618,14 +655,14 @@ func TestSolana_AccountSignatures_ContinuesBelowBefore(t *testing.T) {
 	node := historyNode(t, history, 9100, 0)
 
 	got, err := liveOn(node.server.URL).AccountSignatures(context.Background(), ataFixtureOwner,
-		chain.SignatureQuery{Before: "sig-00600", FloorSlot: 8500, HasFloor: true, MaxPages: 10})
+		chain.SignatureQuery{Before: "sig-00600", Anchor: "sig-00601", FloorSlot: 8500, HasFloor: true, MaxPages: 10})
 
 	require.NoError(t, err)
 	require.NotEmpty(t, got.Signatures)
-	assert.Equal(t, "sig-00599", got.Signatures[0].Signature, "the listing resumes right below before")
-	var options struct{ Before string }
-	node.calls("getSignaturesForAddress")[0].param(t, 1, &options)
-	assert.Equal(t, "sig-00600", options.Before)
+	assert.Equal(t, "sig-00599", got.Signatures[0].Signature, "the listing resumes right below before, which is left out")
+	var first struct{ Before string }
+	node.calls("getSignaturesForAddress")[0].param(t, 1, &first)
+	assert.Equal(t, "sig-00601", first.Before, "the first page starts right below the anchor")
 }
 
 func TestSolana_AccountSignatures_StopsAtTheFirstSignatureBelowTheFloor(t *testing.T) {
