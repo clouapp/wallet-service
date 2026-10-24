@@ -174,7 +174,7 @@ func TestRecord_SignatureSync_ReadsBackBesideTheScanAndThePushWithATTL(t *testin
 		t.Fatal(err)
 	}
 	if err := store.RecordSignatureSync(ctx, sol, deposit.SignatureSyncRecord{Accounts: 36, FailedAccounts: 1, BackfillingAccounts: 2,
-		SkippedMints: []string{"mint-a"}, Head: 1_000_400, CoveredHead: 1_000_100, At: syncedAt}); err != nil {
+		SkippedMints: []string{"mint-a"}, Head: 1_000_400, CoveredHead: 1_000_100, ReadEveryAccount: true, At: syncedAt}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.RecordMode(ctx, sol, deposit.ScanModeRecord{Mode: deposit.ScanModeSignatures, Since: scannedAt, At: syncedAt}); err != nil {
@@ -193,7 +193,7 @@ func TestRecord_SignatureSync_ReadsBackBesideTheScanAndThePushWithATTL(t *testin
 	}
 	solActivity := activity[sol]
 	wantSync := deposit.SignatureSyncRecord{Accounts: 36, FailedAccounts: 1, BackfillingAccounts: 2, SkippedMints: []string{"mint-a"},
-		Head: 1_000_400, CoveredHead: 1_000_100, At: syncedAt.UTC()}
+		Head: 1_000_400, CoveredHead: 1_000_100, ReadEveryAccount: true, At: syncedAt.UTC()}
 	if solActivity.Scan == nil || solActivity.Scan.Checkpoint != 775_000 || solActivity.Signatures == nil ||
 		!reflect.DeepEqual(*solActivity.Signatures, wantSync) || !solActivity.SignatureMode() ||
 		solActivity.Mode.Since != scannedAt || solActivity.Mode.At != syncedAt.UTC() {

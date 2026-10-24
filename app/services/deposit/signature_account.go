@@ -13,12 +13,13 @@ import (
 
 const (
 	// signatureForwardPageCeiling bounds, in pages of 1000 signatures, the new
-	// signatures above an account's cursor read in one cycle. More than that (a burst
-	// of 100 000 transactions in one interval) fails the account: what lies right
-	// above the cursor is on the last page, and nothing may be recorded past it.
+	// signatures above an account's newest recorded one listed in one cycle. A burst
+	// longer than that (100 000 transactions in one interval) is recorded newest first
+	// as a stretch of its own ahead of the cursor, and the gap below it is read over the
+	// next cycles (readNew).
 	signatureForwardPageCeiling = 100
-	// signatureBackfillPages is how many pages of an account's older history one
-	// cycle reads: a history longer than that is read over several cycles.
+	// signatureBackfillPages is how many pages of an account's older history, or of
+	// the gap below a burst, one cycle reads: a longer one is read over several cycles.
 	signatureBackfillPages = 5
 	// signatureCursorSaveEvery is how many signatures are recorded between two saves
 	// of an account's cursor.
@@ -26,12 +27,22 @@ const (
 	// signatureCursorSaveTimeout bounds one save, which does not depend on the cycle's
 	// context: a cycle cut short still keeps what it recorded.
 	signatureCursorSaveTimeout = 5 * time.Second
+	// signatureIndexMargin is how many slots below an endpoint's finalized head its
+	// address index may not have served yet: the head (getSlot) and the listing
+	// (getSignaturesForAddress) are two calls, and one URL can front several backends
+	// (a load balancer), or an index that trails the root. An account with nothing
+	// recorded is known empty only up to the head less this margin, and an account read
+	// up to a head counts as read up to the head less this margin (covered_head), so a
+	// first deposit that lands just below the head is read on the next cycle instead of
+	// falling under its floor. 150 slots is about a minute.
+	signatureIndexMargin = 150
 )
 
 // accountSync is what reading one account did: the signatures it read, the deposits
 // it recorded first in this cycle, the floor its history is read down to, the slot
 // every signature up to which is recorded (coveredTo: 0 while the account is not read
-// down to its floor, or the cycle left it behind), and why it stopped early.
+// down to its floor, a gap above its cursor is still read, or the cycle left it
+// behind), and why it stopped early.
 type accountSync struct {
 	signatures int
 	deposits   int
@@ -43,17 +54,24 @@ type accountSync struct {
 // accountState is an account's cursor while a cycle moves it: the recorded stretch of
 // its history from top (the newest recorded signature, at topSlot; empty: none yet,
 // topSlot is then the slot the account is known empty up to) down to bottom (the
-// oldest recorded one), the floor the backfill goes down to, and whether it got there.
+// oldest recorded one), the floor the backfill goes down to, whether it got there and
+// whether the last backfill read showed the end once (endSeen); and, after a burst,
+// the stretch recorded ahead of a gap above top, from ahead (at aheadSlot) down to
+// aheadBottom.
 type accountState struct {
-	account  string
-	top      string
-	topSlot  uint64
-	bottom   string
-	floor    uint64
-	hasFloor bool
-	covered  bool
-	stored   bool
-	unsaved  int
+	account     string
+	top         string
+	topSlot     uint64
+	bottom      string
+	ahead       string
+	aheadSlot   uint64
+	aheadBottom string
+	floor       uint64
+	hasFloor    bool
+	covered     bool
+	endSeen     bool
+	stored      bool
+	unsaved     int
 }
 
 func newAccountState(account string, row *models.DepositSignatureCursor, floor signatureFloor) *accountState {
@@ -61,7 +79,8 @@ func newAccountState(account string, row *models.DepositSignatureCursor, floor s
 		return &accountState{account: account, floor: floor.slot, hasFloor: floor.ok, topSlot: floor.slot}
 	}
 	return &accountState{account: account, top: row.Signature, topSlot: storedSlot(row.Slot), bottom: row.BackfillBefore,
-		floor: storedSlot(row.SyncedFromSlot), hasFloor: true, covered: row.Covered, stored: true}
+		ahead: row.AheadSignature, aheadSlot: storedSlot(row.AheadSlot), aheadBottom: row.AheadBefore,
+		floor: storedSlot(row.SyncedFromSlot), hasFloor: true, covered: row.Covered, endSeen: row.EndSeen, stored: true}
 }
 
 // storedSlot is a slot read from the cursor store, which never returns a negative
@@ -73,12 +92,22 @@ func storedSlot(slot int64) uint64 {
 	return uint64(slot)
 }
 
-// syncAccount reads one account: first the signatures above its cursor, oldest first
-// (none until something was recorded, unless the account is known empty), then, until
-// it is read down to its floor, at most signatureBackfillPages pages of its older
-// history, newest first. Each signature moves the recorded stretch once its transfers
-// are all recorded; a failure stops the account there. The cursor is saved every
-// signatureCursorSaveEvery signatures and when the account stops, whatever stopped it.
+// indexedUpTo is the slot a listing that ended at an endpoint's head proves read: the
+// head less signatureIndexMargin (0 for a head within it).
+func indexedUpTo(head uint64) uint64 {
+	if head <= signatureIndexMargin {
+		return 0
+	}
+	return head - signatureIndexMargin
+}
+
+// syncAccount reads one account: first the signatures above its newest recorded one
+// (none until something was recorded, unless the account is known empty), then,
+// until it is read down to its floor, at most signatureBackfillPages pages of its
+// older history, newest first. Each signature moves the recorded stretch once its
+// transfers are all recorded; a failure stops the account there. The cursor is saved
+// every signatureCursorSaveEvery signatures and when the account stops, whatever
+// stopped it.
 func (c *signatureCycle) syncAccount(ctx context.Context, account string, row *models.DepositSignatureCursor) (result accountSync) {
 	if !c.hold.Held() {
 		result.err = ErrScanLockLost
@@ -100,43 +129,17 @@ func (c *signatureCycle) syncAccount(ctx context.Context, account string, row *m
 		}
 	}()
 
-	head, readUpTo := uint64(0), false
-	if st.top != "" || st.covered {
-		query := chain.SignatureQuery{Until: st.top, FloorSlot: st.topSlot, HasFloor: true, MaxPages: signatureForwardPageCeiling}
-		history, err := c.reader.AccountSignatures(ctx, account, query)
-		if err != nil {
-			result.err = fmt.Errorf("read the new signatures of %s: %w", account, err)
+	head, upToDate := uint64(0), false
+	if st.top != "" || st.covered || st.ahead != "" {
+		var goOn bool
+		head, upToDate, goOn = c.readNew(ctx, st, stopAt, &result)
+		if !goOn {
 			return result
 		}
-		if history.More {
-			result.err = fmt.Errorf("more than %d pages of new signatures above the cursor of %s; nothing was recorded", signatureForwardPageCeiling, account)
-			return result
-		}
-		result.signatures += len(history.Signatures)
-		newestFirst := history.Signatures
-		oldestFirst := make([]chain.AccountSignature, len(newestFirst))
-		for i, signature := range newestFirst {
-			oldestFirst[len(newestFirst)-1-i] = signature
-		}
-		if !c.process(ctx, st, oldestFirst, true, stopAt, &result) {
-			return result
-		}
-		// Above a cursor the short page reaches it; above a slot the account is known
-		// empty up to, only the floor or a ledger that holds that slot proves the end.
-		reached := history.Ended && (query.Until != "" || history.FloorCrossed || history.LedgerStart <= query.FloorSlot)
-		if !reached {
-			slog.Warn("deposit signature sync: the endpoint did not prove the end of an account's new signatures; its coverage waits for the next cycle",
-				"chain", c.chainID, "account", account, "ledger_start", history.LedgerStart, "from_slot", query.FloorSlot)
-			return result
-		}
-		if st.top == "" && st.topSlot < history.Head {
-			st.topSlot, st.unsaved = history.Head, st.unsaved+1
-		}
-		head, readUpTo = history.Head, true
 	}
 
 	if !st.covered {
-		readUpTo = false
+		nothingRecorded := st.top == "" && st.ahead == ""
 		noFloor := !st.stored && !st.hasFloor
 		pages := signatureBackfillPages
 		if noFloor {
@@ -153,37 +156,133 @@ func (c *signatureCycle) syncAccount(ctx context.Context, account string, row *m
 		if noFloor {
 			c.fixFloor(st, history, pages)
 		}
-		firstRead := st.top == ""
-		if !c.process(ctx, st, history.Signatures, false, stopAt, &result) {
+		if !c.process(ctx, st, history.Signatures, moveDown, stopAt, &result) {
 			return result
 		}
-		switch {
-		case history.FloorCrossed:
-			st.covered = true
-		case history.Ended && history.LedgerStart <= st.floor:
-			st.covered = true
-		case history.Ended:
-			slog.Warn("deposit signature history: the endpoint's ledger starts above the account's floor, so nothing proves its older signatures are read; the account is read again on the next cycle",
-				"chain", c.chainID, "account", account, "ledger_start", history.LedgerStart, "floor", st.floor)
-		case history.More && noFloor:
-			st.covered = true
-		}
-		if st.covered {
-			st.unsaved++
-			if firstRead {
-				head, readUpTo = history.Head, true
-				if st.top == "" {
-					st.topSlot = history.Head
-				}
-			} else if head != 0 {
-				readUpTo = true
-			}
+		c.judgeHistoryEnd(st, history, noFloor)
+		if st.covered && nothingRecorded {
+			head, upToDate = history.Head, true
+			st.markEmptyUpTo(history.Head)
 		}
 	}
-	if st.covered && readUpTo {
-		result.coveredTo = head
+	// Only an account read down to its floor, and up to a head, is read up to it.
+	if st.covered && upToDate {
+		result.coveredTo = indexedUpTo(head)
 	}
 	return result
+}
+
+// readNew records the signatures above the account's newest recorded one, oldest
+// first: above its cursor or, while a burst left a gap, above the stretch recorded
+// ahead of the gap, and then down the gap. It returns the head the account is read up
+// to with upToDate when nothing above its cursor is left unread, and goOn false when
+// the account stops here (a failure, its budget, or a listing whose end nothing
+// proves).
+func (c *signatureCycle) readNew(ctx context.Context, st *accountState, stopAt time.Time, result *accountSync) (head uint64, upToDate, goOn bool) {
+	query := chain.SignatureQuery{Until: st.top, FloorSlot: st.topSlot, HasFloor: true, MaxPages: signatureForwardPageCeiling}
+	if st.ahead != "" {
+		query.Until, query.FloorSlot = st.ahead, st.aheadSlot
+	}
+	history, err := c.reader.AccountSignatures(ctx, st.account, query)
+	if err != nil {
+		result.err = fmt.Errorf("read the new signatures of %s: %w", st.account, err)
+		return 0, false, false
+	}
+	result.signatures += len(history.Signatures)
+	if history.More {
+		// A burst: more new signatures than a cycle lists. The newest, listed from the
+		// head down, are recorded newest first as a stretch of their own ahead of the
+		// cursor; the gap below them is read down to the cursor, this cycle and the next.
+		// Another burst while the gap of the last one is read starts a new stretch: the
+		// one recorded ahead of that gap becomes part of the larger gap, read again
+		// (recording is idempotent), so no burst ever fails the account.
+		if st.ahead != "" {
+			st.ahead, st.aheadSlot, st.aheadBottom = "", 0, ""
+			st.unsaved++
+		}
+		slog.Warn("deposit signature sync: a burst of new signatures above an account's cursor; the newest are recorded first, the gap below them over the next cycles",
+			"chain", c.chainID, "account", st.account, "max_pages", signatureForwardPageCeiling)
+		if !c.process(ctx, st, history.Signatures, moveGapDown, stopAt, result) {
+			return 0, false, false
+		}
+	} else {
+		oldestFirst := make([]chain.AccountSignature, len(history.Signatures))
+		for i, signature := range history.Signatures {
+			oldestFirst[len(history.Signatures)-1-i] = signature
+		}
+		if !c.process(ctx, st, oldestFirst, moveUp, stopAt, result) {
+			return 0, false, false
+		}
+		if !reachedEnd(query, history) {
+			slog.Warn("deposit signature sync: the endpoint did not prove the end of an account's new signatures; its coverage waits for the next cycle",
+				"chain", c.chainID, "account", st.account, "ledger_start", history.LedgerStart, "from_slot", query.FloorSlot)
+			return 0, false, false
+		}
+		st.markEmptyUpTo(history.Head)
+	}
+	head = history.Head
+	if st.ahead == "" {
+		return head, true, true
+	}
+
+	gapQuery := chain.SignatureQuery{Until: st.top, Before: st.aheadBottom, FloorSlot: st.topSlot, HasFloor: true, MaxPages: signatureBackfillPages}
+	gap, err := c.reader.AccountSignatures(ctx, st.account, gapQuery)
+	if err != nil {
+		result.err = fmt.Errorf("read the gap above the cursor of %s: %w", st.account, err)
+		return 0, false, false
+	}
+	result.signatures += len(gap.Signatures)
+	if !c.process(ctx, st, gap.Signatures, moveGapDown, stopAt, result) {
+		return 0, false, false
+	}
+	if !reachedEnd(gapQuery, gap) {
+		return 0, false, true
+	}
+	st.closeGap()
+	return head, true, true
+}
+
+// reachedEnd reports whether a listing above an account's newest recorded signature
+// (or of the gap below a burst) proved it read everything down to query.Until: the
+// short page that reaches the signature; above a slot the account is known empty up
+// to, only the floor or a ledger that holds that slot proves it.
+func reachedEnd(query chain.SignatureQuery, history chain.SignatureHistory) bool {
+	if !history.Ended {
+		return false
+	}
+	return query.Until != "" || history.FloorCrossed || history.LedgerStart <= query.FloorSlot
+}
+
+// judgeHistoryEnd decides, after a backfill read, whether the account is read down to
+// its floor: a signature below the floor proves it at once; an empty page from an
+// endpoint whose ledger reaches the floor proves it only when the account's last
+// backfill read showed it too and this one found nothing older (endSeen), so one odd
+// answer (a backend without the account's index behind a load balancer) never covers
+// an account for good. An account first read on a chain without a floor is covered
+// when MaxPages cut its history (fixFloor).
+func (c *signatureCycle) judgeHistoryEnd(st *accountState, history chain.SignatureHistory, noFloor bool) {
+	endShown := history.Ended && !history.FloorCrossed && history.LedgerStart <= st.floor
+	switch {
+	case history.FloorCrossed:
+		st.covered = true
+	case endShown && st.endSeen && len(history.Signatures) == 0:
+		st.covered = true
+	case endShown:
+		slog.Info("deposit signature history: the endpoint shows the end of an account's history; it is covered once the next cycle shows it again",
+			"chain", c.chainID, "account", st.account, "ledger_start", history.LedgerStart, "floor", st.floor)
+	case history.Ended:
+		slog.Warn("deposit signature history: the endpoint's ledger starts above the account's floor, so nothing proves its older signatures are read; the account is read again on the next cycle",
+			"chain", c.chainID, "account", st.account, "ledger_start", history.LedgerStart, "floor", st.floor)
+	case history.More && noFloor:
+		st.covered = true
+	}
+	if st.covered {
+		st.unsaved++
+	}
+	if endShown != st.endSeen {
+		st.endSeen = endShown
+		st.unsaved++
+	}
 }
 
 // fixFloor sets the floor of an account first read on a chain without one: the oldest
@@ -210,13 +309,26 @@ func (c *signatureCycle) fixFloor(st *accountState, history chain.SignatureHisto
 	}
 }
 
-// process records signatures in order and moves the recorded stretch with each:
-// upward (forward: each one the new top) or downward (backfill: each one the new
-// bottom, the first one also the top while none was). It stops at the first failure,
-// at stopAt (not a failure: the next cycle goes on) and when ctx ends, and saves the
-// cursor every signatureCursorSaveEvery signatures. It reports whether it went
-// through all of them.
-func (c *signatureCycle) process(ctx context.Context, st *accountState, signatures []chain.AccountSignature, forward bool, stopAt time.Time, result *accountSync) bool {
+// stretchMove is how recording a signature moves an account's recorded stretches.
+type stretchMove int
+
+const (
+	// moveUp: a new signature above the newest recorded one, read oldest first; it
+	// tops the stretch ahead of a gap while there is one.
+	moveUp stretchMove = iota
+	// moveDown: an older signature below the oldest recorded one, read newest first.
+	moveDown
+	// moveGapDown: a signature of a burst, or of the gap below it, read newest first:
+	// it extends the stretch ahead of the gap downward.
+	moveGapDown
+)
+
+// process records signatures in order and moves the recorded stretches with each
+// (move). It stops at the first failure, at stopAt (not a failure: the next cycle
+// goes on), when ctx ends and once the chain's scan lock is found lost (checked
+// before each signature it records), and saves the cursor every
+// signatureCursorSaveEvery signatures. It reports whether it went through all of them.
+func (c *signatureCycle) process(ctx context.Context, st *accountState, signatures []chain.AccountSignature, move stretchMove, stopAt time.Time, result *accountSync) bool {
 	for _, signature := range signatures {
 		if err := ctx.Err(); err != nil {
 			result.err = err
@@ -226,6 +338,10 @@ func (c *signatureCycle) process(ctx context.Context, st *accountState, signatur
 			return false
 		}
 		if !signature.Failed {
+			if !c.hold.Held() {
+				result.err = ErrScanLockLost
+				return false
+			}
 			deposits, err := c.record(ctx, signature)
 			result.deposits += deposits
 			if err != nil {
@@ -233,7 +349,7 @@ func (c *signatureCycle) process(ctx context.Context, st *accountState, signatur
 				return false
 			}
 		}
-		st.advance(signature, forward)
+		st.advance(signature, move)
 		if st.unsaved >= signatureCursorSaveEvery {
 			if err := c.saveState(ctx, st); err != nil {
 				result.err = err
@@ -244,15 +360,53 @@ func (c *signatureCycle) process(ctx context.Context, st *accountState, signatur
 	return true
 }
 
-// advance moves the recorded stretch over signature, recorded.
-func (st *accountState) advance(signature chain.AccountSignature, forward bool) {
-	if forward || st.top == "" {
+// advance moves the recorded stretches over signature, recorded.
+func (st *accountState) advance(signature chain.AccountSignature, move stretchMove) {
+	switch move {
+	case moveUp:
+		if st.ahead != "" {
+			st.ahead, st.aheadSlot = signature.Signature, signature.Slot
+			break
+		}
 		st.top, st.topSlot = signature.Signature, signature.Slot
-	}
-	if !forward || st.bottom == "" {
+		if st.bottom == "" {
+			st.bottom = signature.Signature
+		}
+	case moveDown:
 		st.bottom = signature.Signature
+		if st.top == "" {
+			st.top, st.topSlot = signature.Signature, signature.Slot
+		}
+	case moveGapDown:
+		st.aheadBottom = signature.Signature
+		if st.ahead == "" {
+			st.ahead, st.aheadSlot = signature.Signature, signature.Slot
+		}
 	}
 	st.unsaved++
+}
+
+// closeGap joins the stretch recorded ahead of a gap to the cursor once the gap is
+// read: its newest signature becomes the account's newest recorded one.
+func (st *accountState) closeGap() {
+	if st.bottom == "" {
+		st.bottom = st.aheadBottom
+	}
+	st.top, st.topSlot = st.ahead, st.aheadSlot
+	st.ahead, st.aheadSlot, st.aheadBottom = "", 0, ""
+	st.unsaved++
+}
+
+// markEmptyUpTo raises the slot an account with nothing recorded is known empty up to,
+// to what a listing that ended at head proves (indexedUpTo); it never lowers it.
+func (st *accountState) markEmptyUpTo(head uint64) {
+	if st.top != "" || st.ahead != "" {
+		return
+	}
+	if slot := indexedUpTo(head); slot > st.topSlot {
+		st.topSlot = slot
+		st.unsaved++
+	}
 }
 
 // saveState stores the account's cursor when it moved since the last save, with a
@@ -263,14 +417,15 @@ func (c *signatureCycle) saveState(ctx context.Context, st *accountState) error 
 	if st.unsaved == 0 {
 		return nil
 	}
-	if st.topSlot > math.MaxInt64 || st.floor > math.MaxInt64 {
-		return fmt.Errorf("signature cursor of %s: slot %d does not fit a bigint", st.account, st.topSlot)
+	if st.topSlot > math.MaxInt64 || st.floor > math.MaxInt64 || st.aheadSlot > math.MaxInt64 {
+		return fmt.Errorf("signature cursor of %s: a slot does not fit a bigint", st.account)
 	}
 	saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), signatureCursorSaveTimeout)
 	defer cancel()
 	if err := c.svc.signatureCursors.Advance(saveCtx, models.DepositSignatureCursor{
 		Chain: c.chainID, Account: st.account, Signature: st.top, Slot: int64(st.topSlot),
-		BackfillBefore: st.bottom, SyncedFromSlot: int64(st.floor), Covered: st.covered,
+		BackfillBefore: st.bottom, SyncedFromSlot: int64(st.floor), Covered: st.covered, EndSeen: st.endSeen,
+		AheadSignature: st.ahead, AheadSlot: int64(st.aheadSlot), AheadBefore: st.aheadBottom,
 	}); err != nil {
 		return fmt.Errorf("save the signature cursor of %s: %w", st.account, err)
 	}

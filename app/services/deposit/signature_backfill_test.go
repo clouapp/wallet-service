@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -68,7 +69,7 @@ func TestSync_Signatures_ReadsAHistoryLongerThanACycleOverSeveralCycles(t *testi
 	first := f.sync(t)
 
 	assert.Equal(t, signatureBackfillPages, first.Deposits, "one cycle reads its pages, the newest")
-	assert.Equal(t, 1, first.BackfillingAccounts)
+	assert.Equal(t, 3, first.BackfillingAccounts, "bob's history goes on; the end of alice's two showed once")
 	assert.Zero(t, first.FailedAccounts, "an account still read back is no failure")
 	assert.Zero(t, first.CoveredHead)
 	assert.Equal(t, []uint64{1001}, f.pendingBlocks(t), "nothing is dropped before every account reached its floor")
@@ -86,9 +87,15 @@ func TestSync_Signatures_ReadsAHistoryLongerThanACycleOverSeveralCycles(t *testi
 	third := f.sync(t)
 
 	assert.Equal(t, 2, third.Deposits)
-	assert.Zero(t, third.BackfillingAccounts)
-	assert.Equal(t, uint64(sigHead), third.CoveredHead)
-	assert.Equal(t, 1, third.ResolvedPending)
+	assert.Equal(t, 1, third.BackfillingAccounts, "the end of bob's history shows once, below the last two")
+	assert.Zero(t, third.CoveredHead)
+	sameCursor(t, f.cursors(t)[sigBob], "sig-new", 1500, "sig-1001", sigCheckpoint, false)
+
+	fourth := f.sync(t)
+
+	assert.Zero(t, fourth.BackfillingAccounts)
+	assert.Equal(t, uint64(sigCovered), fourth.CoveredHead)
+	assert.Equal(t, 1, fourth.ResolvedPending)
 	assert.Empty(t, f.pendingBlocks(t))
 	sameCursor(t, f.cursors(t)[sigBob], "sig-new", 1500, "sig-1001", sigCheckpoint, true)
 	assert.Len(t, sigDeposits(t), 13, "every signature recorded once")
@@ -120,29 +127,92 @@ func TestSync_Signatures_ClaimsNoCoverageAnEndpointCannotProve(t *testing.T) {
 	f.chain.mu.Unlock()
 	second := f.sync(t)
 
-	assert.Zero(t, second.BackfillingAccounts, "an endpoint that holds the ledger down to the floor proves it")
-	assert.Equal(t, uint64(sigHead), second.CoveredHead)
+	assert.Equal(t, 3, second.BackfillingAccounts, "an endpoint that holds the ledger down to the floor shows the end once")
+	assert.Zero(t, second.CoveredHead)
+	assert.True(t, f.cursors(t)[sigBob].EndSeen)
+
+	third := f.sync(t)
+
+	assert.Zero(t, third.BackfillingAccounts, "and proves it when it shows it again")
+	assert.Equal(t, uint64(sigCovered), third.CoveredHead)
 	assert.Empty(t, f.pendingBlocks(t))
 	assert.True(t, f.cursors(t)[sigBob].Covered)
+}
+
+// The end of a history an endpoint shows once and contradicts on the next cycle (a
+// load-balanced URL whose backends differ) covers nothing: the account is covered
+// only once two backfill reads in a row show the end and find nothing older.
+func TestSync_Signatures_CoversAnAccountOnlyWhenTheEndShowsTwiceInARow(t *testing.T) {
+	f := newSignatureFixture(t)
+	f.chain.accounts[sigAlice] = []string{sigAlice}
+	f.chain.history(sigBob, f.chain.tx("sig-2", 1202, lamports(sigBob, 20, 1)))
+
+	first := f.sync(t)
+	assert.Equal(t, 2, first.BackfillingAccounts)
+	assert.True(t, f.cursors(t)[sigBob].EndSeen, "the end shows below sig-2")
+
+	// The next backend holds an older signature the first one did not show.
+	older := f.chain.tx("sig-1", 1201, lamports(sigBob, 10, 1))
+	f.chain.mu.Lock()
+	f.chain.histories[sigBob] = append([]chain.AccountSignature{older}, f.chain.histories[sigBob]...)
+	f.chain.mu.Unlock()
+	second := f.sync(t)
+
+	assert.Equal(t, 1, second.Deposits, "the older signature is recorded")
+	assert.False(t, f.cursors(t)[sigBob].Covered, "an end contradicted by the next read covers nothing")
+	assert.True(t, f.cursors(t)[sigAlice].Covered, "alice's end showed twice")
+	assert.Zero(t, second.CoveredHead)
+
+	third := f.sync(t)
+
+	assert.True(t, f.cursors(t)[sigBob].Covered)
+	assert.Equal(t, uint64(sigCovered), third.CoveredHead)
+	assert.Len(t, sigDeposits(t), 2)
 }
 
 // An account known empty up to a slot is read above it each cycle; an endpoint whose
 // ledger starts above that slot proves nothing, so the cycle claims no coverage.
 func TestSync_Signatures_ClaimsNoCoverageAnEndpointCannotProveAboveAnEmptyAccount(t *testing.T) {
 	f := newSignatureFixture(t)
-	first := f.sync(t)
-	require.Equal(t, uint64(sigHead), first.CoveredHead)
-	sameCursor(t, f.cursors(t)[sigBob], "", sigHead, "", sigCheckpoint, true)
+	first := f.syncCovered(t)
+	require.Equal(t, uint64(sigCovered), first.CoveredHead)
+	sameCursor(t, f.cursors(t)[sigBob], "", sigCovered, "", sigCheckpoint, true)
 
 	f.chain.mu.Lock()
-	f.chain.ledgerStart = sigHead + 1
+	f.chain.ledgerStart = sigCovered + 1
 	f.chain.mu.Unlock()
 	second := f.sync(t)
 
-	assert.Equal(t, chain.SignatureQuery{FloorSlot: sigHead, HasFloor: true, MaxPages: signatureForwardPageCeiling}, f.chain.queriesOf(sigBob)[1],
+	assert.Equal(t, chain.SignatureQuery{FloorSlot: sigCovered, HasFloor: true, MaxPages: signatureForwardPageCeiling}, f.chain.queriesOf(sigBob)[2],
 		"an account known empty is read above the slot it is known empty up to")
 	assert.Zero(t, second.CoveredHead, "a ledger that starts above that slot proves nothing")
 	assert.Equal(t, 3, second.BackfillingAccounts)
+}
+
+// An account found empty is known empty only up to the head less the index margin:
+// the endpoint's head and its listing are two calls, and its address index (or
+// another backend behind the same URL) may not serve yet a signature just below that
+// head. The first deposit to a fresh address that lands there is read on the next
+// cycle, and the slot every account is read up to stays below it.
+func TestSync_Signatures_AnEmptyAccountsFirstDepositJustBelowTheHeadIsRecorded(t *testing.T) {
+	f := newSignatureFixture(t)
+	f.chain.accounts[sigAlice] = []string{sigAlice}
+	first := f.syncCovered(t)
+	assert.Equal(t, uint64(sigCovered), first.CoveredHead, "not the head: a signature just below it may not be served yet")
+	sameCursor(t, f.cursors(t)[sigBob], "", sigCovered, "", sigCheckpoint, true)
+
+	// The first deposit to bob landed at slot 1995, but the index serves it only now.
+	f.chain.history(sigBob, f.chain.tx("sig-late", sigHead-5, lamports(sigBob, 42, 1)))
+	f.chain.mu.Lock()
+	f.chain.heads[sigBob] = sigHead + 100
+	f.chain.mu.Unlock()
+	f.sync(t)
+
+	rows := sigDeposits(t)
+	require.Len(t, rows, 1, "bob's first deposit is recorded")
+	assert.Equal(t, "sig-late", rows[0].TxHash)
+	assert.Equal(t, chain.SignatureQuery{FloorSlot: sigCovered, HasFloor: true, MaxPages: signatureForwardPageCeiling}, f.chain.queriesOf(sigBob)[2])
+	sameCursor(t, f.cursors(t)[sigBob], "sig-late", sigHead-5, "sig-late", sigCheckpoint, true)
 }
 
 // A cycle cut by its context (the 60 s Lambda deadline, SIGTERM on a deploy) keeps
@@ -171,7 +241,7 @@ func TestSync_Signatures_ACycleCutByItsContextKeepsTheAccountsProgress(t *testin
 				f.chain.tx("sig-3", 1203, lamports(sigBob, 30, 1)))
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			f.chain.onTx = func(signature string) {
+			f.chain.onTx = func(_ context.Context, signature string) {
 				if signature == tc.cutAt {
 					cancel()
 				}
@@ -233,6 +303,55 @@ func TestSync_Signatures_StopsAnAccountAtItsTimeBudgetAndGoesOnNextCycle(t *test
 	assert.Len(t, sigDeposits(t), 40)
 }
 
+// Under a context with a deadline (the deposit_scanner Lambda's) a cycle's budget ends
+// signatureDeadlineMargin before it, and its reads are cut signatureSaveReserve before
+// it, which leaves the final cursor saves their time.
+func TestSync_Signatures_EndsItsBudgetBeforeItsContextsDeadline(t *testing.T) {
+	f := newSignatureFixture(t)
+	f.chain.accounts[sigAlice] = []string{sigAlice}
+	f.svc.now = (&stepClock{now: activityNow, step: time.Second}).Now
+	bobHistory(f, 1001, 1100)
+	var mu sync.Mutex
+	var readDeadlines []time.Time
+	f.chain.onTx = func(ctx context.Context, _ string) {
+		deadline, _ := ctx.Deadline()
+		mu.Lock()
+		defer mu.Unlock()
+		readDeadlines = append(readDeadlines, deadline)
+	}
+	end := time.Now().Add(signatureDeadlineMargin + 30*time.Second)
+	ctx, cancel := context.WithDeadline(context.Background(), end)
+	defer cancel()
+
+	summary, err := f.svc.SyncSignatures(ctx, sigChain)
+
+	require.NoError(t, err, "a budget that ends is no failure")
+	assert.Positive(t, summary.BackfillingAccounts)
+	recorded := len(sigDeposits(t))
+	assert.Positive(t, recorded)
+	assert.Less(t, recorded, 40, "about 30 s of the service's clock at a second a signature, not the account's 3 minutes")
+	assert.Equal(t, fmt.Sprintf("sig-%d", 1100-recorded+1), f.cursors(t)[sigBob].BackfillBefore, "bob's progress is saved")
+	mu.Lock()
+	defer mu.Unlock()
+	require.NotEmpty(t, readDeadlines)
+	for _, deadline := range readDeadlines {
+		assert.True(t, deadline.Equal(end.Add(-signatureSaveReserve)), "the reads end signatureSaveReserve before the deadline, not %s", deadline)
+	}
+}
+
+// A context too close to its deadline runs no cycle: it takes no lock and reads nothing.
+func TestSync_Signatures_RunsNoCycleTooCloseToItsContextsDeadline(t *testing.T) {
+	f := newSignatureFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), signatureDeadlineMargin-time.Second)
+	defer cancel()
+
+	_, err := f.svc.SyncSignatures(ctx, sigChain)
+
+	require.ErrorIs(t, err, errSignatureNoTime)
+	assert.Empty(t, f.chain.queriesOf(sigBob))
+	assert.False(t, f.svc.cache.Has(scanLockKey(sigChain)), "the chain's scan lock is not taken")
+}
+
 // One registered mint the node does not hold as a token mint (a mainnet mint on a
 // devnet chain) is skipped, named in the cycle and its record, and never stops the
 // owners or the other mints.
@@ -263,15 +382,16 @@ func TestSync_Signatures_RecordsTheSlotEveryAccountIsReadUpTo(t *testing.T) {
 	f.chain.heads[sigAliceUSDC] = 1990
 	f.chain.heads[sigBob] = 2100
 
-	first := f.sync(t)
+	first := f.syncCovered(t)
 
-	assert.Equal(t, uint64(1990), first.CoveredHead, "the lowest endpoint head")
+	assert.Equal(t, uint64(1990-signatureIndexMargin), first.CoveredHead, "the lowest endpoint head, less the index margin")
 	record, _ := activity.syncOf(sigChain)
-	assert.Equal(t, uint64(1990), record.CoveredHead)
+	assert.Equal(t, uint64(1990-signatureIndexMargin), record.CoveredHead)
+	assert.True(t, record.ReadEveryAccount)
 	assert.Equal(t, uint64(sigHead), record.Head)
 
 	f.chain.mu.Lock()
-	f.chain.heads[sigAlice], f.chain.heads[sigAliceUSDC], f.chain.heads[sigBob] = 2100, 2100, 2100
+	f.chain.heads[sigAlice], f.chain.heads[sigAliceUSDC], f.chain.heads[sigBob] = 3000, 3000, 3000
 	f.chain.mu.Unlock()
 	capped := f.sync(t)
 	assert.Equal(t, uint64(sigHead), capped.CoveredHead, "never above the head read before the addresses were listed")
@@ -283,7 +403,8 @@ func TestSync_Signatures_RecordsTheSlotEveryAccountIsReadUpTo(t *testing.T) {
 
 	assert.Zero(t, second.CoveredHead)
 	record, _ = activity.syncOf(sigChain)
-	assert.Equal(t, uint64(sigHead), record.CoveredHead, "carried from the last cycle that read every account")
+	assert.Equal(t, uint64(sigHead), record.CoveredHead, "carried from the last cycle that read every account, for the health check")
+	assert.False(t, record.ReadEveryAccount, "but this cycle did not read them all")
 	assert.Equal(t, 1, record.FailedAccounts)
 	f.chain.GetLatestBlockFn = func(context.Context) (uint64, error) { return sigHead + 10, nil }
 	f.sync(t)
@@ -302,9 +423,9 @@ func TestRun_ScanInvocation_SyncsAListedChainOnceItsIntervalElapsed(t *testing.T
 	f.svc.now = clock.Now
 	f.settings.Interval = 10 * time.Minute
 	f.chain.history(sigBob, f.chain.tx("sig-1", 1201, lamports(sigBob, 10, 1)))
-	scanned := 0
+	var scanned atomic.Int64
 	f.chain.ScanBlockFn = func(context.Context, uint64) ([]types.DetectedTransfer, error) {
-		scanned++
+		scanned.Add(1)
 		return nil, nil
 	}
 	ctx := context.Background()
@@ -324,7 +445,7 @@ func TestRun_ScanInvocation_SyncsAListedChainOnceItsIntervalElapsed(t *testing.T
 	run, err = f.svc.RunScanInvocation(ctx, sigChain)
 	require.NoError(t, err)
 	assert.True(t, run.Synced, "past the interval it syncs again")
-	assert.Zero(t, scanned, "no block is read for a chain in signature mode")
+	assert.Zero(t, scanned.Load(), "no block is read for a chain in signature mode")
 
 	f.settings.Chains = nil
 	clock.advance(time.Hour)
@@ -344,6 +465,8 @@ func TestScan_LatestBlocks_ConfirmsAPushedDepositOfAChainInSignatureMode(t *test
 	require.NoError(t, ingestSvc.Ingest(context.Background(), ingest.InboundEvent{ChainID: sigChain, Transfers: []providers.InboundTransfer{
 		{TxHash: "sig-pushed", BlockNumber: 1300, From: sigPayer, To: sigAlice, Amount: big.NewInt(77), LogIndex: 1},
 	}}))
+	probe := &lockProbe{svc: f.svc, chainID: sigChain}
+	f.svc.SetBalanceRefresher(probe)
 	ctx := context.Background()
 
 	for i := 0; i < 3; i++ {
@@ -356,6 +479,10 @@ func TestScan_LatestBlocks_ConfirmsAPushedDepositOfAChainInSignatureMode(t *test
 	assert.Equal(t, string(types.TxStatusConfirmed), rows[0].Status, "the push is meant to be the fast path")
 	assert.Len(t, f.events.ids[types.EventDepositConfirmed], 1)
 	assert.Empty(t, f.chain.queriesOf(sigAlice), "the scan reads no signature either: that is the sync's")
+	require.NotEmpty(t, probe.freeSeen, "alice's wallet is refreshed")
+	for _, free := range probe.freeSeen {
+		assert.True(t, free, "the balances are refreshed once the chain's scan lock is released")
+	}
 }
 
 func TestScan_LatestBlocks_LeavesTheConfirmationsToASyncCycleThatHoldsTheChain(t *testing.T) {
@@ -421,23 +548,26 @@ func TestScan_LatestBlocks_RecordsTheChainsDetectionMode(t *testing.T) {
 }
 
 // When the chain leaves deposit_signatures, the block scan resumes after the slot the
-// sync last read every account up to, instead of the checkpoint it stalled at, and
-// from that checkpoint when no cycle read them all.
+// sync's last cycle read every account up to, instead of the checkpoint it stalled
+// at, and from that checkpoint when the last cycle did not read them all: a covered
+// slot carried from an earlier cycle predates the accounts listed since.
 func TestScan_LatestBlocks_ResumesAfterTheSlotTheSignatureSyncReadEveryAccountUpTo(t *testing.T) {
 	for name, tc := range map[string]struct {
 		covered uint64
+		readAll bool
 		want    uint64
 	}{
-		"every account read up to 1500": {covered: 1500, want: 1500 + 5},
-		"no cycle read them all":        {covered: 0, want: sigCheckpoint + 5},
-		"covered below the checkpoint":  {covered: 900, want: sigCheckpoint + 5},
+		"every account read up to 1500":      {covered: 1500, readAll: true, want: 1500 + 5},
+		"no cycle read them all":             {covered: 0, want: sigCheckpoint + 5},
+		"carried from an earlier full cycle": {covered: 1500, readAll: false, want: sigCheckpoint + 5},
+		"covered below the checkpoint":       {covered: 900, readAll: true, want: sigCheckpoint + 5},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newSignatureFixture(t)
 			activity := newMemoryActivity()
 			f.svc.SetScanActivityStore(activity)
 			activity.modes[sigChain] = ScanModeRecord{Mode: ScanModeSignatures, Since: activityNow, At: activityNow}
-			activity.signatures[sigChain] = SignatureSyncRecord{Accounts: 3, CoveredHead: tc.covered, Head: sigHead, At: activityNow}
+			activity.signatures[sigChain] = SignatureSyncRecord{Accounts: 3, CoveredHead: tc.covered, ReadEveryAccount: tc.readAll, Head: sigHead, At: activityNow}
 			var read []uint64
 			f.chain.ScanBlockFn = func(_ context.Context, block uint64) ([]types.DetectedTransfer, error) {
 				read = append(read, block)
@@ -460,8 +590,92 @@ func TestScan_LatestBlocks_ResumesAfterTheSlotTheSignatureSyncReadEveryAccountUp
 			again, err := f.svc.checkpoints.Find(context.Background(), sigChain)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want+5, again, "the resume happens once, on the change")
+
+			// A one-off sync of the chain the block scan now reads moves no checkpoint.
+			activity.signatures[sigChain] = SignatureSyncRecord{Accounts: 3, CoveredHead: sigHead - 50, ReadEveryAccount: true, Head: sigHead, At: activityNow}
+			require.NoError(t, f.svc.ScanLatestBlocks(context.Background(), sigChain))
+			later, err := f.svc.checkpoints.Find(context.Background(), sigChain)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want+10, later, "the block scan goes on from where it read")
 		})
 	}
+}
+
+// A cycle that skipped a registered mint did not read that mint's accounts: it records
+// no covered slot for the block scan to resume after and drops no pending block, so a
+// deposit of that mint is still read, by the block scan or the pending retry, once the
+// chain leaves deposit_signatures.
+func TestSync_Signatures_ASkippedMintCoversNothing(t *testing.T) {
+	for name, withPending := range map[string]bool{"resume point": false, "pending block": true} {
+		t.Run(name, func(t *testing.T) {
+			f := newSignatureFixture(t)
+			activity := newMemoryActivity()
+			f.svc.SetScanActivityStore(activity)
+			ctx := context.Background()
+			f.chain.history(sigAliceUSDC, f.chain.tx("sig-usdc", 1500, usdcCredit(sigAlice, 2_200, 3)))
+			if withPending {
+				f.keepPending(t, 1500)
+			}
+			// The node does not hold USDC as a token mint: alice's USDC account is not listed.
+			f.chain.accounts[sigAlice] = []string{sigAlice}
+			f.chain.skippedMints = []string{sigUSDCMint}
+			require.NoError(t, f.svc.ScanLatestBlocks(ctx, sigChain))
+
+			summary := f.syncCovered(t)
+
+			assert.Zero(t, summary.CoveredHead, "the skipped mint's accounts were not read")
+			assert.Zero(t, summary.ResolvedPending)
+			record, _ := activity.syncOf(sigChain)
+			assert.False(t, record.ReadEveryAccount)
+
+			f.settings.Chains = nil
+			require.NoError(t, f.svc.SetScanOptions(ScanOptions{BatchBlocks: 1000, CatchUpBlocks: 1000, Concurrency: 8}))
+			require.NoError(t, f.svc.ScanLatestBlocks(ctx, sigChain))
+			_, err := f.svc.ReprocessPending(ctx, sigChain, true)
+			require.NoError(t, err)
+
+			rows := sigDeposits(t)
+			require.Len(t, rows, 1, "the USDC deposit at slot 1500 is recorded by the block scan or the pending retry")
+			assert.Equal(t, "sig-usdc", rows[0].TxHash)
+		})
+	}
+}
+
+// The covered slot carried from an earlier full cycle predates the accounts listed
+// since (a token registered later): after a cycle that did not read every account the
+// block scan resumes from its checkpoint, and reads their older deposits.
+func TestScan_LatestBlocks_ResumesFromTheCheckpointAfterACycleThatDidNotReadEveryAccount(t *testing.T) {
+	f := newSignatureFixture(t)
+	activity := newMemoryActivity()
+	f.svc.SetScanActivityStore(activity)
+	ctx := context.Background()
+	f.chain.accounts[sigAlice] = []string{sigAlice} // USDC not registered yet
+	require.NoError(t, f.svc.ScanLatestBlocks(ctx, sigChain))
+	full := f.syncCovered(t)
+	require.Equal(t, uint64(sigCovered), full.CoveredHead)
+
+	// USDC is registered; alice's USDC account appears and its history fails once.
+	f.chain.history(sigAliceUSDC, f.chain.tx("sig-usdc", 1500, usdcCredit(sigAlice, 2_200, 3)))
+	f.chain.mu.Lock()
+	f.chain.accounts[sigAlice] = []string{sigAlice, sigAliceUSDC}
+	f.chain.txErr["sig-usdc"] = fmt.Errorf("429")
+	f.chain.mu.Unlock()
+	partial := f.sync(t)
+	require.Equal(t, 1, partial.FailedAccounts)
+	record, _ := activity.syncOf(sigChain)
+	assert.Equal(t, uint64(sigCovered), record.CoveredHead, "carried for the health check")
+	assert.False(t, record.ReadEveryAccount)
+
+	f.settings.Chains = nil
+	f.chain.mu.Lock()
+	delete(f.chain.txErr, "sig-usdc")
+	f.chain.mu.Unlock()
+	require.NoError(t, f.svc.SetScanOptions(ScanOptions{BatchBlocks: 1000, CatchUpBlocks: 1000, Concurrency: 8}))
+	require.NoError(t, f.svc.ScanLatestBlocks(ctx, sigChain))
+
+	rows := sigDeposits(t)
+	require.Len(t, rows, 1, "the USDC deposit at 1500, below the carried covered slot, is recorded by the block scan")
+	assert.Equal(t, "sig-usdc", rows[0].TxHash)
 }
 
 func TestScan_LatestBlocks_PausesTheBlockReadsWhileTheSignatureSyncReadsTheChainButNotThePendingRetry(t *testing.T) {
@@ -583,8 +797,8 @@ func TestSync_Signatures_RecordsItsCycleForTheHealthCheck(t *testing.T) {
 
 	record, ok := activity.syncOf(sigChain)
 	require.True(t, ok)
-	assert.Equal(t, SignatureSyncRecord{Accounts: 3, FailedAccounts: 1, Head: sigHead, At: activityNow}, record,
-		"alice's two accounts and bob, whose accounts were not listed")
+	assert.Equal(t, SignatureSyncRecord{Accounts: 3, FailedAccounts: 1, BackfillingAccounts: 2, Head: sigHead, At: activityNow}, record,
+		"alice's two accounts, whose end showed once, and bob, whose accounts were not listed")
 }
 
 func pendingEntryDue(block uint64, now time.Time) pending.Entry {

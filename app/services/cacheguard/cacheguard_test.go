@@ -180,3 +180,31 @@ func TestAcquireHold_ARenewalThatFindsAnotherTokenClosesLost(t *testing.T) {
 	hold.Release()
 	assert.Equal(t, "another-holder", cache.GetString("lock:key"))
 }
+
+// refusingPut is a cache that keeps what it holds but refuses every write after the
+// first Add.
+type refusingPut struct {
+	*memcache.Cache
+}
+
+func (r refusingPut) Put(string, any, time.Duration) error {
+	return errors.New("the cache refused the write")
+}
+
+// A renewal the cache refuses has lost the hold at once, while the key still holds
+// the token: the holder learns it before the key lapses, not once another holder may
+// have taken it.
+func TestAcquireHold_ARenewalTheCacheRefusesClosesLostBeforeTheKeyLapses(t *testing.T) {
+	cache := refusingPut{Cache: memcache.New()}
+	hold, got, err := cacheguard.AcquireHold(cache, "lock:key", 600*time.Millisecond)
+	require.NoError(t, err)
+	require.True(t, got)
+	defer hold.Release()
+
+	select {
+	case <-hold.Lost():
+		assert.True(t, cache.Has("lock:key"), "lost on the refused renewal, before the key lapsed")
+	case <-time.After(450 * time.Millisecond):
+		t.Fatal("the renewal the cache refused must close Lost")
+	}
+}

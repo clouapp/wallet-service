@@ -66,7 +66,7 @@ type signatureChain struct {
 	txReads      map[string]int
 	hashReads    map[uint64]int
 	duringRead   func()
-	onTx         func(signature string)
+	onTx         func(ctx context.Context, signature string)
 }
 
 func newSignatureChain() *signatureChain {
@@ -167,9 +167,9 @@ func (c *signatureChain) AccountSignatures(_ context.Context, account string, qu
 	return listed, nil
 }
 
-func (c *signatureChain) TransactionTransfers(_ context.Context, signature string) (chain.TransactionTransfers, error) {
+func (c *signatureChain) TransactionTransfers(ctx context.Context, signature string) (chain.TransactionTransfers, error) {
 	if hook := c.onTx; hook != nil {
-		hook(signature)
+		hook(ctx, signature)
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -289,6 +289,22 @@ func (f *signatureFixture) sync(t *testing.T) SignatureSyncSummary {
 	return summary
 }
 
+// syncCovered runs two cycles, so the end of every history the endpoint shows (an
+// empty page) is seen twice in a row, which covers the accounts; it returns the second.
+func (f *signatureFixture) syncCovered(t *testing.T) SignatureSyncSummary {
+	t.Helper()
+	f.sync(t)
+	summary := f.sync(t)
+	for account, cursor := range f.cursors(t) {
+		require.True(t, cursor.Covered, "account %s covered after the end of its history showed twice", account)
+	}
+	return summary
+}
+
+// sigCovered is the slot the fixture's accounts are read up to at the head sigHead:
+// the head less the index margin.
+const sigCovered = sigHead - signatureIndexMargin
+
 func (f *signatureFixture) cursors(t *testing.T) map[string]models.DepositSignatureCursor {
 	t.Helper()
 	rows, err := f.svc.signatureCursors.FindByChain(context.Background(), sigChain)
@@ -356,7 +372,8 @@ func TestSync_Signatures_RecordsTheDepositsOfEveryAccountOnceAndConfirmsThemInTh
 
 	summary := f.sync(t)
 
-	assert.Equal(t, SignatureSyncSummary{Accounts: 3, NewSignatures: 6, Deposits: 3, CoveredHead: sigHead, Head: sigHead}, summary)
+	assert.Equal(t, SignatureSyncSummary{Accounts: 3, NewSignatures: 6, Deposits: 3, BackfillingAccounts: 3, Head: sigHead}, summary,
+		"every history ended with an empty page, seen once: no account is covered yet")
 	rows := sigDeposits(t)
 	require.Len(t, rows, 3)
 	want := []struct {
@@ -395,20 +412,34 @@ func TestSync_Signatures_RecordsTheDepositsOfEveryAccountOnceAndConfirmsThemInTh
 
 	cursors := f.cursors(t)
 	require.Len(t, cursors, 3)
+	sameCursor(t, cursors[sigAlice], "sig-nobody", 1103, "sig-native", sigCheckpoint, false)
+	sameCursor(t, cursors[sigAliceUSDC], "sig-usdc", 1102, "sig-usdc", sigCheckpoint, false)
+	sameCursor(t, cursors[sigBob], "sig-bob", 1104, "sig-bob", sigCheckpoint, false)
+	assert.True(t, cursors[sigBob].EndSeen, "the end of bob's history was seen once")
+
+	second := f.sync(t)
+
+	assert.Equal(t, SignatureSyncSummary{Accounts: 3, CoveredHead: sigCovered, Head: sigHead}, second,
+		"the end seen a second time covers every account, read up to the head less the index margin")
+	cursors = f.cursors(t)
 	sameCursor(t, cursors[sigAlice], "sig-nobody", 1103, "sig-native", sigCheckpoint, true)
 	sameCursor(t, cursors[sigAliceUSDC], "sig-usdc", 1102, "sig-usdc", sigCheckpoint, true)
 	sameCursor(t, cursors[sigBob], "sig-bob", 1104, "sig-bob", sigCheckpoint, true)
 
 	again := f.sync(t)
 
-	assert.Equal(t, SignatureSyncSummary{Accounts: 3, CoveredHead: sigHead, Head: sigHead}, again, "nothing newer than the cursors")
+	assert.Equal(t, SignatureSyncSummary{Accounts: 3, CoveredHead: sigCovered, Head: sigHead}, again, "nothing newer than the cursors")
 	assert.Len(t, sigDeposits(t), 3)
 	assert.Len(t, f.events.pending(), 3)
 	queries := f.chain.queriesOf(sigAlice)
-	require.Len(t, queries, 2)
+	require.Len(t, queries, 4)
 	assert.Equal(t, chain.SignatureQuery{FloorSlot: sigCheckpoint, HasFloor: true, MaxPages: signatureBackfillPages}, queries[0],
 		"a new account is read from the head down to its floor")
 	assert.Equal(t, chain.SignatureQuery{Until: "sig-nobody", FloorSlot: 1103, HasFloor: true, MaxPages: signatureForwardPageCeiling}, queries[1],
+		"then above its cursor")
+	assert.Equal(t, chain.SignatureQuery{Before: "sig-native", FloorSlot: sigCheckpoint, HasFloor: true, MaxPages: signatureBackfillPages}, queries[2],
+		"and below it again, where the end shows a second time")
+	assert.Equal(t, chain.SignatureQuery{Until: "sig-nobody", FloorSlot: 1103, HasFloor: true, MaxPages: signatureForwardPageCeiling}, queries[3],
 		"a covered account is read above its cursor only")
 }
 
@@ -449,14 +480,17 @@ func TestSync_Signatures_AFailingSignatureStopsItsAccountsStretchBeforeIt(t *tes
 			assert.Zero(t, summary.FailedAccounts)
 			assert.Equal(t, 2, summary.Deposits)
 			assert.Len(t, sigDeposits(t), 3)
-			sameCursor(t, f.cursors(t)[sigBob], "sig-3", 1203, "sig-1", sigCheckpoint, true)
+			sameCursor(t, f.cursors(t)[sigBob], "sig-3", 1203, "sig-1", sigCheckpoint, false)
 			queries := f.chain.queriesOf(sigBob)
 			assert.Equal(t, "sig-3", queries[len(queries)-1].Before, "the retry reads the history below the stretch recorded")
+
+			f.sync(t)
+			sameCursor(t, f.cursors(t)[sigBob], "sig-3", 1203, "sig-1", sigCheckpoint, true)
 		})
 		t.Run("new signatures, "+name, func(t *testing.T) {
 			f := newSignatureFixture(t)
 			f.chain.history(sigBob, f.chain.tx("sig-0", 1100, lamports(sigBob, 1, 1)))
-			f.sync(t)
+			f.syncCovered(t)
 			f.chain.history(sigBob,
 				f.chain.tx("sig-1", 1201, lamports(sigBob, 10, 1)),
 				f.chain.tx("sig-2", 1202, lamports(sigBob, 20, 1)),
@@ -467,6 +501,7 @@ func TestSync_Signatures_AFailingSignatureStopsItsAccountsStretchBeforeIt(t *tes
 
 			assert.Equal(t, 1, summary.FailedAccounts)
 			assert.Equal(t, 1, summary.Deposits, "new signatures are read oldest first: sig-1, then sig-2 fails")
+			assert.Zero(t, summary.CoveredHead, "an account failed: no slot is covered")
 			sameCursor(t, f.cursors(t)[sigBob], "sig-1", 1201, "sig-0", sigCheckpoint, true)
 
 			f.chain.mu.Lock()
@@ -504,7 +539,7 @@ func TestSync_Signatures_ReadsANewAccountBackToTheCheckpointLoweredToTheLowestPe
 	since := f.chain.tx("sig-since", 1500, lamports(sigBob, 3, 1))
 	f.chain.history(sigBob, before, pendingOnly, since)
 
-	summary := f.sync(t)
+	first := f.sync(t)
 
 	assert.Equal(t, chain.SignatureQuery{FloorSlot: 950, HasFloor: true, MaxPages: signatureBackfillPages}, f.chain.queriesOf(sigBob)[0],
 		"the floor is the lowest pending block, below the checkpoint")
@@ -512,6 +547,12 @@ func TestSync_Signatures_ReadsANewAccountBackToTheCheckpointLoweredToTheLowestPe
 	require.Len(t, rows, 2)
 	assert.Equal(t, []string{"sig-pending", "sig-since"}, []string{rows[0].TxHash, rows[1].TxHash},
 		"the deposit of a pending block is recovered, nothing below the floor is read")
+	assert.True(t, f.cursors(t)[sigBob].Covered, "a signature below the floor proves bob's history read down to it at once")
+	assert.False(t, f.cursors(t)[sigAlice].Covered, "an empty page proves alice's only once it shows again")
+	assert.Zero(t, first.ResolvedPending)
+
+	summary := f.sync(t)
+
 	assert.Equal(t, 2, summary.ResolvedPending)
 	assert.Empty(t, f.pendingBlocks(t), "every account read from 950 on covers the pending blocks")
 	for account, cursor := range f.cursors(t) {
@@ -528,7 +569,7 @@ func TestSync_Signatures_KeepsThePendingBlocksAnAccountsHistoryDoesNotCover(t *t
 		Chain: sigChain, Account: sigBob, Signature: "sig-old", Slot: 995, BackfillBefore: "sig-old", SyncedFromSlot: 990, Covered: true}))
 	f.keepPending(t, 980, 995)
 
-	summary := f.sync(t)
+	summary := f.syncCovered(t)
 
 	assert.Equal(t, 1, summary.ResolvedPending)
 	assert.Equal(t, []uint64{980}, f.pendingBlocks(t), "block 980 stays pending for the pending retry")
@@ -542,15 +583,17 @@ func TestSync_Signatures_KeepsEveryPendingBlockWhileAnAccountFails(t *testing.T)
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newSignatureFixture(t)
+			f.syncCovered(t)
 			f.keepPending(t, 1050)
-			f.chain.history(sigBob, f.chain.tx("sig-1", 1201, lamports(sigBob, 10, 1)))
+			// A new signature, above the slot bob is known empty up to.
+			f.chain.history(sigBob, f.chain.tx("sig-1", sigCovered+50, lamports(sigBob, 10, 1)))
 			fail(f)
 
 			summary := f.sync(t)
 
 			assert.Equal(t, 1, summary.FailedAccounts)
 			assert.Zero(t, summary.ResolvedPending)
-			assert.Zero(t, summary.CoveredHead)
+			assert.Zero(t, summary.CoveredHead, "the other accounts were read up to the head, this one was not")
 			assert.Equal(t, []uint64{1050}, f.pendingBlocks(t), "a pending block is dropped only once every account was read")
 		})
 	}
@@ -652,7 +695,7 @@ func TestSync_Signatures_LeavesOutTheSweepsAndGasSeedsOfTheWallet(t *testing.T) 
 
 	assert.Zero(t, summary.Deposits)
 	assert.Empty(t, sigDeposits(t), "an internal transfer is never a deposit")
-	sameCursor(t, f.cursors(t)[sigBob], "sig-gas_seed", 1401, "sig-sweep", sigCheckpoint, true)
+	sameCursor(t, f.cursors(t)[sigBob], "sig-gas_seed", 1401, "sig-sweep", sigCheckpoint, false)
 }
 
 func TestSync_Signatures_SkipsTheCycleWhileAnotherScanHoldsTheChain(t *testing.T) {
@@ -707,7 +750,7 @@ func TestSync_Signatures_StopsWhenItLosesTheChainsScanLock(t *testing.T) {
 	f := newSignatureFixture(t)
 	f.keepPending(t, 1100)
 	f.chain.history(sigBob, f.chain.tx("sig-1", 1201, lamports(sigBob, 10, 1)))
-	f.chain.onTx = func(string) {
+	f.chain.onTx = func(context.Context, string) {
 		require.NoError(t, f.svc.cache.Put(scanLockKey(sigChain), "another-holder", time.Minute))
 	}
 	activity := newMemoryActivity()
@@ -723,6 +766,90 @@ func TestSync_Signatures_StopsWhenItLosesTheChainsScanLock(t *testing.T) {
 	assert.Equal(t, []uint64{1100}, f.pendingBlocks(t), "nothing is dropped without the lock")
 	assert.Equal(t, "sig-1", f.cursors(t)[sigBob].Signature, "what was recorded is kept")
 	assert.Empty(t, activity.signatures, "a cycle that lost its lock records no completed cycle")
+}
+
+// The cycle checks the chain's scan lock before each signature it records, so once
+// another process took it the cycle stops at once, keeping what it recorded.
+func TestSync_Signatures_StopsRecordingAsSoonAsItFindsTheLockLost(t *testing.T) {
+	f := newSignatureFixture(t)
+	f.chain.history(sigBob,
+		f.chain.tx("sig-1", 1201, lamports(sigBob, 10, 1)),
+		f.chain.tx("sig-2", 1202, lamports(sigBob, 20, 1)),
+		f.chain.tx("sig-3", 1203, lamports(sigBob, 30, 1)))
+	f.chain.onTx = func(_ context.Context, signature string) {
+		if signature == "sig-3" { // the history is read newest first
+			assert.NoError(t, f.svc.cache.Put(scanLockKey(sigChain), "another-holder", time.Minute))
+		}
+	}
+
+	_, err := f.svc.SyncSignatures(context.Background(), sigChain)
+
+	require.ErrorIs(t, err, ErrScanLockLost)
+	rows := sigDeposits(t)
+	require.Len(t, rows, 1, "sig-3, recorded as the lock was taken, and nothing after it")
+	assert.Equal(t, "sig-3", rows[0].TxHash)
+	sameCursor(t, f.cursors(t)[sigBob], "sig-3", 1203, "sig-3", sigCheckpoint, false)
+}
+
+// A cycle that finds the lock lost before an account starts reads nothing of it.
+func TestSync_Signatures_ReadsNoAccountOnceItFindsTheLockLost(t *testing.T) {
+	f := newSignatureFixture(t)
+	f.chain.history(sigBob, f.chain.tx("sig-1", 1201, lamports(sigBob, 10, 1)))
+	var once sync.Once
+	f.chain.GetLatestBlockFn = func(context.Context) (uint64, error) {
+		// The head read before the addresses are listed: another process takes the lock.
+		once.Do(func() {
+			assert.NoError(t, f.svc.cache.Put(scanLockKey(sigChain), "another-holder", time.Minute))
+		})
+		return sigHead, nil
+	}
+
+	_, err := f.svc.SyncSignatures(context.Background(), sigChain)
+
+	require.ErrorIs(t, err, ErrScanLockLost)
+	for _, account := range []string{sigAlice, sigAliceUSDC, sigBob} {
+		assert.Empty(t, f.chain.queriesOf(account), "no history of %s is read", account)
+	}
+	assert.Empty(t, f.cursors(t))
+}
+
+// A lock found lost stops the whole cycle: the reads the other accounts have in
+// flight are cut, not left to finish.
+func TestSync_Signatures_ALostLockCutsTheReadsOtherAccountsHaveInFlight(t *testing.T) {
+	f := newSignatureFixture(t)
+	f.chain.accounts[sigAlice] = []string{sigAlice}
+	f.chain.history(sigAlice, f.chain.tx("sig-a1", 1201, lamports(sigAlice, 10, 1)), f.chain.tx("sig-a2", 1202, lamports(sigAlice, 20, 1)))
+	f.chain.history(sigBob, f.chain.tx("sig-b1", 1301, lamports(sigBob, 30, 1)))
+	bobReading := make(chan struct{})
+	bobCut := make(chan bool, 1)
+	f.chain.onTx = func(ctx context.Context, signature string) {
+		switch signature {
+		case "sig-b1":
+			close(bobReading)
+			select {
+			case <-ctx.Done():
+				bobCut <- true
+			case <-time.After(5 * time.Second):
+				bobCut <- false
+			}
+		case "sig-a2": // alice's newest, read first: the lock is taken while bob reads
+			select {
+			case <-bobReading:
+			case <-time.After(5 * time.Second):
+			}
+			assert.NoError(t, f.svc.cache.Put(scanLockKey(sigChain), "another-holder", time.Minute))
+		}
+	}
+
+	_, err := f.svc.SyncSignatures(context.Background(), sigChain)
+
+	require.ErrorIs(t, err, ErrScanLockLost)
+	select {
+	case cut := <-bobCut:
+		assert.True(t, cut, "bob's read in flight is cut once alice's account finds the lock lost")
+	default:
+		t.Fatal("bob's transaction was never read")
+	}
 }
 
 func TestSync_Signatures_FailsTheCycleWhenItsFloorCannotBeRead(t *testing.T) {

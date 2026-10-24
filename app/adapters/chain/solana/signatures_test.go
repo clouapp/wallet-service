@@ -418,6 +418,73 @@ func TestSolana_AccountSignatures_ReadsEveryPageOfAnAccountFromOneEndpoint(t *te
 	assert.Empty(t, fallback.calls("getFirstAvailableBlock"))
 }
 
+// The head a listing reports is the finalized slot of the endpoint that serves its
+// pages: once getSlot answered, a listing that endpoint fails is an error, never pages
+// from another endpoint read against that head.
+func TestSolana_AccountSignatures_ReadsTheHeadFromTheEndpointThatServesThePages(t *testing.T) {
+	primary := newMethodNode(t, func(req solanaRequest) string {
+		switch req.Method {
+		case "getGenesisHash":
+			return devnetGenesisResult
+		case "getSlot":
+			return `"result":9100`
+		}
+		return ""
+	})
+	fallback := newMethodNode(t, func(req solanaRequest) string {
+		switch req.Method {
+		case "getGenesisHash":
+			return devnetGenesisResult
+		case "getSlot":
+			return `"result":9000`
+		case "getFirstAvailableBlock":
+			return `"result":0`
+		}
+		return `"result":[]`
+	})
+	live := devnetWithFallbacks(primary.server.URL, fallback.server.URL)
+
+	_, err := live.AccountSignatures(context.Background(), ataFixtureOwner, chain.SignatureQuery{MaxPages: 10})
+
+	require.Error(t, err, "the endpoint that answered the head failed the listing")
+	assert.Len(t, primary.calls("getSlot"), 1)
+	assert.Empty(t, fallback.calls("getSignaturesForAddress"), "no page is read against another endpoint's head")
+}
+
+// The first available block that proves the end of a history is the one of the
+// endpoint that served its empty page: when it does not answer, the end is not proven.
+func TestSolana_AccountSignatures_ReadsTheLedgerStartFromTheEndpointThatServesThePages(t *testing.T) {
+	primary := newMethodNode(t, func(req solanaRequest) string {
+		switch req.Method {
+		case "getGenesisHash":
+			return devnetGenesisResult
+		case "getSlot":
+			return `"result":9100`
+		case "getSignaturesForAddress":
+			return `"result":[]`
+		}
+		return ""
+	})
+	fallback := newMethodNode(t, func(req solanaRequest) string {
+		switch req.Method {
+		case "getGenesisHash":
+			return devnetGenesisResult
+		case "getSlot":
+			return `"result":9100`
+		case "getFirstAvailableBlock":
+			return `"result":0`
+		}
+		return `"result":[]`
+	})
+	live := devnetWithFallbacks(primary.server.URL, fallback.server.URL)
+
+	_, err := live.AccountSignatures(context.Background(), ataFixtureOwner, chain.SignatureQuery{MaxPages: 10})
+
+	require.Error(t, err, "the endpoint that served the empty page did not answer its first available block")
+	assert.Len(t, primary.calls("getFirstAvailableBlock"), 1)
+	assert.Empty(t, fallback.calls("getFirstAvailableBlock"), "another endpoint's ledger proves nothing of this listing")
+}
+
 // mintNode answers getAccountInfo for the recorded mints and getTokenAccountsByOwner
 // with the token accounts of tokenAccounts (program → accounts), in the recorded shape:
 // the mint is the account data sliced to its first 32 bytes, base64.

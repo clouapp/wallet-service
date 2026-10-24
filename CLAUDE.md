@@ -1154,19 +1154,32 @@ on; the sync is its safety net, and the only detector where it is not.
   history is read down to, fixed when the account is first read (the chain's scan checkpoint lowered
   to its lowest pending block, so the first cycles recover what the block scan left, the floor slot
   included; a chain with neither: the oldest slot of the newest `max_pages` pages,
-  `DEPOSIT_SIGNATURE_MAX_PAGES` default 10, the cut logged), and `covered` says the backfill got there.
+  `DEPOSIT_SIGNATURE_MAX_PAGES` default 10, the cut logged), and `covered` says the backfill got there
+  (`end_seen`: the last backfill read showed the end once). While `signature` is empty, `slot` is where
+  the account is known empty up to: the head less 150 slots (`signatureIndexMargin`), never the head,
+  since the head (`getSlot`) and the listing are two calls and one URL can front backends whose address
+  index trails, so a first deposit just below the head is read on the next cycle. After a burst,
+  `ahead_signature` (at `ahead_slot`) down to `ahead_before` is a second stretch above a gap (below).
 - **Reading**: `getSignaturesForAddress` (finalized, 1000 a page, newest first), every call of one
   listing on one endpoint (`rpc.PinEndpoint`: its finalized slot first, then the pages, then the
   evidence of the end). Each cycle reads an account's new signatures above its cursor (`until`, at most
-  100 pages: more fails the account) and records them oldest first, then, until it is covered, at most
-  5 pages of its older history below `backfill_before` (`before`), recorded newest first: a long
-  history is read over several cycles while new deposits keep being recorded. Recording is idempotent,
-  so the order across pages does not matter. A failed transaction (`err`) is passed over unread. Each
-  account reads for at most 3 minutes a cycle and the cycle for 8: what the budget leaves goes on next
-  cycle and is no failure (`backfilling_accounts`).
+  100 pages) and records them oldest first, then, until it is covered, at most 5 pages of its older
+  history below `backfill_before` (`before`), recorded newest first: a long history is read over several
+  cycles while new deposits keep being recorded. A burst of more than 100 pages above the cursor is
+  recorded newest first as a stretch of its own (`ahead_*`); each cycle then reads above that stretch and
+  5 pages of the gap below it (`before` = `ahead_before`, `until` = the cursor), and once the gap is read
+  the stretches join. Another burst meanwhile starts a new stretch (the old one is read again as part of
+  the gap): no burst fails an account. Recording is idempotent, so the order across pages does not
+  matter. A failed transaction (`err`) is passed over unread. Each account reads for at most 3 minutes a
+  cycle and the cycle for 8, and, under a context with a deadline (the `deposit_scanner` Lambda's), until
+  20 s before it, its reads cut 6 s before it so the final cursor saves land in time (with less than 20 s
+  left no cycle runs): what the budget leaves goes on next cycle and is no failure
+  (`backfilling_accounts`).
 - **End of a history**: a page shorter than 1000 ends a listing above a cursor (recent, every node holds
   it); otherwise only a signature below the floor, or an empty page together with the endpoint's first
-  available block (`getFirstAvailableBlock`) at or below the floor, proves there is nothing older. A
+  available block (`getFirstAvailableBlock`) at or below the floor, proves there is nothing older. The
+  first covers an account at once; the second only when two backfill reads in a row show it and the
+  second finds nothing older (`end_seen`), so one odd answer never covers an account for good. A
   node without the old ledger (not an archival one, or a failover to one) answers short pages with no
   error: the account then stays not covered (logged), so no pending block is dropped and no covered slot
   recorded, until an endpoint proves it.
@@ -1187,20 +1200,24 @@ on; the sync is its safety net, and the only detector where it is not.
   account stops, with a context of its own (5 s): a cycle cut by the 60 s Lambda deadline or a
   shutdown keeps what it recorded.
 - **Lock**: the cycle holds the chain's scan lock under an owner token, renewed every 40 s
-  (`cacheguard.AcquireHold`). A held lock skips the cycle; a lock lost on the way (another process took
-  it, the cache refused a renewal) stops the cycle (`ErrScanLockLost`): what it recorded is kept, and
-  it drops no pending block and confirms nothing.
+  (`cacheguard.AcquireHold`), and checks it before each account and each signature it records. A held
+  lock skips the cycle; a lock lost on the way (another process took it, the cache refused a renewal)
+  stops the cycle at once, cutting the reads other accounts have in flight (`ErrScanLockLost`): what it
+  recorded is kept, and it drops no pending block and confirms nothing.
 - **Confirmation**: a finalized slot is final, so every cycle ends with the chain's confirmation step
   at the head (deposits, withdrawals, sweeps, gas seeds), under the lock; the balances of the wallets
   it confirmed are refreshed once the lock is released. The paused block scan also runs that step on
-  its own cadence (below), so a deposit the provider push recorded confirms within a scan interval.
+  its own cadence (below), so a deposit the provider push recorded confirms within a scan interval, and
+  refreshes the balances once it released the lock too.
 - **Covered slot and pending blocks**: a cycle in which every account of every address was read, with
-  proof, from its floor up to a head (no failed, unlisted or backfilling account) records
-  `covered_head`: the lowest head an account's endpoint read it up to, and never above the head read
-  before the addresses were listed (an address created later received nothing up to it). It then drops
-  the chain's pending blocks at or above the highest floor (the histories cover them); older ones stay
-  for the pending retry, which keeps running in signature mode. A cycle that did not read them all keeps
-  the last covered slot in its record. The floor is never read from a degraded pending store (a
+  proof, from its floor up to a head (no failed, unlisted or backfilling account, no gap left above a
+  cursor, no skipped mint: its accounts were not read) records `covered_head`: the lowest head an
+  account's endpoint read it up to, less the 150-slot index margin, and never above the head read
+  before the addresses were listed (an address created later received nothing up to it), with
+  `read_every_account`. It then drops the chain's pending blocks at or above the highest floor (the
+  histories cover them); older ones stay for the pending retry, which keeps running in signature mode. A
+  cycle that did not read them all keeps the last covered slot in its record for `/health`, without
+  `read_every_account`. The floor is never read from a degraded pending store (a
   `DurableStore` backend that did not answer, `pending.ListComplete`): that fails the cycle. A deposit to
   a token account that is not an associated one and was closed before the sync read its owner is not
   found.
@@ -1211,8 +1228,9 @@ on; the sync is its safety net, and the only detector where it is not.
   hint; `--block`, `--tx` and `--retry-pending` still run. Every scan cycle records the chain's mode
   (`vault:scan-mode:<chain>`: `signatures` or `blocks`, when it began), which `/health` and the alerts
   read. On the first block cycle after the chain left the list, the checkpoint moves up to the sync's
-  last covered slot when that is past it (`resumeAfterSignatureSync`), else the scan resumes from its
-  frozen checkpoint.
+  covered slot when its last cycle read every account and the slot is past it
+  (`resumeAfterSignatureSync`); a carried one predates the accounts listed since (a token registered
+  later), so the scan then resumes from its frozen checkpoint.
 - **Where it runs**: the local workers' signature loop ticks every 15 s and syncs each listed chain
   that the process scans (`LOCAL_DEPOSIT_SCAN_CHAINS`), once its interval (`interval_seconds`,
   `DEPOSIT_SIGNATURE_INTERVAL_SECONDS`, default 600, at least 15) elapsed since its last sync started,
@@ -1229,8 +1247,9 @@ on; the sync is its safety net, and the only detector where it is not.
 
 — guarded by `app/adapters/chain/solana/signatures_test.go` (devnet slot 514235140 and the
 transactions 2yMCe5… and 634Fzh… recorded in `testdata/solana`, `TestSolana_TransactionTransfers_*`,
-`TestSolana_AccountSignatures_*`, `TestSolana_SignatureAccounts_*`), `app/services/deposit/signatures_test.go`
-and `signature_backfill_test.go` (`TestSync_Signatures_*`, `TestScan_LatestBlocks_*`, `TestRun_ScanInvocation_*`,
+`TestSolana_AccountSignatures_*`, `TestSolana_SignatureAccounts_*`), `app/services/deposit/signatures_test.go`,
+`signature_backfill_test.go` and `signature_gap_test.go` (`TestSync_Signatures_*`, among them the property test
+`TestSync_Signatures_ReadsEveryHistoryAcrossCyclesWithoutASkipOrAnEarlyCoverage`, `TestScan_LatestBlocks_*`, `TestRun_ScanInvocation_*`,
 `TestScan_Alerts_FollowTheRecordedModeNotTheNewestRecord`), `app/services/deposit/signature_settings_test.go`,
 `app/services/settings/deposit_signatures_test.go`, `app/services/cacheguard` (`TestAcquireHold_*`),
 `app/services/deposit/pending` (`TestDurable_Store_ListCompleteRefusesADegradedReadingThatListKeeps`),
@@ -1326,8 +1345,9 @@ of their own, so a slow chain never holds up `eth`, `polygon` and `btc`. — gua
   that scan's lag) has `mode: "signatures"` and, from its last completed sync cycle, `last_synced_at`,
   `accounts`, `failed_accounts`, `backfilling_accounts`, `skipped_mints`, `covered_slot` (the slot every
   account was read up to by the last cycle that read them all) and `lag_blocks` (the head that cycle
-  confirmed at − `covered_slot`: it grows only while cycles leave accounts unread) instead of the block
-  scan's `lag_blocks` and `last_scanned_at`; `mode` is absent for the others, and the statuses keep
+  confirmed at − `covered_slot`: at least the 150-slot index margin, it grows only while cycles leave
+  accounts unread) instead of the block scan's `lag_blocks` and `last_scanned_at`; `mode` is absent
+  for the others, and the statuses keep
   their meaning. Times are UTC, to the second; no address or id;
   `chains_error` says when the store cannot be read and no earlier reading exists, and
   `deposit_scanner.status` does not depend on it. Every reading of the check (pending counts and scan

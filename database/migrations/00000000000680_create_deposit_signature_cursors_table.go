@@ -9,7 +9,10 @@ import "github.com/goravel/framework/contracts/database/schema"
 // empty signature: none yet, slot is then where the account is known empty up to)
 // down to the oldest one (backfill_before), which the backfill continues below until
 // it reaches synced_from_slot, the floor fixed when the account was first read
-// (covered). One row per (chain, account).
+// (covered; end_seen: the last backfill read showed the end once). A burst longer
+// than a cycle lists is recorded as a stretch of its own ahead of the cursor
+// (ahead_signature at ahead_slot down to ahead_before) while the gap below it is read.
+// One row per (chain, account).
 type M00000000000680CreateDepositSignatureCursorsTable struct{}
 
 func (r *M00000000000680CreateDepositSignatureCursorsTable) Signature() string {
@@ -28,6 +31,10 @@ func (r *M00000000000680CreateDepositSignatureCursorsTable) Up() error {
 		table.String("backfill_before", 128).Default("")
 		table.BigInteger("synced_from_slot").Default(0)
 		table.Boolean("covered").Default(false)
+		table.Boolean("end_seen").Default(false)
+		table.String("ahead_signature", 128).Default("")
+		table.BigInteger("ahead_slot").Default(0)
+		table.String("ahead_before", 128).Default("")
 		table.TimestampsTz()
 		table.Primary("chain", "account")
 	})

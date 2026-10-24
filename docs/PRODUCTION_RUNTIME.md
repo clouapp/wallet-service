@@ -222,11 +222,14 @@ The ECS services run tasks for as long as they live; the scheduled tasks run onc
   token and renews it while its cycle runs (`cacheguard.AcquireHold`, every 40 s), so a long first
   sync (the history since the scan stalled) keeps the chain, and a release never frees another
   holder's lock. A held lock skips the sync cycle (`deposit signature sync skipped, another scan
-  holds the chain`). A renewal that finds another token, or that the cache refuses, loses the hold:
-  the cycle stops (`ErrScanLockLost`), keeps the cursors it saved, and drops and confirms nothing. It
-  runs where the chain is in `LOCAL_DEPOSIT_SCAN_CHAINS`, so the one scanning process is also the one
-  syncing. When the chain leaves `deposit_signatures`, the block scan resumes after the slot the sync
-  last read every account up to, instead of the checkpoint it stalled at.
+  holds the chain`). A renewal that finds another token, or that the cache refuses, loses the hold,
+  and so does a check before an account or a signature that finds another token: the cycle stops at
+  once (`ErrScanLockLost`), keeps the cursors it saved, and drops and confirms nothing. It runs where
+  the chain is in `LOCAL_DEPOSIT_SCAN_CHAINS`, so the one scanning process is also the one syncing.
+  When the chain leaves `deposit_signatures`, the block scan resumes after the slot the sync's last
+  cycle read every account up to, instead of the checkpoint it stalled at, and from that checkpoint
+  when the last cycle did not read them all. In the Lambda, a cycle stops 20 s before the invocation's
+  deadline and cuts its reads 6 s before it, so its cursors are saved in time.
 
 ### 5.2 One consumer per queue
 

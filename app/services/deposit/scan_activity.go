@@ -39,9 +39,10 @@ func (r ScanRecord) LagBlocks() uint64 {
 // floor (backfilling) or were left behind by the cycle's time budget, the registered
 // mints the node does not hold as token mints, the head it confirmed at, and when it
 // ended. CoveredHead is the slot every account was read up to by the last cycle that
-// read them all (carried from cycle to cycle, 0 until one did): the deposits to every
-// watched address up to it are recorded, which makes it the slot the block scan may
-// resume after.
+// read them all (carried from cycle to cycle for the health check's lag, 0 until one
+// did); ReadEveryAccount says this cycle is that cycle. Only then are the deposits to
+// every watched address up to CoveredHead known recorded, which makes it the slot the
+// block scan may resume after: a carried one predates the accounts listed since.
 type SignatureSyncRecord struct {
 	Accounts            int
 	FailedAccounts      int
@@ -49,6 +50,7 @@ type SignatureSyncRecord struct {
 	SkippedMints        []string
 	Head                uint64
 	CoveredHead         uint64
+	ReadEveryAccount    bool
 	At                  time.Time
 }
 
@@ -151,7 +153,7 @@ func (s *Service) recordSignatureSync(ctx context.Context, chainID string, summa
 	defer cancel()
 	record := SignatureSyncRecord{Accounts: summary.Accounts, FailedAccounts: summary.FailedAccounts,
 		BackfillingAccounts: summary.BackfillingAccounts, SkippedMints: summary.SkippedMints,
-		Head: summary.Head, CoveredHead: summary.CoveredHead, At: s.now().UTC()}
+		Head: summary.Head, CoveredHead: summary.CoveredHead, ReadEveryAccount: summary.CoveredHead != 0, At: s.now().UTC()}
 	if record.CoveredHead == 0 {
 		if previous, err := s.chainActivity(recordCtx, chainID); err == nil && previous.Signatures != nil {
 			record.CoveredHead = previous.Signatures.CoveredHead

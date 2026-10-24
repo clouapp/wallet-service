@@ -92,6 +92,32 @@ func (s *DepositSignatureCursorRepositoryTestSuite) TestAdvance_MovesTheBackfill
 	s.True(row.Covered, "an account read down to its floor stays so")
 }
 
+// A burst leaves a stretch recorded ahead of a gap above the cursor: it is stored
+// with the cursor, and cleared once the gap is read and the stretches join; the end of
+// a history seen once is stored, and forgotten when the next read contradicts it.
+func (s *DepositSignatureCursorRepositoryTestSuite) TestAdvance_KeepsTheStretchAheadOfAGapAndTheEndSeen() {
+	ctx := context.Background()
+	s.Require().NoError(s.repo.Advance(ctx, models.DepositSignatureCursor{Chain: models.ChainTSOL, Account: cursorOwner,
+		Signature: "sig-top", Slot: 200, BackfillBefore: "sig-150", SyncedFromSlot: 100, EndSeen: true,
+		AheadSignature: "sig-900", AheadSlot: 900, AheadBefore: "sig-800"}))
+
+	row := s.cursorsOf(models.ChainTSOL)[cursorOwner]
+	s.True(row.EndSeen)
+	s.Equal("sig-900", row.AheadSignature)
+	s.EqualValues(900, row.AheadSlot)
+	s.Equal("sig-800", row.AheadBefore)
+
+	s.Require().NoError(s.repo.Advance(ctx, models.DepositSignatureCursor{Chain: models.ChainTSOL, Account: cursorOwner,
+		Signature: "sig-900", Slot: 900, BackfillBefore: "sig-150", SyncedFromSlot: 100}))
+
+	row = s.cursorsOf(models.ChainTSOL)[cursorOwner]
+	s.Equal("sig-900", row.Signature, "the stretches joined")
+	s.Empty(row.AheadSignature)
+	s.Zero(row.AheadSlot)
+	s.Empty(row.AheadBefore)
+	s.False(row.EndSeen, "an end the next read contradicted is forgotten")
+}
+
 func (s *DepositSignatureCursorRepositoryTestSuite) TestAdvance_Never_MovesACursorBack() {
 	ctx := context.Background()
 	s.Require().NoError(s.repo.Advance(ctx, models.DepositSignatureCursor{Chain: models.ChainTSOL, Account: cursorOwner, Signature: "sig-new", Slot: 500}))
@@ -110,6 +136,7 @@ func (s *DepositSignatureCursorRepositoryTestSuite) TestAdvance_Refuses_ABlankKe
 		"blank account":        {Chain: models.ChainTSOL, Account: "  ", Slot: 1},
 		"negative slot":        {Chain: models.ChainTSOL, Account: cursorOwner, Slot: -1},
 		"negative synced slot": {Chain: models.ChainTSOL, Account: cursorOwner, SyncedFromSlot: -1},
+		"negative ahead slot":  {Chain: models.ChainTSOL, Account: cursorOwner, AheadSlot: -1},
 	} {
 		s.Run(name, func() {
 			s.Error(s.repo.Advance(ctx, cursor))
