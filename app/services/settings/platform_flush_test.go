@@ -157,7 +157,7 @@ func TestFlush_Platform_ProvidersSectionForgetsTheIngestBaseURL(t *testing.T) {
 	store := newMemoryStore()
 	store.PutPlatform(groupIngestPush, map[string]string{keyIngestBaseURL: ingestSettingBaseURL})
 	cache := &memoryCache{}
-	service, actor := newIngestPushService(store, cache, &recordingActivity{})
+	service, actor := newIngestPushService(t, store, cache, &recordingActivity{})
 	ctx := context.Background()
 	if got, _ := service.EffectiveIngestBaseURL(ctx, ingestEnvBaseURL); got.URL != ingestSettingBaseURL {
 		t.Fatalf("before the edit = %+v", got)

@@ -67,7 +67,9 @@ type AccountSignature struct {
 // itself), the floor (FloorCrossed: a signature below it was seen), or, without
 // either, an empty page, with LedgerStart the endpoint's first available block: only
 // a ledger that starts at or below the floor proves there is nothing older to read. A
-// listing with Until that is neither Ended nor More did not prove it reached Until.
+// listing with Until that is neither Ended nor More did not prove it reached Until. A
+// listing below a Before the endpoint does not hold is empty and unended: nothing an
+// endpoint lists or says of the end below a signature it cannot place is evidence.
 type SignatureHistory struct {
 	Signatures   []AccountSignature
 	Head         uint64

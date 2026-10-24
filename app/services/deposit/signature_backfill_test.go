@@ -399,10 +399,11 @@ func TestSync_Signatures_NamesTheRegisteredMintsTheNodeDoesNotHold(t *testing.T)
 // The slot every account is read up to is the lowest head an account's endpoint read
 // it up to, and never above the head read before the addresses were listed (an
 // address created later received nothing up to it). A cycle that did not read every
-// account keeps the last one's in its record.
+// account keeps the last one's of this period of signature mode in its record.
 func TestSync_Signatures_RecordsTheSlotEveryAccountIsReadUpTo(t *testing.T) {
 	f := newSignatureFixture(t)
 	activity := newMemoryActivity()
+	activity.modes[sigChain] = ScanModeRecord{Mode: ScanModeSignatures, Since: time.Now().Add(-time.Hour), At: time.Now()}
 	f.svc.SetScanActivityStore(activity)
 	f.chain.heads[sigAliceUSDC] = sigHead - 10
 	f.chain.heads[sigBob] = sigHead + 100
@@ -823,8 +824,8 @@ func TestSync_Signatures_RecordsItsCycleForTheHealthCheck(t *testing.T) {
 
 	record, ok := activity.syncOf(sigChain)
 	require.True(t, ok)
-	assert.Equal(t, SignatureSyncRecord{Accounts: 3, FailedAccounts: 1, BackfillingAccounts: 2, Head: sigHead, At: activityNow}, record,
-		"alice's two accounts, whose end showed once, and bob, whose accounts were not listed")
+	assert.Equal(t, SignatureSyncRecord{Accounts: 3, FailedAccounts: 1, BackfillingAccounts: 2, Head: sigHead, ListedHead: sigHead, BackfillingSince: activityNow, At: activityNow}, record,
+		"alice's two accounts, whose end showed once, and bob, whose accounts were not listed; the first cycle that left accounts backfilling")
 }
 
 func pendingEntryDue(block uint64, now time.Time) pending.Entry {

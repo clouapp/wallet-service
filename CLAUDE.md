@@ -293,8 +293,15 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `TestComposition_Root_GuardsEveryWebhookDestination` (`bootstrap`),
   `TestWebhook_DestinationPolicy_*` (`app/providers`). Receiver side: `docs/vault-summary-v2.md`.
 - The ingest base URL, where the push providers post to this service, goes through the same package:
-  `egress.ParsePublicBase`, the zero policy without any deployment's relaxation (see "Provider push
-  subscriptions"). — guarded by `TestParsePublicBase_*` (`pkg/egress`).
+  `egress.ParsePublicBase`, the zero policy, and its host is resolved with the zero-policy guard
+  (`egress.PublicBaseGuard`) at the settings write and by `ingest:subscribe`. None of the
+  outbound webhook settings applies to it: neither their relaxations (`WEBHOOK_ALLOW_HTTP`, the
+  `APP_ENV=testing` loopback) nor the restriction `WEBHOOK_ALLOWED_PORTS`, which limits the ports this
+  service posts its own webhooks to; the base URL's port is the deployment's public listener, which
+  this service never connects to (see "Provider push subscriptions"). — guarded by
+  `TestParsePublicBase_*`, `TestPublicBaseGuard_*` (`pkg/egress`),
+  `TestIngest_BaseDestinations_AreTheZeroPolicyWhateverTheWebhookSettings` (`app/providers`) and
+  `TestComposition_Root_GuardsTheIngestBaseURLWithTheZeroPolicy` (`bootstrap`).
 - Webhook delivery is at least once. An event is a `webhook_events` row (one per config, type
   and subject: the partial unique index of migration 260) written before the queue send, and
   receivers deduplicate on `X-Vault-Delivery-Id` (the row id), which every resend keeps. Three
@@ -416,7 +423,9 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 - Each completed scan cycle (one that found nothing new, and the first one, included) records the
   head it read, the checkpoint it left and when it ended (`vault:scan-activity:<chain>`), each
   completed signature sync cycle what it read (accounts, failed, backfilling, skipped mints, the head
-  it confirmed at and the covered slot) and when it ended (`vault:signature-sync:<chain>`), each scan
+  it read before listing the addresses and the one it confirmed at, the covered slot and since when
+  accounts are backfilling) and when it ended
+  (`vault:signature-sync:<chain>`), each scan
   cycle that starts the chain's detection mode (`vault:scan-mode:<chain>`, `blocks` or `signatures`,
   written when it changes and hourly), and the inbound ingest records when a provider webhook of a
   known chain arrived (`vault:ingest-push:<chain>`), all in Redis with a 7-day TTL, after the work is
@@ -1191,7 +1200,19 @@ on; the sync is its safety net, and the only detector where it is not.
   endpoint confirms it: one more `getSignaturesForAddress` for the single signature below the oldest it
   listed (or below `before`) must answer the cursor itself. Agave fails a `before` or `until` it does not
   hold (-32020), but another provider may answer an empty page, which must never read as reaching the
-  cursor. Otherwise only a signature below the floor, or an empty page together with the endpoint's first
+  cursor. An empty first page without `before` is confirmed from the newest signature, so on a busy
+  account one that lands between the two calls answers instead of the cursor: when the confirmation
+  answers another signature, the listing is read again once on the same pinned endpoint (it lists the
+  new signature, and its confirmation, below it, must still be the cursor itself); a second miss leaves
+  the account for the next cycle. The empty page read again does not count against the page limit.
+  A listing below a `before` (a backfill read, or the gap below a stretch ahead of the cursor) first asks
+  the same pinned endpoint whether it holds that signature (`getSignatureStatuses`, searching the
+  history): a backend behind on the newest slots, or one without the old ledger, may answer an empty
+  page or its own newest signatures for a `before` it cannot place instead of failing it as Agave does,
+  and twice in a row that read as the end of a history and covered the account with its older history
+  unread (a loss in v0.14.0, found by the review of #130). One that does not hold it lists nothing and
+  ends nothing: the account stays backfilling until an endpoint that holds it reads on.
+  Otherwise only a signature below the floor, or an empty page together with the endpoint's first
   available block (`getFirstAvailableBlock`) at or below the floor, proves there is nothing older. The
   first covers an account at once; the second only when two backfill reads in a row show it and the
   second finds nothing older (`end_seen`), so one odd answer never covers an account for good. A
@@ -1208,6 +1229,23 @@ on; the sync is its safety net, and the only detector where it is not.
   address). A transaction is read and recorded once per cycle however many of its accounts list it.
   One a node does not return, whose keys do not line up with its balances, or whose slot hash is not
   read fails its account.
+- **RPC cost** (counted from the code, steady state: every account covered, nothing new): per cycle,
+  `getSlot` twice (the head before the addresses are listed and at the confirmation step), one
+  `getTokenAccountsByOwner` per address and token program in use (the mints' programs are read once and
+  cached), and three calls per account: `getSlot` (the listing's pinned head), one
+  `getSignaturesForAddress` page, then either the confirmation `getSignaturesForAddress` (an account
+  with a recorded signature) or `getFirstAvailableBlock` (an account known empty). Each new signature
+  adds one `getTransaction`, each slot that credits a watched address one `getBlock` without
+  transactions, a confirmation race two more `getSignaturesForAddress`, and each listing below a
+  `before` (backfill and gap reads only, none in steady state) one `getSignatureStatuses`. At 18
+  addresses with one token (36 accounts) and the default 600 s: 2 + 18 + 36 × 3 = 128 calls a cycle,
+  about 18 400 a day (144 cycles), of which at most 10 400 `getSignaturesForAddress`; the confirmation
+  call is at most one per account and cycle, about 5 200 a day. Beside the cycles, the paused block
+  scan's confirmation step runs on every scan tick (5 s) and reads the head (`getSlot`) only while a
+  transaction of the chain is pending, with one `getSignatureStatuses` per outbound transaction without
+  a block: up to about 17 300 `getSlot` a day more while a withdrawal or a sweep stays in flight (a
+  Solana transfer usually settles within a few ticks). The block scan reads about 350 000 `getBlock` a
+  day.
 - **Recording** goes through the scanner's path (`recordTransfers`: watched addresses only, the
   sweeps and gas seeds of the wallet left out, `depositrecord.Record`). The stretch moves over a
   signature only once its transfers are all recorded, and never back; a failure stops the account
@@ -1297,10 +1335,27 @@ go run . artisan ingest:subscriptions                     # provider, chain, sta
   - The base URL is a public https origin, a path prefix allowed (`egress.ParsePublicBase`): a
     destination the zero `egress.Policy` allows (no credentials, a valid port other than 22 and 25, never
     a numeric-form, internal, metadata, loopback, private, link-local, shared or reserved host, a
-    trailing dot, an IPv4-mapped, NAT64 or 6to4 form included), and no query, fragment or empty port. It
-    takes none of the webhook relaxations (`WEBHOOK_ALLOW_HTTP`, `WEBHOOK_ALLOWED_PORTS`, the
-    `APP_ENV=testing` loopback): providers post to it from the internet, in every environment. No name
-    is resolved.
+    trailing dot, an IPv4-mapped, NAT64 or 6to4 form included), and no query, fragment or empty port.
+    Providers post to it from the internet, in every environment, so it takes none of the outbound
+    webhook settings: not their relaxations (`WEBHOOK_ALLOW_HTTP`, the `APP_ENV=testing` loopback), and
+    not the restriction `WEBHOOK_ALLOWED_PORTS`, which limits the ports this service posts its own
+    webhooks to, while the base URL's port is the deployment's public listener (this service never
+    connects to it).
+  - Its host name is resolved with the zero-policy guard (`egress.PublicBaseGuard.CheckPublicBase`,
+    built by `providers.ingestBaseDestinations` and bound under its own type by the settings provider;
+    the type and its method are the only ones the two services take, so no webhook or RPC guard can
+    stand in for it), as a webhook URL is when it is registered: a name with an A or AAAA record the
+    rule refuses (an internal or metadata address) is refused with `egress.ReasonResolved`, whatever
+    the range. `PUT /v1/platform/settings/ingest_push` resolves the
+    value it writes after the group's validation (the group validators take the values alone, without a
+    context, so `SavePlatform` resolves it, like the price lookup's provider check) and answers 422 with
+    that sentence; `ingest:subscribe --apply` resolves the base URL in effect before any provider call
+    and exits 1 (`ErrInvalidBaseURL`, with where it was read); a dry run warns that `--apply` refuses
+    it. A name that does not resolve then is not refused (the guard's rule).
+  - It is a check at those two moments only. The provider resolves the name itself on every delivery
+    and this service never connects to it, so nothing checks the record again: a name rebound to an
+    internal address after `--apply` (DNS rebinding) cannot be refused on this side. An outbound
+    webhook differs: `egress.Guard.DialContext` checks every connection it opens.
 - The base URL is the `ingest_push.base_url` platform setting, else `WEBHOOK_INGEST_BASE_URL`
   (`vault.webhooks.ingest_base_url`, read only by `providers.ingestBaseURL`).
   - Both are read on every run (`settings.EffectiveIngestBaseURL`), so a value saved through
@@ -1312,18 +1367,25 @@ go run . artisan ingest:subscriptions                     # provider, chain, sta
     platform section, which deletes `ingest_push` with the provider credential groups.
   - A missing or blank row uses the environment value, which the run checks itself (`ErrInvalidBaseURL`,
     naming the rule and the source, never the value). A stored value the rule refuses (an edit made
-    outside the service) does too, and the plan says it is ignored.
+    outside the service, or a rule tightened since it was saved) is the value the operator meant:
+    `--apply` exits 1 with `ErrBaseURLSettingInvalid`, naming the setting and never the value, and
+    touches no provider; a dry run uses the environment value and says the setting is ignored and that
+    `--apply` refuses to run until it is fixed or cleared.
   - A group that cannot be read fails closed: `--apply` exits 1 with `ErrBaseURLUnread` and touches no
     provider, since the environment value may be stale. A dry run uses the environment value and warns
     that the setting was not read.
   - The plan says where the base URL was read (`base URL read from the ingest_push.base_url platform
     setting`, or from `WEBHOOK_INGEST_BASE_URL`). The log names the group and the reason, never a URL. The
     environment value is not seeded into the setting.
-  - — guarded by `TestParsePublicBase_*` (`pkg/egress`), `app/services/settings/ingest_base_url_test.go`,
+  - — guarded by `TestParsePublicBase_*` (`pkg/egress`), `app/services/settings/ingest_base_url_test.go`
+    (`TestSave_IngestPush_RefusesABaseURLWhoseHostResolvesToARefusedAddress` among them),
     `TestReset_Platform_ProvidersSectionClearsTheIngestBaseURL`,
     `TestFlush_Platform_ProvidersSectionForgetsTheIngestBaseURL`,
     `TestSubscribe_ReadsTheBaseURLAtEachRunSoAChangedSettingAppliesWithoutARebuild`,
-    `TestSubscribe_ApplyRefusesToRunWhenTheSettingCannotBeRead`, `TestIngest_BaseURL_*` (`app/providers`,
+    `TestSubscribe_ApplyRefusesToRunWhenTheSettingCannotBeRead`,
+    `TestSubscribe_ApplyRefusesToRunOnAStoredSettingTheRuleRefuses`,
+    `TestSubscribe_ApplyRefusesABaseURLWhoseHostResolvesToARefusedAddress`,
+    `TestSubscribe_DryRunWarnsThatTheBaseURLResolvesToARefusedAddress`, `TestIngest_BaseURL_*` (`app/providers`,
     the log one included), `TestPlatform_Ingest_PushSuite` and
     `TestComposition_Root_ReadsTheIngestBaseURLAndProviderKeyFromThePlatformSettingsAtEachRun` (`bootstrap`).
 - The chain's network (`models.Chain.ResolveNetwork` with its RPC URL) must be one the provider pushes
@@ -1423,8 +1485,21 @@ of their own, so a slow chain never holds up `eth`, `polygon` and `btc`. — gua
   before is cleared); it warns `deposit signature sync has not completed a cycle within the alert
   threshold` when its last sync cycle (or, without one since, the start of that mode) ended longer ago
   than the stale threshold plus the sync's interval, `deposit signature sync left accounts failed`
-  while its last cycle left any, and `deposit signature sync skips registered tokens the chain's node
-  does not hold as token mints` while it skips any. A
+  while its last cycle left any, `deposit signature sync skips registered tokens the chain's node
+  does not hold as token mints` while it skips any, and `deposit signature sync has not read every
+  account up to the head within the alert threshold` when an account does not settle: the head its
+  last cycle read before listing the addresses (`listed_head`) is past the covered slot by more than
+  the 1500-slot index margin plus three sync intervals of 400 ms slots (6000 slots at the default 600
+  s), or accounts have been backfilling for longer than three intervals in a row (`backfilling_since`
+  of the record: when the first cycle of the run that left one backfilling ended; it covers a chain no
+  cycle ever read in full, whose covered slot is unknown). The lag is counted from the listed head, not
+  from the head the cycle confirmed at (`/health`'s `lag_blocks`): a cycle that read every account
+  leaves it at most the margin however long it took, so a healthy cycle at a short interval raises
+  nothing. These three alerts read only a record of this period of signature mode (written at or after
+  the mode record's `since`): a record left from an earlier period raises none of them, the stale check
+  counts from the mode's start, and the covered slot and `backfilling_since` are carried only from a
+  record of the same period. `DEPOSIT_SCAN_ALERT_LAG_BLOCKS` is the block scan's and does not apply to
+  it. A
   value equal to its threshold is no alert. An alert is logged when raised, again every 30 minutes
   while it lasts (`reminder: true`), and once at info level when it clears: the raised alerts live in
   Redis (`vault:scan-alert:<key>`, SET NX, a reminder key with a 30-minute TTL); a store that fails
@@ -1433,7 +1508,12 @@ of their own, so a slow chain never holds up `eth`, `polygon` and `btc`. — gua
   0 keeps the global value). On Lambda the `confirmation_tracker` function reads them (template
   parameters `DepositScanAlertLagBlocks`, `DepositScanAlertStaleMinutes`). A chain taken out of
   scanning stops alerting when its record expires (7 days) or is deleted. — guarded by
-  `app/services/deposit/scan_activity_test.go`, `TestScan_Alerts_FollowTheRecordedModeNotTheNewestRecord`, `app/adapters/redis/scanactivity/store_test.go`,
+  `app/services/deposit/scan_activity_test.go`, `TestScan_Alerts_FollowTheRecordedModeNotTheNewestRecord`,
+  `app/services/deposit/signature_alerts_test.go` (`TestScan_Alerts_WarnWhenAnAccountOfAChainInSignatureModeNeverSettles`,
+  `TestScan_Alerts_ARecordFromAnEarlierSignaturePeriodRaisesNoAlert`,
+  `TestRecord_SignatureSync_CarriesNothingFromAnEarlierSignaturePeriod`,
+  `TestScan_Alerts_AHealthyCycleAtTheShortestIntervalRaisesNoAlert`,
+  `TestSync_Signatures_AnAccountThatNeverSettlesRaisesTheAlertAfterAFewIntervals`), `app/adapters/redis/scanactivity/store_test.go`,
   `app/providers/deposit_scan_overrides_test.go`, `config/vault_test.go` and
   `TestConfirmation_Tracker_ReadsTheScanAlertThresholds` (`tests/architecture`).
 - **Webhook DLQ alarm**: `template.yaml` and `template.dev.yaml` declare `vault-webhooks-dlq-not-empty-<env>`,

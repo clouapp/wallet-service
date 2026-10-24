@@ -43,6 +43,11 @@ func (r ScanRecord) LagBlocks() uint64 {
 // did); ReadEveryAccount says this cycle is that cycle. Only then are the deposits to
 // every watched address up to CoveredHead known recorded, which makes it the slot the
 // block scan may resume after: a carried one predates the accounts listed since.
+// BackfillingSince is when the first of the cycles in a row that left an account
+// backfilling ended, carried from cycle to cycle like CoveredHead (zero while none
+// is), so the tracker can tell an account that never settles from a long first read.
+// ListedHead is the head the cycle read before it listed the addresses (0 in a record
+// written before it was recorded).
 type SignatureSyncRecord struct {
 	Accounts            int
 	FailedAccounts      int
@@ -50,7 +55,9 @@ type SignatureSyncRecord struct {
 	SkippedMints        []string
 	Head                uint64
 	CoveredHead         uint64
+	ListedHead          uint64
 	ReadEveryAccount    bool
+	BackfillingSince    time.Time
 	At                  time.Time
 }
 
@@ -62,6 +69,18 @@ func (r SignatureSyncRecord) LagBlocks() uint64 {
 		return 0
 	}
 	return r.Head - r.CoveredHead
+}
+
+// SettleLag is how far the head the last cycle read before listing the addresses is
+// past the slot every account was last read up to; 0 while either is unknown. A
+// cycle that read every account leaves it at most signatureIndexMargin, whatever the
+// cycle's length or the interval (its covered slot is that head, or an account's
+// later head, less the margin), so only cycles that leave accounts unread raise it.
+func (r SignatureSyncRecord) SettleLag() uint64 {
+	if r.CoveredHead == 0 || r.ListedHead <= r.CoveredHead {
+		return 0
+	}
+	return r.ListedHead - r.CoveredHead
 }
 
 // The detection modes of a chain the scan records (ScanModeRecord).
@@ -97,6 +116,17 @@ type ChainActivity struct {
 // from before the chain left deposit_signatures, never does.
 func (a ChainActivity) SignatureMode() bool {
 	return a.Mode != nil && a.Mode.Mode == ScanModeSignatures
+}
+
+// CurrentSync is the chain's last signature sync record when the chain is in
+// signature mode and the record was written in this period of it (at or after
+// Mode.Since); nil otherwise. A record left from an earlier period (the chain left
+// deposit_signatures and was listed again) says nothing of the accounts now.
+func (a ChainActivity) CurrentSync() *SignatureSyncRecord {
+	if !a.SignatureMode() || a.Signatures == nil || a.Signatures.At.Before(a.Mode.Since) {
+		return nil
+	}
+	return a.Signatures
 }
 
 // ScanActivityStore keeps, per chain, the last completed scan cycle (written by
@@ -143,8 +173,12 @@ func (s *Service) recordScan(ctx context.Context, chainID string, head, checkpoi
 }
 
 // recordSignatureSync notes a completed signature sync cycle of chainID, carrying the
-// covered head of the last cycle that read every account when this one did not. A
-// record that fails is logged and never fails the cycle: its work is already saved.
+// covered head of the last cycle that read every account when this one did not, and,
+// while accounts stay backfilling, when the first cycle of that run ended. Both are
+// carried only from a record of this period of signature mode (ChainActivity.
+// CurrentSync): a previous record that cannot be read, or one from an earlier period,
+// starts them again. A record that fails is logged and never fails the cycle: its
+// work is already saved.
 func (s *Service) recordSignatureSync(ctx context.Context, chainID string, summary SignatureSyncSummary) {
 	if s.activity == nil {
 		return
@@ -153,11 +187,20 @@ func (s *Service) recordSignatureSync(ctx context.Context, chainID string, summa
 	defer cancel()
 	record := SignatureSyncRecord{Accounts: summary.Accounts, FailedAccounts: summary.FailedAccounts,
 		BackfillingAccounts: summary.BackfillingAccounts, SkippedMints: summary.SkippedMints,
-		Head: summary.Head, CoveredHead: summary.CoveredHead, ReadEveryAccount: summary.CoveredHead != 0, At: s.now().UTC()}
+		Head: summary.Head, CoveredHead: summary.CoveredHead, ListedHead: summary.ListedHead,
+		ReadEveryAccount: summary.CoveredHead != 0, At: s.now().UTC()}
 	if record.CoveredHead == 0 {
-		if previous, err := s.chainActivity(recordCtx, chainID); err == nil && previous.Signatures != nil {
-			record.CoveredHead = previous.Signatures.CoveredHead
+		if activity, err := s.chainActivity(recordCtx, chainID); err == nil {
+			if previous := activity.CurrentSync(); previous != nil {
+				record.CoveredHead = previous.CoveredHead
+				if record.BackfillingAccounts > 0 && previous.BackfillingAccounts > 0 {
+					record.BackfillingSince = previous.BackfillingSince
+				}
+			}
 		}
+	}
+	if record.BackfillingAccounts > 0 && record.BackfillingSince.IsZero() {
+		record.BackfillingSince = record.At
 	}
 	if err := s.activity.RecordSignatureSync(recordCtx, chainID, record); err != nil {
 		slog.Warn("deposit signature sync activity not recorded", "chain", chainID, "accounts", record.Accounts, "failed_accounts", record.FailedAccounts, "error", err)

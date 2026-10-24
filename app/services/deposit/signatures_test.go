@@ -50,10 +50,14 @@ var sigUSDC = types.Token{Symbol: models.SymbolUSDC, Contract: sigUSDCMint, Deci
 // ended only when until is right below what it listed, as the adapter's confirmation
 // call proves). The endpoint can be made to show less: nothing above hideAbove (a
 // backend behind on the newest slots), nothing below hideBelow (a node without the
-// old ledger, whose first available block is then hideBelow); with unknownErrs it
-// fails a before or until it does not show, as Agave does (-32020), else it answers
-// as another provider may, with what it holds. ScanBlock reports the same
-// transactions by slot, as the block scan reads them.
+// old ledger, whose first available block is then hideBelow). A before it does not
+// show lists nothing and ends nothing, as the adapter's check that the endpoint holds
+// the before makes it; with unknownErrs it fails an until it does not show, as Agave
+// does (-32020), else it answers as another provider may, with what it holds. With
+// raceMiss, an empty first page
+// above a cursor may stay unended, as when a signature lands between the page and its
+// confirmation twice in a row. ScanBlock reports the same transactions by slot, as the
+// block scan reads them.
 type signatureChain struct {
 	*mocks.MockChain
 	mu           sync.Mutex
@@ -66,6 +70,7 @@ type signatureChain struct {
 	hideAbove    uint64
 	hideBelow    uint64
 	unknownErrs  bool
+	raceMiss     func() bool
 	heads        map[string]uint64
 	transactions map[string]chain.TransactionTransfers
 	txErr        map[string]error
@@ -129,7 +134,7 @@ func (c *signatureChain) AccountSignatures(_ context.Context, account string, qu
 	c.mu.Lock()
 	c.queries[account] = append(c.queries[account], query)
 	history, during, pageSize, ledgerStart := c.histories[account], c.duringRead, c.pageSize, c.ledgerStart
-	hideAbove, hideBelow, unknownErrs := c.hideAbove, c.hideBelow, c.unknownErrs
+	hideAbove, hideBelow, unknownErrs, raceMiss := c.hideAbove, c.hideBelow, c.unknownErrs, c.raceMiss
 	head, ok := c.heads[account]
 	if !ok {
 		head = sigHead
@@ -153,7 +158,10 @@ func (c *signatureChain) AccountSignatures(_ context.Context, account string, qu
 		}
 		return false
 	}
-	if unknownErrs && ((query.Before != "" && !shows(query.Before)) || (query.Until != "" && !shows(query.Until))) {
+	if query.Before != "" && !shows(query.Before) {
+		return chain.SignatureHistory{Head: head}, nil
+	}
+	if unknownErrs && query.Until != "" && !shows(query.Until) {
 		return chain.SignatureHistory{}, errors.New("-32020 transaction not found")
 	}
 	if during != nil {
@@ -178,7 +186,7 @@ func (c *signatureChain) AccountSignatures(_ context.Context, account string, qu
 	}
 	for _, signature := range newestFirst[start:] {
 		if query.Until != "" && signature.Signature == query.Until {
-			listed.Ended = true
+			listed.Ended = raceMiss == nil || query.Before != "" || len(listed.Signatures) > 0 || !raceMiss()
 			return listed, nil
 		}
 		if query.HasFloor && signature.Slot < query.FloorSlot {
@@ -405,7 +413,7 @@ func TestSync_Signatures_RecordsTheDepositsOfEveryAccountOnceAndConfirmsThemInTh
 
 	summary := f.sync(t)
 
-	assert.Equal(t, SignatureSyncSummary{Accounts: 3, NewSignatures: 6, Deposits: 3, BackfillingAccounts: 3, Head: sigHead}, summary,
+	assert.Equal(t, SignatureSyncSummary{Accounts: 3, NewSignatures: 6, Deposits: 3, BackfillingAccounts: 3, ListedHead: sigHead, Head: sigHead}, summary,
 		"every history ended with an empty page, seen once: no account is covered yet")
 	rows := sigDeposits(t)
 	require.Len(t, rows, 3)
@@ -452,7 +460,7 @@ func TestSync_Signatures_RecordsTheDepositsOfEveryAccountOnceAndConfirmsThemInTh
 
 	second := f.sync(t)
 
-	assert.Equal(t, SignatureSyncSummary{Accounts: 3, CoveredHead: sigCovered, Head: sigHead}, second,
+	assert.Equal(t, SignatureSyncSummary{Accounts: 3, CoveredHead: sigCovered, ListedHead: sigHead, Head: sigHead}, second,
 		"the end seen a second time covers every account, read up to the head less the index margin")
 	cursors = f.cursors(t)
 	sameCursor(t, cursors[sigAlice], "sig-nobody", 1103, "sig-native", sigCheckpoint, true)
@@ -461,7 +469,7 @@ func TestSync_Signatures_RecordsTheDepositsOfEveryAccountOnceAndConfirmsThemInTh
 
 	again := f.sync(t)
 
-	assert.Equal(t, SignatureSyncSummary{Accounts: 3, CoveredHead: sigCovered, Head: sigHead}, again, "nothing newer than the cursors")
+	assert.Equal(t, SignatureSyncSummary{Accounts: 3, CoveredHead: sigCovered, ListedHead: sigHead, Head: sigHead}, again, "nothing newer than the cursors")
 	assert.Len(t, sigDeposits(t), 3)
 	assert.Len(t, f.events.pending(), 3)
 	queries := f.chain.queriesOf(sigAlice)

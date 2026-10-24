@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -198,22 +199,45 @@ type propertySignature struct {
 	deposit bool
 }
 
+// signatureRun is how the endpoint of a property run behaves.
+type signatureRun struct {
+	// unknownErrs: the endpoint fails a before or until it does not show (Agave)
+	// instead of answering what it holds.
+	unknownErrs bool
+	// switching: each cycle draws whether it fails or answers (a load balancer over
+	// both kinds of backend), whatever unknownErrs says.
+	switching bool
+	// race: an empty first page above a cursor stays unended one time in three, as
+	// when signatures land between the page and its confirmations.
+	race      bool
+	endpoints signatureEndpoints
+}
+
 // runSignatureProperty drives 30 cycles over two accounts with bursts above the
 // forward ceiling (also while a gap is open), transient read failures (in a gap too),
 // several signatures per slot, failed transactions and an endpoint that changes from
-// cycle to cycle (endpoints); unknownErrs is an endpoint that fails a before or until
-// it does not show (Agave) instead of answering what it holds. After every cycle each
+// cycle to cycle (run: a backend behind on the newest slots anywhere within the index
+// margin, or one without the old ledger; failing or answering what it does not show;
+// confirmation races). After every cycle each
 // recorded stretch (the cursor's, the one ahead of a gap) must be fully recorded, and
 // a covered account fully recorded from its floor up to its cursor or the slot it is
 // known empty up to (violations). Once the endpoint is full and the failures stop,
 // every deposit at or above the floor must be recorded (missing).
-func runSignatureProperty(t *testing.T, seed int64, unknownErrs bool, endpoints signatureEndpoints) (missing, violations int) {
+func runSignatureProperty(t *testing.T, seed int64, run signatureRun) (missing, violations int) {
 	t.Helper()
 	rng := rand.New(rand.NewSource(seed))
 	f := newSignatureFixture(t)
 	f.chain.pageSize = 1 + rng.Intn(2)
 	ceiling := signatureForwardPageCeiling * f.chain.pageSize
 	f.chain.accounts[sigAlice] = []string{sigAlice}
+	if run.race {
+		var raceMu sync.Mutex
+		f.chain.raceMiss = func() bool {
+			raceMu.Lock()
+			defer raceMu.Unlock()
+			return rng.Intn(3) == 0
+		}
+	}
 	accounts := []string{sigAlice, sigBob}
 	order := map[string][]string{}
 	known := map[string]propertySignature{}
@@ -223,7 +247,7 @@ func runSignatureProperty(t *testing.T, seed int64, unknownErrs bool, endpoints 
 		slot := from
 		for i := 0; i < count; i++ {
 			if slot < to && rng.Intn(3) > 0 {
-				slot = min(to, slot+1+rng.Uint64()%3)
+				slot = min(to, slot+1+draw(rng, 3))
 			}
 			n++
 			signature := fmt.Sprintf("p-%s-%05d-%d", account[:3], slot, n)
@@ -297,16 +321,19 @@ func runSignatureProperty(t *testing.T, seed int64, unknownErrs bool, endpoints 
 	setHead()
 	for cycle := 0; cycle < 30; cycle++ {
 		f.chain.mu.Lock()
-		f.chain.hideAbove, f.chain.hideBelow, f.chain.unknownErrs = 0, 0, unknownErrs
+		f.chain.hideAbove, f.chain.hideBelow, f.chain.unknownErrs = 0, 0, run.unknownErrs
+		if run.switching {
+			f.chain.unknownErrs = rng.Intn(2) == 0
+		}
 		pick := rng.Intn(4)
-		if endpoints == laggingEndpoints && pick == 2 || endpoints == nonArchivalEndpoints && pick == 1 {
+		if run.endpoints == laggingEndpoints && pick == 2 || run.endpoints == nonArchivalEndpoints && pick == 1 {
 			pick = 0
 		}
 		switch pick {
-		case 1: // a backend behind on the newest slots, within the index margin
-			f.chain.hideAbove = head - rng.Uint64()%140
+		case 1: // a backend behind on the newest slots, anywhere within the index margin
+			f.chain.hideAbove = head - draw(rng, 1400)
 		case 2: // a backend without the old ledger
-			f.chain.hideBelow = head - 300 - rng.Uint64()%600
+			f.chain.hideBelow = head - 300 - draw(rng, 600)
 		}
 		f.chain.txErr = map[string]error{}
 		for signature, e := range known {
@@ -317,7 +344,7 @@ func runSignatureProperty(t *testing.T, seed int64, unknownErrs bool, endpoints 
 		f.chain.mu.Unlock()
 		if cycle < 20 {
 			previous := head
-			head += 200 + rng.Uint64()%300
+			head += 200 + draw(rng, 300)
 			for _, account := range accounts {
 				if rng.Intn(4) == 0 {
 					add(account, ceiling+1+rng.Intn(ceiling), previous+1, head)
@@ -365,29 +392,95 @@ func runSignatureProperty(t *testing.T, seed int64, unknownErrs bool, endpoints 
 
 // Over cycles with bursts, gaps, failures and endpoints that show less than they hold,
 // no signature at or above the floor is skipped and no account is covered early,
-// whether the endpoint fails a signature it does not hold (Agave) or answers what it
-// holds (another provider), with lagging or non-archival backends. Each seed records a
-// few thousand deposits, so the run keeps a few seeds per kind of endpoint (the review
-// ran 8, 8, 4 and 4).
+// whether the endpoint fails a signature it does not hold (Agave), answers what it
+// holds (another provider) or switches between the two from cycle to cycle, with
+// lagging or non-archival backends and confirmation races. Each seed records a few
+// thousand deposits, so the run keeps a few seeds per kind of endpoint. The seeds of
+// the switching runs are the review's (#130): before the adapter confirmed that an
+// endpoint holds the before of a listing, seeds 204 and 206 lost hundreds of
+// signatures; the races make a run differ from one time to the next, so 206 runs twice.
 func TestProperty_SignatureSync_ReadsEveryHistoryWhateverTheEndpointShows(t *testing.T) {
 	for name, tc := range map[string]struct {
-		unknownErrs bool
-		endpoints   signatureEndpoints
-		seeds       int64
+		run   signatureRun
+		seeds []int64
 	}{
-		"failing an unknown signature, mixed backends":   {unknownErrs: true, endpoints: mixedEndpoints, seeds: 4},
-		"answering an unknown signature, mixed backends": {endpoints: mixedEndpoints, seeds: 4},
-		"answering, lagging backends":                    {endpoints: laggingEndpoints, seeds: 2},
-		"answering, non-archival backends":               {endpoints: nonArchivalEndpoints, seeds: 2},
+		"failing an unknown signature, mixed backends":   {run: signatureRun{unknownErrs: true}, seeds: seedRange(1, 4)},
+		"answering an unknown signature, mixed backends": {run: signatureRun{}, seeds: seedRange(1, 4)},
+		"answering, lagging backends":                    {run: signatureRun{endpoints: laggingEndpoints}, seeds: seedRange(1, 2)},
+		"answering, non-archival backends":               {run: signatureRun{endpoints: nonArchivalEndpoints}, seeds: seedRange(1, 2)},
+		"switching, mixed backends":                      {run: signatureRun{switching: true}, seeds: seedRange(101, 103)},
+		"switching, with confirmation races":             {run: signatureRun{switching: true, race: true}, seeds: append(seedRange(201, 206), 206)},
+		"failing, with confirmation races":               {run: signatureRun{unknownErrs: true, race: true}, seeds: seedRange(301, 301)},
 	} {
 		t.Run(name, func(t *testing.T) {
-			for seed := int64(1); seed <= tc.seeds; seed++ {
-				t.Run(fmt.Sprint(seed), func(t *testing.T) {
-					missing, violations := runSignatureProperty(t, seed, tc.unknownErrs, tc.endpoints)
+			for i, seed := range tc.seeds {
+				t.Run(fmt.Sprintf("%d#%d", seed, i), func(t *testing.T) {
+					missing, violations := runSignatureProperty(t, seed, tc.run)
 					assert.Zero(t, missing, "deposits never recorded")
 					assert.Zero(t, violations, "stretches or coverage claimed over unrecorded deposits")
 				})
 			}
 		})
 	}
+}
+
+// draw is rng.Intn(n) as a count of slots, the review's draws (#130) kept so its seeds
+// replay here.
+func draw(rng *rand.Rand, n int) uint64 {
+	return uint64(rng.Intn(n)) //nolint:gosec // G115: Intn answers in [0, n), never a negative value
+}
+
+// seedRange is the seeds from first to last.
+func seedRange(first, last int64) []int64 {
+	seeds := make([]int64, 0, last-first+1)
+	for seed := first; seed <= last; seed++ {
+		seeds = append(seeds, seed)
+	}
+	return seeds
+}
+
+// A backend behind on the newest slots that answers an empty page for a before it does
+// not hold, instead of failing it as Agave does (-32020), shows the end of an account's
+// history below a before it cannot place. The adapter confirms the endpoint holds the
+// before first, so two cycles on that backend never cover the account with its older
+// history unread; once a full endpoint serves, every deposit above the floor is read.
+func TestSync_Signatures_ABackendThatDoesNotHoldTheBeforeNeverCoversAnUnreadHistory(t *testing.T) {
+	f := newSignatureFixture(t)
+	f.chain.pageSize = 1
+	f.chain.accounts[sigAlice] = []string{sigAlice}
+	for slot := uint64(1001); slot <= 1010; slot++ {
+		f.chain.history(sigBob, f.chain.tx(fmt.Sprintf("old-%d", slot), slot, lamports(sigBob, int64(slot), 1)))
+	}
+	for slot := uint64(4900); slot <= 4909; slot++ {
+		f.chain.history(sigBob, f.chain.tx(fmt.Sprintf("new-%d", slot), slot, lamports(sigBob, int64(slot), 1)))
+	}
+	f.sync(t) // the five newest pages of one signature: bob's oldest recorded is new-4905
+	require.Equal(t, "new-4905", f.cursors(t)[sigBob].BackfillBefore)
+	f.chain.mu.Lock()
+	f.chain.hideAbove = 4800 // a backend 100 slots behind, answering an unknown before with an empty page
+	f.chain.mu.Unlock()
+	f.sync(t)
+	f.sync(t)
+	cursor := f.cursors(t)[sigBob]
+	assert.False(t, cursor.Covered, "an empty page below a before the endpoint does not hold proves no end")
+	assert.Equal(t, "new-4905", cursor.BackfillBefore)
+
+	f.chain.mu.Lock()
+	f.chain.hideAbove = 0
+	f.chain.mu.Unlock()
+	for i := 0; i < 5; i++ {
+		f.sync(t)
+	}
+	recorded := map[string]bool{}
+	for _, row := range sigDeposits(t) {
+		recorded[row.TxHash] = true
+	}
+	var missing []string
+	for slot := uint64(1001); slot <= 1010; slot++ {
+		if !recorded[fmt.Sprintf("old-%d", slot)] {
+			missing = append(missing, fmt.Sprintf("old-%d", slot))
+		}
+	}
+	assert.Empty(t, missing, "bob's history above the floor is recorded")
+	assert.True(t, f.cursors(t)[sigBob].Covered)
 }

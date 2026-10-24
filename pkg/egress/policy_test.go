@@ -21,6 +21,8 @@ func TestPolicy_CheckURL_RefusesEveryInternalDestinationOfAWebhook(t *testing.T)
 		{"no scheme", "//hooks.example.com/in", ReasonInvalidURL},
 		{"opaque", "https:hooks.example.com", ReasonInvalidURL},
 		{"no host", "https:///in", ReasonInvalidURL},
+		{"does not parse", "https://%zz/in", ReasonInvalidURL},
+		{"a host with a space", "https://hooks example.com/in", ReasonInvalidURL},
 		{"empty", "", ReasonInvalidURL},
 		{"port out of range", "https://hooks.example.com:99999/in", ReasonInvalidURL},
 		{"port zero", "https://hooks.example.com:0/in", ReasonInvalidURL},

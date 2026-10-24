@@ -190,6 +190,30 @@ func (h *accountHistory) page(t *testing.T, req solanaRequest) string {
 	return `"result":` + string(body)
 }
 
+// statuses answers getSignatureStatuses as a node does: a status for each signature
+// the history holds, null for any other.
+func (h *accountHistory) statuses(t *testing.T, req solanaRequest) string {
+	t.Helper()
+	var signatures []string
+	req.param(t, 0, &signatures)
+	var options struct {
+		SearchTransactionHistory bool `json:"searchTransactionHistory"`
+	}
+	req.param(t, 1, &options)
+	if !options.SearchTransactionHistory {
+		t.Errorf("getSignatureStatuses without searchTransactionHistory: a cursor is older than the recent status cache")
+	}
+	values := make([]any, len(signatures))
+	for i, signature := range signatures {
+		if at := h.index(signature); at < len(h.signatures) {
+			values[i] = map[string]any{"slot": h.signatures[at].Slot, "err": nil, "confirmationStatus": solanaCommitmentFinalized}
+		}
+	}
+	body, err := json.Marshal(map[string]any{"context": map[string]any{"slot": 1}, "value": values})
+	require.NoError(t, err)
+	return `"result":` + string(body)
+}
+
 func (h *accountHistory) index(signature string) int {
 	for i, entry := range h.signatures {
 		if entry.Signature == signature {
@@ -210,6 +234,8 @@ func historyNode(t *testing.T, history *accountHistory, head, ledgerStart uint64
 			return fmt.Sprintf(`"result":%d`, ledgerStart)
 		case "getSignaturesForAddress":
 			return history.page(t, req)
+		case "getSignatureStatuses":
+			return history.statuses(t, req)
 		}
 		return `"error":{"code":-32601,"message":"Method not found"}`
 	})
@@ -343,6 +369,248 @@ func TestSolana_AccountSignatures_ConfirmsTheCursorOnTheEndpointThatServedThePag
 
 	require.Error(t, err, "the endpoint that served the pages did not confirm the cursor")
 	assert.Empty(t, fallback.calls("getSignaturesForAddress"), "no other endpoint confirms this listing's cursor")
+}
+
+// busyAccountNode keeps history and, right before it answers the first confirmation
+// asked from the newest signature (the one of an empty page), lands a new signature
+// on the account: a transfer finalized between the page and its confirmation. With
+// failRelisting it then fails the next listing (HTTP 503).
+func busyAccountNode(t *testing.T, history *accountHistory, failRelisting bool) *methodNode {
+	t.Helper()
+	var mu sync.Mutex
+	landed, failed := false, false
+	return newMethodNode(t, func(req solanaRequest) string {
+		switch req.Method {
+		case "getGenesisHash":
+			return devnetGenesisResult
+		case "getSlot":
+			return `"result":9100`
+		case "getSignaturesForAddress":
+			mu.Lock()
+			defer mu.Unlock()
+			var options struct {
+				Before string
+				Limit  int
+			}
+			req.param(t, 1, &options)
+			if options.Limit == 1 && options.Before == "" && !landed {
+				landed = true
+				history.signatures = append([]solanaSignatureInfo{{Signature: "sig-landed", Slot: 9001}}, history.signatures...)
+			} else if failRelisting && landed && !failed && options.Limit == solanaSignaturePageLimit {
+				failed = true
+				return ""
+			}
+			return history.page(t, req)
+		}
+		return ""
+	})
+}
+
+// An empty page above the newest recorded signature is confirmed from the newest
+// one, so a signature that lands in between answers instead of the cursor (a busy
+// account). The listing is read again once on the same endpoint: it lists the new
+// signature, whose confirmation, below it, is the cursor itself.
+func TestSolana_AccountSignatures_ListsAgainOnceWhenASignatureLandsBeforeAnEmptyPageIsConfirmed(t *testing.T) {
+	node := busyAccountNode(t, newAccountHistory(10, 9000), false)
+
+	got, err := liveOn(node.server.URL).AccountSignatures(context.Background(), ataFixtureOwner,
+		chain.SignatureQuery{Until: "sig-00009", FloorSlot: 9000, HasFloor: true, MaxPages: 1})
+
+	require.NoError(t, err)
+	assert.True(t, got.Ended, "the listing read again reached the cursor, confirmed below the signature that landed")
+	assert.False(t, got.More, "the empty page read nothing and is not counted against MaxPages")
+	require.Len(t, got.Signatures, 1)
+	assert.Equal(t, "sig-landed", got.Signatures[0].Signature)
+	assert.Equal(t, uint64(9100), got.Head)
+	pages, confirmations := node.pageCalls(t)
+	require.Len(t, pages, 2, "the empty page, then the listing read again once")
+	for i, page := range pages {
+		var options struct{ Before, Until string }
+		page.param(t, 1, &options)
+		assert.Equal(t, "sig-00009", options.Until, "page %d keeps the cursor", i)
+		assert.Empty(t, options.Before, "page %d starts from the newest signature", i)
+	}
+	require.Len(t, confirmations, 2)
+	var first, second struct{ Before string }
+	confirmations[0].param(t, 1, &first)
+	confirmations[1].param(t, 1, &second)
+	assert.Empty(t, first.Before, "the empty page is confirmed from the newest signature")
+	assert.Equal(t, "sig-landed", second.Before, "the page read again is confirmed below what it listed")
+	assert.Len(t, node.calls("getSlot"), 1, "the head is read once, before the first page")
+}
+
+// The listing read again stays on the endpoint the listing is pinned to: when that
+// endpoint fails it, the listing fails, and no other endpoint answers it.
+func TestSolana_AccountSignatures_ListsAgainOnTheEndpointThatServedTheEmptyPage(t *testing.T) {
+	primary := busyAccountNode(t, newAccountHistory(10, 9000), true)
+	fallback := newMethodNode(t, func(req solanaRequest) string {
+		switch req.Method {
+		case "getGenesisHash":
+			return devnetGenesisResult
+		case "getSlot":
+			return `"result":9100`
+		}
+		return `"result":[]`
+	})
+	live := devnetWithFallbacks(primary.server.URL, fallback.server.URL)
+
+	_, err := live.AccountSignatures(context.Background(), ataFixtureOwner, chain.SignatureQuery{Until: "sig-00009", MaxPages: 10})
+
+	require.Error(t, err, "the endpoint that served the empty page failed the listing read again")
+	assert.Empty(t, fallback.calls("getSignaturesForAddress"), "no other endpoint lists or confirms it")
+}
+
+// Reading the listing again never weakens the proof: the confirmation of its page
+// must still be the cursor itself, and it is read again only once.
+func TestSolana_AccountSignatures_ListsAgainOnlyOnceAndStillNeedsTheCursorItself(t *testing.T) {
+	for name, tc := range map[string]struct {
+		// listing answers a page with until; confirmation the single signature asked.
+		listing      func(before string) string
+		confirmation func(before string) string
+		wantPages    int
+		wantListed   int
+	}{
+		// A provider that answers an empty page for a cursor it does not hold, while the
+		// account's newest signature is another one.
+		"an empty page again": {
+			listing:      func(string) string { return `"result":[]` },
+			confirmation: func(string) string { return `"result":[{"signature":"sig-newest","slot":9050,"err":null}]` },
+			wantPages:    2,
+		},
+		// The page read again lists a signature, but the one below it is not the cursor.
+		"a short page whose confirmation is another signature": {
+			listing: func(string) string { return `"result":[{"signature":"sig-landed","slot":9001,"err":null}]` },
+			confirmation: func(before string) string {
+				if before == "sig-landed" {
+					return `"result":[{"signature":"sig-not-the-cursor","slot":8999,"err":null}]`
+				}
+				return `"result":[{"signature":"sig-landed","slot":9001,"err":null}]`
+			},
+			wantPages:  2,
+			wantListed: 1,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			listings := 0
+			node := newMethodNode(t, func(req solanaRequest) string {
+				switch req.Method {
+				case "getSlot":
+					return `"result":9100`
+				case "getSignaturesForAddress":
+					var options struct {
+						Before string
+						Limit  int
+					}
+					req.param(t, 1, &options)
+					if options.Limit == 1 {
+						return tc.confirmation(options.Before)
+					}
+					listings++
+					if listings == 1 {
+						return `"result":[]`
+					}
+					return tc.listing(options.Before)
+				}
+				return `"error":{"code":-32601,"message":"Method not found"}`
+			})
+
+			got, err := liveOn(node.server.URL).AccountSignatures(context.Background(), ataFixtureOwner,
+				chain.SignatureQuery{Until: "sig-cursor", MaxPages: 10})
+
+			require.NoError(t, err)
+			assert.False(t, got.Ended, "nothing answered the cursor itself")
+			assert.Len(t, got.Signatures, tc.wantListed)
+			pages, confirmations := node.pageCalls(t)
+			assert.Len(t, pages, tc.wantPages, "the listing is read again once, never more")
+			assert.Len(t, confirmations, 2)
+		})
+	}
+}
+
+// A listing below a before starts by asking the endpoint whether it holds that
+// signature. One that does not (behind on the newest slots, or without the old
+// ledger) may answer an empty page, its own newest signatures or an error for a
+// before it cannot place: whatever it would answer, nothing is listed or ended, so
+// an empty page never reads as the end of a history and nothing older than the
+// before is skipped.
+func TestSolana_AccountSignatures_ListsNothingBelowABeforeTheEndpointDoesNotHold(t *testing.T) {
+	for name, listing := range map[string]string{
+		"an empty page":            `"result":[]`,
+		"its own newest signature": `"result":[{"signature":"sig-older","slot":4700,"err":null}]`,
+		"Agave's -32020":           `"error":{"code":-32020,"message":"Transaction not found"}`,
+	} {
+		for _, until := range []string{"", "sig-cursor"} {
+			t.Run(fmt.Sprintf("%s, until %q", name, until), func(t *testing.T) {
+				node := newMethodNode(t, func(req solanaRequest) string {
+					switch req.Method {
+					case "getSlot":
+						return `"result":9100`
+					case "getFirstAvailableBlock":
+						return `"result":0`
+					case "getSignatureStatuses":
+						return `"result":{"context":{"slot":9100},"value":[null]}`
+					case "getSignaturesForAddress":
+						return listing
+					}
+					return `"error":{"code":-32601,"message":"Method not found"}`
+				})
+
+				got, err := liveOn(node.server.URL).AccountSignatures(context.Background(), ataFixtureOwner,
+					chain.SignatureQuery{Before: "sig-the-endpoint-does-not-hold", Until: until, FloorSlot: 1000, HasFloor: true, MaxPages: 5})
+
+				require.NoError(t, err)
+				assert.Empty(t, got.Signatures)
+				assert.False(t, got.Ended, "nothing proves the end below a before the endpoint does not hold")
+				assert.False(t, got.More)
+				assert.False(t, got.FloorCrossed)
+				assert.Equal(t, uint64(9100), got.Head)
+				assert.Empty(t, node.calls("getSignaturesForAddress"), "nothing is listed below it")
+				assert.Empty(t, node.calls("getFirstAvailableBlock"))
+				statuses := node.calls("getSignatureStatuses")
+				require.Len(t, statuses, 1)
+				var asked []string
+				statuses[0].param(t, 0, &asked)
+				assert.Equal(t, []string{"sig-the-endpoint-does-not-hold"}, asked)
+			})
+		}
+	}
+}
+
+// The endpoint that serves the listing is the one asked whether it holds the before:
+// when it fails that, the listing fails, and no other endpoint answers it.
+func TestSolana_AccountSignatures_AsksTheListingsEndpointWhetherItHoldsTheBefore(t *testing.T) {
+	history := newAccountHistory(40, 9000)
+	primary := newMethodNode(t, func(req solanaRequest) string {
+		switch req.Method {
+		case "getGenesisHash":
+			return devnetGenesisResult
+		case "getSlot":
+			return `"result":9100`
+		case "getSignaturesForAddress":
+			return history.page(t, req)
+		}
+		return ""
+	})
+	fallback := newMethodNode(t, func(req solanaRequest) string {
+		switch req.Method {
+		case "getGenesisHash":
+			return devnetGenesisResult
+		case "getSlot":
+			return `"result":9100`
+		case "getSignatureStatuses":
+			return history.statuses(t, req)
+		case "getSignaturesForAddress":
+			return history.page(t, req)
+		}
+		return `"result":0`
+	})
+	live := devnetWithFallbacks(primary.server.URL, fallback.server.URL)
+
+	_, err := live.AccountSignatures(context.Background(), ataFixtureOwner, chain.SignatureQuery{Before: "sig-00020", MaxPages: 10})
+
+	require.Error(t, err, "the endpoint that serves the listing did not answer whether it holds the before")
+	assert.Empty(t, fallback.calls("getSignatureStatuses"), "no other endpoint answers for it")
+	assert.Empty(t, fallback.calls("getSignaturesForAddress"))
 }
 
 func TestSolana_AccountSignatures_ContinuesBelowBefore(t *testing.T) {
