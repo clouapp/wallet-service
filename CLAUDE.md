@@ -292,6 +292,9 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   (`tests/feature/api/external/webhooks`), contract step 98 and
   `TestComposition_Root_GuardsEveryWebhookDestination` (`bootstrap`),
   `TestWebhook_DestinationPolicy_*` (`app/providers`). Receiver side: `docs/vault-summary-v2.md`.
+- The ingest base URL, where the push providers post to this service, goes through the same package:
+  `egress.ParsePublicBase`, the zero policy without any deployment's relaxation (see "Provider push
+  subscriptions"). — guarded by `TestParsePublicBase_*` (`pkg/egress`).
 - Webhook delivery is at least once. An event is a `webhook_events` row (one per config, type
   and subject: the partial unique index of migration 260) written before the queue send, and
   receivers deduplicate on `X-Vault-Delivery-Id` (the row id), which every resend keeps. Three
@@ -550,8 +553,10 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `deposit_scan`, `deposit_signatures`, `webhook_delivery`, `sweep_limits`, the mail groups (`mail_smtp`, `mail_delivery`,
   `mail_ses`, `mail_mailgun`, `mail_resend`, `mail_postmark`), the price groups (`price_lookup`,
   `price_coingecko`, `price_coinmarketcap`, `price_coinapi`) and the provider groups
-  (`provider_alchemy`, `provider_helius`, `provider_quicknode`, `provider_etherscan`). A secret
-  (a signing secret, an API key, a password) is written sealed and redacted on read
+  (`ingest_push`, `provider_alchemy`, `provider_helius`, `provider_quicknode`, `provider_etherscan`).
+  `ingest_push.base_url` is the ingest base URL (not a secret, see "Provider push subscriptions"). A
+  provider key counts only while its group's `enabled` is `"true"`.
+  A secret (a signing secret, an API key, a password) is written sealed and redacted on read
   (`<field>Set` tells whether one is stored).
 - `GET /v1/accounts/{accountId}/settings` is `settings.view` (owner, admin,
   auditor). `PATCH /v1/accounts/{accountId}/settings/{group}` is
@@ -1283,12 +1288,44 @@ go run . artisan ingest:subscribe alchemy teth --apply    # create the webhook, 
 go run . artisan ingest:subscriptions                     # provider, chain, status, last sync, webhook host
 ```
 
-- `ingest:subscribe` needs `WEBHOOK_INGEST_BASE_URL` (`vault.webhooks.ingest_base_url`: a public https
-  origin, a path prefix allowed; no credentials, query or fragment, a valid port, and never localhost or
-  a loopback, private, link-local (the cloud metadata address), unspecified, multicast or shared
-  (100.64.0.0/10) IP) and the provider's API key (`ALCHEMY_AUTH_TOKEN`, `HELIUS_API_KEY`,
-  `QUICKNODE_API_KEY` as `vault.webhooks.*`, or the `provider_<name>` platform setting). Each missing
-  one is named and the command exits 1, dry run or not.
+- `ingest:subscribe` needs the ingest base URL and the provider's API key. Each missing one is named
+  and the command exits 1, dry run or not.
+  - The key is the `provider_<name>` platform setting (`provider_alchemy.auth_token`,
+    `provider_helius.api_key`, `provider_quicknode.api_key`), which counts only while that group's
+    `enabled` is `"true"` and the sealed value opens; else `ALCHEMY_AUTH_TOKEN`, `HELIUS_API_KEY`,
+    `QUICKNODE_API_KEY` (`vault.webhooks.*`).
+  - The base URL is a public https origin, a path prefix allowed (`egress.ParsePublicBase`): a
+    destination the zero `egress.Policy` allows (no credentials, a valid port other than 22 and 25, never
+    a numeric-form, internal, metadata, loopback, private, link-local, shared or reserved host, a
+    trailing dot, an IPv4-mapped, NAT64 or 6to4 form included), and no query, fragment or empty port. It
+    takes none of the webhook relaxations (`WEBHOOK_ALLOW_HTTP`, `WEBHOOK_ALLOWED_PORTS`, the
+    `APP_ENV=testing` loopback): providers post to it from the internet, in every environment. No name
+    is resolved.
+- The base URL is the `ingest_push.base_url` platform setting, else `WEBHOOK_INGEST_BASE_URL`
+  (`vault.webhooks.ingest_base_url`, read only by `providers.ingestBaseURL`).
+  - Both are read on every run (`settings.EffectiveIngestBaseURL`), so a value saved through
+    `PUT /v1/platform/settings/ingest_push` applies to the next run without a restart. The save forgets
+    the group cache; an edit made outside the service waits for the 10-minute cache or a flush of the
+    `providers` section.
+  - A write the rule refuses is 422, with the rule's sentence (`egress.Reason*`, never the URL), and is
+    not stored. Blank hands the URL back to the environment, and so does a reset of the `providers`
+    platform section, which deletes `ingest_push` with the provider credential groups.
+  - A missing or blank row uses the environment value, which the run checks itself (`ErrInvalidBaseURL`,
+    naming the rule and the source, never the value). A stored value the rule refuses (an edit made
+    outside the service) does too, and the plan says it is ignored.
+  - A group that cannot be read fails closed: `--apply` exits 1 with `ErrBaseURLUnread` and touches no
+    provider, since the environment value may be stale. A dry run uses the environment value and warns
+    that the setting was not read.
+  - The plan says where the base URL was read (`base URL read from the ingest_push.base_url platform
+    setting`, or from `WEBHOOK_INGEST_BASE_URL`). The log names the group and the reason, never a URL. The
+    environment value is not seeded into the setting.
+  - — guarded by `TestParsePublicBase_*` (`pkg/egress`), `app/services/settings/ingest_base_url_test.go`,
+    `TestReset_Platform_ProvidersSectionClearsTheIngestBaseURL`,
+    `TestFlush_Platform_ProvidersSectionForgetsTheIngestBaseURL`,
+    `TestSubscribe_ReadsTheBaseURLAtEachRunSoAChangedSettingAppliesWithoutARebuild`,
+    `TestSubscribe_ApplyRefusesToRunWhenTheSettingCannotBeRead`, `TestIngest_BaseURL_*` (`app/providers`,
+    the log one included), `TestPlatform_Ingest_PushSuite` and
+    `TestComposition_Root_ReadsTheIngestBaseURLAndProviderKeyFromThePlatformSettingsAtEachRun` (`bootstrap`).
 - The chain's network (`models.Chain.ResolveNetwork` with its RPC URL) must be one the provider pushes
   (`providers.SubscriptionNetwork`): Alchemy Ethereum, Polygon, Base, Arbitrum and BSC, mainnet and
   testnet (`ETH_SEPOLIA`, `MATIC_AMOY`, ...); Helius Solana mainnet and devnet; QuickNode Bitcoin mainnet

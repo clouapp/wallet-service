@@ -159,6 +159,7 @@ func platformGroups() []Group {
 		priceCoinGeckoGroup(),
 		priceCoinMarketCapGroup(),
 		priceCoinAPIGroup(),
+		ingestPushGroup(),
 		providerAlchemyGroup(),
 		providerHeliusGroup(),
 		providerQuickNodeGroup(),

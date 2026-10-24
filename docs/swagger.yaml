@@ -4683,9 +4683,12 @@ paths:
         provider_quicknode store enabled and a sealed api_key that is omitted from
         the response; a blank api_key keeps the stored one. provider_etherscan stores
         enabled and a sealed api_key that is omitted from the response; a blank api_key
-        keeps the stored one. Zero or negative counts, and a negative cap, are 422
-        and are not stored. An unknown group is 404 for a platform admin. Values are
-        not written to the activity log.
+        keeps the stored one. ingest_push stores base_url in the clear, a public https
+        URL without credentials, query or fragment and never an internal, loopback
+        or metadata host (an invalid one is 422 with the rule and is not stored); a
+        blank base_url uses WEBHOOK_INGEST_BASE_URL. Zero or negative counts, and a
+        negative cap, are 422 and are not stored. An unknown group is 404 for a platform
+        admin. Values are not written to the activity log.
       parameters:
       - description: Settings group
         in: path
