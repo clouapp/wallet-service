@@ -70,6 +70,19 @@ func (s *Server) Resolver() *net.Resolver {
 	}
 }
 
+// UseAsSystemResolver makes net.DefaultResolver, which a lookup without a resolver
+// of its own goes through (a guard built with a nil resolver), resolve through this
+// server only until the test ends. It changes a value the whole process shares: a
+// test that calls it must not run in parallel.
+func (s *Server) UseAsSystemResolver(t testing.TB) {
+	t.Helper()
+	previousGo, previousDial := net.DefaultResolver.PreferGo, net.DefaultResolver.Dial
+	net.DefaultResolver.PreferGo, net.DefaultResolver.Dial = true, s.Resolver().Dial
+	t.Cleanup(func() {
+		net.DefaultResolver.PreferGo, net.DefaultResolver.Dial = previousGo, previousDial
+	})
+}
+
 // Set makes name answer addrs from now on; no address makes it NXDOMAIN.
 func (s *Server) Set(name string, addrs ...string) {
 	s.mu.Lock()

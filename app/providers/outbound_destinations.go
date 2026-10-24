@@ -92,15 +92,17 @@ func newWebhookDestinations() *egress.Guard {
 
 // ingestBaseDestinations is the guard of the ingest base URL (ingest_push.base_url,
 // else WEBHOOK_INGEST_BASE_URL), which the settings write and ingest:subscribe ask
-// what its host resolves to: the zero policy, the rule of egress.ParsePublicBase,
-// over the system resolver. The base URL is where Alchemy, Helius and QuickNode post
-// to this service from the internet, so none of the outbound webhook settings
-// applies to it: not WEBHOOK_ALLOW_HTTP or the APP_ENV=testing loopback (a provider
-// reaches neither), and not WEBHOOK_ALLOWED_PORTS, which restricts the ports this
-// service posts its own webhooks to; the base URL's port is the deployment's public
-// listener, and this service never connects to it.
-func ingestBaseDestinations() *egress.Guard {
-	return egress.NewGuard(egress.Policy{}, nil)
+// what its host resolves to: egress.PublicBaseGuard, the zero policy, the rule of
+// egress.ParsePublicBase, over the system resolver. The base URL is where Alchemy,
+// Helius and QuickNode post to this service from the internet, so none of the
+// outbound webhook settings applies to it: not WEBHOOK_ALLOW_HTTP or the
+// APP_ENV=testing loopback (a provider reaches neither), and not
+// WEBHOOK_ALLOWED_PORTS, which restricts the ports this service posts its own
+// webhooks to; the base URL's port is the deployment's public listener, and this
+// service never connects to it. The settings provider binds it under its own type,
+// the only one the two services take for it.
+func ingestBaseDestinations() *egress.PublicBaseGuard {
+	return egress.NewPublicBaseGuard(nil)
 }
 
 func productionLike(settings outboundSettings) bool {

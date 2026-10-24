@@ -1,9 +1,12 @@
 package egress
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/macrowallets/waas/tests/fakedns"
 )
 
 func TestParsePublicBase_AcceptsAPublicHTTPSOrigin(t *testing.T) {
@@ -120,4 +123,55 @@ func TestParsePublicBase_RefusesWhatAProviderCannotPostTo(t *testing.T) {
 			t.Errorf("ParsePublicBase(%q) named the host: %q", tc.raw, err.Error())
 		}
 	}
+}
+
+// The base URL guard keeps the base URL rule and refuses a name whose records point
+// inside, with the one resolved-name sentence; a literal keeps the rule it broke and
+// is never looked up.
+func TestPublicBaseGuard_CheckPublicBase_RefusesTheBaseRuleAndANameThatResolvesInside(t *testing.T) {
+	dns := fakedns.Start(t, map[string][]string{
+		"ingest.wallets.test":   {"93.184.215.14"},
+		"loopback.wallets.test": {"127.0.0.1"},
+		"private.wallets.test":  {"10.0.0.5"},
+		"metadata.wallets.test": {"169.254.169.254"},
+		"mixed.wallets.test":    {"93.184.215.14", "fd00:ec2::254"},
+	})
+	guard := NewPublicBaseGuard(dns.Resolver())
+	ctx := context.Background()
+
+	for _, raw := range []string{"https://ingest.wallets.test", "https://ingest.wallets.test:8443/waas/", "https://unlisted.wallets.test", "https://93.184.215.14:8443"} {
+		if err := guard.CheckPublicBase(ctx, raw); err != nil {
+			t.Errorf("CheckPublicBase(%q) refused a public base URL: %v", raw, err)
+		}
+	}
+	for _, name := range []string{"loopback", "private", "metadata", "mixed"} {
+		err := guard.CheckPublicBase(ctx, "https://"+name+".wallets.test/waas")
+		assertRefusal(t, err, ReasonResolved)
+		if strings.Contains(err.Error(), name) {
+			t.Errorf("the refusal %q names the host", err)
+		}
+	}
+	before := len(dns.Queries())
+	for raw, reason := range map[string]string{
+		"https://127.0.0.1":                     ReasonLoopback,
+		"https://10.0.0.5":                      ReasonPrivate,
+		"https://169.254.169.254":               ReasonLinkLocal,
+		"http://ingest.wallets.test":            ReasonScheme,
+		"https://ingest.wallets.test/?a=1":      ReasonBaseURL,
+		"https://user:pass@ingest.wallets.test": ReasonUserinfo,
+		"https://%zz":                           ReasonInvalidURL,
+	} {
+		assertRefusal(t, guard.CheckPublicBase(ctx, raw), reason)
+	}
+	if queries := dns.Queries()[before:]; len(queries) != 0 {
+		t.Fatalf("a static refusal looked up %v", queries)
+	}
+}
+
+// Built without a resolver, the guard resolves through the system's.
+func TestPublicBaseGuard_WithoutAResolverAsksTheSystemResolver(t *testing.T) {
+	dns := fakedns.Start(t, map[string][]string{"metadata.wallets.test": {"169.254.169.254"}})
+	dns.UseAsSystemResolver(t)
+
+	assertRefusal(t, NewPublicBaseGuard(nil).CheckPublicBase(context.Background(), "https://metadata.wallets.test"), ReasonResolved)
 }

@@ -99,10 +99,11 @@ type BaseURL struct {
 	SettingInvalid bool
 }
 
-// destinationGuard decides whether a URL's host name resolves now only to addresses
-// its policy allows; *egress.Guard is one.
-type destinationGuard interface {
-	CheckDestination(ctx context.Context, rawURL string) error
+// baseURLGuard checks the base URL by the base URL rule and what its host name
+// resolves to now; *egress.PublicBaseGuard is the one implementation, so no other
+// guard (a webhook receiver's, an RPC node's) can be wired in its place.
+type baseURLGuard interface {
+	CheckPublicBase(ctx context.Context, rawURL string) error
 }
 
 // Creator creates and deletes one provider's push webhook.
@@ -156,9 +157,8 @@ type Deps struct {
 	// Seal seals the signing secret as every stored secret is (settings.Seal).
 	Seal func(plaintext string) (string, error)
 	// Destinations checks what the base URL's host resolves to, by the base URL rule
-	// (the zero egress.Policy, see egress.ParsePublicBase); nil is that guard over the
-	// system resolver.
-	Destinations destinationGuard
+	// (egress.PublicBaseGuard); nil is that guard over the system resolver.
+	Destinations baseURLGuard
 }
 
 // Service creates and lists provider push subscriptions.
@@ -169,7 +169,7 @@ type Service struct {
 // NewService wires the subscription service from Deps.
 func NewService(deps Deps) *Service {
 	if deps.Destinations == nil {
-		deps.Destinations = egress.NewGuard(egress.Policy{}, nil)
+		deps.Destinations = egress.NewPublicBaseGuard(nil)
 	}
 	return &Service{deps: deps}
 }
@@ -261,7 +261,7 @@ func (s *Service) Subscribe(ctx context.Context, req Request) (Plan, error) {
 		if plan.WebhookURL, err = webhookURL(base.URL, plan.Provider, plan.ChainID); err != nil {
 			return plan, fmt.Errorf("%w; read from %s", err, plan.BaseURLSource)
 		}
-		if resolveErr := s.deps.Destinations.CheckDestination(ctx, strings.TrimSpace(base.URL)); resolveErr != nil {
+		if resolveErr := s.deps.Destinations.CheckPublicBase(ctx, base.URL); resolveErr != nil {
 			if req.Apply {
 				return plan, fmt.Errorf("%w: %w; read from %s", ErrInvalidBaseURL, resolveErr, plan.BaseURLSource)
 			}

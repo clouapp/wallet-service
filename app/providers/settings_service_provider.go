@@ -6,14 +6,19 @@ import (
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/repositories"
 	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/pkg/egress"
 )
 
-// SettingsServiceProvider binds the account settings store and service.
+// SettingsServiceProvider binds the account settings store and service, and the
+// guard of the ingest base URL, which the settings write and ingest:subscribe share.
 type SettingsServiceProvider struct{}
 
 func (p *SettingsServiceProvider) Register(app foundation.Application) {
 	app.Singleton((*repositories.SettingRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewSettingRepository(nil), nil
+	})
+	app.Singleton((*egress.PublicBaseGuard)(nil), func(foundation.Application) (any, error) {
+		return ingestBaseDestinations(), nil
 	})
 	app.Singleton((*settings.Service)(nil), func(app foundation.Application) (any, error) {
 		store, err := resolve[*repositories.SettingRepository](app)
@@ -32,8 +37,12 @@ func (p *SettingsServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
+		baseURLs, err := resolve[*egress.PublicBaseGuard](app)
+		if err != nil {
+			return nil, err
+		}
 		return settings.NewService(settings.Deps{Store: store, Sealer: settings.CryptSealer{}, Cache: settings.FacadeCache{}, Activity: activityLog,
-			Fallback: platformSettingsFallback(facades.Config()), IngestBaseDestinations: ingestBaseDestinations()}).
+			Fallback: platformSettingsFallback(facades.Config()), IngestBaseDestinations: baseURLs}).
 			WithPlatformAdmins(admins).
 			WithAccounts(accounts).
 			WithPlatformTestMailer(NewPlatformTestMailer()), nil

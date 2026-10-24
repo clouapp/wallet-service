@@ -110,13 +110,43 @@ func TestComposition_Root_GuardsEveryProviderConnection(t *testing.T) {
 	}
 }
 
+// The ingest base URL has one guard, bound under its own type: egress.PublicBaseGuard,
+// the only type the subscription and the settings services take for it, so no other
+// guard (the webhook receivers', which takes loopback under APP_ENV=testing, or the
+// RPC nodes') compiles in its place. It is the zero policy whatever the webhook
+// settings say: loopback, private and link-local destinations and http are refused,
+// and a public host on another port than 443 is taken. Literals only, so nothing
+// here asks the system resolver.
+func TestComposition_Root_GuardsTheIngestBaseURLWithTheZeroPolicy(t *testing.T) {
+	guard := container.MustMake[*egress.PublicBaseGuard]()
+	ctx := context.Background()
+
+	for raw, reason := range map[string]string{
+		"https://127.0.0.1":           egress.ReasonLoopback,
+		"https://10.0.0.5":            egress.ReasonPrivate,
+		"https://169.254.169.254":     egress.ReasonLinkLocal,
+		"http://93.184.215.14":        egress.ReasonScheme,
+		"https://93.184.215.14:25":    egress.ReasonPort,
+		"https://93.184.215.14/?ok=1": egress.ReasonBaseURL,
+	} {
+		err := guard.CheckPublicBase(ctx, raw)
+		var refusal *egress.Refusal
+		require.ErrorAs(t, err, &refusal, raw)
+		assert.Equal(t, reason, refusal.Reason, raw)
+	}
+	assert.NoError(t, guard.CheckPublicBase(ctx, "https://93.184.215.14:8443/waas"))
+	assert.Same(t, guard, container.MustMake[*egress.PublicBaseGuard](), "one guard for both services")
+	assert.NotNil(t, container.MustMake[*ingestsubscription.Service]())
+	assert.NotNil(t, container.MustMake[*settings.Service]())
+}
+
 // The bound subscription service reads the ingest base URL and the provider key on
 // every run, the platform settings before the environment: a value saved through the
 // settings service after the service was built applies to the next run, and
 // WEBHOOK_INGEST_BASE_URL is read again once the setting is cleared.
 func TestComposition_Root_ReadsTheIngestBaseURLAndProviderKeyFromThePlatformSettingsAtEachRun(t *testing.T) {
 	fixtures.TestDB(t)
-	setConfig(t, "vault.webhooks.ingest_base_url", "https://env.wallets.example.com")
+	setConfig(t, "vault.webhooks.ingest_base_url", "https://env.wallets.test")
 	setConfig(t, "vault.webhooks.helius_api_key", "")
 	ctx := context.Background()
 	require.NoError(t, container.MustMake[*repositories.ChainRepository]().Create(ctx, &models.Chain{
@@ -133,19 +163,19 @@ func TestComposition_Root_ReadsTheIngestBaseURLAndProviderKeyFromThePlatformSett
 
 	plan, err := subscriptions.Subscribe(ctx, dryRun)
 	require.ErrorIs(t, err, ingestsubscription.ErrMissingConfiguration, "no Helius key is configured yet")
-	assert.Equal(t, "https://env.wallets.example.com/v1/webhooks/ingest/helius/tsol", plan.WebhookURL)
+	assert.Equal(t, "https://env.wallets.test/v1/webhooks/ingest/helius/tsol", plan.WebhookURL)
 	assert.Equal(t, fromEnv, plan.BaseURLSource)
 	require.Len(t, plan.Missing, 1)
 	assert.Contains(t, plan.Missing[0], "HELIUS_API_KEY")
 
-	_, err = platform.SavePlatform(ctx, admin.ID, "ingest_push", map[string]any{"base_url": "https://push.wallets.example.com/waas"})
+	_, err = platform.SavePlatform(ctx, admin.ID, "ingest_push", map[string]any{"base_url": "https://push.wallets.test/waas"})
 	require.NoError(t, err)
 	_, err = platform.SavePlatform(ctx, admin.ID, "provider_helius", map[string]any{"enabled": true, "api_key": "helius-composition-key"})
 	require.NoError(t, err)
 
 	plan, err = subscriptions.Subscribe(ctx, dryRun)
 	require.NoError(t, err)
-	assert.Equal(t, "https://push.wallets.example.com/waas/v1/webhooks/ingest/helius/tsol", plan.WebhookURL)
+	assert.Equal(t, "https://push.wallets.test/waas/v1/webhooks/ingest/helius/tsol", plan.WebhookURL)
 	assert.Equal(t, "the ingest_push.base_url platform setting", plan.BaseURLSource)
 	assert.Empty(t, plan.Missing, "the provider_helius key stands in for HELIUS_API_KEY")
 	assert.False(t, plan.Applied, "a dry run calls no provider")
@@ -154,7 +184,7 @@ func TestComposition_Root_ReadsTheIngestBaseURLAndProviderKeyFromThePlatformSett
 	require.NoError(t, err)
 	plan, err = subscriptions.Subscribe(ctx, dryRun)
 	require.NoError(t, err)
-	assert.Equal(t, "https://env.wallets.example.com/v1/webhooks/ingest/helius/tsol", plan.WebhookURL)
+	assert.Equal(t, "https://env.wallets.test/v1/webhooks/ingest/helius/tsol", plan.WebhookURL)
 	assert.Equal(t, fromEnv, plan.BaseURLSource)
 }
 

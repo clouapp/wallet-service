@@ -180,7 +180,7 @@ func newFixture(t *testing.T, mutate func(*Deps)) *fixture {
 			return f.base, f.baseErr
 		},
 		Seal:         func(plaintext string) (string, error) { return "enc:v1:sealed(" + plaintext + ")", nil },
-		Destinations: egress.NewGuard(egress.Policy{}, f.dns.Resolver()),
+		Destinations: egress.NewPublicBaseGuard(f.dns.Resolver()),
 	}
 	if mutate != nil {
 		mutate(&deps)
@@ -769,4 +769,21 @@ func TestSubscribe_AnInvalidBaseURLNamesTheRuleAndNeverTheURL(t *testing.T) {
 		assert.NotContains(t, err.Error(), egress.Host(base), base)
 		assert.Empty(t, f.creator.configs, base)
 	}
+}
+
+// Without a guard of its own the service checks the base URL with the base URL
+// guard over the system resolver: a name whose record points at the metadata address
+// is refused before any provider call. It points the system resolver at the
+// fixture's DNS, so it does not run in parallel.
+func TestSubscribe_WithoutAGuardRefusesANameThatResolvesInsideThroughTheSystemResolver(t *testing.T) {
+	f := newFixture(t, func(d *Deps) { d.Destinations = nil })
+	f.dns.UseAsSystemResolver(t)
+	f.base = BaseURL{URL: "https://" + metadataBaseHost, Source: BaseURLFromSetting}
+
+	_, err := subscribe(f, "alchemy", "teth", true)
+
+	require.ErrorIs(t, err, ErrInvalidBaseURL)
+	assert.Contains(t, err.Error(), egress.ReasonResolved)
+	assert.Empty(t, f.creator.configs, "no provider webhook points at the metadata address")
+	assert.Contains(t, f.dns.Queries(), metadataBaseHost, "the system resolver asked the fixture's DNS")
 }

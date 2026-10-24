@@ -294,12 +294,14 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `TestWebhook_DestinationPolicy_*` (`app/providers`). Receiver side: `docs/vault-summary-v2.md`.
 - The ingest base URL, where the push providers post to this service, goes through the same package:
   `egress.ParsePublicBase`, the zero policy, and its host is resolved with the zero-policy guard
-  (`egress.Guard.CheckDestination`) at the settings write and by `ingest:subscribe`. None of the
+  (`egress.PublicBaseGuard`) at the settings write and by `ingest:subscribe`. None of the
   outbound webhook settings applies to it: neither their relaxations (`WEBHOOK_ALLOW_HTTP`, the
   `APP_ENV=testing` loopback) nor the restriction `WEBHOOK_ALLOWED_PORTS`, which limits the ports this
   service posts its own webhooks to; the base URL's port is the deployment's public listener, which
   this service never connects to (see "Provider push subscriptions"). — guarded by
-  `TestParsePublicBase_*` (`pkg/egress`).
+  `TestParsePublicBase_*`, `TestPublicBaseGuard_*` (`pkg/egress`),
+  `TestIngest_BaseDestinations_AreTheZeroPolicyWhateverTheWebhookSettings` (`app/providers`) and
+  `TestComposition_Root_GuardsTheIngestBaseURLWithTheZeroPolicy` (`bootstrap`).
 - Webhook delivery is at least once. An event is a `webhook_events` row (one per config, type
   and subject: the partial unique index of migration 260) written before the queue send, and
   receivers deduplicate on `X-Vault-Delivery-Id` (the row id), which every resend keeps. Three
@@ -1325,15 +1327,21 @@ go run . artisan ingest:subscriptions                     # provider, chain, sta
     not the restriction `WEBHOOK_ALLOWED_PORTS`, which limits the ports this service posts its own
     webhooks to, while the base URL's port is the deployment's public listener (this service never
     connects to it).
-  - Its host name is resolved with the zero-policy guard (`egress.Guard.CheckDestination`, built by
-    `providers.ingestBaseDestinations`), as a webhook URL is when it is registered: a name with an A or
-    AAAA record the rule refuses (an internal or metadata address) is refused with
-    `egress.ReasonResolved`, whatever the range. `PUT /v1/platform/settings/ingest_push` resolves the
+  - Its host name is resolved with the zero-policy guard (`egress.PublicBaseGuard.CheckPublicBase`,
+    built by `providers.ingestBaseDestinations` and bound under its own type by the settings provider;
+    the type and its method are the only ones the two services take, so no webhook or RPC guard can
+    stand in for it), as a webhook URL is when it is registered: a name with an A or AAAA record the
+    rule refuses (an internal or metadata address) is refused with `egress.ReasonResolved`, whatever
+    the range. `PUT /v1/platform/settings/ingest_push` resolves the
     value it writes after the group's validation (the group validators take the values alone, without a
     context, so `SavePlatform` resolves it, like the price lookup's provider check) and answers 422 with
     that sentence; `ingest:subscribe --apply` resolves the base URL in effect before any provider call
     and exits 1 (`ErrInvalidBaseURL`, with where it was read); a dry run warns that `--apply` refuses
     it. A name that does not resolve then is not refused (the guard's rule).
+  - It is a check at those two moments only. The provider resolves the name itself on every delivery
+    and this service never connects to it, so nothing checks the record again: a name rebound to an
+    internal address after `--apply` (DNS rebinding) cannot be refused on this side. An outbound
+    webhook differs: `egress.Guard.DialContext` checks every connection it opens.
 - The base URL is the `ingest_push.base_url` platform setting, else `WEBHOOK_INGEST_BASE_URL`
   (`vault.webhooks.ingest_base_url`, read only by `providers.ingestBaseURL`).
   - Both are read on every run (`settings.EffectiveIngestBaseURL`), so a value saved through

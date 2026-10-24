@@ -42,7 +42,7 @@ func newIngestPushService(t *testing.T, store Store, cache Cache, activity *reco
 func newIngestPushServiceOver(dns *fakedns.Server, store Store, cache Cache, activity *recordingActivity) (*Service, uuid.UUID) {
 	actor := uuid.New()
 	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: cache, Activity: activity,
-		IngestBaseDestinations: egress.NewGuard(egress.Policy{}, dns.Resolver())}).
+		IngestBaseDestinations: egress.NewPublicBaseGuard(dns.Resolver())}).
 		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
 	return service, actor
 }
@@ -170,6 +170,33 @@ func TestSave_IngestPush_RefusesABaseURLWhoseHostResolvesToARefusedAddress(t *te
 		if queries := dns.Queries(); !containsAll(queries, host) {
 			t.Fatalf("%s: queries = %v, want the name looked up", host, queries)
 		}
+	}
+}
+
+// Without a guard of its own the service checks a written base_url with the base URL
+// guard over the system resolver, and a service built without NewService checks it
+// the same way: neither skips the check. They point the system resolver at the
+// test's DNS, so this test does not run in parallel.
+func TestSave_IngestPush_WithoutAGuardRefusesANameThatResolvesInsideThroughTheSystemResolver(t *testing.T) {
+	dns := ingestBaseDNS(t)
+	dns.UseAsSystemResolver(t)
+	actor := uuid.New()
+	admins := allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}}
+	built := NewService(Deps{Store: newMemoryStore(), Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: &recordingActivity{}}).
+		WithPlatformAdmins(admins)
+	literal := (&Service{store: newMemoryStore(), sealer: prefixSealer{}, cache: &memoryCache{}, activity: &recordingActivity{}}).
+		WithPlatformAdmins(admins)
+
+	for name, service := range map[string]*Service{"NewService": built, "a literal": literal} {
+		_, err := service.SavePlatform(context.Background(), actor, groupIngestPush, map[string]any{keyIngestBaseURL: "https://" + ingestMetadataHost})
+
+		var validation *ValidationError
+		if !errors.As(err, &validation) || len(validation.Fields[keyIngestBaseURL]) != 1 || validation.Fields[keyIngestBaseURL][0] != egress.ReasonResolved {
+			t.Fatalf("%s: error = %v, want the rule %q", name, err, egress.ReasonResolved)
+		}
+	}
+	if queries := dns.Queries(); !containsAll(queries, ingestMetadataHost) {
+		t.Fatalf("queries = %v, want the name asked through the system resolver", queries)
 	}
 }
 

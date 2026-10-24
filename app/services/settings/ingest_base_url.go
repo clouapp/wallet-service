@@ -63,8 +63,9 @@ func ingestPushGroup() Group {
 				Key:   keyIngestBaseURL,
 				Label: "Ingest base URL",
 				Help: "Public https origin Alchemy, Helius and QuickNode post deposits to, a path prefix allowed " +
-					"(no credentials, query or fragment; never an internal, loopback or metadata host, nor a name that resolves to one). ingest:subscribe reads it " +
-					"on each run. Blank uses WEBHOOK_INGEST_BASE_URL.",
+					"(no credentials, query or fragment; never an internal, loopback or metadata host, nor a name that resolves to one, " +
+					"checked when saved and at ingest:subscribe --apply only: the provider resolves it on every delivery). " +
+					"ingest:subscribe reads it on each run. Blank uses WEBHOOK_INGEST_BASE_URL.",
 				Type:    TypeString,
 				Default: func() any { return "" },
 			},
@@ -73,10 +74,11 @@ func ingestPushGroup() Group {
 	}
 }
 
-// destinationGuard decides whether a URL's host name resolves now only to addresses
-// its policy allows; *egress.Guard is one.
-type destinationGuard interface {
-	CheckDestination(ctx context.Context, rawURL string) error
+// baseURLGuard checks a base URL by the base URL rule and what its host name
+// resolves to now; *egress.PublicBaseGuard is the one implementation, so no other
+// guard (a webhook receiver's, an RPC node's) can be wired in its place.
+type baseURLGuard interface {
+	CheckPublicBase(ctx context.Context, rawURL string) error
 }
 
 // validateIngestPush refuses a base_url a provider cannot post to, by the rule
@@ -101,16 +103,27 @@ func validateIngestPush(effective map[string]string) error {
 // ingest:subscribe --apply would, with the one resolved-name sentence
 // (egress.ReasonResolved) as the message. It runs once the value passed
 // validateIngestPush, and only for a value this write sets: a name that does not
-// resolve now is not refused here, and the run checks it again.
+// resolve now is not refused here, and the run checks it again. It is a check at the
+// save only: the provider resolves the name on every delivery, which nothing here
+// checks (egress.PublicBaseGuard).
 func (s *Service) rejectResolvedIngestBase(ctx context.Context, writes map[string]string) error {
 	value := strings.TrimSpace(writes[keyIngestBaseURL])
-	if value == "" || s.ingestBase == nil {
+	if value == "" {
 		return nil
 	}
-	if err := s.ingestBase.CheckDestination(ctx, value); err != nil {
+	if err := s.ingestBaseGuard().CheckPublicBase(ctx, value); err != nil {
 		return ingestBaseRefusal(err)
 	}
 	return nil
+}
+
+// ingestBaseGuard is the guard the service was given, else the base URL guard over
+// the system resolver: a service without one never skips the check.
+func (s *Service) ingestBaseGuard() baseURLGuard {
+	if s.ingestBase != nil {
+		return s.ingestBase
+	}
+	return egress.NewPublicBaseGuard(nil)
 }
 
 // ingestBaseRefusal is the validation error of a refused base_url: the rule's
