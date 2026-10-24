@@ -1156,27 +1156,37 @@ on; the sync is its safety net, and the only detector where it is not.
   included; a chain with neither: the oldest slot of the newest `max_pages` pages,
   `DEPOSIT_SIGNATURE_MAX_PAGES` default 10, the cut logged), and `covered` says the backfill got there
   (`end_seen`: the last backfill read showed the end once). While `signature` is empty, `slot` is where
-  the account is known empty up to: the head less 150 slots (`signatureIndexMargin`), never the head,
-  since the head (`getSlot`) and the listing are two calls and one URL can front backends whose address
-  index trails, so a first deposit just below the head is read on the next cycle. After a burst,
-  `ahead_signature` (at `ahead_slot`) down to `ahead_before` is a second stretch above a gap (below).
+  the account is known empty up to: the head less 1500 slots (`signatureIndexMargin`, about one sync
+  interval at the default 600 s), never the head, since the head (`getSlot`) and the listing are two
+  calls and one URL can front backends whose address index trails, so a first deposit just below the
+  head is read on a later cycle. The cost is lag only: `covered_head` trails the head by the margin, the
+  block scan resumed after the sync rescans it once, and a known-empty account lists it each cycle. An
+  index further behind than that could still drop a first deposit. After a burst, or a listing whose end
+  is not proven, `ahead_signature` (at `ahead_slot`) down to `ahead_before` is a second stretch above a
+  gap (below).
 - **Reading**: `getSignaturesForAddress` (finalized, 1000 a page, newest first), every call of one
   listing on one endpoint (`rpc.PinEndpoint`: its finalized slot first, then the pages, then the
   evidence of the end). Each cycle reads an account's new signatures above its cursor (`until`, at most
   100 pages) and records them oldest first, then, until it is covered, at most 5 pages of its older
   history below `backfill_before` (`before`), recorded newest first: a long history is read over several
-  cycles while new deposits keep being recorded. A burst of more than 100 pages above the cursor is
-  recorded newest first as a stretch of its own (`ahead_*`); each cycle then reads above that stretch and
-  5 pages of the gap below it (`before` = `ahead_before`, `until` = the cursor), and once the gap is read
-  the stretches join. Another burst meanwhile starts a new stretch (the old one is read again as part of
-  the gap): no burst fails an account. Recording is idempotent, so the order across pages does not
+  cycles while new deposits keep being recorded. New signatures move the cursor only once the listing
+  proves it reached it (below); a burst of more than 100 pages above the cursor, or a listing whose end
+  nothing proves (an endpoint without the old ledger above an account known empty, a provider that
+  answers a cursor it does not hold with a short page), is recorded newest first as a stretch of its own
+  (`ahead_*`) instead. Each cycle then reads above that stretch and 5 pages of the gap below it
+  (`before` = `ahead_before`, `until` = the cursor), and once an endpoint proves the gap read the
+  stretches join. Another such listing meanwhile starts a new stretch (the old one is read again as part
+  of the gap): no burst fails an account. Recording is idempotent, so the order across pages does not
   matter. A failed transaction (`err`) is passed over unread. Each account reads for at most 3 minutes a
   cycle and the cycle for 8, and, under a context with a deadline (the `deposit_scanner` Lambda's), until
   20 s before it, its reads cut 6 s before it so the final cursor saves land in time (with less than 20 s
   left no cycle runs): what the budget leaves goes on next cycle and is no failure
   (`backfilling_accounts`).
-- **End of a history**: a page shorter than 1000 ends a listing above a cursor (recent, every node holds
-  it); otherwise only a signature below the floor, or an empty page together with the endpoint's first
+- **End of a history**: a page shorter than 1000 ends a listing above a cursor only once the same
+  endpoint confirms it: one more `getSignaturesForAddress` for the single signature below the oldest it
+  listed (or below `before`) must answer the cursor itself. Agave fails a `before` or `until` it does not
+  hold (-32020), but another provider may answer an empty page, which must never read as reaching the
+  cursor. Otherwise only a signature below the floor, or an empty page together with the endpoint's first
   available block (`getFirstAvailableBlock`) at or below the floor, proves there is nothing older. The
   first covers an account at once; the second only when two backfill reads in a row show it and the
   second finds nothing older (`end_seen`), so one odd answer never covers an account for good. A
@@ -1212,10 +1222,11 @@ on; the sync is its safety net, and the only detector where it is not.
 - **Covered slot and pending blocks**: a cycle in which every account of every address was read, with
   proof, from its floor up to a head (no failed, unlisted or backfilling account, no gap left above a
   cursor, no skipped mint: its accounts were not read) records `covered_head`: the lowest head an
-  account's endpoint read it up to, less the 150-slot index margin, and never above the head read
+  account's endpoint read it up to, less the 1500-slot index margin, and never above the head read
   before the addresses were listed (an address created later received nothing up to it), with
-  `read_every_account`. It then drops the chain's pending blocks at or above the highest floor (the
-  histories cover them); older ones stay for the pending retry, which keeps running in signature mode. A
+  `read_every_account`. It then drops the chain's pending blocks from the highest floor up to
+  `covered_head` (the histories cover them); older ones, and newer ones within the margin, stay for the
+  pending retry, which keeps running in signature mode. A
   cycle that did not read them all keeps the last covered slot in its record for `/health`, without
   `read_every_account`. The floor is never read from a degraded pending store (a
   `DurableStore` backend that did not answer, `pending.ListComplete`): that fails the cycle. A deposit to
@@ -1248,8 +1259,8 @@ on; the sync is its safety net, and the only detector where it is not.
 — guarded by `app/adapters/chain/solana/signatures_test.go` (devnet slot 514235140 and the
 transactions 2yMCe5… and 634Fzh… recorded in `testdata/solana`, `TestSolana_TransactionTransfers_*`,
 `TestSolana_AccountSignatures_*`, `TestSolana_SignatureAccounts_*`), `app/services/deposit/signatures_test.go`,
-`signature_backfill_test.go` and `signature_gap_test.go` (`TestSync_Signatures_*`, among them the property test
-`TestSync_Signatures_ReadsEveryHistoryAcrossCyclesWithoutASkipOrAnEarlyCoverage`, `TestScan_LatestBlocks_*`, `TestRun_ScanInvocation_*`,
+`signature_backfill_test.go` and `signature_gap_test.go` (`TestSync_Signatures_*`, the property test
+`TestProperty_SignatureSync_ReadsEveryHistoryWhateverTheEndpointShows`, `TestScan_LatestBlocks_*`, `TestRun_ScanInvocation_*`,
 `TestScan_Alerts_FollowTheRecordedModeNotTheNewestRecord`), `app/services/deposit/signature_settings_test.go`,
 `app/services/settings/deposit_signatures_test.go`, `app/services/cacheguard` (`TestAcquireHold_*`),
 `app/services/deposit/pending` (`TestDurable_Store_ListCompleteRefusesADegradedReadingThatListKeeps`),
@@ -1345,7 +1356,7 @@ of their own, so a slow chain never holds up `eth`, `polygon` and `btc`. — gua
   that scan's lag) has `mode: "signatures"` and, from its last completed sync cycle, `last_synced_at`,
   `accounts`, `failed_accounts`, `backfilling_accounts`, `skipped_mints`, `covered_slot` (the slot every
   account was read up to by the last cycle that read them all) and `lag_blocks` (the head that cycle
-  confirmed at − `covered_slot`: at least the 150-slot index margin, it grows only while cycles leave
+  confirmed at − `covered_slot`: at least the 1500-slot index margin, it grows only while cycles leave
   accounts unread) instead of the block scan's `lag_blocks` and `last_scanned_at`; `mode` is absent
   for the others, and the statuses keep
   their meaning. Times are UTC, to the second; no address or id;

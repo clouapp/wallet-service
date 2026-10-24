@@ -28,7 +28,7 @@ import (
 
 const (
 	sigChain      = models.ChainTSOL
-	sigHead       = 2000
+	sigHead       = 5000
 	sigCheckpoint = 1000
 
 	sigAlice     = "alice-owner"
@@ -46,7 +46,13 @@ var sigUSDC = types.Token{Symbol: models.SymbolUSDC, Contract: sigUSDCMint, Deci
 // sync asked for. Reading recorded node answers stays in the adapter tests; here the
 // port reports their outcome, listing as the adapter does (newest first, below
 // before, above until, down to the floor, at most MaxPages pages, an empty end of
-// history answered with the node's first available block). ScanBlock reports the same
+// history answered with the node's first available block, and a listing above until
+// ended only when until is right below what it listed, as the adapter's confirmation
+// call proves). The endpoint can be made to show less: nothing above hideAbove (a
+// backend behind on the newest slots), nothing below hideBelow (a node without the
+// old ledger, whose first available block is then hideBelow); with unknownErrs it
+// fails a before or until it does not show, as Agave does (-32020), else it answers
+// as another provider may, with what it holds. ScanBlock reports the same
 // transactions by slot, as the block scan reads them.
 type signatureChain struct {
 	*mocks.MockChain
@@ -57,6 +63,9 @@ type signatureChain struct {
 	histories    map[string][]chain.AccountSignature
 	pageSize     int
 	ledgerStart  uint64
+	hideAbove    uint64
+	hideBelow    uint64
+	unknownErrs  bool
 	heads        map[string]uint64
 	transactions map[string]chain.TransactionTransfers
 	txErr        map[string]error
@@ -120,11 +129,33 @@ func (c *signatureChain) AccountSignatures(_ context.Context, account string, qu
 	c.mu.Lock()
 	c.queries[account] = append(c.queries[account], query)
 	history, during, pageSize, ledgerStart := c.histories[account], c.duringRead, c.pageSize, c.ledgerStart
+	hideAbove, hideBelow, unknownErrs := c.hideAbove, c.hideBelow, c.unknownErrs
 	head, ok := c.heads[account]
 	if !ok {
 		head = sigHead
 	}
 	c.mu.Unlock()
+	if hideAbove != 0 || hideBelow != 0 {
+		var shown []chain.AccountSignature
+		for _, signature := range history {
+			if (hideAbove == 0 || signature.Slot <= hideAbove) && signature.Slot >= hideBelow {
+				shown = append(shown, signature)
+			}
+		}
+		history = shown
+		ledgerStart = max(ledgerStart, hideBelow)
+	}
+	shows := func(signature string) bool {
+		for _, shown := range history {
+			if shown.Signature == signature {
+				return true
+			}
+		}
+		return false
+	}
+	if unknownErrs && ((query.Before != "" && !shows(query.Before)) || (query.Until != "" && !shows(query.Until))) {
+		return chain.SignatureHistory{}, errors.New("-32020 transaction not found")
+	}
 	if during != nil {
 		during()
 	}
@@ -160,7 +191,9 @@ func (c *signatureChain) AccountSignatures(_ context.Context, account string, qu
 		}
 		listed.Signatures = append(listed.Signatures, signature)
 	}
-	listed.Ended = true
+	// The end of what the endpoint shows: above until, the signature below the oldest
+	// listed is not until, so the adapter's confirmation proves nothing.
+	listed.Ended = query.Until == ""
 	if query.Until == "" {
 		listed.LedgerStart = ledgerStart
 	}
@@ -565,6 +598,7 @@ func TestSync_Signatures_KeepsThePendingBlocksAnAccountsHistoryDoesNotCover(t *t
 	f := newSignatureFixture(t)
 	// bob's history was first read down to slot 990 (an earlier cycle), after block 980
 	// went pending: his deposits in it, if any, are not covered.
+	f.chain.history(sigBob, failed("sig-old", 995))
 	require.NoError(t, f.svc.signatureCursors.Advance(context.Background(), models.DepositSignatureCursor{
 		Chain: sigChain, Account: sigBob, Signature: "sig-old", Slot: 995, BackfillBefore: "sig-old", SyncedFromSlot: 990, Covered: true}))
 	f.keepPending(t, 980, 995)

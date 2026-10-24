@@ -33,9 +33,16 @@ const (
 	// (a load balancer), or an index that trails the root. An account with nothing
 	// recorded is known empty only up to the head less this margin, and an account read
 	// up to a head counts as read up to the head less this margin (covered_head), so a
-	// first deposit that lands just below the head is read on the next cycle instead of
-	// falling under its floor. 150 slots is about a minute.
-	signatureIndexMargin = 150
+	// first deposit that lands just below the head is read on a later cycle instead of
+	// falling under its floor. The margin is about one sync interval at the default 600
+	// s (1500 slots of 400 ms, about 10 minutes): an index more than that behind could
+	// still drop a first deposit, a wider margin costs only lag. covered_head (and
+	// /health's lag_blocks) trails the head by at least the margin, the block scan
+	// resumed after the sync rescans that many slots once, and a known-empty account
+	// lists that many slots each cycle (an empty page while it stays empty). It does
+	// not follow the configured interval: how far an index trails does not depend on
+	// how often it is read.
+	signatureIndexMargin = 1500
 )
 
 // accountSync is what reading one account did: the signatures it read, the deposits
@@ -172,12 +179,12 @@ func (c *signatureCycle) syncAccount(ctx context.Context, account string, row *m
 	return result
 }
 
-// readNew records the signatures above the account's newest recorded one, oldest
-// first: above its cursor or, while a burst left a gap, above the stretch recorded
-// ahead of the gap, and then down the gap. It returns the head the account is read up
-// to with upToDate when nothing above its cursor is left unread, and goOn false when
-// the account stops here (a failure, its budget, or a listing whose end nothing
-// proves).
+// readNew records the signatures above the account's newest recorded one: above its
+// cursor or, while a gap is open, above the stretch recorded ahead of the gap, oldest
+// first, once the listing proves it reached them (reachedEnd); then down the gap. It
+// returns the head the account is read up to with upToDate when nothing above its
+// cursor is left unread, and goOn false when the account stops here (a failure, its
+// budget, or an empty listing whose end nothing proves).
 func (c *signatureCycle) readNew(ctx context.Context, st *accountState, stopAt time.Time, result *accountSync) (head uint64, upToDate, goOn bool) {
 	query := chain.SignatureQuery{Until: st.top, FloorSlot: st.topSlot, HasFloor: true, MaxPages: signatureForwardPageCeiling}
 	if st.ahead != "" {
@@ -189,23 +196,8 @@ func (c *signatureCycle) readNew(ctx context.Context, st *accountState, stopAt t
 		return 0, false, false
 	}
 	result.signatures += len(history.Signatures)
-	if history.More {
-		// A burst: more new signatures than a cycle lists. The newest, listed from the
-		// head down, are recorded newest first as a stretch of their own ahead of the
-		// cursor; the gap below them is read down to the cursor, this cycle and the next.
-		// Another burst while the gap of the last one is read starts a new stretch: the
-		// one recorded ahead of that gap becomes part of the larger gap, read again
-		// (recording is idempotent), so no burst ever fails the account.
-		if st.ahead != "" {
-			st.ahead, st.aheadSlot, st.aheadBottom = "", 0, ""
-			st.unsaved++
-		}
-		slog.Warn("deposit signature sync: a burst of new signatures above an account's cursor; the newest are recorded first, the gap below them over the next cycles",
-			"chain", c.chainID, "account", st.account, "max_pages", signatureForwardPageCeiling)
-		if !c.process(ctx, st, history.Signatures, moveGapDown, stopAt, result) {
-			return 0, false, false
-		}
-	} else {
+	switch {
+	case reachedEnd(query, history): // never a listing MaxPages cut (More)
 		oldestFirst := make([]chain.AccountSignature, len(history.Signatures))
 		for i, signature := range history.Signatures {
 			oldestFirst[len(history.Signatures)-1-i] = signature
@@ -213,12 +205,32 @@ func (c *signatureCycle) readNew(ctx context.Context, st *accountState, stopAt t
 		if !c.process(ctx, st, oldestFirst, moveUp, stopAt, result) {
 			return 0, false, false
 		}
-		if !reachedEnd(query, history) {
-			slog.Warn("deposit signature sync: the endpoint did not prove the end of an account's new signatures; its coverage waits for the next cycle",
-				"chain", c.chainID, "account", st.account, "ledger_start", history.LedgerStart, "from_slot", query.FloorSlot)
+		st.markEmptyUpTo(history.Head)
+	case len(history.Signatures) == 0:
+		slog.Warn("deposit signature sync: the endpoint did not prove the end of an account's new signatures; its coverage waits for the next cycle",
+			"chain", c.chainID, "account", st.account, "ledger_start", history.LedgerStart, "from_slot", query.FloorSlot)
+		return 0, false, false
+	default:
+		// Nothing proves the listing reached the newest recorded signature (or, for an
+		// account known empty, the slot it is known empty up to): a burst longer than a
+		// cycle lists, or an endpoint that does not show what lies right above it (one
+		// without the old ledger, an address index behind, a provider that answers a
+		// signature it does not hold with an empty page). Moving the cursor over the
+		// listing could skip what the endpoint did not show, so the listing is recorded
+		// newest first as a stretch of its own ahead of the cursor, and the gap below it
+		// is read down to the cursor, this cycle and the next, until an endpoint proves
+		// it. Another such listing while the gap of the last one is read starts a new
+		// stretch: the one recorded ahead of that gap becomes part of the larger gap,
+		// read again (recording is idempotent), so no burst ever fails the account.
+		if st.ahead != "" {
+			st.ahead, st.aheadSlot, st.aheadBottom = "", 0, ""
+			st.unsaved++
+		}
+		slog.Warn("deposit signature sync: new signatures above an account's cursor not proven to reach it (a burst, or an endpoint that does not show them all); recorded as a stretch ahead of the cursor, the gap below it over the next cycles",
+			"chain", c.chainID, "account", st.account, "burst", history.More, "max_pages", signatureForwardPageCeiling, "ledger_start", history.LedgerStart)
+		if !c.process(ctx, st, history.Signatures, moveGapDown, stopAt, result) {
 			return 0, false, false
 		}
-		st.markEmptyUpTo(history.Head)
 	}
 	head = history.Head
 	if st.ahead == "" {

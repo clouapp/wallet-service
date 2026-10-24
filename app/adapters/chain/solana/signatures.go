@@ -259,11 +259,15 @@ type solanaSignatureInfo struct {
 // query.Until, the floor, or the end of the history, at most query.MaxPages pages, and
 // returns what it read newest first. Every call of one listing goes to one endpoint
 // (rpc.PinEndpoint): its finalized slot first (Head), then the pages, then the
-// evidence of the end. A page shorter than the limit ends a listing with Until (the
-// cursor is recent, every node holds it); without Until only an empty page does, and
-// then the endpoint's first available block (getFirstAvailableBlock) is LedgerStart:
-// a node that does not hold an old ledger answers short pages with no error, which
-// must never read as the start of the history.
+// evidence of the end. A page shorter than the limit ends a listing with Until only
+// once the endpoint confirms it: one more call for the single signature below the
+// oldest it listed (or below Before) must answer Until itself. Agave fails a listing
+// whose until or before it does not hold, but another provider may answer an empty
+// or short page instead, which must never read as reaching the cursor. Without Until
+// only an empty page ends a listing, and then the endpoint's first available block
+// (getFirstAvailableBlock) is LedgerStart: a node that does not hold an old ledger
+// answers short pages with no error, which must never read as the start of the
+// history.
 func (a *SolanaLive) AccountSignatures(ctx context.Context, account string, query chain.SignatureQuery) (chain.SignatureHistory, error) {
 	var history chain.SignatureHistory
 	if _, err := solana.PublicKeyFromBase58(strings.TrimSpace(account)); err != nil {
@@ -304,7 +308,15 @@ func (a *SolanaLive) AccountSignatures(ctx context.Context, account string, quer
 			history.Signatures = append(history.Signatures, chain.AccountSignature{Signature: entry.Signature, Slot: entry.Slot, Failed: entry.Err != nil})
 		}
 		if query.Until != "" && len(entries) < solanaSignaturePageLimit {
-			history.Ended = true
+			below := before
+			if len(entries) > 0 {
+				below = entries[len(entries)-1].Signature
+			}
+			reached, err := a.confirmUntil(pinned, account, below, query.Until)
+			if err != nil {
+				return chain.SignatureHistory{}, fmt.Errorf("sol signatures of %s: confirm the cursor: %w", account, err)
+			}
+			history.Ended = reached
 			return history, nil
 		}
 		if len(entries) == 0 {
@@ -317,6 +329,21 @@ func (a *SolanaLive) AccountSignatures(ctx context.Context, account string, quer
 		before = entries[len(entries)-1].Signature
 	}
 	return history, nil
+}
+
+// confirmUntil reports whether the signature right below below (the newest one when
+// below is empty) is until, on the listing's endpoint (ctx pinned): only then did a
+// short page reach the cursor.
+func (a *SolanaLive) confirmUntil(ctx context.Context, account, below, until string) (bool, error) {
+	options := map[string]any{"commitment": solanaCommitmentFinalized, "limit": 1}
+	if below != "" {
+		options["before"] = below
+	}
+	var entries []solanaSignatureInfo
+	if err := a.rpc.Call(ctx, "getSignaturesForAddress", &entries, account, options); err != nil {
+		return false, err
+	}
+	return len(entries) == 1 && entries[0].Signature == until, nil
 }
 
 // solanaSignedTransaction is getTransaction with the json encoding: the static

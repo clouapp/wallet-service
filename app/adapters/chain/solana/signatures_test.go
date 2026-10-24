@@ -105,6 +105,22 @@ func newMethodNode(t *testing.T, answer func(req solanaRequest) string) *methodN
 	return node
 }
 
+// pageCalls are the getSignaturesForAddress calls of full pages, and confirmations
+// the single-signature calls that confirm a short page reached its cursor.
+func (n *methodNode) pageCalls(t *testing.T) (pages, confirmations []solanaRequest) {
+	t.Helper()
+	for _, req := range n.calls("getSignaturesForAddress") {
+		var options struct{ Limit int }
+		req.param(t, 1, &options)
+		if options.Limit == 1 {
+			confirmations = append(confirmations, req)
+			continue
+		}
+		pages = append(pages, req)
+	}
+	return pages, confirmations
+}
+
 func (n *methodNode) calls(method string) []solanaRequest {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -154,8 +170,9 @@ func (h *accountHistory) page(t *testing.T, req solanaRequest) string {
 		Limit                     int
 	}
 	req.param(t, 1, &options)
-	if options.Commitment != solanaCommitmentFinalized || options.Limit != solanaSignaturePageLimit {
-		t.Errorf("getSignaturesForAddress options %+v, want finalized and %d per page", options, solanaSignaturePageLimit)
+	confirmation := options.Limit == 1 && options.Until == ""
+	if options.Commitment != solanaCommitmentFinalized || (options.Limit != solanaSignaturePageLimit && !confirmation) {
+		t.Errorf("getSignaturesForAddress options %+v, want finalized and %d per page (or 1, confirming a cursor)", options, solanaSignaturePageLimit)
 	}
 	start := 0
 	if options.Before != "" {
@@ -216,9 +233,18 @@ func TestSolana_AccountSignatures_PagesBackUntilTheCursorNewestFirst(t *testing.
 	for i := 1; i < len(got.Signatures); i++ {
 		require.GreaterOrEqual(t, got.Signatures[i-1].Slot, got.Signatures[i].Slot)
 	}
-	pages := node.calls("getSignaturesForAddress")
+	pages, confirmations := node.pageCalls(t)
 	require.Len(t, pages, 3, "1000 + 1000 + 200: the short page ends at the cursor")
 	assert.Empty(t, node.calls("getFirstAvailableBlock"), "a recent cursor needs no ledger evidence")
+	require.Len(t, confirmations, 1, "the endpoint confirms the short page reached the cursor")
+	var confirm struct {
+		Before, Until string
+		Limit         int
+	}
+	confirmations[0].param(t, 1, &confirm)
+	assert.Equal(t, "sig-00400", confirm.Before, "the one signature below the oldest listed")
+	assert.Empty(t, confirm.Until)
+	assert.Equal(t, 1, confirm.Limit)
 	for i, page := range pages {
 		var account string
 		page.param(t, 0, &account)
@@ -232,6 +258,91 @@ func TestSolana_AccountSignatures_PagesBackUntilTheCursorNewestFirst(t *testing.
 		}
 		assert.Equal(t, wantBefore, options.Before, "page %d starts before the last signature of the page before it", i)
 	}
+}
+
+// A provider that does not hold the cursor may answer a short or empty page instead
+// of failing (Agave fails it): the signature below what it listed is then not the
+// cursor, so the listing did not reach it, and says so.
+func TestSolana_AccountSignatures_AShortPageAboveACursorTheEndpointDoesNotHoldIsNoEnd(t *testing.T) {
+	for name, tc := range map[string]struct {
+		count      int
+		wantBefore string
+	}{
+		"a short page": {count: 40, wantBefore: "sig-00000"},
+		"an empty one": {count: 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			node := historyNode(t, newAccountHistory(tc.count, 9000), 9100, 0)
+
+			got, err := liveOn(node.server.URL).AccountSignatures(context.Background(), ataFixtureOwner,
+				chain.SignatureQuery{Until: "sig-the-endpoint-does-not-hold", MaxPages: 10})
+
+			require.NoError(t, err)
+			assert.Len(t, got.Signatures, tc.count)
+			assert.False(t, got.Ended, "nothing proves the cursor was reached")
+			assert.False(t, got.More)
+			_, confirmations := node.pageCalls(t)
+			require.Len(t, confirmations, 1)
+			var confirm struct{ Before string }
+			confirmations[0].param(t, 1, &confirm)
+			assert.Equal(t, tc.wantBefore, confirm.Before, "below the oldest listed, or from the newest when none was")
+		})
+	}
+}
+
+// A gap with nothing in it (the signature below before is the cursor) answers an
+// empty page; the confirmation, below before, finds the cursor and closes it.
+func TestSolana_AccountSignatures_ClosesAnEmptyGapBelowBefore(t *testing.T) {
+	node := historyNode(t, newAccountHistory(10, 9000), 9100, 0)
+
+	got, err := liveOn(node.server.URL).AccountSignatures(context.Background(), ataFixtureOwner,
+		chain.SignatureQuery{Until: "sig-00004", Before: "sig-00005", MaxPages: 10})
+
+	require.NoError(t, err)
+	assert.Empty(t, got.Signatures)
+	assert.True(t, got.Ended, "the signature below before is the cursor")
+	_, confirmations := node.pageCalls(t)
+	require.Len(t, confirmations, 1)
+	var confirm struct{ Before string }
+	confirmations[0].param(t, 1, &confirm)
+	assert.Equal(t, "sig-00005", confirm.Before, "below the query's before when nothing was listed")
+}
+
+// The confirmation of a cursor is asked of the endpoint that served the listing: when
+// it fails there, the listing fails, and no other endpoint answers it.
+func TestSolana_AccountSignatures_ConfirmsTheCursorOnTheEndpointThatServedThePages(t *testing.T) {
+	history := newAccountHistory(40, 9000)
+	primary := newMethodNode(t, func(req solanaRequest) string {
+		switch req.Method {
+		case "getGenesisHash":
+			return devnetGenesisResult
+		case "getSlot":
+			return `"result":9100`
+		case "getSignaturesForAddress":
+			var options struct{ Limit int }
+			req.param(t, 1, &options)
+			if options.Limit == 1 {
+				return ""
+			}
+			return history.page(t, req)
+		}
+		return ""
+	})
+	fallback := newMethodNode(t, func(req solanaRequest) string {
+		switch req.Method {
+		case "getGenesisHash":
+			return devnetGenesisResult
+		case "getSlot":
+			return `"result":9100`
+		}
+		return `"result":[{"signature":"sig-00010","slot":8990,"err":null}]`
+	})
+	live := devnetWithFallbacks(primary.server.URL, fallback.server.URL)
+
+	_, err := live.AccountSignatures(context.Background(), ataFixtureOwner, chain.SignatureQuery{Until: "sig-00010", MaxPages: 10})
+
+	require.Error(t, err, "the endpoint that served the pages did not confirm the cursor")
+	assert.Empty(t, fallback.calls("getSignaturesForAddress"), "no other endpoint confirms this listing's cursor")
 }
 
 func TestSolana_AccountSignatures_ContinuesBelowBefore(t *testing.T) {

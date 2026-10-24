@@ -63,9 +63,11 @@ type AccountSignature struct {
 // Head is that endpoint's finalized slot, read before the first page: a listing that
 // ended holds every signature of the selected range up to it. More is a listing cut
 // by MaxPages. Ended is a listing that reached the end of the range: Until (a short
-// page), the floor (FloorCrossed: a signature below it was seen), or, without
+// page the endpoint confirms: the signature right below what it listed is Until
+// itself), the floor (FloorCrossed: a signature below it was seen), or, without
 // either, an empty page, with LedgerStart the endpoint's first available block: only
-// a ledger that starts at or below the floor proves there is nothing older to read.
+// a ledger that starts at or below the floor proves there is nothing older to read. A
+// listing with Until that is neither Ended nor More did not prove it reached Until.
 type SignatureHistory struct {
 	Signatures   []AccountSignature
 	Head         uint64

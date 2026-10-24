@@ -60,7 +60,7 @@ const signatureMode = "signatures"
 // SkippedMints (registered tokens the node does not hold as token mints), CoveredSlot
 // (the slot every account was read up to by the last cycle that read them all) and
 // LagBlocks (the head that cycle confirmed at − CoveredSlot: at least the sync's
-// 150-slot index margin, it grows only while cycles leave accounts unread). Mode is absent for a chain the block scan reads.
+// 1500-slot index margin, it grows only while cycles leave accounts unread). Mode is absent for a chain the block scan reads.
 // Times are UTC, to the second.
 type ScannedChain struct {
 	Mode                string     `json:"mode,omitempty" example:"signatures"`

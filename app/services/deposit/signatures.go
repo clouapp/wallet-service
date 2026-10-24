@@ -258,7 +258,7 @@ func (s *Service) syncSignatures(ctx context.Context, chainID string, adapter ty
 	}
 	if everyAccountRead {
 		summary.CoveredHead = coveredHead
-		resolved, err := s.resolveCoveredPending(ctx, chainID, coveredFrom)
+		resolved, err := s.resolveCoveredPending(ctx, chainID, coveredFrom, coveredHead)
 		summary.ResolvedPending = resolved
 		if err != nil {
 			slog.Warn("pending deposit blocks the signature sync covers were not all dropped; the next cycle drops them", "chain", chainID, "error", err)
@@ -304,11 +304,12 @@ func (s *Service) signatureFloor(ctx context.Context, chainID string) (signature
 	return floor, nil
 }
 
-// resolveCoveredPending drops the chain's pending blocks at or above coveredFrom:
-// every account of the chain has just been read from a slot no higher than that up
-// to now, so the deposits those blocks hold are recorded. Older pending blocks stay,
-// for the pending retry.
-func (s *Service) resolveCoveredPending(ctx context.Context, chainID string, coveredFrom uint64) (int, error) {
+// resolveCoveredPending drops the chain's pending blocks from coveredFrom up to
+// coveredHead: every account of the chain has just been read from a slot no higher
+// than coveredFrom up to coveredHead, so the deposits those blocks hold are recorded.
+// Older pending blocks stay, for the pending retry, and so do newer ones (within the
+// index margin), until a cycle covers them.
+func (s *Service) resolveCoveredPending(ctx context.Context, chainID string, coveredFrom, coveredHead uint64) (int, error) {
 	if s.pending == nil {
 		return 0, nil
 	}
@@ -318,6 +319,9 @@ func (s *Service) resolveCoveredPending(ctx context.Context, chainID string, cov
 	}
 	resolved, older := 0, 0
 	for _, entry := range entries {
+		if entry.Block > coveredHead {
+			continue
+		}
 		if entry.Block < coveredFrom {
 			older++
 			continue

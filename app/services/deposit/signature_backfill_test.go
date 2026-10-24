@@ -189,6 +189,31 @@ func TestSync_Signatures_ClaimsNoCoverageAnEndpointCannotProveAboveAnEmptyAccoun
 	assert.Equal(t, 3, second.BackfillingAccounts)
 }
 
+// An address index that trails the head by about seven minutes (1000 slots, within
+// one default sync interval) drops no first deposit: an account it showed empty is
+// known empty only up to the head less the index margin, so the deposit it served late
+// is read on the next cycle.
+func TestSync_Signatures_AnIndexMinutesBehindDropsNoFirstDeposit(t *testing.T) {
+	f := newSignatureFixture(t)
+	f.chain.accounts[sigAlice] = []string{sigAlice}
+	late := uint64(sigHead - 1000)
+	f.chain.history(sigBob, f.chain.tx("sig-late", late, lamports(sigBob, 42, 1)))
+	f.chain.mu.Lock()
+	f.chain.hideAbove = late - 1 // the index has not served the deposit yet
+	f.chain.mu.Unlock()
+	f.syncCovered(t)
+	require.Empty(t, sigDeposits(t))
+
+	f.chain.mu.Lock()
+	f.chain.hideAbove = 0
+	f.chain.mu.Unlock()
+	f.sync(t)
+
+	rows := sigDeposits(t)
+	require.Len(t, rows, 1, "the deposit the index served late is recorded")
+	assert.Equal(t, "sig-late", rows[0].TxHash)
+}
+
 // An account found empty is known empty only up to the head less the index margin:
 // the endpoint's head and its listing are two calls, and its address index (or
 // another backend behind the same URL) may not serve yet a signature just below that
@@ -379,19 +404,20 @@ func TestSync_Signatures_RecordsTheSlotEveryAccountIsReadUpTo(t *testing.T) {
 	f := newSignatureFixture(t)
 	activity := newMemoryActivity()
 	f.svc.SetScanActivityStore(activity)
-	f.chain.heads[sigAliceUSDC] = 1990
-	f.chain.heads[sigBob] = 2100
+	f.chain.heads[sigAliceUSDC] = sigHead - 10
+	f.chain.heads[sigBob] = sigHead + 100
 
 	first := f.syncCovered(t)
 
-	assert.Equal(t, uint64(1990-signatureIndexMargin), first.CoveredHead, "the lowest endpoint head, less the index margin")
+	assert.Equal(t, uint64(sigCovered-10), first.CoveredHead, "the lowest endpoint head, less the index margin")
 	record, _ := activity.syncOf(sigChain)
-	assert.Equal(t, uint64(1990-signatureIndexMargin), record.CoveredHead)
+	assert.Equal(t, uint64(sigCovered-10), record.CoveredHead)
 	assert.True(t, record.ReadEveryAccount)
 	assert.Equal(t, uint64(sigHead), record.Head)
 
 	f.chain.mu.Lock()
-	f.chain.heads[sigAlice], f.chain.heads[sigAliceUSDC], f.chain.heads[sigBob] = 3000, 3000, 3000
+	ahead := uint64(sigHead + 2*signatureIndexMargin)
+	f.chain.heads[sigAlice], f.chain.heads[sigAliceUSDC], f.chain.heads[sigBob] = ahead, ahead, ahead
 	f.chain.mu.Unlock()
 	capped := f.sync(t)
 	assert.Equal(t, uint64(sigHead), capped.CoveredHead, "never above the head read before the addresses were listed")
