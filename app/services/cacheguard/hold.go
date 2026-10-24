@@ -18,16 +18,20 @@ import (
 // The token checks and the writes are two cache calls (the driver has no compare
 // and set). The renewal keeps the key from lapsing while the holder runs, so
 // another holder can take it only after this one stopped renewing; a renewal or a
-// release that finds another token leaves it alone.
+// release that finds another token leaves it alone. A renewal that finds the key
+// gone or another token, or that cannot write, has lost the hold: Lost is closed,
+// so the holder can stop before it acts on what it no longer holds.
 type Hold struct {
 	cache contractscache.Driver
 	key   string
 	token string
 	ttl   time.Duration
 
-	once sync.Once
-	stop chan struct{}
-	done chan struct{}
+	once     sync.Once
+	stop     chan struct{}
+	done     chan struct{}
+	lostOnce sync.Once
+	lost     chan struct{}
 }
 
 // AcquireHold takes key for ttl when it is absent, like Acquire, and renews it until
@@ -47,7 +51,7 @@ func AcquireHold(c contractscache.Driver, key string, ttl time.Duration) (*Hold,
 		}
 		return nil, false, fmt.Errorf("acquire %s: %w", key, ErrUnavailable)
 	}
-	hold := &Hold{cache: c, key: key, token: token, ttl: ttl, stop: make(chan struct{}), done: make(chan struct{})}
+	hold := &Hold{cache: c, key: key, token: token, ttl: ttl, stop: make(chan struct{}), done: make(chan struct{}), lost: make(chan struct{})}
 	go hold.renew()
 	return hold, true, nil
 }
@@ -67,6 +71,27 @@ func (h *Hold) Release() {
 	})
 }
 
+// Lost is closed once the hold is known lost: a renewal found the key gone or
+// another token, or could not write it, or Held found it so. It stays open while the
+// hold is kept and after a Release.
+func (h *Hold) Lost() <-chan struct{} {
+	return h.lost
+}
+
+// Held reports whether the key still holds this holder's token now; a hold found
+// lost closes Lost. A cache that cannot be read reads as lost.
+func (h *Hold) Held() bool {
+	if h.owned() {
+		return true
+	}
+	h.markLost()
+	return false
+}
+
+func (h *Hold) markLost() {
+	h.lostOnce.Do(func() { close(h.lost) })
+}
+
 func (h *Hold) renew() {
 	defer close(h.done)
 	ticker := time.NewTicker(h.ttl / 3)
@@ -77,9 +102,13 @@ func (h *Hold) renew() {
 			return
 		case <-ticker.C:
 			if !h.owned() {
+				h.markLost()
 				return
 			}
-			_ = h.cache.Put(h.key, h.token, h.ttl)
+			if err := h.cache.Put(h.key, h.token, h.ttl); err != nil {
+				h.markLost()
+				return
+			}
 		}
 	}
 }

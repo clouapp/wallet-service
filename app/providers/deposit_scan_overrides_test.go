@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/macrowallets/waas/app/services/deposit"
+	"github.com/macrowallets/waas/app/services/settings"
 )
 
 type intConfig map[string]int
@@ -95,5 +96,20 @@ func TestSignature_SettingsFromEnv_ReadsDepositSignatures(t *testing.T) {
 	}
 	if empty := signatureSettingsFromEnv(signatureConfig{intConfig: intConfig{}}); len(empty.Chains) != 0 {
 		t.Fatalf("an empty DEPOSIT_SIGNATURE_CHAINS lists %v, want no chain", empty.Chains)
+	}
+}
+
+func TestPlatform_SettingsFallback_ShowsTheEnvironmentChainsOfDepositSignaturesOnly(t *testing.T) {
+	fallback := platformSettingsFallback(signatureConfig{chains: "sol", intConfig: intConfig{}})
+
+	chains, ok := fallback(settings.GroupDepositSignatures, settings.KeySignatureChains)
+	if !ok || len(chains.([]string)) != 1 || chains.([]string)[0] != "sol" {
+		t.Fatalf("chains %v (ok %v), want DEPOSIT_SIGNATURE_CHAINS", chains, ok)
+	}
+	if _, ok := fallback(settings.GroupDepositSignatures, "interval_seconds"); ok {
+		t.Fatal("only the chain list falls back to the environment on the views")
+	}
+	if _, ok := fallback("deposit_scan", settings.KeySignatureChains); ok {
+		t.Fatal("another group keeps its defaults")
 	}
 }

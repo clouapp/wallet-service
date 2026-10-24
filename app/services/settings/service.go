@@ -72,7 +72,14 @@ type Service struct {
 	admins   platformAdmins
 	accounts accountDirectory
 	testMail PlatformTestMailer
+	fallback PlatformFallback
 }
+
+// PlatformFallback is the value a platform field takes while no row stores it, when
+// that value comes from outside the registry (the environment): ok false keeps the
+// definition's default. The platform views show it, so a form that sends a whole
+// group back stores what was in effect instead of the registry default.
+type PlatformFallback func(group, key string) (value any, ok bool)
 
 // Deps is everything the account settings service needs. Store, Sealer, and
 // Activity are required. A nil Cache uses a no-op cache.
@@ -81,6 +88,9 @@ type Deps struct {
 	Sealer   Sealer
 	Cache    Cache
 	Activity activitylog.Writer
+	// Fallback shows, on the platform views, the environment value of a field no
+	// row stores (nil: the definitions' defaults).
+	Fallback PlatformFallback
 }
 
 // NewService builds the account settings service.
@@ -98,7 +108,7 @@ func NewService(deps Deps) *Service {
 	if cache == nil {
 		cache = nopCache{}
 	}
-	return &Service{store: deps.Store, sealer: deps.Sealer, cache: cache, activity: deps.Activity}
+	return &Service{store: deps.Store, sealer: deps.Sealer, cache: cache, activity: deps.Activity, fallback: deps.Fallback}
 }
 
 // WithPlatformAdmins sets the gate for platform groups. A nil reader leaves

@@ -34,8 +34,8 @@ func TestLive_DevnetSignaturesReadTheCreditsTheBlockScanReads(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{ataFixtureOwner, ataFixtureUSDC, ataFixtureToken2022} {
-		if !slices.Contains(accounts, want) {
-			t.Fatalf("accounts %v, want %s among them", accounts, want)
+		if !slices.Contains(accounts.Accounts, want) {
+			t.Fatalf("accounts %v, want %s among them", accounts.Accounts, want)
 		}
 	}
 
@@ -46,8 +46,11 @@ func TestLive_DevnetSignaturesReadTheCreditsTheBlockScanReads(t *testing.T) {
 	if len(history.Signatures) == 0 {
 		t.Skip("the trader has no history on this endpoint")
 	}
+	if history.Head < history.Signatures[0].Slot {
+		t.Fatalf("head %d below the newest signature's slot %d", history.Head, history.Signatures[0].Slot)
+	}
 	compared := 0
-	for i := len(history.Signatures) - 1; i >= 0 && compared < 2; i-- {
+	for i := 0; i < len(history.Signatures) && compared < 2; i++ {
 		signature := history.Signatures[i]
 		if signature.Failed {
 			continue

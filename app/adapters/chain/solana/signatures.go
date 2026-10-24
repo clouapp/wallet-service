@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gagliardetto/solana-go"
 
@@ -29,25 +30,40 @@ const solanaMintAddressLength = 32
 // history lists: it does not serve that transaction yet (a lagging backend).
 var errSolanaTransactionNotReturned = errors.New("solana: the node returned no transaction for the signature")
 
+// invalidMintRecheck is how long a registered mint the node does not hold as a token
+// mint is skipped before it is read again (a registry fix is picked up within it).
+const invalidMintRecheck = 10 * time.Minute
+
+// errNotATokenMint means a registered mint is no token mint on the node: no account
+// at that address, or one another program owns.
+var errNotATokenMint = errors.New("solana: the registered mint is not a token mint on the node")
+
 // mintPrograms caches the token program that owns each registered mint (Token or
-// Token-2022), read once with getAccountInfo: a mint never changes program.
+// Token-2022), read once with getAccountInfo: a mint never changes program. A mint the
+// node does not hold as a token mint is remembered for invalidMintRecheck.
 type mintPrograms struct {
 	mu       sync.Mutex
 	programs map[string]solana.PublicKey
+	invalid  map[string]time.Time
 }
 
 func newMintPrograms() *mintPrograms {
-	return &mintPrograms{programs: map[string]solana.PublicKey{}}
+	return &mintPrograms{programs: map[string]solana.PublicKey{}, invalid: map[string]time.Time{}}
 }
 
-func (m *mintPrograms) get(mint string) (solana.PublicKey, bool) {
+func (m *mintPrograms) get(mint string, now time.Time) (solana.PublicKey, bool, bool) {
 	if m == nil {
-		return solana.PublicKey{}, false
+		return solana.PublicKey{}, false, false
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	program, ok := m.programs[mint]
-	return program, ok
+	if program, ok := m.programs[mint]; ok {
+		return program, true, false
+	}
+	if until, ok := m.invalid[mint]; ok && now.Before(until) {
+		return solana.PublicKey{}, false, true
+	}
+	return solana.PublicKey{}, false, false
 }
 
 func (m *mintPrograms) put(mint string, program solana.PublicKey) {
@@ -57,27 +73,40 @@ func (m *mintPrograms) put(mint string, program solana.PublicKey) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.programs[mint] = program
+	delete(m.invalid, mint)
+}
+
+func (m *mintPrograms) refuse(mint string, until time.Time) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.invalid[mint] = until
 }
 
 // SignatureAccounts returns owner, its associated token account of each registered
 // mint (derived with the mint's own token program), and every token account of a
 // registered mint that getTokenAccountsByOwner lists for the token programs those
 // mints use (a token account that is not the associated one), without repeats. A
-// registered mint that is not a public key, or a read that fails, is an error.
-func (a *SolanaLive) SignatureAccounts(ctx context.Context, owner string) ([]string, error) {
+// registered mint the node does not hold as a token mint is skipped and named, so
+// one bad registry row never stops the other mints or the owners; a read that fails
+// is an error.
+func (a *SolanaLive) SignatureAccounts(ctx context.Context, owner string) (chain.SignatureAccounts, error) {
+	var listed chain.SignatureAccounts
 	if a.tokensErr != nil {
-		return nil, a.tokensErr
+		return listed, a.tokensErr
 	}
 	ownerKey, err := solana.PublicKeyFromBase58(strings.TrimSpace(owner))
 	if err != nil {
-		return nil, chain.InvalidAddress(fmt.Errorf("sol owner %q: %w", owner, err))
+		return listed, chain.InvalidAddress(fmt.Errorf("sol owner %q: %w", owner, err))
 	}
-	accounts := []string{ownerKey.String()}
+	listed.Accounts = []string{ownerKey.String()}
 	seen := map[string]bool{ownerKey.String(): true}
 	add := func(account string) {
 		if !seen[account] {
 			seen[account] = true
-			accounts = append(accounts, account)
+			listed.Accounts = append(listed.Accounts, account)
 		}
 	}
 
@@ -90,16 +119,20 @@ func (a *SolanaLive) SignatureAccounts(ctx context.Context, owner string) ([]str
 	for _, mint := range mints {
 		mintKey, err := solana.PublicKeyFromBase58(mint)
 		if err != nil {
-			return nil, fmt.Errorf("sol token mint %s: %w", mint, err)
+			return chain.SignatureAccounts{}, fmt.Errorf("sol token mint %s: %w", mint, err)
 		}
 		program, err := a.mintProgram(ctx, mintKey)
+		if errors.Is(err, errNotATokenMint) {
+			listed.SkippedMints = append(listed.SkippedMints, mint)
+			continue
+		}
 		if err != nil {
-			return nil, err
+			return chain.SignatureAccounts{}, err
 		}
 		inUse[program] = true
 		ata, err := associatedTokenAccount(ownerKey, mintKey, program)
 		if err != nil {
-			return nil, err
+			return chain.SignatureAccounts{}, err
 		}
 		add(ata.String())
 	}
@@ -112,7 +145,7 @@ func (a *SolanaLive) SignatureAccounts(ctx context.Context, owner string) ([]str
 	for _, program := range programs {
 		held, err := a.tokenAccountsByOwner(ctx, ownerKey, program)
 		if err != nil {
-			return nil, err
+			return chain.SignatureAccounts{}, err
 		}
 		for _, account := range held {
 			if _, registered := a.tokens[account.mint]; registered {
@@ -120,7 +153,7 @@ func (a *SolanaLive) SignatureAccounts(ctx context.Context, owner string) ([]str
 			}
 		}
 	}
-	return accounts, nil
+	return listed, nil
 }
 
 // associatedTokenAccount is owner's associated token account of mint under the token
@@ -137,10 +170,14 @@ func associatedTokenAccount(owner, mint, program solana.PublicKey) (solana.Publi
 
 // mintProgram is the token program that owns mint (Token or Token-2022), read once
 // with getAccountInfo and then cached. A mint the node does not hold, or one another
-// program owns, is an error.
+// program owns, is errNotATokenMint (also cached, for invalidMintRecheck); a read that
+// fails is an error and is tried again on the next call.
 func (a *SolanaLive) mintProgram(ctx context.Context, mint solana.PublicKey) (solana.PublicKey, error) {
-	if program, ok := a.mints.get(mint.String()); ok {
+	now := time.Now()
+	if program, ok, refused := a.mints.get(mint.String(), now); ok {
 		return program, nil
+	} else if refused {
+		return solana.PublicKey{}, fmt.Errorf("sol mint %s: %w", mint, errNotATokenMint)
 	}
 	var info struct {
 		Value *struct {
@@ -155,11 +192,13 @@ func (a *SolanaLive) mintProgram(ctx context.Context, mint solana.PublicKey) (so
 		return solana.PublicKey{}, fmt.Errorf("sol mint %s account: %w", mint, err)
 	}
 	if info.Value == nil {
-		return solana.PublicKey{}, fmt.Errorf("sol mint %s: no such account on the node", mint)
+		a.mints.refuse(mint.String(), now.Add(invalidMintRecheck))
+		return solana.PublicKey{}, fmt.Errorf("sol mint %s: no such account on the node: %w", mint, errNotATokenMint)
 	}
 	program, err := solana.PublicKeyFromBase58(info.Value.Owner)
 	if err != nil || (!program.Equals(solana.TokenProgramID) && !program.Equals(solana.Token2022ProgramID)) {
-		return solana.PublicKey{}, fmt.Errorf("sol mint %s is owned by %q, not a token program", mint, info.Value.Owner)
+		a.mints.refuse(mint.String(), now.Add(invalidMintRecheck))
+		return solana.PublicKey{}, fmt.Errorf("sol mint %s is owned by %q, not a token program: %w", mint, info.Value.Owner, errNotATokenMint)
 	}
 	a.mints.put(mint.String(), program)
 	return program, nil
@@ -216,13 +255,15 @@ type solanaSignatureInfo struct {
 }
 
 // AccountSignatures pages getSignaturesForAddress (finalized, newest first, 1000 per
-// page) back from the newest signature until query.Until (left out), until the first
-// signature below query.FloorSlot with a floor, or until the history ends, and
-// returns what it read oldest first. Every page of one account is read from one
-// endpoint (rpc.PinEndpoint): a node that does not know the signature a page starts
-// before would answer an empty page, which reads like the end of the history.
-// query.MaxPages pages are read at most; a history that goes on is returned
-// Truncated.
+// page) from below query.Before (from the newest signature when empty) down to
+// query.Until, the floor, or the end of the history, at most query.MaxPages pages, and
+// returns what it read newest first. Every call of one listing goes to one endpoint
+// (rpc.PinEndpoint): its finalized slot first (Head), then the pages, then the
+// evidence of the end. A page shorter than the limit ends a listing with Until (the
+// cursor is recent, every node holds it); without Until only an empty page does, and
+// then the endpoint's first available block (getFirstAvailableBlock) is LedgerStart:
+// a node that does not hold an old ledger answers short pages with no error, which
+// must never read as the start of the history.
 func (a *SolanaLive) AccountSignatures(ctx context.Context, account string, query chain.SignatureQuery) (chain.SignatureHistory, error) {
 	var history chain.SignatureHistory
 	if _, err := solana.PublicKeyFromBase58(strings.TrimSpace(account)); err != nil {
@@ -232,11 +273,13 @@ func (a *SolanaLive) AccountSignatures(ctx context.Context, account string, quer
 		return history, fmt.Errorf("sol signatures of %s: at least one page must be allowed", account)
 	}
 	pinned := rpc.PinEndpoint(ctx)
-	var newestFirst []chain.AccountSignature
-	before := ""
+	if err := a.rpc.Call(pinned, "getSlot", &history.Head, map[string]string{"commitment": solanaCommitmentFinalized}); err != nil {
+		return chain.SignatureHistory{}, fmt.Errorf("sol signatures of %s: head: %w", account, err)
+	}
+	before := query.Before
 	for page := 0; ; page++ {
 		if page == query.MaxPages {
-			history.Truncated = true
+			history.More = true
 			break
 		}
 		options := map[string]any{"commitment": solanaCommitmentFinalized, "limit": solanaSignaturePageLimit}
@@ -250,25 +293,28 @@ func (a *SolanaLive) AccountSignatures(ctx context.Context, account string, quer
 		if err := a.rpc.Call(pinned, "getSignaturesForAddress", &entries, account, options); err != nil {
 			return chain.SignatureHistory{}, fmt.Errorf("sol signatures of %s: %w", account, err)
 		}
-		floorReached := false
 		for _, entry := range entries {
 			if strings.TrimSpace(entry.Signature) == "" {
 				return chain.SignatureHistory{}, fmt.Errorf("sol signatures of %s: an entry has no signature", account)
 			}
 			if query.HasFloor && entry.Slot < query.FloorSlot {
-				floorReached = true
-				break
+				history.Ended, history.FloorCrossed = true, true
+				return history, nil
 			}
-			newestFirst = append(newestFirst, chain.AccountSignature{Signature: entry.Signature, Slot: entry.Slot, Failed: entry.Err != nil})
+			history.Signatures = append(history.Signatures, chain.AccountSignature{Signature: entry.Signature, Slot: entry.Slot, Failed: entry.Err != nil})
 		}
-		if floorReached || len(entries) < solanaSignaturePageLimit {
-			break
+		if query.Until != "" && len(entries) < solanaSignaturePageLimit {
+			history.Ended = true
+			return history, nil
+		}
+		if len(entries) == 0 {
+			if err := a.rpc.Call(pinned, "getFirstAvailableBlock", &history.LedgerStart); err != nil {
+				return chain.SignatureHistory{}, fmt.Errorf("sol signatures of %s: first available block: %w", account, err)
+			}
+			history.Ended = true
+			return history, nil
 		}
 		before = entries[len(entries)-1].Signature
-	}
-	history.Signatures = make([]chain.AccountSignature, len(newestFirst))
-	for i, signature := range newestFirst {
-		history.Signatures[len(newestFirst)-1-i] = signature
 	}
 	return history, nil
 }

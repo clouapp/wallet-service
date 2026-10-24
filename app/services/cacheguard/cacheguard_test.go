@@ -140,3 +140,43 @@ func TestAcquireHold_ReportsAnOutageInsteadOfContention(t *testing.T) {
 	assert.False(t, got)
 	require.ErrorIs(t, err, cacheguard.ErrUnavailable)
 }
+
+func TestAcquireHold_ReportsAHoldAnotherHolderTook(t *testing.T) {
+	cache := memcache.New()
+	hold, got, err := cacheguard.AcquireHold(cache, "lock:key", time.Minute)
+	require.NoError(t, err)
+	require.True(t, got)
+	assert.True(t, hold.Held())
+	select {
+	case <-hold.Lost():
+		t.Fatal("a kept hold is not lost")
+	default:
+	}
+
+	require.NoError(t, cache.Put("lock:key", "another-holder", time.Minute))
+
+	assert.False(t, hold.Held(), "the key holds another token")
+	select {
+	case <-hold.Lost():
+	default:
+		t.Fatal("a hold found lost closes Lost")
+	}
+	hold.Release()
+	assert.Equal(t, "another-holder", cache.GetString("lock:key"))
+}
+
+func TestAcquireHold_ARenewalThatFindsAnotherTokenClosesLost(t *testing.T) {
+	cache := memcache.New()
+	hold, got, err := cacheguard.AcquireHold(cache, "lock:key", 90*time.Millisecond)
+	require.NoError(t, err)
+	require.True(t, got)
+	require.NoError(t, cache.Put("lock:key", "another-holder", time.Minute))
+
+	select {
+	case <-hold.Lost():
+	case <-time.After(time.Second):
+		t.Fatal("the renewal must close Lost when another holder has the key")
+	}
+	hold.Release()
+	assert.Equal(t, "another-holder", cache.GetString("lock:key"))
+}

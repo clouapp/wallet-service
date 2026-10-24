@@ -43,12 +43,12 @@ func (s *Service) lockChain(chainID string) (func(), error) {
 	}, nil
 }
 
-// holdChain takes the chain's scan lock like lockChain, and renews it until released
-// (cacheguard.AcquireHold): a signature sync cycle that reads a long history keeps
-// the chain for as long as it runs, while a holder that died frees it within
-// scanLockTTL. It shares the key with lockChain, so it never runs beside a block scan
-// of the chain.
-func (s *Service) holdChain(chainID string) (func(), error) {
+// holdChain takes the chain's scan lock like lockChain, under an owner token, and
+// renews it until released (cacheguard.AcquireHold): a signature sync cycle that reads
+// a long history keeps the chain for as long as it runs, a holder that died frees it
+// within scanLockTTL, and a release never frees another holder's lock. It shares the
+// key with lockChain, so it never runs beside a block scan of the chain.
+func (s *Service) holdChain(chainID string) (*cacheguard.Hold, error) {
 	if s.cache == nil {
 		return nil, fmt.Errorf("deposit scan lock: cache is not configured")
 	}
@@ -59,5 +59,5 @@ func (s *Service) holdChain(chainID string) (func(), error) {
 	if !acquired {
 		return nil, ErrScanInProgress
 	}
-	return hold.Release, nil
+	return hold, nil
 }

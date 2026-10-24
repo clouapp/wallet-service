@@ -2,6 +2,7 @@ package scanactivity
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -25,6 +26,9 @@ func TestNew_Returns_NilForANilClientThatRecordsAndReadsNothing(t *testing.T) {
 	if err := store.RecordSignatureSync(ctx, "sol", deposit.SignatureSyncRecord{Accounts: 1}); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.RecordMode(ctx, "sol", deposit.ScanModeRecord{Mode: deposit.ScanModeSignatures}); err != nil {
+		t.Fatal(err)
+	}
 	if activity, err := store.ReadActivity(ctx, []string{"eth"}); err != nil || len(activity) != 0 {
 		t.Fatalf("activity %+v, err %v", activity, err)
 	}
@@ -41,7 +45,7 @@ func testChains(t *testing.T, names ...string) []string {
 	}
 	t.Cleanup(func() {
 		for _, chainID := range chains {
-			_ = client.Del(context.Background(), ScanKeyPrefix+chainID, PushKeyPrefix+chainID, SignatureKeyPrefix+chainID).Err()
+			_ = client.Del(context.Background(), ScanKeyPrefix+chainID, PushKeyPrefix+chainID, SignatureKeyPrefix+chainID, ModeKeyPrefix+chainID).Err()
 		}
 	})
 	return chains
@@ -169,7 +173,11 @@ func TestRecord_SignatureSync_ReadsBackBesideTheScanAndThePushWithATTL(t *testin
 	if err := store.RecordScan(ctx, sol, deposit.ScanRecord{Head: 1_000_000, Checkpoint: 775_000, At: scannedAt}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.RecordSignatureSync(ctx, sol, deposit.SignatureSyncRecord{Accounts: 36, FailedAccounts: 1, At: syncedAt}); err != nil {
+	if err := store.RecordSignatureSync(ctx, sol, deposit.SignatureSyncRecord{Accounts: 36, FailedAccounts: 1, BackfillingAccounts: 2,
+		SkippedMints: []string{"mint-a"}, Head: 1_000_400, CoveredHead: 1_000_100, At: syncedAt}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordMode(ctx, sol, deposit.ScanModeRecord{Mode: deposit.ScanModeSignatures, Since: scannedAt, At: syncedAt}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.RecordSignatureSync(ctx, tsol, deposit.SignatureSyncRecord{Accounts: 4, At: syncedAt}); err != nil {
@@ -184,16 +192,22 @@ func TestRecord_SignatureSync_ReadsBackBesideTheScanAndThePushWithATTL(t *testin
 		t.Fatalf("activity %+v, want sol and tsol only", activity)
 	}
 	solActivity := activity[sol]
+	wantSync := deposit.SignatureSyncRecord{Accounts: 36, FailedAccounts: 1, BackfillingAccounts: 2, SkippedMints: []string{"mint-a"},
+		Head: 1_000_400, CoveredHead: 1_000_100, At: syncedAt.UTC()}
 	if solActivity.Scan == nil || solActivity.Scan.Checkpoint != 775_000 || solActivity.Signatures == nil ||
-		*solActivity.Signatures != (deposit.SignatureSyncRecord{Accounts: 36, FailedAccounts: 1, At: syncedAt.UTC()}) || !solActivity.SignatureMode() {
-		t.Fatalf("sol %+v (signatures %+v), want both records and the sync's mode", solActivity, solActivity.Signatures)
+		!reflect.DeepEqual(*solActivity.Signatures, wantSync) || !solActivity.SignatureMode() ||
+		solActivity.Mode.Since != scannedAt || solActivity.Mode.At != syncedAt.UTC() {
+		t.Fatalf("sol %+v (signatures %+v, mode %+v), want the three records", solActivity, solActivity.Signatures, solActivity.Mode)
 	}
-	if tsolActivity := activity[tsol]; tsolActivity.Scan != nil || tsolActivity.Signatures == nil || tsolActivity.Signatures.Accounts != 4 {
-		t.Fatalf("tsol %+v, want its sync only", tsolActivity)
+	if tsolActivity := activity[tsol]; tsolActivity.Scan != nil || tsolActivity.Signatures == nil || tsolActivity.Signatures.Accounts != 4 ||
+		tsolActivity.SignatureMode() {
+		t.Fatalf("tsol %+v, want its sync only, and no signature mode without the scan's record of it", tsolActivity)
 	}
-	ttl, err := client.TTL(ctx, SignatureKeyPrefix+sol).Result()
-	if err != nil || ttl <= recordTTL-time.Minute || ttl > recordTTL {
-		t.Fatalf("signature sync ttl %s (err %v), want about %s", ttl, err, recordTTL)
+	for _, key := range []string{SignatureKeyPrefix + sol, ModeKeyPrefix + sol} {
+		ttl, ttlErr := client.TTL(ctx, key).Result()
+		if ttlErr != nil || ttl <= recordTTL-time.Minute || ttl > recordTTL {
+			t.Fatalf("%s ttl %s (err %v), want about %s", key, ttl, ttlErr, recordTTL)
+		}
 	}
 
 	if setErr := client.Set(ctx, SignatureKeyPrefix+eth, "not json", time.Minute).Err(); setErr != nil {

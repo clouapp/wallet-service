@@ -182,18 +182,25 @@ func (h *accountHistory) index(signature string) int {
 	return len(h.signatures)
 }
 
-func historyNode(t *testing.T, history *accountHistory) *methodNode {
+// historyNode keeps history and answers its pages, its finalized slot (head) and its
+// first available block (ledgerStart).
+func historyNode(t *testing.T, history *accountHistory, head, ledgerStart uint64) *methodNode {
 	return newMethodNode(t, func(req solanaRequest) string {
-		if req.Method != "getSignaturesForAddress" {
-			return `"error":{"code":-32601,"message":"Method not found"}`
+		switch req.Method {
+		case "getSlot":
+			return fmt.Sprintf(`"result":%d`, head)
+		case "getFirstAvailableBlock":
+			return fmt.Sprintf(`"result":%d`, ledgerStart)
+		case "getSignaturesForAddress":
+			return history.page(t, req)
 		}
-		return history.page(t, req)
+		return `"error":{"code":-32601,"message":"Method not found"}`
 	})
 }
 
-func TestSolana_AccountSignatures_PagesBackUntilTheCursorAndReturnsThemOldestFirst(t *testing.T) {
+func TestSolana_AccountSignatures_PagesBackUntilTheCursorNewestFirst(t *testing.T) {
 	history := newAccountHistory(2600, 9000)
-	node := historyNode(t, history)
+	node := historyNode(t, history, 9100, 0)
 	// sig-00399 is the newest signature already processed: the 2200 newer ones are new.
 	until := "sig-00399"
 
@@ -201,14 +208,17 @@ func TestSolana_AccountSignatures_PagesBackUntilTheCursorAndReturnsThemOldestFir
 
 	require.NoError(t, err)
 	require.Len(t, got.Signatures, 2200)
-	assert.False(t, got.Truncated)
-	assert.Equal(t, "sig-00400", got.Signatures[0].Signature, "oldest first, the cursor left out")
-	assert.Equal(t, "sig-02599", got.Signatures[2199].Signature)
+	assert.True(t, got.Ended, "a short page with the cursor reaches it")
+	assert.False(t, got.More)
+	assert.Equal(t, uint64(9100), got.Head, "the endpoint's finalized slot, read before the first page")
+	assert.Equal(t, "sig-02599", got.Signatures[0].Signature, "newest first")
+	assert.Equal(t, "sig-00400", got.Signatures[2199].Signature, "the cursor left out")
 	for i := 1; i < len(got.Signatures); i++ {
-		require.LessOrEqual(t, got.Signatures[i-1].Slot, got.Signatures[i].Slot, "slots never go back in the returned order")
+		require.GreaterOrEqual(t, got.Signatures[i-1].Slot, got.Signatures[i].Slot)
 	}
 	pages := node.calls("getSignaturesForAddress")
-	require.Len(t, pages, 3, "1000 + 1000 + 200: the short page ends the history")
+	require.Len(t, pages, 3, "1000 + 1000 + 200: the short page ends at the cursor")
+	assert.Empty(t, node.calls("getFirstAvailableBlock"), "a recent cursor needs no ledger evidence")
 	for i, page := range pages {
 		var account string
 		page.param(t, 0, &account)
@@ -224,32 +234,91 @@ func TestSolana_AccountSignatures_PagesBackUntilTheCursorAndReturnsThemOldestFir
 	}
 }
 
+func TestSolana_AccountSignatures_ContinuesBelowBefore(t *testing.T) {
+	history := newAccountHistory(1500, 9000)
+	node := historyNode(t, history, 9100, 0)
+
+	got, err := liveOn(node.server.URL).AccountSignatures(context.Background(), ataFixtureOwner,
+		chain.SignatureQuery{Before: "sig-00600", FloorSlot: 8500, HasFloor: true, MaxPages: 10})
+
+	require.NoError(t, err)
+	require.NotEmpty(t, got.Signatures)
+	assert.Equal(t, "sig-00599", got.Signatures[0].Signature, "the listing resumes right below before")
+	var options struct{ Before string }
+	node.calls("getSignaturesForAddress")[0].param(t, 1, &options)
+	assert.Equal(t, "sig-00600", options.Before)
+}
+
 func TestSolana_AccountSignatures_StopsAtTheFirstSignatureBelowTheFloor(t *testing.T) {
 	history := newAccountHistory(3000, 9000)
-	node := historyNode(t, history)
+	node := historyNode(t, history, 9100, 0)
 	// Two signatures per slot from 9000 down: slot 8250 holds sig-01499 and sig-01498,
 	// on the second page; slot 8249 is below the floor.
 	got, err := liveOn(node.server.URL).AccountSignatures(context.Background(), ataFixtureOwner,
 		chain.SignatureQuery{FloorSlot: 8250, HasFloor: true, MaxPages: 10})
 
 	require.NoError(t, err)
-	assert.False(t, got.Truncated)
-	require.Len(t, got.Signatures, 1502, "slots 8250 to 9000, the floor slot included")
-	assert.Equal(t, uint64(8250), got.Signatures[0].Slot)
+	assert.True(t, got.Ended)
+	assert.True(t, got.FloorCrossed, "the floor proves the end, whatever the endpoint's ledger")
+	require.Len(t, got.Signatures, 1502, "slots 9000 down to 8250, the floor slot included")
+	assert.Equal(t, uint64(8250), got.Signatures[1501].Slot)
 	assert.Len(t, node.calls("getSignaturesForAddress"), 2, "no page is read past the floor")
+	assert.Empty(t, node.calls("getFirstAvailableBlock"))
 }
 
 func TestSolana_AccountSignatures_CutsAHistoryLongerThanMaxPages(t *testing.T) {
 	history := newAccountHistory(2500, 9000)
-	node := historyNode(t, history)
+	node := historyNode(t, history, 9100, 0)
 
 	got, err := liveOn(node.server.URL).AccountSignatures(context.Background(), ataFixtureOwner, chain.SignatureQuery{MaxPages: 2})
 
 	require.NoError(t, err)
-	assert.True(t, got.Truncated, "500 older signatures were not read")
+	assert.True(t, got.More, "500 older signatures were not read")
+	assert.False(t, got.Ended)
 	require.Len(t, got.Signatures, 2000)
-	assert.Equal(t, "sig-00500", got.Signatures[0].Signature, "the newest pages are kept")
+	assert.Equal(t, "sig-00500", got.Signatures[1999].Signature, "the newest pages are kept")
 	assert.Len(t, node.calls("getSignaturesForAddress"), 2)
+}
+
+// A node that does not hold an old ledger (a non-archival node, or a failover to one)
+// answers a short page, with no error, where the history goes on: without the cursor
+// only an empty page ends a listing, and the endpoint's first available block says
+// how far down its ledger goes.
+func TestSolana_AccountSignatures_AShortPageWithoutTheCursorIsNoEndOfTheHistory(t *testing.T) {
+	pages := [][]string{{"sig-c", "sig-b"}, {"sig-a"}, {}}
+	var served int
+	var mu sync.Mutex
+	node := newMethodNode(t, func(req solanaRequest) string {
+		switch req.Method {
+		case "getSlot":
+			return `"result":9100`
+		case "getFirstAvailableBlock":
+			return `"result":512000000`
+		case "getSignaturesForAddress":
+			mu.Lock()
+			defer mu.Unlock()
+			page := pages[min(served, len(pages)-1)]
+			served++
+			entries := make([]string, len(page))
+			for i, signature := range page {
+				entries[i] = fmt.Sprintf(`{"signature":%q,"slot":%d,"err":null}`, signature, 9000-served)
+			}
+			return `"result":[` + strings.Join(entries, ",") + `]`
+		}
+		return `"error":{"code":-32601,"message":"Method not found"}`
+	})
+
+	got, err := liveOn(node.server.URL).AccountSignatures(context.Background(), ataFixtureOwner,
+		chain.SignatureQuery{FloorSlot: 100, HasFloor: true, MaxPages: 10})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"sig-c", "sig-b", "sig-a"}, []string{got.Signatures[0].Signature, got.Signatures[1].Signature, got.Signatures[2].Signature},
+		"the page after a short one is read")
+	assert.True(t, got.Ended, "an empty page ends the listing")
+	assert.False(t, got.FloorCrossed)
+	assert.Equal(t, uint64(512000000), got.LedgerStart, "the ledger of this endpoint starts far above the floor: nothing proves the history ends")
+	assert.Len(t, node.calls("getSignaturesForAddress"), 3)
+	assert.Len(t, node.calls("getFirstAvailableBlock"), 1)
 }
 
 func TestSolana_AccountSignatures_ReadsTheRecordedPageAndMarksFailedTransactions(t *testing.T) {
@@ -259,23 +328,42 @@ func TestSolana_AccountSignatures_ReadsTheRecordedPageAndMarksFailedTransactions
 	page[3]["err"] = map[string]any{"InstructionError": []any{0, map[string]any{"Custom": 6022}}}
 	body, err := json.Marshal(page)
 	require.NoError(t, err)
-	node := newMethodNode(t, func(solanaRequest) string { return `"result":` + string(body) })
+	node := newMethodNode(t, func(req solanaRequest) string {
+		switch req.Method {
+		case "getSlot":
+			return `"result":514240000`
+		case "getFirstAvailableBlock":
+			return `"result":0`
+		}
+		var options struct{ Before string }
+		req.param(t, 1, &options)
+		if options.Before != "" {
+			return `"result":[]`
+		}
+		return `"result":` + string(body)
+	})
 
-	got, err := liveOn(node.server.URL).AccountSignatures(context.Background(), ataFixtureOwner, chain.SignatureQuery{MaxPages: 1})
+	got, err := liveOn(node.server.URL).AccountSignatures(context.Background(), ataFixtureOwner, chain.SignatureQuery{MaxPages: 3})
 
 	require.NoError(t, err)
-	assert.False(t, got.Truncated, "a short page is the whole history")
+	assert.True(t, got.Ended)
+	assert.Zero(t, got.LedgerStart)
 	require.Len(t, got.Signatures, 10)
-	newest := got.Signatures[9]
+	newest := got.Signatures[0]
 	assert.Equal(t, "2yMCe5i8u3jpxnMr18chCCZxP3JDDbj2WJD4SzbpTjb7643q9Enfidtx12eJK8pHuiN11eHTqn69C7FE9kSVpt2o", newest.Signature)
 	assert.Equal(t, uint64(514235140), newest.Slot)
 	for i, signature := range got.Signatures {
-		assert.Equal(t, i == 6, signature.Failed, "only the entry with an err is a failed transaction (signature %d)", i)
+		assert.Equal(t, i == 3, signature.Failed, "only the entry with an err is a failed transaction (signature %d)", i)
 	}
 }
 
 func TestSolana_AccountSignatures_RefusesAMalformedQueryOrAnswer(t *testing.T) {
-	node := newMethodNode(t, func(solanaRequest) string { return `"result":[{"signature":"","slot":5,"err":null}]` })
+	node := newMethodNode(t, func(req solanaRequest) string {
+		if req.Method == "getSlot" {
+			return `"result":9100`
+		}
+		return `"result":[{"signature":"","slot":5,"err":null}]`
+	})
 	live := liveOn(node.server.URL)
 
 	_, err := live.AccountSignatures(context.Background(), "not a key", chain.SignatureQuery{MaxPages: 1})
@@ -283,12 +371,12 @@ func TestSolana_AccountSignatures_RefusesAMalformedQueryOrAnswer(t *testing.T) {
 	_, err = live.AccountSignatures(context.Background(), ataFixtureOwner, chain.SignatureQuery{})
 	assert.Error(t, err, "a query that allows no page reads nothing")
 	_, err = live.AccountSignatures(context.Background(), ataFixtureOwner, chain.SignatureQuery{MaxPages: 1})
-	assert.Error(t, err, "an entry without a signature is an error")
+	assert.ErrorContains(t, err, "no signature", "an entry without a signature is an error")
 }
 
 // A node that does not know the signature a page starts before answers an empty
-// page, which reads like the end of the history: every page of one account comes
-// from the endpoint that answered the first one, and its failure fails the history.
+// page, which ends a listing: every call of one account's listing goes to the
+// endpoint that answered the first one, and its failure fails the listing.
 func TestSolana_AccountSignatures_ReadsEveryPageOfAnAccountFromOneEndpoint(t *testing.T) {
 	history := newAccountHistory(1500, 9000)
 	var primaryPages int
@@ -297,6 +385,8 @@ func TestSolana_AccountSignatures_ReadsEveryPageOfAnAccountFromOneEndpoint(t *te
 		switch req.Method {
 		case "getGenesisHash":
 			return devnetGenesisResult
+		case "getSlot":
+			return `"result":9100`
 		case "getSignaturesForAddress":
 			mu.Lock()
 			defer mu.Unlock()
@@ -309,8 +399,13 @@ func TestSolana_AccountSignatures_ReadsEveryPageOfAnAccountFromOneEndpoint(t *te
 		return `"error":{"code":-32601,"message":"Method not found"}`
 	})
 	fallback := newMethodNode(t, func(req solanaRequest) string {
-		if req.Method == "getGenesisHash" {
+		switch req.Method {
+		case "getGenesisHash":
 			return devnetGenesisResult
+		case "getSlot":
+			return `"result":9100`
+		case "getFirstAvailableBlock":
+			return `"result":0`
 		}
 		return `"result":[]`
 	})
@@ -320,6 +415,7 @@ func TestSolana_AccountSignatures_ReadsEveryPageOfAnAccountFromOneEndpoint(t *te
 
 	require.Error(t, err, "the second page failed on the endpoint that served the first")
 	assert.Empty(t, fallback.calls("getSignaturesForAddress"), "no page comes from another endpoint")
+	assert.Empty(t, fallback.calls("getFirstAvailableBlock"))
 }
 
 // mintNode answers getAccountInfo for the recorded mints and getTokenAccountsByOwner
@@ -389,7 +485,8 @@ func TestSolana_SignatureAccounts_DerivesEachAssociatedAccountWithTheMintsProgra
 	got, err := live.SignatureAccounts(context.Background(), ataFixtureOwner)
 
 	require.NoError(t, err)
-	assert.Equal(t, []string{ataFixtureOwner, ataFixtureToken2022, ataFixtureUSDC, ataFixtureOtherAccount}, got,
+	assert.Empty(t, got.SkippedMints)
+	assert.Equal(t, []string{ataFixtureOwner, ataFixtureToken2022, ataFixtureUSDC, ataFixtureOtherAccount}, got.Accounts,
 		"the owner, the associated accounts by mint, then the held accounts of registered mints, once each")
 	tokenATA, _, err := solana.FindAssociatedTokenAddress(solana.MustPublicKeyFromBase58(ataFixtureOwner), solana.MustPublicKeyFromBase58(token2022FixtureMint))
 	require.NoError(t, err)
@@ -408,7 +505,7 @@ func TestSolana_SignatureAccounts_ListsOnlyTheProgramsOfTheRegisteredMints(t *te
 	got, err := liveOn(node.server.URL, devnetUSDC).SignatureAccounts(context.Background(), ataFixtureOwner)
 
 	require.NoError(t, err)
-	assert.Equal(t, []string{ataFixtureOwner, ataFixtureUSDC, ataFixtureOtherAccount}, got)
+	assert.Equal(t, []string{ataFixtureOwner, ataFixtureUSDC, ataFixtureOtherAccount}, got.Accounts)
 	calls := node.calls("getTokenAccountsByOwner")
 	require.Len(t, calls, 1)
 	var filter struct {
@@ -424,44 +521,81 @@ func TestSolana_SignatureAccounts_WithoutTokensIsTheOwnerAlone(t *testing.T) {
 	got, err := liveOn(node.server.URL).SignatureAccounts(context.Background(), ataFixtureOwner)
 
 	require.NoError(t, err)
-	assert.Equal(t, []string{ataFixtureOwner}, got)
+	assert.Equal(t, []string{ataFixtureOwner}, got.Accounts)
 	assert.Empty(t, node.requests, "no read is needed")
 }
 
-func TestSolana_SignatureAccounts_RefusesAMintItCannotPlace(t *testing.T) {
-	cases := map[string]struct {
-		mintAnswer string
-		reachable  bool
-	}{
-		"no such account":        {`"result":{"context":{"slot":1},"value":null}`, true},
-		"owned by a non-token":   {`"result":{"context":{"slot":1},"value":{"data":["","base64"],"owner":"11111111111111111111111111111111","lamports":1,"executable":false}}`, true},
-		"the read keeps failing": {"", false},
-	}
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			var reads int
-			var mu sync.Mutex
-			node := newMethodNode(t, func(req solanaRequest) string {
-				mu.Lock()
-				defer mu.Unlock()
-				if req.Method == "getAccountInfo" {
-					reads++
-					return tc.mintAnswer
-				}
-				return `"result":{"context":{"slot":1},"value":[]}`
-			})
-			live := liveOn(node.server.URL, devnetUSDC)
+// Mainnet USDC and USDT, registered on a devnet chain by mistake: devnet holds the
+// first as an account the System program owns and does not hold the second.
+const (
+	mainnetUSDCMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+	mainnetUSDTMint = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
+)
 
-			_, err := live.SignatureAccounts(context.Background(), ataFixtureOwner)
-			require.Error(t, err)
-			_, err = live.SignatureAccounts(context.Background(), ataFixtureOwner)
-			require.Error(t, err)
+func TestSolana_SignatureAccounts_SkipsAMintTheNodeDoesNotHoldAsATokenMintAndReadsTheOthers(t *testing.T) {
+	answers := map[string]string{
+		devnetUSDCMint:  fixtureResult(t, "getAccountInfo_mint_token.json"),
+		mainnetUSDCMint: `"result":{"context":{"slot":1},"value":{"data":["","base64"],"owner":"11111111111111111111111111111111","lamports":1,"executable":false,"space":0}}`,
+		mainnetUSDTMint: `"result":{"context":{"slot":1},"value":null}`,
+	}
+	reads := map[string]int{}
+	var mu sync.Mutex
+	node := newMethodNode(t, func(req solanaRequest) string {
+		switch req.Method {
+		case "getAccountInfo":
+			var mint string
+			req.param(t, 0, &mint)
+			mu.Lock()
+			reads[mint]++
+			mu.Unlock()
+			return answers[mint]
+		case "getTokenAccountsByOwner":
+			usdc := solana.MustPublicKeyFromBase58(devnetUSDCMint)
+			return fmt.Sprintf(`"result":{"context":{"slot":1},"value":[{"account":{"data":["%s","base64"]},"pubkey":"%s"}]}`,
+				base64.StdEncoding.EncodeToString(usdc[:]), ataFixtureOtherAccount)
+		}
+		return `"error":{"code":-32601,"message":"Method not found"}`
+	})
+	live := liveOn(node.server.URL, devnetUSDC,
+		types.Token{Symbol: "USDC-MAINNET", Contract: mainnetUSDCMint, Decimals: 6, ChainID: models.ChainSOL},
+		types.Token{Symbol: "USDT", Contract: mainnetUSDTMint, Decimals: 6, ChainID: models.ChainSOL})
+
+	for call := 0; call < 2; call++ {
+		got, err := live.SignatureAccounts(context.Background(), ataFixtureOwner)
+
+		require.NoError(t, err, "one bad registry row never stops the owner")
+		assert.Equal(t, []string{ataFixtureOwner, ataFixtureUSDC, ataFixtureOtherAccount}, got.Accounts, "the other mint is read")
+		assert.Equal(t, []string{mainnetUSDCMint, mainnetUSDTMint}, got.SkippedMints)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 1, reads[mainnetUSDCMint], "a mint the node does not hold is not asked about again at once")
+	assert.Equal(t, 1, reads[mainnetUSDTMint])
+	assert.Equal(t, 1, reads[devnetUSDCMint])
+}
+
+func TestSolana_SignatureAccounts_FailsWhileAMintCannotBeRead(t *testing.T) {
+	var reads int
+	var mu sync.Mutex
+	node := newMethodNode(t, func(req solanaRequest) string {
+		if req.Method == "getAccountInfo" {
 			mu.Lock()
 			defer mu.Unlock()
-			assert.GreaterOrEqual(t, reads, 2, "a mint that could not be placed is read again on the next call")
-			assert.Empty(t, node.calls("getTokenAccountsByOwner"))
-		})
-	}
+			reads++
+			return ""
+		}
+		return `"result":{"context":{"slot":1},"value":[]}`
+	})
+	live := liveOn(node.server.URL, devnetUSDC)
+
+	_, err := live.SignatureAccounts(context.Background(), ataFixtureOwner)
+	require.Error(t, err, "a node that does not answer proves nothing about the mint")
+	_, err = live.SignatureAccounts(context.Background(), ataFixtureOwner)
+	require.Error(t, err)
+	mu.Lock()
+	defer mu.Unlock()
+	assert.GreaterOrEqual(t, reads, 2, "a mint that could not be read is read again on the next call")
+	assert.Empty(t, node.calls("getTokenAccountsByOwner"))
 }
 
 func TestSolana_SignatureAccounts_RefusesAnOwnerThatIsNotAKeyAndATokenAccountWithoutItsMint(t *testing.T) {

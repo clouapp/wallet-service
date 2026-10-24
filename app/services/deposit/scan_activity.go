@@ -35,39 +35,78 @@ func (r ScanRecord) LagBlocks() uint64 {
 }
 
 // SignatureSyncRecord is one completed signature sync cycle of a chain: how many
-// accounts it read, how many of them failed, and when it ended.
+// accounts it read, how many of them failed, how many are still read back to their
+// floor (backfilling) or were left behind by the cycle's time budget, the registered
+// mints the node does not hold as token mints, the head it confirmed at, and when it
+// ended. CoveredHead is the slot every account was read up to by the last cycle that
+// read them all (carried from cycle to cycle, 0 until one did): the deposits to every
+// watched address up to it are recorded, which makes it the slot the block scan may
+// resume after.
 type SignatureSyncRecord struct {
-	Accounts       int
-	FailedAccounts int
-	At             time.Time
+	Accounts            int
+	FailedAccounts      int
+	BackfillingAccounts int
+	SkippedMints        []string
+	Head                uint64
+	CoveredHead         uint64
+	At                  time.Time
+}
+
+// LagBlocks is how far the head the last cycle confirmed at is past the slot every
+// account was last read up to; 0 while either is unknown. It grows only while cycles
+// leave accounts unread.
+func (r SignatureSyncRecord) LagBlocks() uint64 {
+	if r.CoveredHead == 0 || r.Head <= r.CoveredHead {
+		return 0
+	}
+	return r.Head - r.CoveredHead
+}
+
+// The detection modes of a chain the scan records (ScanModeRecord).
+const (
+	ScanModeBlocks     = "blocks"
+	ScanModeSignatures = "signatures"
+)
+
+// ScanModeRecord is how the scan of a chain reads its deposits now: ScanModeBlocks,
+// or ScanModeSignatures while deposit_signatures lists it (its block scan pauses).
+// The scan writes it on every cycle it starts, whether or not the cycle completes;
+// Since is when that mode began (as far as the writer saw), At when it was written.
+type ScanModeRecord struct {
+	Mode  string
+	Since time.Time
+	At    time.Time
 }
 
 // ChainActivity is what is known of a chain's deposit detection: its last
 // completed scan cycle (nil when none was recorded), its last completed signature
-// sync cycle (nil when none was) and when an inbound provider webhook for it was
-// last received (zero when none was).
+// sync cycle (nil when none was), its detection mode as its scan last recorded it
+// (nil when none did) and when an inbound provider webhook for it was last received
+// (zero when none was).
 type ChainActivity struct {
 	Scan       *ScanRecord
 	Signatures *SignatureSyncRecord
+	Mode       *ScanModeRecord
 	PushedAt   time.Time
 }
 
-// SignatureMode reports whether the chain's deposits are read by the signature sync
-// now: its last signature sync cycle is not older than its last block scan cycle (the
-// block scan records no cycle while the sync reads the chain, and records one again
-// as soon as it resumes).
+// SignatureMode reports whether the chain's scan last recorded that the signature
+// sync reads it: a one-off sync of a chain the block scan reads, or a sync record left
+// from before the chain left deposit_signatures, never does.
 func (a ChainActivity) SignatureMode() bool {
-	return a.Signatures != nil && (a.Scan == nil || !a.Signatures.At.Before(a.Scan.At))
+	return a.Mode != nil && a.Mode.Mode == ScanModeSignatures
 }
 
 // ScanActivityStore keeps, per chain, the last completed scan cycle (written by
 // the scanner, at scan time), the last completed signature sync cycle (written by
-// the sync) and the last provider push (written by the ingest), so the health check
-// and the tracker read them without asking the chain. It holds counts, heights and
+// the sync), the detection mode (written by the scan on each cycle it starts) and the
+// last provider push (written by the ingest), so the health check and the tracker
+// read them without asking the chain. It holds counts, heights, mint addresses and
 // times only. ReadActivity leaves out a chain with none of them.
 type ScanActivityStore interface {
 	RecordScan(ctx context.Context, chainID string, scan ScanRecord) error
 	RecordSignatureSync(ctx context.Context, chainID string, sync SignatureSyncRecord) error
+	RecordMode(ctx context.Context, chainID string, mode ScanModeRecord) error
 	ReadActivity(ctx context.Context, chainIDs []string) (map[string]ChainActivity, error)
 }
 
@@ -101,17 +140,65 @@ func (s *Service) recordScan(ctx context.Context, chainID string, head, checkpoi
 	}
 }
 
-// recordSignatureSync notes a completed signature sync cycle of chainID. A record
-// that fails is logged and never fails the cycle: its work is already saved.
+// recordSignatureSync notes a completed signature sync cycle of chainID, carrying the
+// covered head of the last cycle that read every account when this one did not. A
+// record that fails is logged and never fails the cycle: its work is already saved.
 func (s *Service) recordSignatureSync(ctx context.Context, chainID string, summary SignatureSyncSummary) {
 	if s.activity == nil {
 		return
 	}
-	recordCtx, cancel := context.WithTimeout(ctx, scanActivityWriteTimeout)
+	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), scanActivityWriteTimeout)
 	defer cancel()
-	record := SignatureSyncRecord{Accounts: summary.Accounts, FailedAccounts: summary.FailedAccounts, At: s.now().UTC()}
+	record := SignatureSyncRecord{Accounts: summary.Accounts, FailedAccounts: summary.FailedAccounts,
+		BackfillingAccounts: summary.BackfillingAccounts, SkippedMints: summary.SkippedMints,
+		Head: summary.Head, CoveredHead: summary.CoveredHead, At: s.now().UTC()}
+	if record.CoveredHead == 0 {
+		if previous, err := s.chainActivity(recordCtx, chainID); err == nil && previous.Signatures != nil {
+			record.CoveredHead = previous.Signatures.CoveredHead
+		}
+	}
 	if err := s.activity.RecordSignatureSync(recordCtx, chainID, record); err != nil {
 		slog.Warn("deposit signature sync activity not recorded", "chain", chainID, "accounts", record.Accounts, "failed_accounts", record.FailedAccounts, "error", err)
+	}
+}
+
+// chainActivity reads one chain's activity, bounded like the health check's reading.
+func (s *Service) chainActivity(ctx context.Context, chainID string) (ChainActivity, error) {
+	if s.activity == nil {
+		return ChainActivity{}, nil
+	}
+	readCtx, cancel := context.WithTimeout(ctx, pendingHealthTimeout)
+	defer cancel()
+	activity, err := s.activity.ReadActivity(readCtx, []string{chainID})
+	if err != nil {
+		return ChainActivity{}, err
+	}
+	return activity[chainID], nil
+}
+
+// modeRefreshEvery is how often an unchanged detection mode is written again, so its
+// record never expires while the scan runs.
+const modeRefreshEvery = time.Hour
+
+// noteScanMode records that chainID's scan reads its deposits in mode, unless the
+// record read before (previous) says so already and was written within
+// modeRefreshEvery. A record that fails is logged; the cycle goes on.
+func (s *Service) noteScanMode(ctx context.Context, chainID, mode string, previous *ScanModeRecord) {
+	if s.activity == nil {
+		return
+	}
+	now := s.now().UTC()
+	if previous != nil && previous.Mode == mode && now.Sub(previous.At) < modeRefreshEvery {
+		return
+	}
+	record := ScanModeRecord{Mode: mode, Since: now, At: now}
+	if previous != nil && previous.Mode == mode && !previous.Since.IsZero() {
+		record.Since = previous.Since
+	}
+	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), scanActivityWriteTimeout)
+	defer cancel()
+	if err := s.activity.RecordMode(recordCtx, chainID, record); err != nil {
+		slog.Warn("deposit scan mode not recorded", "chain", chainID, "mode", mode, "error", err)
 	}
 }
 

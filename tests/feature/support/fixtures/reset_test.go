@@ -87,13 +87,16 @@ func TestTestDB_ForgetsTheScanActivityARunLeft(t *testing.T) {
 		if err := store.RecordSignatureSync(ctx, "tsol", deposit.SignatureSyncRecord{Accounts: 36, At: time.Now()}); err != nil {
 			t.Fatal(err)
 		}
+		if err := store.RecordMode(ctx, "btc", deposit.ScanModeRecord{Mode: deposit.ScanModeBlocks, At: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
 		if _, err := store.RaiseAlert(ctx, "scan-lag:eth", time.Hour); err != nil {
 			t.Fatal(err)
 		}
 	})
 
 	fixtures.TestDB(t)
-	activity, err := store.ReadActivity(ctx, []string{"eth", "sol", "tsol"})
+	activity, err := store.ReadActivity(ctx, []string{"eth", "sol", "tsol", "btc"})
 	if err != nil || len(activity) != 0 {
 		t.Fatalf("activity after the reset %+v (err %v), want none", activity, err)
 	}

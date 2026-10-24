@@ -77,6 +77,21 @@ func (s *DepositSignatureCursorRepositoryTestSuite) TestAdvance_MovesForwardAndK
 	s.Equal("sig-c", s.cursorsOf(models.ChainTSOL)[cursorOwner].Signature, "a later signature of the same slot moves the cursor")
 }
 
+func (s *DepositSignatureCursorRepositoryTestSuite) TestAdvance_MovesTheBackfillDownAndACoveredAccountStaysCovered() {
+	ctx := context.Background()
+	s.Require().NoError(s.repo.Advance(ctx, models.DepositSignatureCursor{Chain: models.ChainTSOL, Account: cursorOwner,
+		Signature: "sig-top", Slot: 200, BackfillBefore: "sig-150", SyncedFromSlot: 100}))
+	s.Require().NoError(s.repo.Advance(ctx, models.DepositSignatureCursor{Chain: models.ChainTSOL, Account: cursorOwner,
+		Signature: "sig-top", Slot: 200, BackfillBefore: "sig-101", SyncedFromSlot: 100, Covered: true}))
+	s.Require().NoError(s.repo.Advance(ctx, models.DepositSignatureCursor{Chain: models.ChainTSOL, Account: cursorOwner,
+		Signature: "sig-new", Slot: 210, BackfillBefore: "sig-101", SyncedFromSlot: 100}))
+
+	row := s.cursorsOf(models.ChainTSOL)[cursorOwner]
+	s.Equal("sig-new", row.Signature)
+	s.Equal("sig-101", row.BackfillBefore, "the backfill moves down with the same newest signature")
+	s.True(row.Covered, "an account read down to its floor stays so")
+}
+
 func (s *DepositSignatureCursorRepositoryTestSuite) TestAdvance_Never_MovesACursorBack() {
 	ctx := context.Background()
 	s.Require().NoError(s.repo.Advance(ctx, models.DepositSignatureCursor{Chain: models.ChainTSOL, Account: cursorOwner, Signature: "sig-new", Slot: 500}))

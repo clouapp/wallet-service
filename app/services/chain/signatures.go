@@ -15,13 +15,15 @@ import (
 // the block hash of a slot that credits a watched address.
 type SignatureReader interface {
 	BlockHashReader
-	// SignatureAccounts returns, without repeats, the accounts whose transactions
-	// carry the deposits of owner: owner itself, its associated token account of
-	// each registered token, and every token account of a registered token that it
-	// owns.
-	SignatureAccounts(ctx context.Context, owner string) ([]string, error)
-	// AccountSignatures returns the finalized signatures of account that query
-	// selects, oldest first, failed transactions included and marked.
+	// SignatureAccounts returns the accounts whose transactions carry the deposits of
+	// owner: owner itself, its associated token account of each registered token, and
+	// every token account of a registered token that it owns, without repeats. A
+	// registered token the node does not hold as a token mint is left out and named
+	// in SkippedMints; a read that fails is an error.
+	SignatureAccounts(ctx context.Context, owner string) (SignatureAccounts, error)
+	// AccountSignatures lists, newest first, the finalized signatures of account that
+	// query selects, failed transactions included and marked, every page from one
+	// endpoint, with what that endpoint says of the end of the history.
 	AccountSignatures(ctx context.Context, account string, query SignatureQuery) (SignatureHistory, error)
 	// TransactionTransfers returns the credits of one finalized transaction, in the
 	// order and at the positions the block scan reports them, with the transaction's
@@ -29,13 +31,21 @@ type SignatureReader interface {
 	TransactionTransfers(ctx context.Context, signature string) (TransactionTransfers, error)
 }
 
-// SignatureQuery selects the signatures of one account, newest first on the node,
-// page by page. Until is the newest signature already processed (it and the older
-// ones are left out; empty for none). With HasFloor, the history stops before the
-// first signature below FloorSlot. MaxPages bounds how many pages are read: a history
-// that goes on past it is returned cut (SignatureHistory.Truncated).
+// SignatureAccounts is the accounts of one owner, and the registered mints left out
+// because the node does not hold them as token mints (a mint of another network, a
+// mistyped row): their deposits cannot be read until the registry is fixed.
+type SignatureAccounts struct {
+	Accounts     []string
+	SkippedMints []string
+}
+
+// SignatureQuery selects part of the history of one account, read newest first, page
+// by page: below Before (from the newest signature when empty) and above Until (both
+// left out; empty for none). With HasFloor, the listing stops at the first signature
+// below FloorSlot. MaxPages pages are read at most.
 type SignatureQuery struct {
 	Until     string
+	Before    string
 	FloorSlot uint64
 	HasFloor  bool
 	MaxPages  int
@@ -49,12 +59,20 @@ type AccountSignature struct {
 	Failed    bool
 }
 
-// SignatureHistory is the signatures a SignatureQuery selected, oldest first.
-// Truncated means MaxPages was reached before the history ended (or reached the
-// floor): older signatures were not read.
+// SignatureHistory is what one SignatureQuery listed, newest first, from one endpoint.
+// Head is that endpoint's finalized slot, read before the first page: a listing that
+// ended holds every signature of the selected range up to it. More is a listing cut
+// by MaxPages. Ended is a listing that reached the end of the range: Until (a short
+// page), the floor (FloorCrossed: a signature below it was seen), or, without
+// either, an empty page, with LedgerStart the endpoint's first available block: only
+// a ledger that starts at or below the floor proves there is nothing older to read.
 type SignatureHistory struct {
-	Signatures []AccountSignature
-	Truncated  bool
+	Signatures   []AccountSignature
+	Head         uint64
+	More         bool
+	Ended        bool
+	FloorCrossed bool
+	LedgerStart  uint64
 }
 
 // TransactionTransfers is the credits of one finalized transaction and its slot.

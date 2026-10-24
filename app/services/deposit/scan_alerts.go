@@ -26,6 +26,8 @@ const (
 	signatureStaleClearedMessage  = "deposit signature sync completes its cycles again"
 	signatureFailedMessage        = "deposit signature sync left accounts failed"
 	signatureFailedClearedMessage = "deposit signature sync reads every account again"
+	signatureMintsMessage         = "deposit signature sync skips registered tokens the chain's node does not hold as token mints"
+	signatureMintsClearedMessage  = "deposit signature sync reads every registered token again"
 )
 
 // AlertTransition is what raising an alert did: raised it, reminded of it (it was
@@ -147,7 +149,7 @@ func (s *Service) warnScanActivity(ctx context.Context) map[string]bool {
 	for _, chainID := range sortedChains(activity) {
 		if activity[chainID].SignatureMode() {
 			scanned[chainID] = true
-			s.warnSignatureSync(ctx, chainID, *activity[chainID].Signatures, now)
+			s.warnSignatureSync(ctx, chainID, activity[chainID], now)
 			continue
 		}
 		s.clearSignatureAlerts(ctx, chainID)
@@ -179,16 +181,26 @@ func (s *Service) warnScanActivity(ctx context.Context) map[string]bool {
 	return scanned
 }
 
-// warnSignatureSync alerts on a chain whose deposits the signature sync reads: its
-// last completed cycle ended longer ago than its stale threshold plus the sync's
-// interval (the sync stopped, or every cycle fails), or left accounts failed (their
-// deposits wait for a later cycle). Its block scan records no cycle meanwhile, so
-// that scan's alerts are cleared rather than raised forever.
-func (s *Service) warnSignatureSync(ctx context.Context, chainID string, sync SignatureSyncRecord, now time.Time) {
+// warnSignatureSync alerts on a chain whose scan last recorded that the signature
+// sync reads it: its last completed sync cycle (or, without one since, the start of
+// that mode) ended longer ago than its stale threshold plus the sync's interval (the
+// sync stopped, or every cycle fails), the cycle left accounts failed (their deposits
+// wait for a later cycle), or it skipped registered tokens the node does not hold as
+// token mints. Its block scan records no cycle meanwhile, so that scan's alerts are
+// cleared rather than raised forever.
+func (s *Service) warnSignatureSync(ctx context.Context, chainID string, activity ChainActivity, now time.Time) {
 	thresholds := s.scanAlertThresholdsFor(ctx, chainID)
 	staleAfter := thresholds.StaleAfter + s.SignatureSettings(ctx).Interval
-	lastSyncedAt := sync.At.UTC().Format(time.RFC3339)
-	age := now.Sub(sync.At)
+	var sync SignatureSyncRecord
+	last := activity.Mode.Since
+	if activity.Signatures != nil {
+		sync = *activity.Signatures
+		if sync.At.After(last) {
+			last = sync.At
+		}
+	}
+	lastSyncedAt := last.UTC().Format(time.RFC3339)
+	age := now.Sub(last)
 	s.alert(ctx, "signature-stale:"+chainID, age > staleAfter, func(reminder bool) {
 		slog.Warn(signatureStaleMessage,
 			"chain", chainID, "minutes_since_sync", int(age/time.Minute), "threshold_minutes", int(staleAfter/time.Minute),
@@ -203,6 +215,13 @@ func (s *Service) warnSignatureSync(ctx context.Context, chainID string, sync Si
 			"reminder", reminder, "remind_every_minutes", int(scanAlertReminder/time.Minute))
 	}, func() {
 		slog.Info(signatureFailedClearedMessage, "chain", chainID, "accounts", sync.Accounts)
+	})
+	s.alert(ctx, "signature-mints:"+chainID, len(sync.SkippedMints) > 0, func(reminder bool) {
+		slog.Warn(signatureMintsMessage,
+			"chain", chainID, "mints", sync.SkippedMints, "hint", "fix the chain's token registry (chains:align-tokens)",
+			"reminder", reminder, "remind_every_minutes", int(scanAlertReminder/time.Minute))
+	}, func() {
+		slog.Info(signatureMintsClearedMessage, "chain", chainID)
 	})
 	quiet := func(bool) {}
 	s.alert(ctx, "scan-lag:"+chainID, false, quiet, func() {
@@ -222,6 +241,9 @@ func (s *Service) clearSignatureAlerts(ctx context.Context, chainID string) {
 	})
 	s.alert(ctx, "signature-failed:"+chainID, false, quiet, func() {
 		slog.Info(signatureFailedClearedMessage, "chain", chainID, "reason", "the block scan reads the chain")
+	})
+	s.alert(ctx, "signature-mints:"+chainID, false, quiet, func() {
+		slog.Info(signatureMintsClearedMessage, "chain", chainID, "reason", "the block scan reads the chain")
 	})
 }
 

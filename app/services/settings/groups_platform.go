@@ -11,9 +11,17 @@ import (
 	"github.com/macrowallets/waas/app/policies"
 )
 
+// GroupDepositSignatures is the deposit signature sync's platform group, and
+// KeySignatureChains its chain list, which the composition root shows with its
+// environment value while no row stores it (PlatformFallback).
+const (
+	GroupDepositSignatures = "deposit_signatures"
+	KeySignatureChains     = "chains"
+)
+
 const (
 	groupDepositScan        = "deposit_scan"
-	groupDepositSignatures  = "deposit_signatures"
+	groupDepositSignatures  = GroupDepositSignatures
 	groupWebhookDelivery    = "webhook_delivery"
 	groupSweepLimits        = "sweep_limits"
 	groupMailSMTP           = "mail_smtp"
@@ -41,7 +49,7 @@ const (
 	keyMaxAttempts     = "max_attempts"
 	keyTimeoutSeconds  = "timeout_seconds"
 
-	keySignatureChains      = "chains"
+	keySignatureChains      = KeySignatureChains
 	keySignatureInterval    = "interval_seconds"
 	keySignatureConcurrency = "concurrency"
 	keySignatureMaxPages    = "max_pages"

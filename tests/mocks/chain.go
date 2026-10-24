@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/macrowallets/waas/pkg/types"
@@ -62,6 +63,8 @@ type MockChain struct {
 	BuildSweepCalls              int
 	FinalizedBlockCalls          int
 	SolidifiedBlockCalls         int
+
+	scanBlockMu sync.Mutex
 }
 
 func NewMockChain(id string) *MockChain {
@@ -158,7 +161,10 @@ func (m *MockChain) GetLatestBlock(ctx context.Context) (uint64, error) {
 }
 
 func (m *MockChain) ScanBlock(ctx context.Context, blockNum uint64) ([]types.DetectedTransfer, error) {
+	// The block scan fetches blocks concurrently.
+	m.scanBlockMu.Lock()
 	m.ScanBlockCalls++
+	m.scanBlockMu.Unlock()
 	if m.ScanBlockFn != nil {
 		return m.ScanBlockFn(ctx, blockNum)
 	}

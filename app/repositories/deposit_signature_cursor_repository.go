@@ -38,10 +38,10 @@ func (r *DepositSignatureCursorRepository) FindByChain(ctx context.Context, chai
 }
 
 // Advance stores cursor, creating the account's row on its first call. An existing
-// row moves to the cursor's signature and slot only when that slot is not behind
-// the stored one, so a slower sync never rewinds an account, and it keeps the slot
-// its history was first read from. A blank chain or account, or a negative slot, is
-// refused.
+// row moves to the cursor's signature, slot and backfill position only when that
+// slot is not behind the stored one, so a slower sync never rewinds an account; it
+// keeps the floor its history was first read down to, and once covered it stays
+// covered. A blank chain or account, or a negative slot, is refused.
 func (r *DepositSignatureCursorRepository) Advance(ctx context.Context, cursor models.DepositSignatureCursor) error {
 	if strings.TrimSpace(cursor.Chain) == "" || strings.TrimSpace(cursor.Account) == "" {
 		return fmt.Errorf("advance deposit signature cursor: chain and account are required")
@@ -50,12 +50,13 @@ func (r *DepositSignatureCursorRepository) Advance(ctx context.Context, cursor m
 		return fmt.Errorf("advance deposit signature cursor: slots must not be negative")
 	}
 	if _, err := r.Query(ctx).Exec(
-		`INSERT INTO deposit_signature_cursors (chain, account, signature, slot, synced_from_slot, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, NOW(), NOW())
+		`INSERT INTO deposit_signature_cursors (chain, account, signature, slot, backfill_before, synced_from_slot, covered, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 		 ON CONFLICT (chain, account) DO UPDATE
-		 SET signature = EXCLUDED.signature, slot = EXCLUDED.slot, updated_at = NOW()
+		 SET signature = EXCLUDED.signature, slot = EXCLUDED.slot, backfill_before = EXCLUDED.backfill_before,
+		     covered = deposit_signature_cursors.covered OR EXCLUDED.covered, updated_at = NOW()
 		 WHERE deposit_signature_cursors.slot <= EXCLUDED.slot`,
-		cursor.Chain, cursor.Account, cursor.Signature, cursor.Slot, cursor.SyncedFromSlot,
+		cursor.Chain, cursor.Account, cursor.Signature, cursor.Slot, cursor.BackfillBefore, cursor.SyncedFromSlot, cursor.Covered,
 	); err != nil {
 		return fmt.Errorf("advance deposit signature cursor: %w", err)
 	}

@@ -193,3 +193,46 @@ func TestNew_DurableStore_NeedsABackend(t *testing.T) {
 		t.Fatal("expected an error without any backend")
 	}
 }
+
+// downStore is a backend that fails every call.
+type downStore struct{}
+
+func (downStore) Put(context.Context, Entry) error              { return errors.New("redis down") }
+func (downStore) Delete(context.Context, string, uint64) error  { return errors.New("redis down") }
+func (downStore) List(context.Context, string) ([]Entry, error) { return nil, errors.New("redis down") }
+
+func TestDurable_Store_ListCompleteRefusesADegradedReadingThatListKeeps(t *testing.T) {
+	ctx := context.Background()
+	file, openErr := NewFileStore(FileStoreDeps{Dir: t.TempDir()})
+	if openErr != nil {
+		t.Fatal(openErr)
+	}
+	if putErr := file.Put(ctx, sampleEntry(7, 1, time.Now().UTC())); putErr != nil {
+		t.Fatal(putErr)
+	}
+	store, storeErr := NewDurableStore(DurableStoreDeps{Redis: downStore{}, File: file})
+	if storeErr != nil {
+		t.Fatal(storeErr)
+	}
+
+	if entries, listErr := store.List(ctx, testChain); listErr != nil || len(entries) != 1 {
+		t.Fatalf("List keeps the backend that answered: %+v, %v", entries, listErr)
+	}
+	if _, completeErr := store.ListComplete(ctx, testChain); completeErr == nil {
+		t.Fatal("a reading that missed a backend must fail ListComplete: its entries could hold the lowest pending block")
+	}
+	if _, completeErr := ListComplete(ctx, store, testChain); completeErr == nil {
+		t.Fatal("ListComplete goes through the store's own")
+	}
+	if entries, completeErr := ListComplete(ctx, file, testChain); completeErr != nil || len(entries) != 1 {
+		t.Fatalf("a store of one backend lists as it does: %+v, %v", entries, completeErr)
+	}
+
+	whole, err := NewDurableStore(DurableStoreDeps{File: file})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entries, err := whole.ListComplete(ctx, testChain); err != nil || len(entries) != 1 {
+		t.Fatalf("every backend answered: %+v, %v", entries, err)
+	}
+}

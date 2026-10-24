@@ -151,3 +151,52 @@ func TestSave_Deposit_SignaturesIsNotAnAccountGroup(t *testing.T) {
 	)
 	require.ErrorIs(t, err, ErrGroupNotFound)
 }
+
+// While no row stores the chains, the platform views show the environment's list: a
+// form that sends the whole group back (to change the interval) stores the chains in
+// effect, and never turns off a chain DEPOSIT_SIGNATURE_CHAINS lists by accident.
+func TestPlatform_DepositSignaturesViewShowsTheEnvironmentChainsSoAWholeGroupSaveKeepsThem(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	actor := uuid.New()
+	fallback := func(group, key string) (any, bool) {
+		if group == GroupDepositSignatures && key == KeySignatureChains {
+			return []string{models.ChainSOL}, true
+		}
+		return nil, false
+	}
+	service := NewService(Deps{Store: store, Sealer: prefixSealer{}, Cache: &memoryCache{}, Activity: &recordingActivity{}, Fallback: fallback}).
+		WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}})
+	ctx := context.Background()
+
+	view, err := service.PlatformGroup(ctx, actor, groupDepositSignatures)
+	require.NoError(t, err)
+	body := map[string]any{}
+	for _, field := range view.Fields {
+		if field.Key == keySignatureChains {
+			assert.False(t, field.IsSet)
+			assert.Equal(t, []string{models.ChainSOL}, field.Value, "the chains in effect, from the environment")
+		}
+		body[field.Key] = field.Value
+	}
+	body[keySignatureInterval] = 900
+
+	_, err = service.SavePlatform(ctx, actor, groupDepositSignatures, body)
+	require.NoError(t, err)
+	got, err := service.EffectiveDepositSignatures(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, DepositSignatureValues{Chains: []string{models.ChainSOL}, ChainsStored: true, IntervalSeconds: 900}, got,
+		"the resubmitted form keeps the chain the environment listed")
+
+	view, err = service.PlatformGroup(ctx, actor, groupDepositSignatures)
+	require.NoError(t, err)
+	for _, field := range view.Fields {
+		if field.Key == keySignatureChains {
+			assert.True(t, field.IsSet, "a stored row is shown as stored")
+		}
+		if field.Key == keySignatureConcurrency {
+			assert.Equal(t, 0, field.Value, "a field without an environment fallback keeps its default")
+		}
+	}
+}

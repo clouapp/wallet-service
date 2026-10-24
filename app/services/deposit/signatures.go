@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
+	"slices"
 	"sync"
+	"time"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/cacheguard"
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/deposit/pending"
 	"github.com/macrowallets/waas/pkg/types"
@@ -21,18 +23,25 @@ var (
 	// ErrSignatureMode means the chain's deposits are read by the signature sync, so
 	// its block scan does not run.
 	ErrSignatureMode = errors.New("deposit: the chain is in signature mode, its block scan is paused")
+	// ErrScanLockLost means a signature sync cycle lost the chain's scan lock (another
+	// process took it, or the cache could not be read or written): it stopped, its
+	// progress saved, without confirming or dropping anything.
+	ErrScanLockLost = errors.New("deposit: the signature sync lost the chain's scan lock")
 
 	errNoSignatureCursorStore = errors.New("deposit: no signature cursor store configured")
 )
 
-// signatureHistoryPageCeiling bounds, in pages of 1000 signatures, the history of an
-// account read back to its cursor or to the floor. A history longer than that is
-// never cut there: older signatures could hold deposits the sync would skip for
-// good, so the account fails instead and keeps its cursor.
-const signatureHistoryPageCeiling = 100
+const (
+	// signatureCycleBudget is how long one cycle reads and records signatures: an
+	// account started after it waits for the next cycle, one in progress stops at
+	// its next signature, its cursor saved.
+	signatureCycleBudget = 8 * time.Minute
+	// signatureAccountBudget is how long one account reads and records in a cycle.
+	signatureAccountBudget = 3 * time.Minute
+)
 
-// SignatureCursorStore keeps where the signature sync of each account of a chain
-// resumes; Advance never moves a cursor back.
+// SignatureCursorStore keeps how far the signature sync of each account of a chain
+// got; Advance never moves a cursor back.
 type SignatureCursorStore interface {
 	FindByChain(ctx context.Context, chainID string) ([]models.DepositSignatureCursor, error)
 	Advance(ctx context.Context, cursor models.DepositSignatureCursor) error
@@ -40,33 +49,46 @@ type SignatureCursorStore interface {
 
 // SignatureSyncSummary is what one SyncSignatures cycle did: the accounts it read
 // (an owner whose accounts could not be listed counts as one, failed), the
-// signatures newer than their cursors, the deposits it recorded, the accounts that
-// failed (their cursor stays before the failure, so the next cycle reads them
-// again) and the pending blocks it found covered. Skipped is a cycle that found
-// another scan holding the chain and did nothing.
+// signatures it read, the deposits it recorded, the accounts that failed (their
+// cursor stays before the failure, so the next cycle reads them again), those not
+// read down to their floor yet or left behind by the cycle's budget (backfilling:
+// the next cycle goes on), the registered mints the node does not hold as token
+// mints, and the pending blocks it found covered. CoveredHead is the slot every
+// account was read up to when this cycle read them all (0 otherwise); Head the slot
+// it confirmed at. Skipped is a cycle that found another scan holding the chain and
+// did nothing.
 type SignatureSyncSummary struct {
-	Accounts        int
-	NewSignatures   int
-	Deposits        int
-	FailedAccounts  int
-	ResolvedPending int
-	Skipped         bool
+	Accounts            int
+	NewSignatures       int
+	Deposits            int
+	FailedAccounts      int
+	BackfillingAccounts int
+	SkippedMints        []string
+	ResolvedPending     int
+	CoveredHead         uint64
+	Head                uint64
+	Skipped             bool
 }
 
-// SyncSignatures records the deposits of chainID read account by account: for
-// every watched address, its accounts (chain.SignatureReader.SignatureAccounts), the
-// signatures of each account since its cursor, oldest first, and the credits of
-// each successful transaction, recorded through the scanner's path
-// (recordTransfers: the watched-address check, internal transfers left out,
-// depositrecord's one row per transfer), so a deposit the block scan or the provider
-// push also saw is one row. An account's cursor moves past a signature only once its
-// transfers are all recorded. An account without a cursor is read back to the
-// floor: the chain's scan checkpoint, or its lowest pending block when lower, which
-// recovers what the block scan left; a chain without either reads at most MaxPages
-// of each history. When every account was read, the pending blocks the histories
-// cover are dropped. The chain's confirmation step then runs at the head. The cycle
-// holds the chain's scan lock, renewed while it runs (another scan holding it skips
-// the cycle: Skipped, no error); the balances are refreshed after it is released.
+// SyncSignatures records the deposits of chainID read account by account: for every
+// watched address, its accounts (chain.SignatureReader.SignatureAccounts), the new
+// signatures of each account above its cursor (oldest first), and, until the account
+// is read down to its floor, its older history (newest first, at most a few pages a
+// cycle, so a long history is read over several cycles). The floor of an account
+// first seen is the chain's scan checkpoint lowered to its lowest pending block,
+// which recovers what the block scan left; a chain with neither reads at most
+// MaxPages of each history. The credits of each successful transaction are recorded
+// through the scanner's path (recordTransfers: the watched-address check, internal
+// transfers left out, depositrecord's one row per transfer), so a deposit the block
+// scan or the provider push also saw is one row. An account's cursor moves past a
+// signature only once its transfers are all recorded, and is saved as it goes, with a
+// context of its own, so a cycle cut short (a deadline, a shutdown) keeps what it
+// recorded. When every account was read up to now, the pending blocks the histories
+// cover are dropped and the slot they were read up to is recorded (the block scan
+// resumes after it). The chain's confirmation step then runs at the head. The cycle
+// holds the chain's scan lock, renewed while it runs; another scan holding it skips
+// the cycle (Skipped, no error), and a lock lost on the way stops it
+// (ErrScanLockLost). The balances are refreshed once the lock is released.
 func (s *Service) SyncSignatures(ctx context.Context, chainID string) (SignatureSyncSummary, error) {
 	adapter, err := s.registry.Chain(chainID)
 	if err != nil {
@@ -80,7 +102,7 @@ func (s *Service) SyncSignatures(ctx context.Context, chainID string) (Signature
 		return SignatureSyncSummary{}, errNoSignatureCursorStore
 	}
 	settings := s.SignatureSettings(ctx)
-	release, err := s.holdChain(chainID)
+	hold, err := s.holdChain(chainID)
 	if errors.Is(err, ErrScanInProgress) {
 		slog.Info("deposit signature sync skipped, another scan holds the chain", "chain", chainID)
 		return SignatureSyncSummary{Skipped: true}, nil
@@ -88,24 +110,58 @@ func (s *Service) SyncSignatures(ctx context.Context, chainID string) (Signature
 	if err != nil {
 		return SignatureSyncSummary{}, err
 	}
+	cycleCtx, stop := context.WithCancel(ctx)
+	go func() {
+		select {
+		case <-hold.Lost():
+			stop()
+		case <-cycleCtx.Done():
+		}
+	}()
 	confirmed := newWalletSet()
-	summary, err := s.syncSignatures(ctx, chainID, adapter, reader, settings, confirmed)
-	release()
+	summary, err := s.syncSignatures(cycleCtx, chainID, adapter, reader, settings, hold, confirmed)
+	stop()
+	hold.Release()
 	s.refreshBalances(ctx, confirmed.ids)
 	if err != nil {
 		return summary, err
 	}
 	s.recordSignatureSync(ctx, chainID, summary)
 	slog.Info("deposit signature sync complete", "chain", chainID, "accounts", summary.Accounts,
-		"new_signatures", summary.NewSignatures, "deposits", summary.Deposits,
-		"failed_accounts", summary.FailedAccounts, "resolved_pending", summary.ResolvedPending)
+		"new_signatures", summary.NewSignatures, "deposits", summary.Deposits, "failed_accounts", summary.FailedAccounts,
+		"backfilling_accounts", summary.BackfillingAccounts, "resolved_pending", summary.ResolvedPending,
+		"covered_head", summary.CoveredHead)
 	return summary, nil
+}
+
+// SyncSignaturesWhenDue runs one SyncSignatures cycle of chainID when
+// deposit_signatures lists it and its interval elapsed since the last completed cycle
+// (the scan activity's record, so it holds across processes and Lambda invocations);
+// ran is false otherwise. A record that cannot be read runs the cycle.
+func (s *Service) SyncSignaturesWhenDue(ctx context.Context, chainID string) (summary SignatureSyncSummary, ran bool, err error) {
+	settings := s.SignatureSettings(ctx)
+	if !settings.Enabled(chainID) {
+		return SignatureSyncSummary{}, false, nil
+	}
+	activity, readErr := s.chainActivity(ctx, chainID)
+	if readErr != nil {
+		slog.Warn("deposit signature sync: last cycle unread, syncing now", "chain", chainID, "error", readErr)
+	} else if last := activity.Signatures; last != nil && s.now().Sub(last.At) < settings.Interval {
+		return SignatureSyncSummary{}, false, nil
+	}
+	summary, err = s.SyncSignatures(ctx, chainID)
+	return summary, true, err
 }
 
 // syncSignatures is one cycle under the chain's scan lock; the wallets whose
 // movements it confirmed are added to confirmed.
-func (s *Service) syncSignatures(ctx context.Context, chainID string, adapter types.Chain, reader chain.SignatureReader, settings SignatureSyncSettings, confirmed *walletSet) (SignatureSyncSummary, error) {
+func (s *Service) syncSignatures(ctx context.Context, chainID string, adapter types.Chain, reader chain.SignatureReader, settings SignatureSyncSettings, hold *cacheguard.Hold, confirmed *walletSet) (SignatureSyncSummary, error) {
 	var summary SignatureSyncSummary
+	// Read before the addresses: an address created later received nothing up to it.
+	listedAt, err := adapter.GetLatestBlock(ctx)
+	if err != nil {
+		return summary, fmt.Errorf("deposit signature sync of %s: head: %w", chainID, err)
+	}
 	owners, err := s.addressRepo.PluckActiveAddresses(ctx, chainID)
 	if err != nil {
 		return summary, fmt.Errorf("deposit signature sync of %s: %w", chainID, err)
@@ -124,10 +180,16 @@ func (s *Service) syncSignatures(ctx context.Context, chainID string, adapter ty
 	}
 
 	cycle := &signatureCycle{svc: s, chainID: chainID, adapter: adapter, reader: reader, settings: settings, floor: floor,
+		hold: hold, deadline: s.now().Add(signatureCycleBudget),
 		transactions: map[string]*signatureOutcome{}, hashes: map[uint64]*slotHash{}}
-	accounts, unlisted := cycle.accounts(ctx, owners)
+	accounts, unlisted, skippedMints := cycle.accounts(ctx, owners)
 	summary.Accounts = len(accounts) + unlisted
 	summary.FailedAccounts = unlisted
+	summary.SkippedMints = skippedMints
+	if len(skippedMints) > 0 {
+		slog.Error("deposit signature sync: registered tokens the chain's node does not hold as token mints are not read; fix the token registry",
+			"chain", chainID, "mints", skippedMints)
+	}
 
 	results := make([]accountSync, len(accounts))
 	forEachConcurrently(ctx, settings.Concurrency, len(accounts), func(i int) {
@@ -137,29 +199,40 @@ func (s *Service) syncSignatures(ctx context.Context, chainID string, adapter ty
 		}
 		results[i] = cycle.syncAccount(ctx, accounts[i], cursor)
 	})
-	var coveredFrom uint64
+	everyAccountRead := unlisted == 0 && len(accounts) > 0
+	coveredHead, coveredFrom := listedAt, uint64(0)
 	for i, result := range results {
 		summary.NewSignatures += result.signatures
 		summary.Deposits += result.deposits
-		if result.err != nil {
+		switch {
+		case result.err != nil:
 			summary.FailedAccounts++
+			everyAccountRead = false
 			slog.Error("deposit signature sync of an account failed; its cursor stays before the failure and the next cycle reads it again",
 				"chain", chainID, "account", accounts[i], "error", result.err, "provider_cause", chain.CauseText(result.err))
-			continue
+		case result.coveredTo == 0:
+			summary.BackfillingAccounts++
+			everyAccountRead = false
+		default:
+			coveredHead = min(coveredHead, result.coveredTo)
+			coveredFrom = max(coveredFrom, result.syncedFrom)
 		}
-		coveredFrom = max(coveredFrom, result.syncedFrom)
+	}
+	if !hold.Held() {
+		return summary, fmt.Errorf("deposit signature sync of %s: %w", chainID, ErrScanLockLost)
 	}
 	if err := ctx.Err(); err != nil {
 		return summary, fmt.Errorf("deposit signature sync of %s interrupted: %w", chainID, err)
 	}
-	if summary.FailedAccounts == 0 && len(accounts) > 0 {
+	if everyAccountRead {
+		summary.CoveredHead = coveredHead
 		resolved, err := s.resolveCoveredPending(ctx, chainID, coveredFrom)
 		summary.ResolvedPending = resolved
 		if err != nil {
 			slog.Warn("pending deposit blocks the signature sync covers were not all dropped; the next cycle drops them", "chain", chainID, "error", err)
 		}
 	}
-	s.confirmSignatureDeposits(ctx, chainID, adapter, confirmed)
+	summary.Head = s.confirmSignatureDeposits(ctx, chainID, adapter, confirmed)
 	return summary, nil
 }
 
@@ -172,8 +245,9 @@ type signatureFloor struct {
 
 // signatureFloor is the chain's scan checkpoint, lowered to its lowest pending
 // block: the block scan recorded the deposits up to the checkpoint except those of
-// its pending blocks. A checkpoint or a pending store that cannot be read fails the
-// cycle, since a floor set too high would skip deposits for good.
+// its pending blocks. A checkpoint that cannot be read, or a pending store read that
+// missed a backend (pending.ListComplete), fails the cycle: a floor set too high
+// would skip deposits for good.
 func (s *Service) signatureFloor(ctx context.Context, chainID string) (signatureFloor, error) {
 	var floor signatureFloor
 	checkpoint, found, err := s.loadCheckpoint(ctx, chainID)
@@ -186,7 +260,7 @@ func (s *Service) signatureFloor(ctx context.Context, chainID string) (signature
 	if s.pending == nil {
 		return floor, nil
 	}
-	entries, err := s.pending.List(ctx, chainID)
+	entries, err := pending.ListComplete(ctx, s.pending, chainID)
 	if err != nil {
 		return floor, fmt.Errorf("signature floor: list pending %s blocks: %w", chainID, err)
 	}
@@ -200,7 +274,8 @@ func (s *Service) signatureFloor(ctx context.Context, chainID string) (signature
 
 // resolveCoveredPending drops the chain's pending blocks at or above coveredFrom:
 // every account of the chain has just been read from a slot no higher than that up
-// to now, so the deposits those blocks hold are recorded. Older pending blocks stay.
+// to now, so the deposits those blocks hold are recorded. Older pending blocks stay,
+// for the pending retry.
 func (s *Service) resolveCoveredPending(ctx context.Context, chainID string, coveredFrom uint64) (int, error) {
 	if s.pending == nil {
 		return 0, nil
@@ -222,29 +297,30 @@ func (s *Service) resolveCoveredPending(ctx context.Context, chainID string, cov
 		slog.Info("pending deposit block covered by the signature sync", "chain", chainID, "block", entry.Block, "attempts", entry.Attempts)
 	}
 	if older > 0 {
-		slog.Warn("pending deposit blocks older than the signature sync's histories stay pending", "chain", chainID, "blocks", older, "covered_from_slot", coveredFrom)
+		slog.Warn("pending deposit blocks older than the signature sync's histories stay pending; the pending retry reads them", "chain", chainID, "blocks", older, "covered_from_slot", coveredFrom)
 	}
 	return resolved, nil
 }
 
 // confirmSignatureDeposits runs the chain's confirmation step at the head, as the
 // block scan does after each cycle: a finalized Solana slot is final, so a deposit
-// the sync recorded confirms in the same cycle. A head or a pending list that cannot
-// be read leaves the confirmations to the next cycle.
-func (s *Service) confirmSignatureDeposits(ctx context.Context, chainID string, adapter types.Chain, confirmed *walletSet) {
+// the sync recorded confirms in the same cycle. It returns the head it confirmed at,
+// 0 when the head could not be read (the confirmations wait for the next cycle).
+func (s *Service) confirmSignatureDeposits(ctx context.Context, chainID string, adapter types.Chain, confirmed *walletSet) uint64 {
 	head, err := adapter.GetLatestBlock(ctx)
 	if err != nil {
 		slog.Error("deposit signature sync: head not read, confirmations left to the next cycle", "chain", chainID, "error", err)
-		return
+		return 0
 	}
 	rows, err := s.txRepo.FindPendingByChain(ctx, chainID)
 	if err != nil {
 		slog.Error("deposit signature sync: pending transactions not read, confirmations left to the next cycle", "chain", chainID, "error", err)
-		return
+		return head
 	}
 	if err := s.confirmPending(ctx, adapter, head, rows, confirmed); err != nil {
 		slog.Error("update confirmations failed", "chain", chainID, "error", err)
 	}
+	return head
 }
 
 // signatureCycle is one SyncSignatures cycle of a chain. A transaction is read and
@@ -257,6 +333,8 @@ type signatureCycle struct {
 	reader   chain.SignatureReader
 	settings SignatureSyncSettings
 	floor    signatureFloor
+	hold     *cacheguard.Hold
+	deadline time.Time
 
 	mu           sync.Mutex
 	transactions map[string]*signatureOutcome
@@ -277,15 +355,16 @@ type slotHash struct {
 	err  error
 }
 
-// accounts lists the accounts of every owner, without repeats, and how many owners
-// could not be listed (each skipped this cycle and counted as a failed account).
-func (c *signatureCycle) accounts(ctx context.Context, owners []string) ([]string, int) {
-	listed := make([][]string, len(owners))
+// accounts lists the accounts of every owner, without repeats, how many owners
+// could not be listed (each skipped this cycle and counted as a failed account), and
+// the registered mints the node does not hold as token mints.
+func (c *signatureCycle) accounts(ctx context.Context, owners []string) ([]string, int, []string) {
+	listed := make([]chain.SignatureAccounts, len(owners))
 	failures := make([]error, len(owners))
 	forEachConcurrently(ctx, c.settings.Concurrency, len(owners), func(i int) {
 		listed[i], failures[i] = c.reader.SignatureAccounts(ctx, owners[i])
 	})
-	var accounts []string
+	var accounts, skipped []string
 	seen := map[string]bool{}
 	unlisted := 0
 	for i, owner := range owners {
@@ -295,118 +374,20 @@ func (c *signatureCycle) accounts(ctx context.Context, owners []string) ([]strin
 				"chain", c.chainID, "address", owner, "error", failures[i], "provider_cause", chain.CauseText(failures[i]))
 			continue
 		}
-		for _, account := range listed[i] {
+		for _, mint := range listed[i].SkippedMints {
+			if !slices.Contains(skipped, mint) {
+				skipped = append(skipped, mint)
+			}
+		}
+		for _, account := range listed[i].Accounts {
 			if !seen[account] {
 				seen[account] = true
 				accounts = append(accounts, account)
 			}
 		}
 	}
-	return accounts, unlisted
-}
-
-// accountSync is what reading one account did: the new signatures it read, the
-// deposits it recorded first in this cycle, the slot its history covers from, and
-// why it stopped early.
-type accountSync struct {
-	signatures int
-	deposits   int
-	syncedFrom uint64
-	err        error
-}
-
-// syncAccount reads account's signatures since its cursor (or since the floor, or at
-// most MaxPages of its history), oldest first, records each successful transaction,
-// and moves the cursor past the last signature whose transfers were all recorded. A
-// failed signature stops the account there.
-func (c *signatureCycle) syncAccount(ctx context.Context, account string, cursor *models.DepositSignatureCursor) accountSync {
-	query := chain.SignatureQuery{MaxPages: signatureHistoryPageCeiling}
-	var result accountSync
-	var newest chain.AccountSignature
-	switch {
-	case cursor != nil:
-		query.Until, query.FloorSlot, query.HasFloor = cursor.Signature, storedSlot(cursor.Slot), true
-		newest = chain.AccountSignature{Signature: cursor.Signature, Slot: storedSlot(cursor.Slot)}
-		result.syncedFrom = storedSlot(cursor.SyncedFromSlot)
-	case c.floor.ok:
-		query.FloorSlot, query.HasFloor = c.floor.slot, true
-		newest = chain.AccountSignature{Slot: c.floor.slot}
-		result.syncedFrom = c.floor.slot
-	default:
-		query.MaxPages = c.settings.MaxPages
-	}
-	if err := ctx.Err(); err != nil {
-		result.err = err
-		return result
-	}
-	history, err := c.reader.AccountSignatures(ctx, account, query)
-	if err != nil {
-		result.err = fmt.Errorf("read the signatures of %s: %w", account, err)
-		return result
-	}
-	if history.Truncated {
-		if query.HasFloor {
-			result.err = fmt.Errorf("the history of %s since slot %d is longer than %d pages; nothing was recorded and the cursor stays (scan the account's transactions with scan:deposits --tx)",
-				account, query.FloorSlot, query.MaxPages)
-			return result
-		}
-		if len(history.Signatures) > 0 {
-			result.syncedFrom = history.Signatures[0].Slot
-		}
-		slog.Warn("deposit signature history cut at the page limit; older signatures are not read",
-			"chain", c.chainID, "account", account, "max_pages", query.MaxPages, "oldest_slot_read", result.syncedFrom)
-	}
-	result.signatures = len(history.Signatures)
-
-	start := newest
-	for _, signature := range history.Signatures {
-		if err := ctx.Err(); err != nil {
-			result.err = err
-			break
-		}
-		if !signature.Failed {
-			deposits, err := c.record(ctx, signature)
-			result.deposits += deposits
-			if err != nil {
-				result.err = err
-				break
-			}
-		}
-		newest = signature
-	}
-	if result.err != nil && newest == start {
-		return result
-	}
-	if cursor != nil && newest == start {
-		return result
-	}
-	if err := c.saveCursor(ctx, account, newest, result.syncedFrom); err != nil {
-		result.err = errors.Join(result.err, err)
-	}
-	return result
-}
-
-// storedSlot is a slot read from the cursor store, which never returns a negative
-// one (DepositSignatureCursorRepository.FindByChain refuses it).
-func storedSlot(slot int64) uint64 {
-	if slot < 0 {
-		return 0
-	}
-	return uint64(slot)
-}
-
-// saveCursor stores account's cursor at signature.
-func (c *signatureCycle) saveCursor(ctx context.Context, account string, signature chain.AccountSignature, syncedFrom uint64) error {
-	if signature.Slot > math.MaxInt64 || syncedFrom > math.MaxInt64 {
-		return fmt.Errorf("signature cursor of %s: slot %d does not fit a bigint", account, signature.Slot)
-	}
-	if err := c.svc.signatureCursors.Advance(ctx, models.DepositSignatureCursor{
-		Chain: c.chainID, Account: account, Signature: signature.Signature,
-		Slot: int64(signature.Slot), SyncedFromSlot: int64(syncedFrom),
-	}); err != nil {
-		return fmt.Errorf("save the signature cursor of %s: %w", account, err)
-	}
-	return nil
+	slices.Sort(skipped)
+	return accounts, unlisted, skipped
 }
 
 // record records one successful transaction once per cycle and returns the deposits
@@ -513,6 +494,67 @@ func forEachConcurrently(ctx context.Context, limit, n int, fn func(i int)) {
 	wg.Wait()
 }
 
+// confirmWhileSigning runs the confirmation step of a chain whose block scan is paused
+// for the signature sync, at the head, under the chain's scan lock, on the scan's
+// cadence: a deposit the provider push recorded (the fast path) confirms within a scan
+// interval instead of waiting for the next sync cycle. While a sync cycle holds the
+// lock it is skipped (the cycle confirms at its end); with no pending transaction the
+// head is not read.
+func (s *Service) confirmWhileSigning(ctx context.Context, chainID string, adapter types.Chain) {
+	release, err := s.lockChain(chainID)
+	if errors.Is(err, ErrScanInProgress) {
+		return
+	}
+	if err != nil {
+		slog.Warn("confirmations of a chain in signature mode left to the next cycle", "chain", chainID, "error", err)
+		return
+	}
+	defer release()
+	rows, err := s.txRepo.FindPendingByChain(ctx, chainID)
+	if err != nil {
+		slog.Warn("confirmations of a chain in signature mode left to the next cycle", "chain", chainID, "error", err)
+		return
+	}
+	if len(rows) == 0 {
+		return
+	}
+	head, err := adapter.GetLatestBlock(ctx)
+	if err != nil {
+		slog.Warn("confirmations of a chain in signature mode left to the next cycle", "chain", chainID, "error", err)
+		return
+	}
+	if err := s.applyConfirmations(ctx, adapter, head, rows); err != nil {
+		slog.Error("update confirmations failed", "chain", chainID, "error", err)
+	}
+}
+
+// resumeAfterSignatureSync moves the checkpoint of a chain the signature sync read,
+// whose block scan resumes, up to the slot the sync last read every account up to
+// (sync.CoveredHead), when that is past it. That slot is safe to resume after: a
+// cycle records it only when every account of every address listed at its start was
+// read, with proof, from its floor up to a head no lower than it, and an address
+// created later had received nothing up to the slot read before the addresses were
+// listed; the pending blocks under the histories' floors stay pending. Without such a
+// slot the scan resumes from its checkpoint.
+func (s *Service) resumeAfterSignatureSync(ctx context.Context, chainID string, sync *SignatureSyncRecord) error {
+	if sync == nil || sync.CoveredHead == 0 {
+		return nil
+	}
+	checkpoint, found, err := s.loadCheckpoint(ctx, chainID)
+	if err != nil {
+		return fmt.Errorf("deposit scan skipped: %w", err)
+	}
+	if found && checkpoint >= sync.CoveredHead {
+		return nil
+	}
+	if err := s.saveCheckpoint(ctx, chainID, sync.CoveredHead); err != nil {
+		return fmt.Errorf("deposit scan resume: %w", err)
+	}
+	slog.Info("deposit block scan resumes after the slot the signature sync read every account up to",
+		"chain", chainID, "checkpoint", checkpoint, "covered_head", sync.CoveredHead)
+	return nil
+}
+
 // blockScanPaused reports whether chainID's block scan pauses because the signature
 // sync reads its deposits, logging when that changes. A chain the settings enable
 // whose adapter cannot read signatures keeps its block scan (a warning says so), so
@@ -531,7 +573,7 @@ func (s *Service) blockScanPaused(ctx context.Context, chainID string, adapter t
 	case enabled:
 		slog.Warn("deposit signature sync enabled for a chain whose adapter cannot read signatures; its block scan keeps running", "chain", chainID)
 	case seen:
-		slog.Info("deposit block scan resumed from its checkpoint: the signature sync is off for the chain", "chain", chainID)
+		slog.Info("deposit block scan resumed: the signature sync is off for the chain", "chain", chainID)
 	}
 	return paused
 }
