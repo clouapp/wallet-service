@@ -531,7 +531,12 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `docs/DEV_SEED_DATA.md`). Only `DatabaseSeeder` is registered, so `db:seed --seeder=ChainSeeder`
   is not available. The chain catalog that
   `chains:add-missing` and `chains:align-tokens` write in production is not seed data: it lives in
-  `app/repositories/chaincatalog`.
+  `app/repositories/chaincatalog`. A fresh production database gets its reference rows from
+  `chains:seed-catalog --apply` (the catalog's primary chains on `CHAIN_NETWORK_PROFILE`, their
+  thresholds, tokens and resources, and the currencies: the part of `DatabaseSeeder` before the
+  dev-only users, accounts and wallets), run once, before `chains:add-missing --apply` and
+  `chains:rpc-endpoints`, since it re-seals an existing chain's `rpc_url` from the catalog's
+  environment variable. — guarded by `app/console/commands/chains_seed_catalog_test.go`.
 
 ### 9. Tests never touch live data and never share state
 
@@ -1627,7 +1632,8 @@ A TRC-20 sweep's gas_seed gives the child what it lacks to pay the estimated ban
 
 ```bash
 make deploy ENV=dev     # template.dev.yaml: queues, KMS key, the host's IAM user (docs/AWS_DEV_STACK.md)
-make deploy ENV=prod    # template.yaml via SAM; validate (sam validate --lint) runs first
+make deploy ENV=prod STACK=host  # template.dev.yaml with Environment=prod: the same host layout as dev (production on a Forge server)
+make deploy ENV=prod    # STACK=lambda (default): template.yaml via SAM; validate (sam validate --lint) runs first
 ```
 
 `template.yaml` does not run the service as it stands; the production runtime, its options and

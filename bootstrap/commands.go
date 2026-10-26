@@ -37,6 +37,7 @@ import (
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/database/seeders"
 )
 
 // Commands are the artisan commands of the application, each built with the
@@ -99,6 +100,7 @@ func Commands() []console.Command {
 			Profile:     configuredChainProfile,
 		})),
 		commands.NewChainsRPCEndpoints(container.MustMake[*rpcendpoints.Service]()),
+		commands.NewChainsSeedCatalog(seedCatalog),
 		commands.NewChainsAddMissing(chainregistry.NewMissingChains(seedMissingAddedChains)),
 		commands.NewChainsAlignTokens(chainregistry.NewNetworkTokens(alignNetworkTokens)),
 		commands.NewWithdrawPreflight(commands.WithdrawPreflightDeps{
@@ -145,6 +147,23 @@ func Commands() []console.Command {
 }
 
 const chainNetworkProfileConfigKey = "vault.chains.network_profile"
+
+// seedCatalog is the reference part of DatabaseSeeder (database/seeders): the
+// catalog's primary chains, thresholds, tokens and resources on the configured network
+// profile, then the currencies. The dev-only seeders (accounts, users, wallets) are
+// left out, so a production database can be seeded without them.
+func seedCatalog(ctx context.Context) error {
+	catalog := chaincatalog.New(appfacades.Config(), appfacades.Crypt())
+	steps := []func(context.Context) error{
+		catalog.SeedChains, catalog.SeedSweepThresholds, catalog.SeedTokens, catalog.SeedChainResources,
+	}
+	for _, step := range steps {
+		if err := step(ctx); err != nil {
+			return err
+		}
+	}
+	return (&seeders.CurrencySeeder{}).Run()
+}
 
 func seedMissingAddedChains(ctx context.Context, apply bool) (chainregistry.AddedChainsPlan, error) {
 	plan, err := chaincatalog.New(appfacades.Config(), appfacades.Crypt()).SeedMissingAddedChains(ctx, apply)
