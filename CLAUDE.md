@@ -534,9 +534,13 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `app/repositories/chaincatalog`. A fresh production database gets its reference rows from
   `chains:seed-catalog --apply` (the catalog's primary chains on `CHAIN_NETWORK_PROFILE`, their
   thresholds, tokens and resources, and the currencies: the part of `DatabaseSeeder` before the
-  dev-only users, accounts and wallets), run once, before `chains:add-missing --apply` and
-  `chains:rpc-endpoints`, since it re-seals an existing chain's `rpc_url` from the catalog's
-  environment variable. — guarded by `app/console/commands/chains_seed_catalog_test.go`.
+  dev-only users, accounts and wallets), then `chains:add-missing --apply`. A rerun keeps an
+  existing chain's row and its `rpc_url` (an operator may have moved it with `chains:set-rpc` or
+  the platform API); only an `rpc_url` the current `APP_KEY` cannot open (a rotated key) is sealed
+  again from the catalog's environment variable. — guarded by
+  `app/console/commands/chains_seed_catalog_test.go` and
+  `TestSeed_Chains_KeepsAnOperatorEndpointAndResealsOnlyOneThatDoesNotOpen`
+  (`app/repositories/chaincatalog`).
 
 ### 9. Tests never touch live data and never share state
 

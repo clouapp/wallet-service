@@ -32,7 +32,7 @@ func TestChains_SeedCatalog_DryRunPrintsTheStepsAndWritesNothing(t *testing.T) {
 	ctx := mocksconsole.NewContext(t)
 	ctx.EXPECT().OptionBool("apply").Return(false)
 	ctx.EXPECT().Warning(mock.MatchedBy(func(line string) bool {
-		return strings.Contains(line, "re-sealed from the environment variable") && strings.Contains(line, "before chains:rpc-endpoints")
+		return strings.Contains(line, "keeps its row and its rpc_url") && strings.Contains(line, "cannot open")
 	})).Return()
 	for range catalogSeedSteps {
 		ctx.EXPECT().Info(mock.AnythingOfType("string")).Return().Once()

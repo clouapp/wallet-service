@@ -52,7 +52,7 @@ var catalogSeedSteps = []string{
 	"currencies (crypto and fiat)",
 }
 
-const catalogSeedWarning = "an existing chain keeps its row, but its rpc_url is re-sealed from the environment variable the catalog names: run this once, on a fresh database, before chains:rpc-endpoints"
+const catalogSeedWarning = "an existing chain keeps its row and its rpc_url; only an rpc_url the current APP_KEY cannot open is sealed again from the environment variable the catalog names"
 
 func (c *ChainsSeedCatalog) Handle(ctx console.Context) error {
 	printReport(ctx, catalogSeedSteps, []string{catalogSeedWarning}, nil, nil)
