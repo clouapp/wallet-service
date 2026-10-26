@@ -66,8 +66,9 @@ type Service struct {
 	sleep                func(ctx context.Context, d time.Duration) error
 	now                  func() time.Time
 	// staleAfter is how long an outbound transfer may stay unsettled (stale_outbound.go).
-	staleAfter time.Duration
-	staleCache healthSnapshot[StaleOutboundHealth]
+	staleAfter       time.Duration
+	staleAfterSource func(ctx context.Context) time.Duration
+	staleCache       healthSnapshot[StaleOutboundHealth]
 	// pendingCache is the health check's reading of the pending blocks (pending_blocks.go).
 	pendingCache healthSnapshot[PendingHealth]
 	// activity records each completed scan cycle; activityCache is the health
@@ -76,6 +77,7 @@ type Service struct {
 	activity        ScanActivityStore
 	activityCache   healthSnapshot[ScanActivityHealth]
 	scanAlerts      ScanAlertThresholds
+	scanAlertSource func(ctx context.Context) ScanAlertThresholds
 	chainScanAlerts func(chainID string) ScanAlertThresholds
 	alertState      ScanAlertState
 	// reconcileWithdrawals and reconcileTransactions are the rows withdrawals:reconcile

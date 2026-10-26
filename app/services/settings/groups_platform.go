@@ -43,11 +43,13 @@ const (
 	sectionDelivery = "delivery"
 	sectionSweep    = "sweep"
 
-	keyBatchBlocks     = "batch_blocks"
-	keyCatchUpBlocks   = "catch_up_blocks"
-	keyScanConcurrency = "concurrency"
-	keyMaxAttempts     = "max_attempts"
-	keyTimeoutSeconds  = "timeout_seconds"
+	keyBatchBlocks       = "batch_blocks"
+	keyCatchUpBlocks     = "catch_up_blocks"
+	keyScanConcurrency   = "concurrency"
+	keyAlertLagBlocks    = "alert_lag_blocks"
+	keyAlertStaleMinutes = "alert_stale_minutes"
+	keyMaxAttempts       = "max_attempts"
+	keyTimeoutSeconds    = "timeout_seconds"
 
 	keySignatureChains      = KeySignatureChains
 	keySignatureInterval    = "interval_seconds"
@@ -78,7 +80,7 @@ const (
 )
 
 func platformGroups() []Group {
-	return []Group{
+	groups := []Group{
 		{
 			Name:    groupDepositScan,
 			Scope:   ScopePlatform,
@@ -106,10 +108,29 @@ func platformGroups() []Group {
 					Type:    TypeInt,
 					Default: func() any { return 0 },
 				},
+				{
+					Key:   keyAlertLagBlocks,
+					Label: "Lag alert",
+					Help: "The tracker warns when a scan's last cycle left its checkpoint more blocks than this behind the head. " +
+						"0 keeps DEPOSIT_SCAN_ALERT_LAG_BLOCKS (whose 0 is the chain's catch-up window). A chain's " +
+						"DEPOSIT_SCAN_ALERT_LAG_BLOCKS_<CHAIN> still wins for that chain.",
+					Type:    TypeInt,
+					Default: func() any { return 0 },
+				},
+				{
+					Key:   keyAlertStaleMinutes,
+					Label: "Stale alert",
+					Help: "The tracker warns when a scanned chain completed no cycle for more minutes than this. " +
+						"0 keeps DEPOSIT_SCAN_ALERT_STALE_MINUTES (default 10). A chain's DEPOSIT_SCAN_ALERT_STALE_MINUTES_<CHAIN> still wins for that chain.",
+					Type:    TypeInt,
+					Default: func() any { return 0 },
+				},
 			},
 			Validate: validateDepositScan,
 		},
 		depositSignaturesGroup(),
+		localWorkersGroup(),
+		xrpStreamGroup(),
 		{
 			Name:    groupWebhookDelivery,
 			Scope:   ScopePlatform,
@@ -164,7 +185,10 @@ func platformGroups() []Group {
 		providerHeliusGroup(),
 		providerQuickNodeGroup(),
 		providerEtherscanGroup(),
+		providerTronGroup(),
 	}
+	groups = append(groups, utxoFallbackGroups()...)
+	return append(groups, httpThrottleGroup(), withdrawalsGroup(), platformURLsGroup())
 }
 
 func validateDepositScan(effective map[string]string) error {
@@ -180,6 +204,11 @@ func validateDepositScan(effective map[string]string) error {
 	}
 	if !concurrencyOK || concurrency > maxDepositScanConcurrency {
 		fields[keyScanConcurrency] = []string{fmt.Sprintf("must be between 0 and %d", maxDepositScanConcurrency)}
+	}
+	for _, key := range []string{keyAlertLagBlocks, keyAlertStaleMinutes} {
+		if _, ok := blankOrBounded(effective[key], 0, math.MaxInt32); !ok {
+			fields[key] = []string{"must be greater than or equal to 0"}
+		}
 	}
 	if batchOK && catchUpOK && batch > 0 && catchUp > 0 && catchUp < batch {
 		fields[keyCatchUpBlocks] = []string{"must not be smaller than batch_blocks"}

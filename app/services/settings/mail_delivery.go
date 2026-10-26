@@ -208,6 +208,9 @@ func mailDriverMessage(raw string) string {
 	if driver == mailDriverLog && productionMailEnv() {
 		return "must not be log in production"
 	}
+	if driver == mailDriverSES {
+		return "ses is not available yet: use smtp, mailgun, resend or postmark"
+	}
 	return ""
 }
 

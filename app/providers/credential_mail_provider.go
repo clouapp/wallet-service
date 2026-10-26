@@ -13,6 +13,7 @@ import (
 	authsvc "github.com/macrowallets/waas/app/services/auth"
 	"github.com/macrowallets/waas/app/services/credentialmail"
 	"github.com/macrowallets/waas/app/services/sessions"
+	"github.com/macrowallets/waas/app/services/settings"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
@@ -38,6 +39,10 @@ func (p *CredentialMailServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
+		platformURLs, err := resolve[*settings.Service](app)
+		if err != nil {
+			return nil, err
+		}
 		dispatcher := newCredentialMailDispatcher(app)
 		return credentialmail.NewService(credentialmail.Deps{
 			Users:          users,
@@ -47,6 +52,7 @@ func (p *CredentialMailServiceProvider) Register(app foundation.Application) {
 			Sender:         credentialMailSender{},
 			Dispatch:       dispatcher.Dispatch,
 			DispatchInvite: dispatcher.DispatchAccountInvite,
+			FrontendURLs:   platformURLs,
 		}), nil
 	})
 }

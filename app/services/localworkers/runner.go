@@ -112,7 +112,10 @@ type DepositStream interface {
 // Workers are the jobs Start runs; Deliverer, Redispatcher, Scanner, Balances and
 // DepositStream are only needed when the configuration enables them. PreParams is
 // optional, and so is Signatures, which syncs the deposit scan chains that
-// deposit_signatures lists (their block scan pauses meanwhile).
+// deposit_signatures lists (their block scan pauses meanwhile). ScanChains, when set,
+// is read on every supervisor tick and replaces DepositScanChains (which then is only
+// the list kept when the first read fails); Streams, when set, runs the deposit stream
+// the settings ask for instead of DepositStream; ChainSync runs until ctx ends.
 type Workers struct {
 	Checker       WithdrawalConfirmationChecker
 	Deliverer     OutboxDeliverer
@@ -122,6 +125,9 @@ type Workers struct {
 	PreParams     PreParamsFiller
 	DepositStream DepositStream
 	Signatures    SignatureSyncer
+	ScanChains    ScanChainSource
+	Streams       DepositStreams
+	ChainSync     ChainSync
 }
 
 type Config struct {
@@ -149,6 +155,12 @@ type Config struct {
 	// syncs only DepositScanChains: the process that scans a chain is the one that
 	// reads it by signatures instead, so two processes never both read it.
 	SignatureSyncTick time.Duration
+	// SupervisorTick paces the reads of Workers.ScanChains and Workers.Streams
+	// (0: DefaultSupervisorTick).
+	SupervisorTick time.Duration
+	// KnownChain reports whether the chain registry holds a chain; a scanned chain it
+	// does not hold is skipped and logged instead of scanned. nil holds every chain.
+	KnownChain func(chainID string) bool
 }
 
 func (c Config) validate() error {
@@ -169,6 +181,9 @@ func (c Config) validate() error {
 	}
 	if c.SignatureSyncTick != 0 && c.SignatureSyncTick < MinInterval {
 		return errors.New("signature sync tick must be at least one second, or 0 for the default")
+	}
+	if c.SupervisorTick != 0 && c.SupervisorTick < MinInterval {
+		return errors.New("supervisor tick must be at least one second, or 0 for the default")
 	}
 	seen := make(map[string]bool, len(c.DepositScanChains))
 	for _, chainID := range c.DepositScanChains {
@@ -232,8 +247,12 @@ func Start(ctx context.Context, cfg Config, workers Workers) (*Loops, error) {
 	if cfg.RedispatchOutbox && workers.Redispatcher == nil {
 		return nil, errors.New("outbox redispatcher is required")
 	}
-	if len(cfg.DepositScanChains) > 0 && scanner == nil {
+	dynamicChains := workers.ScanChains != nil
+	if (len(cfg.DepositScanChains) > 0 || dynamicChains) && scanner == nil {
 		return nil, errors.New("deposit scanner is required")
+	}
+	if dynamicChains && cfg.DepositScanInterval < MinInterval {
+		return nil, errors.New("deposit scan interval must be at least one second")
 	}
 	if cfg.BalanceRefreshInterval > 0 && workers.Balances == nil {
 		return nil, errors.New("balance refresher is required")
@@ -241,21 +260,39 @@ func Start(ctx context.Context, cfg Config, workers Workers) (*Loops, error) {
 	if cfg.DepositStreamChain != "" && workers.DepositStream == nil {
 		return nil, errors.New("deposit stream is required")
 	}
-	scanChains := append([]string(nil), cfg.DepositScanChains...)
+	if workers.Streams != nil && (workers.DepositStream != nil || cfg.DepositStreamChain != "") {
+		return nil, errors.New("the deposit stream is either the configured one or the one the settings ask for, never both")
+	}
 	loops := &Loops{}
 
 	if workers.PreParams != nil {
 		loops.running.Go(func() { workers.PreParams.Run(ctx) })
 	}
-	if cfg.DepositStreamChain != "" {
+	if workers.ChainSync != nil {
+		loops.running.Go(func() { workers.ChainSync.Run(ctx) })
+	}
+
+	scans := newScanSupervisor(ctx, loops, scanner, cfg.DepositScanInterval, cfg.KnownChain)
+	initial := cfg.DepositScanChains
+	if dynamicChains {
+		if read, err := workers.ScanChains.ScanChains(ctx); err != nil {
+			slog.Error("local deposit scan chains unread; scanning the configured ones", "error", err)
+		} else {
+			initial = read
+		}
+	}
+	scans.apply(initial)
+	if !dynamicChains && cfg.DepositStreamChain != "" {
 		loops.running.Go(func() { workers.DepositStream.Run(ctx) })
 	}
+	streams := &streamSupervisor{streams: workers.Streams, loops: loops}
+	streams.reconcile(ctx, scans.current())
 
 	loops.every(ctx, cfg.ConfirmationInterval, func() {
 		if err := checker.RunWithdrawalConfirmationCheck(ctx); err != nil {
 			slog.Error("local withdrawal confirmation check failed", "error", err)
 		}
-		if len(scanChains) > 0 {
+		if scanChains := scans.current(); len(scanChains) > 0 {
 			backfillDepositEvents(ctx, scanner, scanChains)
 		}
 	})
@@ -279,34 +316,42 @@ func Start(ctx context.Context, cfg Config, workers Workers) (*Loops, error) {
 		})
 	}
 
-	if len(scanChains) > 0 {
-		for _, chainID := range scanChains {
-			syncAddressCache(ctx, scanner, chainID)
-		}
-		sharedChains, dedicatedChains := splitScanChains(scanChains)
-		if len(sharedChains) > 0 {
-			loops.every(ctx, cfg.DepositScanInterval, func() {
-				for _, chainID := range sharedChains {
-					if ctx.Err() != nil {
-						return
-					}
-					scanChain(ctx, scanner, chainID)
+	scanning := scanner != nil && (dynamicChains || len(scans.current()) > 0)
+	if scanning {
+		loops.every(ctx, cfg.DepositScanInterval, func() {
+			for _, chainID := range scans.shared() {
+				if ctx.Err() != nil {
+					return
 				}
-			})
-		}
-		for _, chainID := range dedicatedChains {
-			loops.every(ctx, cfg.DepositScanInterval, func() {
 				scanChain(ctx, scanner, chainID)
-			})
-		}
+			}
+		})
+	}
+
+	supervisorTick := cfg.SupervisorTick
+	if supervisorTick == 0 {
+		supervisorTick = DefaultSupervisorTick
+	}
+	if dynamicChains || workers.Streams != nil {
+		loops.every(ctx, supervisorTick, func() {
+			if dynamicChains {
+				if read, err := workers.ScanChains.ScanChains(ctx); err != nil {
+					slog.Warn("local deposit scan chains unread; the running ones are kept", "error", err)
+				} else {
+					scans.apply(read)
+				}
+			}
+			streams.reconcile(ctx, scans.current())
+		})
 	}
 
 	signatureTick := cfg.SignatureSyncTick
 	if signatureTick == 0 {
 		signatureTick = DefaultSignatureSyncTick
 	}
-	if workers.Signatures != nil && len(scanChains) > 0 {
-		schedule := newSignatureSchedule(scanChains)
+	signatureSync := workers.Signatures != nil && scanning
+	if signatureSync {
+		schedule := newLiveSignatureSchedule(scans.current)
 		loops.every(ctx, signatureTick, func() {
 			for _, chainID := range schedule.due(time.Now(), workers.Signatures.SignatureSettings(ctx)) {
 				if ctx.Err() != nil {
@@ -333,11 +378,14 @@ func Start(ctx context.Context, cfg Config, workers Workers) (*Loops, error) {
 		"deliver_outbox", cfg.DeliverOutbox,
 		"redispatch_outbox", cfg.RedispatchOutbox,
 		"delivery_interval", cfg.DeliveryInterval.String(),
-		"deposit_scan_chains", strings.Join(scanChains, ","),
+		"deposit_scan_chains", strings.Join(scans.current(), ","),
+		"deposit_scan_chains_live", dynamicChains,
 		"deposit_scan_interval", cfg.DepositScanInterval.String(),
 		"balance_refresh_interval", cfg.BalanceRefreshInterval.String(),
 		"deposit_stream_chain", cfg.DepositStreamChain,
-		"signature_sync", workers.Signatures != nil && len(scanChains) > 0,
+		"deposit_stream_live", workers.Streams != nil,
+		"chain_sync", workers.ChainSync != nil,
+		"signature_sync", signatureSync,
 		"signature_sync_tick", signatureTick.String(),
 	)
 	return loops, nil
@@ -348,12 +396,17 @@ func Start(ctx context.Context, cfg Config, workers Workers) (*Loops, error) {
 // since their last sync started (at once the first time). It is used by the loop's
 // goroutine only.
 type signatureSchedule struct {
-	scanned []string
+	scanned func() []string
 	last    map[string]time.Time
 	ignored map[string]bool
 }
 
 func newSignatureSchedule(scanned []string) *signatureSchedule {
+	return newLiveSignatureSchedule(func() []string { return scanned })
+}
+
+// newLiveSignatureSchedule reads the scanned chains on each tick.
+func newLiveSignatureSchedule(scanned func() []string) *signatureSchedule {
 	return &signatureSchedule{scanned: scanned, last: map[string]time.Time{}, ignored: map[string]bool{}}
 }
 
@@ -362,12 +415,13 @@ func newSignatureSchedule(scanned []string) *signatureSchedule {
 // process that scans it.
 func (s *signatureSchedule) due(now time.Time, settings deposit.SignatureSyncSettings) []string {
 	var due []string
+	scanned := s.scanned()
 	for _, chainID := range settings.Chains {
-		if !slices.Contains(s.scanned, chainID) {
+		if !slices.Contains(scanned, chainID) {
 			if !s.ignored[chainID] {
 				s.ignored[chainID] = true
 				slog.Info("deposit signature sync of a chain this process does not scan is left to the process that scans it",
-					"chain", chainID, "hint", "list it in LOCAL_DEPOSIT_SCAN_CHAINS of the process that should read it")
+					"chain", chainID, "hint", "list it in the local_workers setting (or LOCAL_DEPOSIT_SCAN_CHAINS) of the process that should read it")
 			}
 			continue
 		}

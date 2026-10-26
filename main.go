@@ -8,8 +8,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"slices"
-	"strings"
 	"syscall"
 	"time"
 
@@ -18,20 +16,20 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/awslabs/aws-lambda-go-api-proxy/httpadapter"
 
-	xrpchain "github.com/macrowallets/waas/app/adapters/chain/xrp"
 	queuesqs "github.com/macrowallets/waas/app/adapters/queue/sqs"
 	"github.com/macrowallets/waas/app/container"
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/providers"
 	"github.com/macrowallets/waas/app/repositories"
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
+	"github.com/macrowallets/waas/app/services/chainsync"
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/localworkers"
 	"github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/refresh"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/webhooksync"
-	"github.com/macrowallets/waas/app/services/xrpstream"
 	"github.com/macrowallets/waas/bootstrap"
 	_ "github.com/macrowallets/waas/docs" // Import generated swagger docs
 	"github.com/macrowallets/waas/pkg/lifecycle"
@@ -223,7 +221,10 @@ func runWebhookPoller() {
 // startLocalWorkers stands in for the confirmation_tracker and webhook_worker
 // Lambdas, which never run beside the local HTTP server, keeps the wallet
 // balance read model refreshed and fills the MPC keygen pre-parameters pool. With a
-// webhook queue the outbox is re-dispatched to it instead of delivered locally. It
+// webhook queue the outbox is re-dispatched to it instead of delivered locally. The
+// scanned chains (local_workers, else LOCAL_DEPOSIT_SCAN_CHAINS) and the XRP deposit
+// stream (xrp_stream, else LOCAL_XRP_STREAM_*) are read on every supervisor tick, and
+// the chain sync keeps the adapters on the stored RPC lists and TronGrid key. It
 // returns nil when no worker was started.
 func startLocalWorkers(ctx context.Context) lifecycle.Workers {
 	if !facades.Config().GetBool("vault.local_workers.enabled") {
@@ -238,70 +239,26 @@ func startLocalWorkers(ctx context.Context) lifecycle.Workers {
 		DepositScanChains:      localworkers.ParseChainList(facades.Config().GetString("vault.local_workers.deposit_scan_chains")),
 		DepositScanInterval:    time.Duration(facades.Config().GetInt("vault.local_workers.deposit_scan_interval_seconds")) * time.Second,
 		BalanceRefreshInterval: time.Duration(facades.Config().GetInt("vault.local_workers.balance_refresh_interval_seconds")) * time.Second,
+		KnownChain:             providers.KnownScanChain(registry),
 	}
-	for _, chainID := range cfg.DepositScanChains {
-		if _, err := registry.Chain(chainID); err != nil {
-			slog.Error("local workers not started: unknown deposit scan chain", "chain", chainID, "error", err)
-			return nil
-		}
-	}
-	var stream localworkers.DepositStream
-	if facades.Config().GetBool("vault.local_workers.xrp_stream_enabled") {
-		listener, err := xrpDepositStream(cfg.DepositScanChains)
-		if err != nil {
-			slog.Error("xrp deposit stream not started: enabled but not configured; the other local workers run", "error", err)
-		} else {
-			stream, cfg.DepositStreamChain = listener, facades.Config().GetString("vault.local_workers.xrp_stream_chain")
-		}
-	}
+	stored := container.MustMake[*settings.Service]()
 	loops, err := localworkers.Start(ctx, cfg, localworkers.Workers{
-		Checker:       deposits,
-		Deliverer:     webhooks,
-		Redispatcher:  webhooks,
-		Scanner:       deposits,
-		Balances:      container.MustMake[*refresh.WalletRefresher](),
-		PreParams:     container.MustMake[*mpc.PreParamsPool](),
-		DepositStream: stream,
-		Signatures:    deposits,
+		Checker:      deposits,
+		Deliverer:    webhooks,
+		Redispatcher: webhooks,
+		Scanner:      deposits,
+		Balances:     container.MustMake[*refresh.WalletRefresher](),
+		PreParams:    container.MustMake[*mpc.PreParamsPool](),
+		Signatures:   deposits,
+		ScanChains:   providers.LocalScanChains(stored),
+		Streams:      providers.XRPDepositStreams(stored, registry, container.MustMake[*repositories.AddressRepository](), deposits),
+		ChainSync:    container.MustMake[*chainsync.Service](),
 	})
 	if err != nil {
 		slog.Error("local workers not started", "error", err)
 		return nil
 	}
 	return loops
-}
-
-// xrpDepositStream is the real-time XRP deposit listener of
-// vault.local_workers.xrp_stream_chain over the WebSocket endpoint
-// xrp_stream_url (never logged). The chain must be an XRP chain of the registry
-// that the local workers also scan (the ledger scan stays the guarantee).
-func xrpDepositStream(scanChains []string) (*xrpstream.Service, error) {
-	chainID := facades.Config().GetString("vault.local_workers.xrp_stream_chain")
-	adapter, err := registry.Chain(chainID)
-	if err != nil {
-		return nil, err
-	}
-	live, ok := adapter.(*xrpchain.Live)
-	if !ok {
-		return nil, errors.New("LOCAL_XRP_STREAM_CHAIN " + chainID + " is not an XRP chain")
-	}
-	if !slices.Contains(scanChains, chainID) {
-		return nil, errors.New("LOCAL_XRP_STREAM_CHAIN " + chainID + " is not in LOCAL_DEPOSIT_SCAN_CHAINS")
-	}
-	url := strings.TrimSpace(facades.Config().GetString("vault.local_workers.xrp_stream_url"))
-	if url == "" {
-		return nil, errors.New("LOCAL_XRP_STREAM_URL is empty")
-	}
-	return xrpstream.NewService(xrpstream.Deps{
-		ChainID: chainID,
-		// Every session connects through the RPC guard, as the RPC nodes do.
-		Dialer: xrpchain.NewStreamDialer(xrpchain.StreamConfig{
-			ChainIDStr: chainID, NativeSymbol: adapter.NativeAsset(), URL: url, IsTestnet: live.IsTestnet(),
-		}, providers.RPCDestinations().DialContext),
-		Addresses:      container.MustMake[*repositories.AddressRepository](),
-		Deposits:       deposits,
-		AddressRefresh: time.Duration(facades.Config().GetInt("vault.local_workers.xrp_stream_address_refresh_seconds")) * time.Second,
-	}), nil
 }
 
 const (

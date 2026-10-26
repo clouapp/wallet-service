@@ -1,6 +1,7 @@
 package account
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -14,11 +15,24 @@ const frontendURLEnv = "APP_FRONTEND_URL"
 
 var (
 	ErrInviteTokenRequired = errors.New("invite token is required")
-	ErrFrontendURLRequired = errors.New("APP_FRONTEND_URL is required")
+	ErrFrontendURLRequired = errors.New("the front-end URL is required: set platform_urls.frontend_url or APP_FRONTEND_URL")
 )
 
-// FrontendBase is the invite link base. It is only APP_FRONTEND_URL.
-func FrontendBase() (string, error) {
+// FrontendURLSource reads the stored front-end base (the platform_urls setting,
+// settings.Service); "" means none is stored.
+type FrontendURLSource interface {
+	FrontendURL(ctx context.Context) (string, error)
+}
+
+// FrontendBase is the invite link base: the platform_urls.frontend_url setting
+// when source stores one, else APP_FRONTEND_URL. A failed settings read keeps
+// APP_FRONTEND_URL. Neither set is ErrFrontendURLRequired.
+func FrontendBase(ctx context.Context, source FrontendURLSource) (string, error) {
+	if source != nil && ctx != nil {
+		if stored, err := source.FrontendURL(ctx); err == nil && strings.TrimSpace(stored) != "" {
+			return strings.TrimSpace(stored), nil
+		}
+	}
 	value := strings.TrimSpace(os.Getenv(frontendURLEnv))
 	if value == "" {
 		return "", ErrFrontendURLRequired

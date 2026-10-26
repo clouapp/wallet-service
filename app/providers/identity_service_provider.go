@@ -160,16 +160,17 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 			return nil, err
 		}
 		return account.NewService(account.Deps{
-			Accounts:    accounts,
-			Memberships: memberships,
-			Users:       users,
-			Tokens:      tokens,
-			Activity:    activityLog,
-			Invites:     invites,
-			InviteMail:  newCredentialMailDispatcher(app),
-			Passwords:   passwords,
-			SweepLimits: limits,
-			Features:    flags,
+			Accounts:     accounts,
+			Memberships:  memberships,
+			Users:        users,
+			Tokens:       tokens,
+			Activity:     activityLog,
+			Invites:      invites,
+			InviteMail:   newCredentialMailDispatcher(app),
+			Passwords:    passwords,
+			SweepLimits:  limits,
+			Features:     flags,
+			FrontendURLs: limits,
 		}).WithPlatformAdmins(admins), nil
 	})
 	app.Singleton((*apitoken.Service)(nil), func(app foundation.Application) (any, error) {

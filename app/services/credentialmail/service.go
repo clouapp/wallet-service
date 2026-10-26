@@ -74,6 +74,8 @@ type Deps struct {
 	Sender         Sender
 	Dispatch       DispatchFunc
 	DispatchInvite InviteDispatchFunc
+	// FrontendURLs is the stored base of invite links; nil keeps APP_FRONTEND_URL.
+	FrontendURLs account.FrontendURLSource
 }
 
 // Service mints credential mail at send time.
@@ -85,6 +87,7 @@ type Service struct {
 	sender         Sender
 	dispatch       DispatchFunc
 	dispatchInvite InviteDispatchFunc
+	frontendURLs   account.FrontendURLSource
 }
 
 // NewService fails fast when a dependency is missing.
@@ -118,6 +121,7 @@ func NewService(deps Deps) *Service {
 		sender:         deps.Sender,
 		dispatch:       deps.Dispatch,
 		dispatchInvite: deps.DispatchInvite,
+		frontendURLs:   deps.FrontendURLs,
 	}
 }
 
@@ -262,7 +266,7 @@ func (s *Service) SendAccountInvite(ctx context.Context, inviteID uuid.UUID) (st
 	if inviteID == uuid.Nil {
 		return "", errors.New("invite mail: invite id is required")
 	}
-	base, err := account.FrontendBase()
+	base, err := account.FrontendBase(ctx, s.frontendURLs)
 	if err != nil {
 		return "", err
 	}

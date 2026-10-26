@@ -1,6 +1,8 @@
 package providers
 
 import (
+	"strings"
+
 	"github.com/goravel/framework/contracts/foundation"
 
 	"github.com/macrowallets/waas/app/facades"
@@ -42,7 +44,8 @@ func (p *SettingsServiceProvider) Register(app foundation.Application) {
 			return nil, err
 		}
 		return settings.NewService(settings.Deps{Store: store, Sealer: settings.CryptSealer{}, Cache: settings.FacadeCache{}, Activity: activityLog,
-			Fallback: platformSettingsFallback(facades.Config()), IngestBaseDestinations: baseURLs}).
+			Fallback: platformSettingsFallback(facades.Config()), IngestBaseDestinations: baseURLs,
+			WriteChecks: chainProviderWriteChecks(RPCDestinations())}).
 			WithPlatformAdmins(admins).
 			WithAccounts(accounts).
 			WithPlatformTestMailer(NewPlatformTestMailer()), nil
@@ -58,9 +61,23 @@ func (p *SettingsServiceProvider) Boot(foundation.Application) {}
 // by a save that did not mean to change it; sending an empty list still does.
 func platformSettingsFallback(cfg configReader) settings.PlatformFallback {
 	return func(group, key string) (any, bool) {
-		if group != settings.GroupDepositSignatures || key != settings.KeySignatureChains {
-			return nil, false
+		switch {
+		case group == settings.GroupDepositSignatures && key == settings.KeySignatureChains:
+			return signatureSettingsFromEnv(cfg).Chains, true
+		case group == settings.GroupLocalWorkers && key == settings.KeyDepositScanChains:
+			return parseChainList(cfg.GetString("vault.local_workers.deposit_scan_chains")), true
 		}
-		return signatureSettingsFromEnv(cfg).Chains, true
+		return nil, false
 	}
+}
+
+// parseChainList splits a comma-separated chain list, without blanks.
+func parseChainList(raw string) []string {
+	chains := []string{}
+	for _, part := range strings.Split(raw, ",") {
+		if chainID := strings.TrimSpace(part); chainID != "" {
+			chains = append(chains, chainID)
+		}
+	}
+	return chains
 }

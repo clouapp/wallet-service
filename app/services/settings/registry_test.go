@@ -24,7 +24,7 @@ func TestAccount_Sections_DoNotShareNamesWithGroups(t *testing.T) {
 		switch group.Scope {
 		case ScopeAccount:
 		case ScopePlatform:
-			if !knownPlatformGroup(group.Name) {
+			if !knownPlatformGroup(group.Name) && !strings.HasPrefix(group.Name, groupUTXOFallbackPrefix) {
 				t.Fatalf("unexpected platform group %s", group.Name)
 			}
 		default:
@@ -63,7 +63,7 @@ func TestAccount_Sections_DoNotShareNamesWithGroups(t *testing.T) {
 		}
 	}
 	scan, ok := FindGroup(groupDepositScan)
-	if !ok || scan.Scope != ScopePlatform || len(scan.Settings) != 3 {
+	if !ok || scan.Scope != ScopePlatform || len(scan.Settings) != 5 {
 		t.Fatalf("deposit scan group = %+v present %v", scan, ok)
 	}
 	delivery, ok := FindGroup(groupWebhookDelivery)
@@ -110,7 +110,8 @@ func knownPlatformGroup(name string) bool {
 	case groupDepositScan, groupDepositSignatures, groupWebhookDelivery, groupSweepLimits, groupMailSMTP, groupMailDelivery,
 		groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark,
 		groupPriceLookup, groupPriceCoinGecko, groupPriceCoinMarketCap, groupPriceCoinAPI,
-		groupIngestPush, groupProviderAlchemy, groupProviderHelius, groupProviderQuickNode, groupProviderEtherscan:
+		groupIngestPush, groupProviderAlchemy, groupProviderHelius, groupProviderQuickNode, groupProviderEtherscan,
+		GroupLocalWorkers, GroupXRPStream, GroupProviderTron, GroupHTTPThrottle, GroupWithdrawals, GroupPlatformURLs:
 		return true
 	default:
 		return false
@@ -404,9 +405,13 @@ func platformSecretGroupGatedByAdmins(group Group) bool {
 	case groupMailSMTP, groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark:
 		return mailCredentialPermissions(group) && platformAdminCoversViewPermission(group.ViewPermission)
 	case groupPriceCoinGecko, groupPriceCoinMarketCap, groupPriceCoinAPI,
-		groupProviderAlchemy, groupProviderHelius, groupProviderQuickNode, groupProviderEtherscan:
+		groupProviderAlchemy, groupProviderHelius, groupProviderQuickNode, groupProviderEtherscan,
+		GroupProviderTron, GroupXRPStream:
 		return providerCredentialPermissions(group) && platformAdminCoversViewPermission(group.ViewPermission)
 	default:
+		if strings.HasPrefix(group.Name, groupUTXOFallbackPrefix) {
+			return providerCredentialPermissions(group) && platformAdminCoversViewPermission(group.ViewPermission)
+		}
 		return false
 	}
 }

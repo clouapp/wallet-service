@@ -105,6 +105,9 @@ func registerVault() {
 			"xrp_stream_chain":                   envString("LOCAL_XRP_STREAM_CHAIN", ""),
 			"xrp_stream_url":                     envString("LOCAL_XRP_STREAM_URL", ""),
 			"xrp_stream_address_refresh_seconds": envInt("LOCAL_XRP_STREAM_ADDRESS_REFRESH_SECONDS", 15),
+			// How often the local workers read every chain's RPC endpoint list and the
+			// TronGrid key, so a change another process wrote reaches this one.
+			"chain_sync_interval_seconds": envInt("LOCAL_CHAIN_SYNC_INTERVAL_SECONDS", 30),
 		},
 		// An outbound transfer (withdrawal, sweep, gas seed) still pending or confirming
 		// this many hours after it was recorded is warned about on every tracker pass
