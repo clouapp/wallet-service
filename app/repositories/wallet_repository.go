@@ -57,6 +57,15 @@ func (r *WalletRepository) FindByID(ctx context.Context, id uuid.UUID) (*models.
 	return &wallet, nil
 }
 
+// LockByID returns the wallet under a row lock in the transaction on ctx.
+func (r *WalletRepository) LockByID(ctx context.Context, id uuid.UUID) (*models.Wallet, error) {
+	var wallet models.Wallet
+	if err := r.Query(ctx).LockForUpdate().With("DepositAddress").Where("id = ?", id).FirstOrFail(&wallet); err != nil {
+		return nil, db.LookupError(err, "lock wallet")
+	}
+	return &wallet, nil
+}
+
 // FindByIDAndAccount returns the wallet when it belongs to accountID, or ErrRepositoryNotFound.
 func (r *WalletRepository) FindByIDAndAccount(ctx context.Context, id, accountID uuid.UUID) (*models.Wallet, error) {
 	var wallet models.Wallet
@@ -162,11 +171,18 @@ func (r *WalletRepository) SetMPCSecretARN(ctx context.Context, id uuid.UUID, fr
 
 // Activate sets status and clears activation_code together.
 func (r *WalletRepository) Activate(ctx context.Context, id uuid.UUID, status string) error {
-	if _, err := r.Query(ctx).Model(&models.Wallet{}).Where("id = ?", id).Update(map[string]any{
+	if status != "active" {
+		return fmt.Errorf("activate wallet: active status is required")
+	}
+	result, err := r.Query(ctx).Model(&models.Wallet{}).Where("id = ? AND status = ? AND activation_code IS NOT NULL", id, "pending").Update(map[string]any{
 		"status":          status,
 		"activation_code": nil,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("activate wallet: %w", err)
+	}
+	if result == nil || result.RowsAffected != 1 {
+		return models.ErrRepositoryNotFound
 	}
 	return nil
 }

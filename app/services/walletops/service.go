@@ -28,6 +28,7 @@ var ErrAddressesUnavailable = errors.New("addresses unavailable")
 // implements it.
 type Wallets interface {
 	CreateWallet(ctx context.Context, accountID uuid.UUID, chainID, label, passphrase string) (*wallet.CreateWalletResult, error)
+	CreateExternalWallet(ctx context.Context, accountID uuid.UUID, chainID, label, passphrase string) (*wallet.CreateWalletResult, error)
 	ActivateWallet(ctx context.Context, walletID uuid.UUID, code string) (*models.Wallet, error)
 	GetWallet(ctx context.Context, id uuid.UUID) (*models.Wallet, error)
 	GenerateAddress(ctx context.Context, walletID uuid.UUID, externalUserID, label, metadata, passphrase string) (*models.Address, error)
@@ -92,6 +93,21 @@ func NewService(deps Deps) *Service {
 // CreateWallet creates a wallet for the account on any chain the service runs.
 func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID, label, passphrase string) (*wallet.CreateWalletResult, error) {
 	return s.wallets.CreateWallet(ctx, accountID, chainID, label, passphrase)
+}
+
+// CreateExternalWallet provisions an authorized headless API wallet without the dashboard activation ceremony.
+func (s *Service) CreateExternalWallet(ctx context.Context, input CreateWalletInput) (*wallet.CreateWalletResult, error) {
+	if input.Environment != models.EnvironmentTest && input.Environment != models.EnvironmentProd {
+		return nil, chainsvc.ErrChainNotInEnvironment
+	}
+	chain, err := s.chains.FindForEnvironment(ctx, input.Chain, input.Environment)
+	if err != nil {
+		return nil, err
+	}
+	if chain == nil || chain.Status != models.StatusActive {
+		return nil, chainsvc.ErrChainNotInEnvironment
+	}
+	return s.wallets.CreateExternalWallet(ctx, input.AccountID, input.Chain, input.Label, input.Passphrase)
 }
 
 // ActivateWallet confirms the user saved the wallet's KeyCard, by its activation code.

@@ -27,6 +27,7 @@ var (
 	ErrWalletNotFound        = errors.New("wallet not found")
 	ErrWalletAlreadyActive   = errors.New("wallet is not pending activation")
 	ErrInvalidActivationCode = errors.New("invalid activation code")
+	ErrLifecycleUnavailable  = errors.New("wallet lifecycle transaction is unavailable")
 
 	ErrAccountRequired    = errors.New("account_id is required")
 	ErrPassphraseTooShort = errors.New("passphrase must be at least 12 characters")
@@ -77,6 +78,12 @@ type WalletStore interface {
 	SetDepositAddressID(ctx context.Context, id, addressID uuid.UUID) error
 	SetMPCChainCode(ctx context.Context, id uuid.UUID, chainCode string) error
 	Activate(ctx context.Context, id uuid.UUID, status string) error
+}
+
+// lifecycleStore makes creation and activation atomic without exposing persistence outside this service.
+type lifecycleStore interface {
+	Within(ctx context.Context, fn func(context.Context) error) error
+	LockByID(ctx context.Context, id uuid.UUID) (*models.Wallet, error)
 }
 
 // AddressStore is the address persistence this service uses.
@@ -149,12 +156,25 @@ func (s *Service) cacheAddress(ctx context.Context, chainID, address string) {
 }
 
 func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID, label, passphrase string) (*CreateWalletResult, error) {
+	return s.createWallet(ctx, accountID, chainID, label, passphrase, false)
+}
+
+// CreateExternalWallet provisions a headless API wallet active, without a dashboard activation credential.
+func (s *Service) CreateExternalWallet(ctx context.Context, accountID uuid.UUID, chainID, label, passphrase string) (*CreateWalletResult, error) {
+	return s.createWallet(ctx, accountID, chainID, label, passphrase, true)
+}
+
+func (s *Service) createWallet(ctx context.Context, accountID uuid.UUID, chainID, label, passphrase string, external bool) (*CreateWalletResult, error) {
 	defer mpcshare.DiscardPassphrase(&passphrase)
 	if accountID == uuid.Nil {
 		return nil, ErrAccountRequired
 	}
 	if len(passphrase) < 12 {
 		return nil, ErrPassphraseTooShort
+	}
+	lifecycle, transactional := s.walletRepo.(lifecycleStore)
+	if external && !transactional {
+		return nil, ErrLifecycleUnavailable
 	}
 
 	chainID = strings.ToLower(chainID)
@@ -184,11 +204,18 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 	}
 	defer zeroBytes(enc.Ciphertext)
 
-	n, err := cryptorand.Int(cryptorand.Reader, big.NewInt(1_000_000))
-	if err != nil {
-		return nil, fmt.Errorf("generate activation code: %w", err)
+	var code string
+	var activationCode *string
+	status := string(types.WalletStatusActive)
+	if !external {
+		n, err := cryptorand.Int(cryptorand.Reader, big.NewInt(1_000_000))
+		if err != nil {
+			return nil, fmt.Errorf("generate activation code: %w", err)
+		}
+		code = fmt.Sprintf("%06d", n.Int64())
+		activationCode = &code
+		status = string(types.WalletStatusPending)
 	}
-	code := fmt.Sprintf("%06d", n.Int64())
 
 	walletID := uuid.New()
 	secretARN, err := s.secretsManager.Create(ctx, ShareBSecretName(walletID), keygenResult.ShareB)
@@ -206,7 +233,6 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 		return onPostSecretErr(fmt.Errorf("derive address: %w", err))
 	}
 
-	codeStr := code
 	w := &models.Wallet{
 		ID:               walletID,
 		Chain:            chainID,
@@ -220,11 +246,8 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 		MPCChainCode:     hex.EncodeToString(keygenResult.ChainCode),
 		AddressIndex:     0,
 		AccountID:        &accountID,
-		Status:           string(types.WalletStatusPending),
-		ActivationCode:   &codeStr,
-	}
-	if err := s.walletRepo.Create(ctx, w); err != nil {
-		return onPostSecretErr(fmt.Errorf("create wallet: %w", err))
+		Status:           status,
+		ActivationCode:   activationCode,
 	}
 
 	addressID := uuid.New()
@@ -239,12 +262,25 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 		Label:           "Deposit Address",
 		DerivationType:  "genesis",
 	}
-	if err := s.addressRepo.Create(ctx, addr); err != nil {
-		return onPostSecretErr(fmt.Errorf("create deposit address: %w", err))
+	persist := func(writeCtx context.Context) error {
+		if err := s.walletRepo.Create(writeCtx, w); err != nil {
+			return fmt.Errorf("create wallet: %w", err)
+		}
+		if err := s.addressRepo.Create(writeCtx, addr); err != nil {
+			return fmt.Errorf("create deposit address: %w", err)
+		}
+		if err := s.walletRepo.SetDepositAddressID(writeCtx, walletID, addressID); err != nil {
+			return fmt.Errorf("link deposit address: %w", err)
+		}
+		return nil
 	}
-
-	if err := s.walletRepo.SetDepositAddressID(ctx, walletID, addressID); err != nil {
-		return onPostSecretErr(fmt.Errorf("link deposit address: %w", err))
+	if external {
+		err = lifecycle.Within(ctx, persist)
+	} else {
+		err = persist(ctx)
+	}
+	if err != nil {
+		return onPostSecretErr(err)
 	}
 	w.DepositAddressID = &addressID
 	w.DepositAddress = addr
@@ -268,27 +304,37 @@ func (s *Service) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID
 }
 
 func (s *Service) ActivateWallet(ctx context.Context, walletID uuid.UUID, code string) (*models.Wallet, error) {
-	w, err := s.walletRepo.FindByID(ctx, walletID)
-	if err != nil || w == nil {
-		return nil, ErrWalletNotFound
+	lifecycle, ok := s.walletRepo.(lifecycleStore)
+	if !ok {
+		return nil, ErrLifecycleUnavailable
 	}
-	if w.Status != string(types.WalletStatusPending) {
-		return nil, ErrWalletAlreadyActive
+	var activated *models.Wallet
+	err := lifecycle.Within(ctx, func(writeCtx context.Context) error {
+		w, err := lifecycle.LockByID(writeCtx, walletID)
+		if err != nil || w == nil {
+			return ErrWalletNotFound
+		}
+		if w.Status != string(types.WalletStatusPending) {
+			return ErrWalletAlreadyActive
+		}
+		if w.ActivationCode == nil {
+			return ErrWalletNotFound
+		}
+		if subtle.ConstantTimeCompare([]byte(*w.ActivationCode), []byte(code)) != 1 {
+			return ErrInvalidActivationCode
+		}
+		if err := s.walletRepo.Activate(writeCtx, w.ID, string(types.WalletStatusActive)); err != nil {
+			return fmt.Errorf("activate wallet: %w", err)
+		}
+		w.Status = string(types.WalletStatusActive)
+		w.ActivationCode = nil
+		activated = w
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	if w.ActivationCode == nil {
-		return nil, ErrWalletNotFound
-	}
-	if subtle.ConstantTimeCompare([]byte(*w.ActivationCode), []byte(code)) != 1 {
-		return nil, ErrInvalidActivationCode
-	}
-
-	if err := s.walletRepo.Activate(ctx, w.ID, string(types.WalletStatusActive)); err != nil {
-		return nil, fmt.Errorf("activate wallet: %w", err)
-	}
-	w.Status = string(types.WalletStatusActive)
-	w.ActivationCode = nil
-
-	return w, nil
+	return activated, nil
 }
 
 func curveForChain(chainID string) mpc.Curve {

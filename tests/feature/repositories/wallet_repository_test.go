@@ -94,6 +94,24 @@ func (s *WalletRepositoryTestSuite) TestActivate_Clears_TheCode() {
 	s.Require().NoError(err)
 	s.Equal("active", found.Status)
 	s.Nil(found.ActivationCode)
+	s.ErrorIs(s.repo.Activate(context.Background(), w.ID, "active"), models.ErrRepositoryNotFound)
+}
+
+func (s *WalletRepositoryTestSuite) TestActivate_RefusesConcurrentFreezeOrMissingCode() {
+	for _, status := range []string{"frozen", "archived", "active", "pending"} {
+		w := s.makeWallet("eth")
+		w.Status = status
+		if status != "pending" {
+			code := "000000"
+			w.ActivationCode = &code
+		}
+		s.Require().NoError(s.repo.Create(context.Background(), w))
+		s.ErrorIs(s.repo.Activate(context.Background(), w.ID, "active"), models.ErrRepositoryNotFound)
+		found, err := s.repo.FindByID(context.Background(), w.ID)
+		s.Require().NoError(err)
+		s.Equal(status, found.Status)
+		s.Equal(w.ActivationCode, found.ActivationCode)
+	}
 }
 
 func (s *WalletRepositoryTestSuite) TestPaginate_By_AccountAndMemberKeepsOnlyActiveMemberships() {

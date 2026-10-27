@@ -72,6 +72,15 @@ func (r *AccountRepository) FindByID(ctx context.Context, id uuid.UUID) (*models
 	return &account, nil
 }
 
+// LockByID returns the account under a row lock in the transaction on ctx.
+func (r *AccountRepository) LockByID(ctx context.Context, id uuid.UUID) (*models.Account, error) {
+	var account models.Account
+	if err := r.Query(ctx).LockForUpdate().Where("id = ?", id).FirstOrFail(&account); err != nil {
+		return nil, db.LookupError(err, "lock account")
+	}
+	return &account, nil
+}
+
 // FindByIDs returns the accounts whose ids are in the list. An empty list is an empty result.
 func (r *AccountRepository) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.Account, error) {
 	accounts := []models.Account{}

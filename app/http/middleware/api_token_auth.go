@@ -143,6 +143,7 @@ func APITokenAuth(tokens apiTokenLookup) http.Middleware {
 		}
 
 		ctx.WithValue(requestctx.KeyAccountID, accountID)
+		ctx.WithValue(requestctx.KeyAccountEnvironment, account.Environment)
 		ctx.WithValue(requestctx.KeyAPIToken, &token)
 		ctx.Request().Next()
 	}

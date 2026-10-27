@@ -8,6 +8,7 @@ import (
 
 	"github.com/macrowallets/waas/app/http/responses"
 	"github.com/macrowallets/waas/app/services/chainregistry"
+	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	"github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/app/services/walletview"
 )
@@ -21,6 +22,8 @@ import (
 func mapError(ctx http.Context, err error, action string) http.Response {
 	var fetch *walletview.FetchError
 	switch {
+	case errors.Is(err, chainsvc.ErrChainNotInEnvironment):
+		return responses.Fail(ctx, http.StatusForbidden, responses.CodeForbidden, chainsvc.ErrChainNotInEnvironment.Error())
 	case errors.Is(err, chainregistry.ErrUnknownChain):
 		return responses.Fail(ctx, http.StatusConflict, responses.CodeConflict, "unknown chain")
 	case errors.Is(err, wallet.ErrPassphraseTooShort):
