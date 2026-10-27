@@ -564,6 +564,9 @@ func (s *Service) editPayload(ctx context.Context, tx models.Transaction, set ma
 // keeps (sealed, for a same-key retry) once the chain settled it: in a block, or
 // failed on chain. Its send was taken, so a pending outcome becomes accepted. It
 // returns the payload the row now holds; a row without bytes is not written.
+// A purpose-tagged direct-child gas seed keeps its sealed bytes: the preparation
+// observer verifies its exact economics from them after inclusion, independently
+// of this tracker. Removing them here would strand the linked token payment.
 func (s *Service) forgetSignedBytes(ctx context.Context, tx models.Transaction) string {
 	payload := map[string]any{}
 	if json.Unmarshal([]byte(tx.RawPayload), &payload) != nil {
@@ -572,7 +575,10 @@ func (s *Service) forgetSignedBytes(ctx context.Context, tx models.Transaction) 
 	if _, kept := payload[chain.SignedTxPayloadKey]; !kept {
 		return tx.RawPayload
 	}
-	delete(payload, chain.SignedTxPayloadKey)
+	_, preparation := payload["direct_child_gas"]
+	if tx.TxType != models.TxTypeGasSeed || tx.Origin != models.TxOriginGasSeed || !preparation {
+		delete(payload, chain.SignedTxPayloadKey)
+	}
 	if payload[chain.BroadcastOutcomePayloadKey] == chain.BroadcastOutcomePending {
 		payload[chain.BroadcastOutcomePayloadKey] = chain.BroadcastOutcomeAccepted
 	}

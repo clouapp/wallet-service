@@ -237,7 +237,12 @@ func (s *Service) Request(ctx context.Context, req WithdrawRequest) (*models.Tra
 		return nil, nil, err
 	}
 
-	plan, err := s.sweep.PlanForWithdrawalTo(ctx, wallet.ID, req.Asset, amount, sweep.Destination{Address: req.ToAddress, Tag: req.DestinationTag}, req.CallerAccountID)
+	var plan *sweep.Plan
+	if operationPlanner, ok := s.sweep.(sweep.OperationPlanner); ok {
+		plan, err = operationPlanner.PlanForOperation(ctx, req.WithdrawalID, wallet.ID, req.Asset, amount.String(), sweep.Destination{Address: req.ToAddress, Tag: req.DestinationTag}, req.CallerAccountID)
+	} else {
+		plan, err = s.sweep.PlanForWithdrawalTo(ctx, wallet.ID, req.Asset, amount, sweep.Destination{Address: req.ToAddress, Tag: req.DestinationTag}, req.CallerAccountID)
+	}
 	if err != nil {
 		if errors.Is(err, sweep.ErrUnsupportedChain) {
 			// Bubble the sentinel; the controller maps it to 422

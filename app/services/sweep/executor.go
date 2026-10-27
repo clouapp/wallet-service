@@ -70,6 +70,11 @@ func (s *service) ExecutePlan(
 	if err != nil {
 		return nil, fmt.Errorf("sweep: adapter for %q: %w", plan.Chain, err)
 	}
+	if plan.GasPreparation != nil {
+		if err = s.executeDirectChildGasPreparation(ctx, plan, creds, toAddress); err != nil {
+			return nil, err
+		}
+	}
 	if err = s.requireTokenPlanGas(ctx, adapter, wallet, plan, toAddress); err != nil {
 		return nil, err
 	}

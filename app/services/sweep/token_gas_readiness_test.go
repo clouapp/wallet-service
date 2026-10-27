@@ -95,6 +95,11 @@ func tokenReadinessFixture(t *testing.T, childGas, baseGas int64) (*service, *to
 	child := models.Address{ID: uuid.New(), WalletID: id}
 	wallet := &models.Wallet{ID: id, Chain: gasPlanChain, DepositAddress: &base, MPCCurve: "secp256k1"}
 	assignDerivedEVMAddresses(t, wallet, &base, &child)
+	accountID := uuid.New()
+	wallet.AccountID, wallet.Status = &accountID, "active"
+	base.Chain, base.IsActive, base.ExternalUserID = wallet.Chain, true, "system"
+	child.Chain, child.IsActive, child.ExternalUserID = wallet.Chain, true, "test-user"
+	networkID := int64(80002)
 	port.balances = map[string]*big.Int{base.Address: big.NewInt(baseGas), child.Address: big.NewInt(childGas)}
 	port.tokens = map[string]*big.Int{base.Address: new(big.Int), child.Address: big.NewInt(11_000_000)}
 	registry := chain.NewRegistry()
@@ -106,7 +111,7 @@ func tokenReadinessFixture(t *testing.T, childGas, baseGas int64) (*service, *to
 	svc := &service{
 		registry: registry, mpc: mpc, walletRepo: &fakeWalletRepo{wallet: wallet},
 		addressRepo: &fakeAddressRepo{children: []models.Address{base, child}},
-		chainRepo:   &fakeChainRepo{chain: evmChainEntity(gasPlanChain)}, txRepo: rows,
+		chainRepo:   &fakeChainRepo{chain: &models.Chain{ID: gasPlanChain, AdapterType: models.AdapterTypeEVM, NetworkID: &networkID, Status: "active"}}, txRepo: rows,
 		fetchShareBFn: func(context.Context, *models.Wallet) ([]byte, error) {
 			*secretReads++
 			return []byte("synthetic-test-share"), nil
@@ -122,8 +127,8 @@ func TestTokenGas_DirectChildRequiresItsOwnNativeFeeIncludingL1(t *testing.T) {
 		strategy Strategy
 	}{
 		{"exact_fee", 207, StrategyDirectFromChild},
-		{"one_unit_short", 206, StrategyMultiSweep},
-		{"zero_native", 0, StrategyMultiSweep},
+		{"one_unit_short", 206, StrategyDirectFromChild},
+		{"zero_native", 0, StrategyDirectFromChild},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			svc, port, wallet, child, _, _, _ := tokenReadinessFixture(t, tc.childGas, 10_000)
@@ -133,6 +138,9 @@ func TestTokenGas_DirectChildRequiresItsOwnNativeFeeIncludingL1(t *testing.T) {
 			}
 			if tc.strategy == StrategyDirectFromChild && (plan.SourceAddress == nil || plan.SourceAddress.ID != child.ID) {
 				t.Fatalf("wrong direct sender: %+v", plan)
+			}
+			if (tc.childGas < 207) != (plan.GasPreparation != nil) {
+				t.Fatal("unfunded child needs explicit preparation")
 			}
 			if port.BuildTransferCalls != 0 || port.BroadcastTransactionCalls != 0 {
 				t.Fatal("planning built or broadcast a transaction")
@@ -148,13 +156,14 @@ func TestTokenGas_PreparationBudgetsSeedBufferSeedFeeAndFinalFee(t *testing.T) {
 		base int64
 		ok   bool
 	}{{481, false}, {482, true}, {0, false}} {
-		svc, _, wallet, _, _, _, _ := tokenReadinessFixture(t, 0, tc.base)
-		plan, err := svc.PlanForWithdrawal(context.Background(), wallet.ID, gasPlanAsset, big.NewInt(6_100_000), gasPlanDestination, uuid.Nil)
+		svc, port, wallet, child, _, _, _ := tokenReadinessFixture(t, 0, tc.base)
+		plan := &Plan{WalletID: wallet.ID, Chain: wallet.Chain, Asset: gasPlanAsset, Amount: big.NewInt(6_100_000), Strategy: StrategyMultiSweep, Sweeps: []PlannedSweep{{From: child, Amount: big.NewInt(11_000_000), NeedsGas: true}}}
+		err := svc.requireTokenPlanGas(context.Background(), port, wallet, plan, gasPlanDestination)
 		if tc.ok {
 			if err != nil || plan == nil || plan.Strategy != StrategyMultiSweep {
 				t.Fatalf("base %d: plan=%+v err=%v", tc.base, plan, err)
 			}
-		} else if !errors.Is(err, ErrWalletNotGasReady) || plan != nil {
+		} else if !errors.Is(err, ErrWalletNotGasReady) {
 			t.Fatalf("base %d must refuse: plan=%+v err=%v", tc.base, plan, err)
 		}
 	}
@@ -227,12 +236,12 @@ func TestTokenGas_UnfundedPreparationStopsBeforeKeyRetrieval(t *testing.T) {
 	}
 }
 
-func TestTokenGas_RefusesUnestimableUnfundedBaseWithoutProjectedState(t *testing.T) {
+func TestTokenGas_ExplicitChildPreparationNeverEstimatesAnUnfundedBaseTokenTransfer(t *testing.T) {
 	svc, port, wallet, _, rows, mpc, secrets := tokenReadinessFixture(t, 0, 10_000)
 	port.requireHoldings = true
 	plan, err := svc.PlanForWithdrawal(context.Background(), wallet.ID, gasPlanAsset, big.NewInt(6_100_000), gasPlanDestination, uuid.Nil)
-	if !errors.Is(err, ErrGasEstimateFailed) || plan != nil {
-		t.Fatalf("unfunded base was incorrectly promised executable: plan=%+v err=%v", plan, err)
+	if err != nil || plan == nil || plan.Strategy != StrategyDirectFromChild || plan.GasPreparation == nil {
+		t.Fatalf("expected explicitly prepared child without fictitious base state: plan=%+v err=%v", plan, err)
 	}
 	if *secrets != 0 || mpc.SignCalls != 0 || port.BroadcastTransactionCalls != 0 || len(rows.created) != 0 {
 		t.Fatal("a refusal touched signing, persistence or broadcast")
@@ -345,10 +354,8 @@ func TestTokenGas_FundedPreparationUsesExistingSeedSweepAndFinalTransfer(t *test
 		}
 		return "synthetic-broadcast-hash", nil
 	}
-	plan, err := svc.PlanForWithdrawal(context.Background(), wallet.ID, gasPlanAsset, big.NewInt(6_100_000), gasPlanDestination, uuid.Nil)
-	if err != nil || plan.Strategy != StrategyMultiSweep {
-		t.Fatalf("plan=%+v err=%v", plan, err)
-	}
+	plan := &Plan{WalletID: wallet.ID, Chain: wallet.Chain, Asset: gasPlanAsset, Amount: big.NewInt(6_100_000), Strategy: StrategyMultiSweep,
+		Sweeps: []PlannedSweep{{From: child, Amount: big.NewInt(11_000_000), NeedsGas: true}}}
 	result, err := svc.ExecutePlan(context.Background(), plan, SigningCredentials{}, uuid.New(), gasPlanDestination, "test-user")
 	if err != nil || result == nil || result.FinalWithdrawTx == nil || result.FailedStep != nil {
 		t.Fatalf("result=%+v err=%v", result, err)
@@ -362,15 +369,13 @@ func TestTokenGas_FundedPreparationUsesExistingSeedSweepAndFinalTransfer(t *test
 }
 
 func TestTokenGas_SeedInclusionWithoutObservedFundingNeverSignsTheChild(t *testing.T) {
-	svc, port, wallet, _, rows, mpc, _ := tokenReadinessFixture(t, 0, 482)
+	svc, port, wallet, child, rows, mpc, _ := tokenReadinessFixture(t, 0, 482)
 	port.GetTransactionBlockVal = 1
 	port.BuildSweepFn = func(context.Context, types.SweepRequest) ([]types.UnsignedTx, error) {
 		return []types.UnsignedTx{{ChainID: wallet.Chain, RawBytes: []byte("seed")}, {ChainID: wallet.Chain, RawBytes: []byte("sweep")}}, nil
 	}
-	plan, err := svc.PlanForWithdrawal(context.Background(), wallet.ID, gasPlanAsset, big.NewInt(6_100_000), gasPlanDestination, uuid.Nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	plan := &Plan{WalletID: wallet.ID, Chain: wallet.Chain, Asset: gasPlanAsset, Amount: big.NewInt(6_100_000), Strategy: StrategyMultiSweep,
+		Sweeps: []PlannedSweep{{From: child, Amount: big.NewInt(11_000_000), NeedsGas: true}}}
 	result, err := svc.ExecutePlan(context.Background(), plan, SigningCredentials{}, uuid.New(), gasPlanDestination, "test-user")
 	if err != nil || result == nil || result.FailedStep == nil || result.FinalWithdrawTx != nil {
 		t.Fatalf("unfunded child must stop the preparation: result=%+v err=%v", result, err)
