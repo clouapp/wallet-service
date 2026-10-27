@@ -121,10 +121,12 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 - **Rate limits:** `middleware.Throttle` on `/v1/auth/{login,register,2fa/verify,refresh,recover,
   recover/confirm,invites/accept}`, on the whole `/api/v1` group and on `gas-check`; over the limit is
   429 `too_many_requests` with `Retry-After`. Keys use `middleware.ClientIP`, which trusts
-  `X-Forwarded-For` only from `TRUSTED_PROXIES`; the limits are `THROTTLE_*` (attempts per minute,
-  `0` turns one off) and the counters live in the Cache (Redis); a cache failure lets the request
-  through. Limiters and defaults: `.ai/guidelines/http-error-contract.md`. — guarded by
-  `app/http/middleware/throttle_test.go` and the contract steps 69 and 70.
+  `X-Forwarded-For` only from `TRUSTED_PROXIES`; the limits are read at each request from the
+  `http_throttle` platform setting (attempts per minute, `-1` turns one off), and a key it does not
+  store keeps its `THROTTLE_*` value (`0` turns one off); the counters live in the Cache (Redis); a
+  cache failure lets the request through. Limiters and defaults: `.ai/guidelines/http-error-contract.md`.
+  — guarded by `app/http/middleware/throttle_test.go` (`TestLogin_TheStoredLimitWinsOverTheConfigAndMinusOneTurnsItOff`
+  among them) and the contract steps 69 and 70.
 - **API token (external):** a JWT minted by `apitoken.Service.Mint` (claims and signing in
   `apitoken.Sign`; test fixtures sign through `middleware.MintAPIToken`) (`sub: api_token`,
   `jti` = `access_tokens` row, `account_id` claim). The row must exist and be active. When
@@ -222,7 +224,7 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
 |---|---|---|
 | Goravel queue, `sync` connection (`QUEUE_CONNECTION`, default `sync`; `config/queue.go`) | credential mail (`jobs.SendCredentialMailJob`, always `DispatchSync`) | runs in the dispatching process. The `database` connection (queue `blockchain`) is configured but nothing runs `queue:work` and no job uses it |
 | AWS SQS (`app/adapters/queue/sqs`, port `queue.Sender`) | outbound webhook delivery | `webhook_worker` Lambda, or on a host without Lambda the `webhook_poller` process (same handler) |
-| `app/services/localworkers` | local stand-in for `confirmation_tracker` and `webhook_worker` (with a webhook queue, the outbox re-dispatch instead of local delivery), the wallet balance refresh loop (and optional deposit scan, with the deposit event backfill of the scanned chains), the deposit signature sync of the scanned chains `deposit_signatures` lists (see "Solana deposits"), the MPC keygen pre-parameters pool, and the optional real-time XRP deposit stream (`app/services/xrpstream`, off by default, see "XRP deposits") | started from `main.go` in local mode only |
+| `app/services/localworkers` | local stand-in for `confirmation_tracker` and `webhook_worker` (with a webhook queue, the outbox re-dispatch instead of local delivery), the wallet balance refresh loop (and optional deposit scan, with the deposit event backfill of the scanned chains), the deposit signature sync of the scanned chains `deposit_signatures` lists (see "Solana deposits"), the MPC keygen pre-parameters pool, the optional real-time XRP deposit stream (`app/services/xrpstream`, off by default, see "XRP deposits") and the chain sync (`app/services/chainsync`, see "Platform settings over the environment"). The scanned chains and the stream are read on every supervisor tick (15 s) | started from `main.go` in local mode only |
 
 - Local webhook delivery from the outbox runs only when no SQS webhook queue is
   configured, so a message is never drained twice. — guarded by
@@ -571,7 +573,11 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `deposit_scan`, `deposit_signatures`, `webhook_delivery`, `sweep_limits`, the mail groups (`mail_smtp`, `mail_delivery`,
   `mail_ses`, `mail_mailgun`, `mail_resend`, `mail_postmark`), the price groups (`price_lookup`,
   `price_coingecko`, `price_coinmarketcap`, `price_coinapi`) and the provider groups
-  (`ingest_push`, `provider_alchemy`, `provider_helius`, `provider_quicknode`, `provider_etherscan`).
+  (`ingest_push`, `provider_alchemy`, `provider_helius`, `provider_quicknode`, `provider_etherscan`,
+  `provider_tron`, `utxo_fallbacks_btc`, `utxo_fallbacks_tbtc`, `utxo_fallbacks_ltc`, `utxo_fallbacks_tltc`),
+  `local_workers` and `xrp_stream` (section `scanning`), and the operations groups (`http_throttle`,
+  `withdrawals`, `platform_urls`; section `operations`). What each one replaces, and when a change
+  applies: "Platform settings over the environment" below.
   `ingest_push.base_url` is the ingest base URL (not a secret, see "Provider push subscriptions"). A
   provider key counts only while its group's `enabled` is `"true"`.
   A secret (a signing secret, an API key, a password) is written sealed and redacted on read
@@ -590,6 +596,49 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   time. Stored rows stay, and no activity row is written. An unknown page,
   including a platform-only page, is 404 before the role check. A page that
   holds a platform-managed group is 403 and the cache is left in place.
+
+### Platform settings over the environment
+
+Each of these platform settings replaces an environment variable field by field: a field no row
+stores keeps the variable (the platform views show the variable's value only for the two chain
+lists, `PlatformFallback`). Every read goes through the settings cache (Redis, 10 minutes, dropped
+on save), so a save reaches every process on its next read.
+
+| Setting | Replaces | Applies |
+|---|---|---|
+| `local_workers.deposit_scan_chains` | `LOCAL_DEPOSIT_SCAN_CHAINS` | next supervisor tick (15 s): an added chain has its address cache synced and starts (a dedicated chain in its own loop), a removed one stops after its cycle in progress; an empty stored list scans none; a chain the registry does not hold is skipped and logged (it no longer stops the local workers); the backfill and the signature schedule follow the list |
+| `xrp_stream.{enabled,chain,url,address_refresh_seconds}` | `LOCAL_XRP_STREAM_*` | next supervisor tick: a changed stream is stopped (waited up to 10 s) and the new one opened; a stream whose chain is not scanned does not run. `url` is sealed and checked on write (`wss://`, `ws://` on the loopback, through the RPC guard) |
+| `provider_tron.{enabled,api_key}` | `TRON_API_KEY` | every adapter within `LOCAL_CHAIN_SYNC_INTERVAL_SECONDS` (30 s, `TronLive.SetAPIKey`) in a process running the local workers; at the next registry build elsewhere |
+| `utxo_fallbacks_<chain>.{rpc_urls,api_key,tatum_data_api_url}` | `<PREFIX>_FALLBACK_RPC_URL`, `_FALLBACK_RPC_API_KEY`, `_TATUM_DATA_API_URL` | at the next registry build (restart, or a platform chain edit in that process). `rpc_urls` (`none` turns them off) and `api_key` are sealed; every URL must pass the adapter's rule (`bitcoinchain.CheckFallbackURL`) and the RPC guard on write |
+| `http_throttle.<limit>` | `THROTTLE_*` | next request; `-1` turns a limit off, `0` keeps the variable |
+| `deposit_scan.{alert_lag_blocks,alert_stale_minutes}` | `DEPOSIT_SCAN_ALERT_LAG_BLOCKS`, `_STALE_MINUTES` | next tracker pass; a chain's `_<CHAIN>` variable still wins for that chain |
+| `withdrawals.stale_after_hours` | `WITHDRAWAL_STALE_AFTER_HOURS` | next tracker pass and `/health` count |
+| `platform_urls.frontend_url` | `APP_FRONTEND_URL` | next invite (an absolute http(s) URL, no query or fragment) |
+| `mail_delivery.driver` | `MAIL_MAILER` | next send: `smtp` (`mail_smtp`), `mailgun`, `resend` or `postmark` over their HTTP APIs (`app/providers/mail/api_transport.go`, their groups' credentials and sender overrides; a Mailgun endpoint is `api.mailgun.net` or `api.eu.mailgun.net` only); a transport without its credential fails the send and never falls back to another; `ses` is refused on write and on send until it ships; `log` is refused in production |
+
+- **Chain sync** (`app/services/chainsync`, run by the local workers): every
+  `LOCAL_CHAIN_SYNC_INTERVAL_SECONDS` it reads each active chain's endpoint list (primary and enabled
+  fallbacks, as the registry opens them) and the TronGrid key; its first pass only records them, a
+  later one replaces the list of a chain whose list changed (`Registry.ReplaceEndpoints`, the
+  primary only for the Bitcoin family) and sets a changed key. So an endpoint list written by
+  `chains:rpc-endpoints`, `chains:set-rpc` or another process's platform API reaches every process
+  running the local workers without a restart. A chain added or removed still needs a registry
+  build.
+- **Moving the environment over**: `go run . artisan settings:import-env --actor=<platform admin email>
+  [--apply] [--overwrite]` copies the set variables of the table (and `DEPOSIT_SIGNATURE_CHAINS`)
+  through `SavePlatform` (validated, sealed, logged as that admin); it prints group, key and variable
+  names, never a value, leaves a stored field alone unless `--overwrite`, and writes nothing without
+  `--apply`. A `THROTTLE_*` `0` becomes `-1`; `TRON_API_KEY` is stored with `enabled` true. Once each
+  value shows on the panel, the variable can leave the environment.
+- **Write checks**: a group may register a `settings.WriteCheck` (composition root,
+  `providers.chainProviderWriteChecks`) that sees a save's plaintext, secrets included, before they
+  are sealed; its refusal is 422 with the rule, never the value.
+
+— guarded by `app/services/settings/runtime_groups_test.go`, `env_import_test.go`,
+`app/services/localworkers/supervisor_test.go`, `app/services/chainsync/service_test.go`,
+`app/providers/chain_provider_settings_test.go`, `app/providers/mail/api_transport_test.go`,
+`TestTronHTTP_SetAPIKeyReplacesTheKeyFromTheNextCall` (`app/adapters/chain/tron`),
+`app/services/account/frontend_base_test.go` and `app/console/commands/settings_import_env_test.go`.
 
 ### 11. Feature flags
 
@@ -834,7 +883,13 @@ DEPOSIT_SIGNATURE_CHAINS=        # e.g. sol: chains read account by account inst
 DEPOSIT_SIGNATURE_INTERVAL_SECONDS=600  # how often the signature sync reads a listed chain (at least 15)
 DEPOSIT_SIGNATURE_CONCURRENCY=2  # accounts read at once (1-16)
 DEPOSIT_SIGNATURE_MAX_PAGES=10   # pages of 1000 signatures read per account when the chain has no scan checkpoint
+LOCAL_CHAIN_SYNC_INTERVAL_SECONDS=30  # local workers: how often RPC endpoint lists and the TronGrid key are reloaded
 ```
+
+`THROTTLE_*`, `WITHDRAWAL_STALE_AFTER_HOURS`, `DEPOSIT_SCAN_ALERT_*`, `DEPOSIT_SIGNATURE_CHAINS`,
+`LOCAL_DEPOSIT_SCAN_CHAINS`, `LOCAL_XRP_STREAM_*`, `TRON_API_KEY`, `<PREFIX>_FALLBACK_*`,
+`APP_FRONTEND_URL` and `MAIL_MAILER` are fallbacks of platform settings ("Platform settings over the
+environment").
 
 Redis is the cache driver (rate limits, locks including the per-chain deposit scan lock, settings
 cache, the deposit scanner's watched addresses and its copy of the scan checkpoint, which lives in
@@ -853,7 +908,9 @@ TRON (the java-tron HTTP API) and XRP (rippled JSON-RPC) with their own clients 
 (`rpc.Endpoints`: order, cool-downs, network checks, health, logs and broadcast rule). The Bitcoin
 family keeps its own list (next section): its list writes are refused.
 
-- **Configure** (the processes load a changed list on restart; the platform API reloads its own at once):
+- **Configure** (the platform API reloads its own process at once; every process running the local
+  workers reloads a changed list within `LOCAL_CHAIN_SYNC_INTERVAL_SECONDS`, the chain sync; the others
+  on restart):
   `go run . artisan chains:rpc-endpoints <chain>` lists position, host, enabled flag and recorded
   health (`--probe` also asks every endpoint for its network and head now). One change per run, dry
   run unless `--apply`: `--add=<url|env:NAME> [--position=N]` (1 makes it the primary),
@@ -864,6 +921,8 @@ family keeps its own list (next section): its list writes are refused.
   disabled endpoint never becomes the primary. A chain keeps at most 5 endpoints. A write locks the
   chain row and reads the list again: a list another writer changed since the change was planned
   refuses it. The same operations are
+  `GET /v1/platform/chains` (every chain, whatever the account environment, with its thresholds,
+  confirmations and finality, never a URL) and
   `/v1/platform/chains/{chainId}/rpc-endpoints` (GET, POST, PUT, POST `/order`, POST `/defaults`,
   PATCH and DELETE `/{position}`), platform admin only, 422 on a refusal, one `chains.updated` row
   (`{"fields":["rpc_endpoints"]}`) in the write's transaction. No URL is ever printed, logged, stored
@@ -1012,11 +1071,13 @@ family keeps its own list (next section): its list writes are refused.
 `app/console/commands/chains_rpc_endpoints_test.go`, `app/adapters/redis/rpchealth/store_test.go`,
 `app/providers/active_chains_rpc_fallbacks_test.go`, `TestChain_RPCEndpoint_RepositorySuite`
 (`tests/feature/repositories`), `tests/migrations/create_chain_rpc_endpoints_test.go` and
-`tests/feature/api/platform/chains` (`TestB_Platform_*`). Operator steps: `docs/RPC_PROVIDERS.md`.
+`tests/feature/api/platform/chains` (`TestB_Platform_*`, `TestC_Platform_ListShowsEveryChainWithoutAnyURL`). Operator steps: `docs/RPC_PROVIDERS.md`.
 
 ### Bitcoin-family provider failover
 
-BTC, TBTC, LTC and TLTC take fallback providers after `<PREFIX>_RPC_URL`:
+BTC, TBTC, LTC and TLTC take fallback providers after `<PREFIX>_RPC_URL` (each field of the
+`utxo_fallbacks_<chain>` platform setting wins over its variable; see "Platform settings over the
+environment"):
 
 ```bash
 LTC_FALLBACK_RPC_URL=                 # empty: the network's built-in list; "none": no fallback
@@ -1058,7 +1119,7 @@ The final withdrawal row is created under the hash of the signed bytes **before*
 
 The tracker settles every sent transfer by its hash (mined → confirmed or failed on chain). For a row with `broadcast_outcome: "unknown"` that no node knows by its hash, EVM `NonceSpend` gives a **positive proof**: from `max(required_confirmations, 12)` blocks under the head (the finalized block on a `finalized_tag` chain, whose finality may lag the head by more than any count) it walks back (newest first, which a node without archive state still has), then binary-searches the block where the sender's nonce count passed the nonce, and reads the sender's transaction with that nonce in it. Ours there is confirmed from that block (or failed on chain from its receipt, read by block; a node without a transaction index such as publicnode Sepolia still has it); another one there fails the withdrawal `not_landed` (and `withdrawal.failed` once). A nonce still free, one spent before the send, or a read that fails proves nothing: the row stays pending with a warning. A node without the state of those blocks ("missing trie node", "historical state … not available") is no endpoint failure for a read of a past block (an explicit block number, `earliest` or an EIP-1898 block object, found where each read names its block: `eth_getBlockByNumber`'s first parameter, an `eth_getLogs` filter's `blockHash`, `fromBlock` or `toBlock`, every other read's last parameter; a latest or pending read answered so counts a failure); the row is then left for an hour (`nonce_proof_retry_at` in `raw_payload`) before the next try. XRP fails `expired` past its last ledger once the node searched every ledger up to it. Solana fails `expired` only for a row whose broadcast outcome was unknown, past its blockhash's last valid height (`getEpochInfo`, finalized), when no endpoint knows the signature and either two endpoints answering for that finalized slot or later say so, or one does twice ten minutes apart (`expiry_witnessed_at`): a backend behind the slot answers null without an error.
 
-A Bitcoin-family row with `broadcast_outcome: "unknown"` and `spent_inputs` that the failover order does not know is searched on every provider, cooling down or not (`SearchTransactionBlock`: found in a block, it is confirmed from it), then its inputs are read from the first provider with a spend index (Esplora `/tx/:txid/outspend/:vout` and `/tx/:txid`; bitcoind, ElectrumX and the Tatum gateway have none): an input spent by itself, or by a transaction paying the row's destination exactly its amount that is none of our other outbound rows (a malleated or re-signed copy, kept as `landed_as`; another withdrawal, sweep or gas seed of ours is a conflict, so a second withdrawal is never taken for the first one landing), in a block confirms it from that block; only every input spent by other transactions paying someone else, each at least 6 blocks deep (`UTXO_DOUBLE_SPEND_DEPTH`, or `required_confirmations` when more), fails it `not_landed` (and `withdrawal.failed` once); a conflicting transaction whose outputs cannot be read proves nothing. Anything else (an input unspent, a spend in the mempool or not deep enough, ours still in the mempool, no provider with a spend index) proves nothing: the row stays pending and is asked again after 10 minutes (`spend_proof_retry_at`). A TRON unknown outcome has no automatic proof yet. Every tracker pass warns (`outbound transaction still unsettled …`) about each withdrawal, sweep or gas_seed still pending or confirming `WITHDRAWAL_STALE_AFTER_HOURS` (default 6) after it was recorded, and `GET /health` counts them per chain under `confirmation_tracker`. `GET /health` counts once a minute at most, one count at a time, outside its lock, and serves the last counts when a count is in flight or fails. An operator settles one with `go run . artisan withdrawals:reconcile <withdrawal-id or outbound transaction id> [--apply]` (dry run by default): a withdrawal's transaction, or the one recorded under its key when it is not linked (linked with `--apply`), or a sweep, gas seed or orphan row by its own id; then the transaction on every endpoint, the nonce proof (EVM, any row with `sender_nonce`), the inputs proof (Bitcoin family, any row with `spent_inputs`) and a provable expiry (any row, with the same proof); landed records the block (the tracker then counts confirmations), failed fails it with the proof, unknown says why and writes nothing.
+A Bitcoin-family row with `broadcast_outcome: "unknown"` and `spent_inputs` that the failover order does not know is searched on every provider, cooling down or not (`SearchTransactionBlock`: found in a block, it is confirmed from it), then its inputs are read from the first provider with a spend index (Esplora `/tx/:txid/outspend/:vout` and `/tx/:txid`; bitcoind, ElectrumX and the Tatum gateway have none): an input spent by itself, or by a transaction paying the row's destination exactly its amount that is none of our other outbound rows (a malleated or re-signed copy, kept as `landed_as`; another withdrawal, sweep or gas seed of ours is a conflict, so a second withdrawal is never taken for the first one landing), in a block confirms it from that block; only every input spent by other transactions paying someone else, each at least 6 blocks deep (`UTXO_DOUBLE_SPEND_DEPTH`, or `required_confirmations` when more), fails it `not_landed` (and `withdrawal.failed` once); a conflicting transaction whose outputs cannot be read proves nothing. Anything else (an input unspent, a spend in the mempool or not deep enough, ours still in the mempool, no provider with a spend index) proves nothing: the row stays pending and is asked again after 10 minutes (`spend_proof_retry_at`). A TRON unknown outcome has no automatic proof yet. Every tracker pass warns (`outbound transaction still unsettled …`) about each withdrawal, sweep or gas_seed still pending or confirming `withdrawals.stale_after_hours` (else `WITHDRAWAL_STALE_AFTER_HOURS`, default 6) after it was recorded, and `GET /health` counts them per chain under `confirmation_tracker`. `GET /health` counts once a minute at most, one count at a time, outside its lock, and serves the last counts when a count is in flight or fails. An operator settles one with `go run . artisan withdrawals:reconcile <withdrawal-id or outbound transaction id> [--apply]` (dry run by default): a withdrawal's transaction, or the one recorded under its key when it is not linked (linked with `--apply`), or a sweep, gas seed or orphan row by its own id; then the transaction on every endpoint, the nonce proof (EVM, any row with `sender_nonce`), the inputs proof (Bitcoin family, any row with `spent_inputs`) and a provable expiry (any row, with the same proof); landed records the block (the tracker then counts confirmations), failed fails it with the proof, unknown says why and writes nothing.
 
 — guarded by `TestClassify_Broadcast_*` (`app/services/chain`), `TestFailover_Broadcast_ThatReachedNoNodeIsNeverAnUnknownOutcome`, `TestCall_AJSONRPCErrorCarriedByANon2xxStatusIsTheRPCError` (`app/adapters/chain/rpc`), `TestBroadcast_*` (`app/adapters/chain/bitcoin/broadcast_outcome_test.go`), `TestBitcoin_*` (`app/adapters/chain/bitcoin/double_spend_test.go`), `TestTron_Broadcast_*`, `TestXRP_Broadcast_*`, `TestExecute_Withdrawal_*`, `TestExecute_Linked_AnUnknownGasSeedOutcomeIsAwaitedLikeASentOne` (`app/services/sweep`), `TestEVM_NonceSpend_*`, `TestEVM_SearchTransactionBlock_*`, `TestPending_Nonce_AnUnknownBroadcastOutcomeKeepsItsNonceTaken` (`app/adapters/chain/evm`), `TestSolana_LastValidBlock_*`, `TestSolana_TransactionExpired_*` (`app/adapters/chain/solana`), `TestRunConfirmationCheck_EVMUnknownOutcome*` (`app/services/deposit/evm_not_landed_test.go`), `bitcoin_unknown_outcome_test.go`, `stale_outbound_test.go`, `withdrawal_reconcile_test.go` (`app/services/deposit`) and `TestWithdrawals_Reconcile_*` (`app/console/commands`).
 
@@ -1093,7 +1154,7 @@ A deposit confirmed before its block was reorganized is not re-read (the confirm
 
 `ScanBlock` on `xrp`/`txrp` reads one validated ledger (rippled `ledger`, `transactions` and `expand` true; API v1 `metaData` and API v2 `tx_json`/`meta` shapes) and reports, in ledger order (`TransactionIndex`), every `Payment` with `meta.TransactionResult` `tesSUCCESS` that delivered XRP to another account, at the native value position (`-1`, one Payment per transaction): the amount is `meta.delivered_amount` in drops (a partial payment credits what arrived, never `Amount`), `From` is `Account`, `To` is `Destination`, and `DestinationTag` is carried to `transactions.destination_tag` and to the `deposit.*` webhooks (`destination_tag`, omitted without a tag and on other chains). Not deposits: `tec…` payments, issued-currency or MPT deliveries (an object `delivered_amount`; the token registry does not model XRPL issued currencies), payments an account makes to itself, and every other type, including `CheckCash`, `EscrowFinish`, `PaymentChannelClaim` and `AccountDelete`, which can also deliver XRP. A ledger that is not validated, not closed, not the one asked for, without its transactions list, with a transaction not expanded or without metadata, or a payment whose `delivered_amount` is missing or `unavailable`, is an error, never an empty ledger, so the engine retries it and then keeps it pending. An XRP withdrawal is a `Payment` from the base address to its destination, so it is a deposit only when that destination is itself a watched address (as on every chain). The head is the validated ledger, so with 1 required confirmation a deposit is confirmed on the cycle that records it (tip − ledger + 1). A scanner runs only where one is scheduled for the chain: the local workers scan the chains in `LOCAL_DEPOSIT_SCAN_CHAINS` (`xrp`/`txrp` must be listed), `template.yaml` schedules no `deposit_scanner` run for any chain, and `artisan scan:deposits` scans on demand; the first cycle starts at the head, without history. A ledger closes every 3–5 s, so the default windows (`DEPOSIT_SCAN_BATCH_BLOCKS` 50, `DEPOSIT_SCAN_CATCH_UP_BLOCKS` 500, 8 ledgers fetched at a time) are about 3–4 minutes and 30–40 minutes of ledgers; a ledger the load-balanced public servers do not have yet answers `lgrNotFound` and is retried. — guarded by `TestLive_ScanBlock_*` (`app/adapters/chain/xrp/scan_test.go`, altnet ledgers recorded in `testdata/xrpl`) and `TestXRP_Deposit_*` (`app/services/deposit/xrp_deposit_test.go`).
 
-**Real-time XRP deposits** (`app/services/xrpstream`, off by default). The local workers can also run one long-lived XRPL WebSocket subscription (rippled or Clio) for one XRP chain, so a deposit is recorded and confirmed when its ledger is validated instead of on the next scan cycle:
+**Real-time XRP deposits** (`app/services/xrpstream`, off by default). The local workers can also run one long-lived XRPL WebSocket subscription (rippled or Clio) for one XRP chain, so a deposit is recorded and confirmed when its ledger is validated instead of on the next scan cycle. Each field of the `xrp_stream` platform setting wins over its variable, read on every supervisor tick:
 
 ```bash
 LOCAL_XRP_STREAM_ENABLED=true
@@ -1103,7 +1164,7 @@ LOCAL_XRP_STREAM_ADDRESS_REFRESH_SECONDS=15
 ```
 
 - **The stream is only a trigger; the chain RPC is the source.** A validated payment the stream reports to a watched address makes the deposit service read that ledger through the chain's own RPC adapter (`deposit.Service.RecordStreamedLedger` → `ScanBlock`, as `scan:deposits --block` does: the scanner's recording path and dedupe, a ledger that keeps failing kept pending for the scanner). What the stream says about the payment is never recorded, so a stream endpoint on another network cannot create a deposit, and the scan reaching the same ledger later records nothing again. Every dial also checks the server's `server_info` `network_id` (altnet 1 for a testnet chain, mainnet 0, also a server that names none) and refuses another network (XRP addresses are the same on every network).
-- **The ledger scan stays the guarantee.** The stream chain must also be in `LOCAL_DEPOSIT_SCAN_CHAINS`. A misconfigured stream (unknown or non-XRP chain, a chain not scanned, no URL) is logged and the other local workers run without it.
+- **The ledger scan stays the guarantee.** The stream chain must also be a scanned chain (`local_workers`, else `LOCAL_DEPOSIT_SCAN_CHAINS`). A misconfigured stream (unknown or non-XRP chain, a chain not scanned, no URL) is logged and the other local workers run without it.
 - **Subscription**: `accounts` first (every active address of the chain, 500 per request), then the validated ledger stream, so no ledger falls between the two. Only `validated` transactions are read, by the scan's own rule (`xrpLedgerEntry.deposit`), API v1 (`transaction`) and v2 (`tx_json`) alike; one to an address nobody watches (a withdrawal of the wallet) reads nothing. The active addresses are read again every `LOCAL_XRP_STREAM_ADDRESS_REFRESH_SECONDS` (default 15); new ones are subscribed to and inactive ones unsubscribed on the same connection; a read that fails keeps the subscription. A payment to an address created since the last read is the scan's.
 - **Confirmation**: the new deposits of the ledger (and only those) are confirmed at that ledger (1 confirmation on `txrp`/`xrp`) under the chain's scan lock, released before the balance refresh; while a scan cycle holds the lock they are left to that cycle's confirmation step (seconds later). `deposit.pending` and `deposit.confirmed` are sent once, as from the scan. `RecordStreamedLedger` is meant for chains whose scanned blocks are final (XRP validated ledgers).
 - **A ledger whose read fails** (the RPC a ledger behind the stream, an endpoint down) is read again on each of the next validated ledgers, 3 reads in all (at most 100 ledgers waiting), then left to the scan.

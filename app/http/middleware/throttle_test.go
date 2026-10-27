@@ -1,6 +1,7 @@
 package middleware_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/rand/v2"
@@ -15,6 +16,8 @@ import (
 
 	"github.com/macrowallets/waas/app/http/middleware"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/repositories"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
 
@@ -104,6 +107,29 @@ func (s *throttleSuite) TestLogin_IsLimited_PerClientAndEmail() {
 	s.assertThrottled(s.post("/v1/auth/login", client, login(strings.ToUpper(email))))
 	s.post("/v1/auth/login", client, login(uuid.NewString()+"@example.com")).AssertStatus(401)
 	s.post("/v1/auth/login", uniqueClient(), login(email)).AssertStatus(401)
+}
+
+// TestLogin_TheStoredLimitWinsOverTheConfigAndMinusOneTurnsItOff: http_throttle,
+// read at each request, replaces THROTTLE_LOGIN_PER_IP; -1 turns the limit off.
+func (s *throttleSuite) TestLogin_TheStoredLimitWinsOverTheConfigAndMinusOneTurnsItOff() {
+	s.setConfig("http.throttle.login_per_ip_email", 0)
+	s.setConfig("http.throttle.login_per_ip", 100)
+	store := repositories.NewSettingRepository(nil)
+	s.Require().NoError(store.UpsertPlatform(context.Background(), settings.GroupHTTPThrottle, map[string]string{settings.KeyThrottleLoginPerIP: "2"}))
+	client := uniqueClient()
+
+	for range 2 {
+		s.post("/v1/auth/login", client, login(uuid.NewString()+"@example.com")).AssertStatus(401)
+	}
+	s.assertThrottled(s.post("/v1/auth/login", client, login(uuid.NewString()+"@example.com")))
+
+	s.Require().NoError(store.UpsertPlatform(context.Background(), settings.GroupHTTPThrottle, map[string]string{settings.KeyThrottleLoginPerIP: "-1"}))
+	facades.Cache().Forget(":settings:platform:" + settings.GroupHTTPThrottle)
+	facades.Cache().Forget("settings:platform:" + settings.GroupHTTPThrottle)
+	other := uniqueClient()
+	for range 4 {
+		s.post("/v1/auth/login", other, login(uuid.NewString()+"@example.com")).AssertStatus(401)
+	}
 }
 
 func (s *throttleSuite) TestLogin_IsLimited_PerClientAcrossEmails() {
