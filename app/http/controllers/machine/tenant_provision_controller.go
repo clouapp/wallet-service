@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
-	"os"
 	"strings"
 
 	"github.com/goravel/framework/contracts/http"
@@ -36,7 +35,7 @@ func ValidProvisionKey(expected, presented string) bool {
 }
 
 func (TenantProvisionController) Store(ctx http.Context) http.Response {
-	key := os.Getenv("TENANT_PROVISIONING_KEY")
+	key := facades.Config().GetString("vault.tenant_provisioning_key")
 	if len(key) < 32 {
 		return responses.Fail(ctx, http.StatusServiceUnavailable, responses.CodeInvalidRequest, "tenant provisioning unavailable")
 	}
