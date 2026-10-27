@@ -24,6 +24,7 @@ const (
 	guardPublic            guard = "public"             // health and API docs
 	guardGuest             guard = "guest"              // the auth endpoints that create a session
 	guardProviderSignature guard = "provider-signature" // inbound chain-provider webhooks
+	guardMachineKey        guard = "machine-key"        // a platform machine's dedicated key (tenant provisioning)
 	guardSession           guard = "session"            // middleware.SessionAuth (dashboard, /v1)
 	guardAPIToken          guard = "api-token"          // middleware.APITokenAuth (external, /api/v1)
 )
@@ -95,6 +96,9 @@ func public() routeSecurity {
 }
 func provider() routeSecurity {
 	return routeSecurity{auth: guardProviderSignature}
+}
+func machineKey(chain string) routeSecurity {
+	return routeSecurity{auth: guardMachineKey, chain: chain}
 }
 
 // routeTable is the closed list of every route the router serves, keyed by
@@ -252,6 +256,7 @@ var routeTable = map[string]routeSecurity{
 	"POST /v1/wallets/{walletId}/withdrawals/{withdrawalId}/cancel":    session(chainWalletCancelWithdrawal),
 	"GET|HEAD /v1/withdrawals/{withdrawalId}":                          session(chainHeader),
 	"POST /v1/webhooks/ingest/{provider}/{chainID}":                    provider(),
+	"POST /internal/v1/tenants":                                        machineKey("TenantProvisioningKey"),
 }
 
 func TestMain(m *testing.M) {

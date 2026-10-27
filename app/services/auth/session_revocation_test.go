@@ -71,11 +71,25 @@ func (a *recordingSessionActivity) Append(_ context.Context, row models.AccountA
 	return nil
 }
 
+// recordedSleeps is the revoker's clock and sleep: a sleep advances the clock by
+// what it was asked, less lag (a wall clock adjusted backwards meanwhile).
 type recordedSleeps struct {
+	now   time.Time
+	lag   []time.Duration
 	waits []time.Duration
 }
 
-func (r *recordedSleeps) sleep(d time.Duration) { r.waits = append(r.waits, d) }
+func (r *recordedSleeps) clock() time.Time { return r.now }
+
+func (r *recordedSleeps) sleep(d time.Duration) {
+	r.waits = append(r.waits, d)
+	advance := d
+	if len(r.lag) > 0 {
+		advance -= r.lag[0]
+		r.lag = r.lag[1:]
+	}
+	r.now = r.now.Add(advance)
+}
 
 func newTestRevoker(t *testing.T, now time.Time) (*authsvc.SessionRevoker, *fakeWatermarks, *fakeRefreshRevoker) {
 	t.Helper()
@@ -87,11 +101,11 @@ func newObservedRevoker(t *testing.T, now time.Time) (*authsvc.SessionRevoker, *
 	t.Helper()
 	watermarks := &fakeWatermarks{at: map[uuid.UUID]time.Time{}}
 	refresh := &fakeRefreshRevoker{}
-	sleeps := &recordedSleeps{}
+	sleeps := &recordedSleeps{now: now}
 	revoker, err := authsvc.NewSessionRevoker(authsvc.RevokerDeps{
 		Watermarks: watermarks,
 		Refresh:    refresh,
-		Now:        func() time.Time { return now },
+		Now:        sleeps.clock,
 		Sleep:      sleeps.sleep,
 	})
 	require.NoError(t, err)
@@ -132,6 +146,29 @@ func TestSession_Revoker_AwaitIssuableWaitsOutTheRevocationSecond(t *testing.T) 
 	require.NoError(t, revoker.AwaitIssuable(&watermark))
 
 	assert.Equal(t, []time.Duration{750 * time.Millisecond}, sleeps.waits)
+}
+
+// TestSession_Revoker_AwaitIssuableReadsTheWallClockAgainAfterSleeping: when the
+// wall clock reads earlier than the watermark after the sleep (adjusted backwards
+// meanwhile), it sleeps the rest instead of minting a token inside the revoked second,
+// and gives up on a clock that never gets there.
+func TestSession_Revoker_AwaitIssuableReadsTheWallClockAgainAfterSleeping(t *testing.T) {
+	now := time.Date(2026, 10, 2, 12, 0, 5, 250_000_000, time.UTC)
+	revoker, _, _, sleeps := newObservedRevoker(t, now)
+	watermark, err := revoker.RevokeAll(context.Background(), uuid.New())
+	require.NoError(t, err)
+	sleeps.lag = []time.Duration{40 * time.Millisecond}
+
+	require.NoError(t, revoker.AwaitIssuable(&watermark))
+	assert.Equal(t, []time.Duration{750 * time.Millisecond, 40 * time.Millisecond}, sleeps.waits)
+	assert.False(t, sleeps.clock().Before(watermark))
+
+	stuck, _, _, stuckSleeps := newObservedRevoker(t, now)
+	stuckWatermark, err := stuck.RevokeAll(context.Background(), uuid.New())
+	require.NoError(t, err)
+	stuckSleeps.lag = []time.Duration{750 * time.Millisecond, 750 * time.Millisecond, 750 * time.Millisecond}
+	assert.Error(t, stuck.AwaitIssuable(&stuckWatermark), "a clock that never reaches the watermark fails the issue")
+	assert.Len(t, stuckSleeps.waits, 3)
 }
 
 func TestSession_Revoker_AwaitIssuableDoesNotWaitOnceTheWatermarkPassed(t *testing.T) {

@@ -142,20 +142,30 @@ func (r *SessionRevoker) RevokeAllBy(ctx context.Context, actorID, userID uuid.U
 	return watermark, nil
 }
 
+// maxIssueWaits bounds how many times AwaitIssuable sleeps before it gives up on a
+// wall clock that keeps reading earlier than the watermark.
+const maxIssueWaits = 3
+
 // AwaitIssuable blocks until a session minted now would postdate the user's
-// watermark. Only a session issued within a second of a revocation waits.
+// watermark. Only a session issued within a second of a revocation waits. The sleep
+// runs on the monotonic clock while a JWT carries a wall-clock iat, so the wall clock
+// is read again after each sleep: a clock adjusted backwards during the wait would
+// otherwise mint a token inside the revoked second, refused at once.
 func (r *SessionRevoker) AwaitIssuable(revokedAt *time.Time) error {
 	if revokedAt == nil {
 		return nil
 	}
 	wait := revokedAt.Sub(r.now())
-	if wait <= 0 {
-		return nil
-	}
 	if wait > maxIssueDelay {
 		return fmt.Errorf("auth: sessions revoked until %s, %s ahead of this server's clock", revokedAt.UTC().Format(time.RFC3339), wait)
 	}
-	r.sleep(wait)
+	for attempt := 0; wait > 0; attempt++ {
+		if attempt == maxIssueWaits {
+			return fmt.Errorf("auth: the clock did not reach the revocation watermark %s", revokedAt.UTC().Format(time.RFC3339))
+		}
+		r.sleep(wait)
+		wait = revokedAt.Sub(r.now())
+	}
 	return nil
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/sessions"
 	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/app/services/tenantprovision"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
@@ -32,6 +33,23 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 	})
 	app.Singleton((*repositories.AccessTokenRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewAccessTokenRepository(nil), nil
+	})
+	// The machine route of tenant provisioning (routes/tenant_provisioning.go).
+	app.Singleton((*tenantprovision.Service)(nil), func(app foundation.Application) (any, error) {
+		accounts, err := resolve[*repositories.AccountRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		tokens, err := resolve[*repositories.AccessTokenRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		return &tenantprovision.Service{
+			Accounts:     accounts,
+			Tokens:       tokens,
+			SigningKey:   appfacades.Config().GetString("jwt.secret"),
+			ProvisionKey: appfacades.Config().GetString("vault.tenant_provisioning_key"),
+		}, nil
 	})
 	app.Singleton((*repositories.AccountInviteRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewAccountInviteRepository(nil), nil

@@ -1695,6 +1695,20 @@ A TRC-20 sweep's gas_seed gives the child what it lacks to pay the estimated ban
 
 ## Deploy
 
+**CI/CD (GitHub Actions).** `.github/workflows/ci.yml` runs on every pull request: build, vet and
+the lint findings the PR introduces (`golangci-lint` v2.5.0, `only-new-issues`), `make test-unit`
+and `make test-integration` (PostgreSQL and Redis from `docker-compose.yml`, LocalStack plain) in
+parallel jobs. `.github/workflows/deploy.yml` runs on a push to `main` (production) or `dev` (the dev
+host): it calls the CI first (`workflow_call`) and deploys only when it passed, one deploy per branch
+at a time. The deploy is `scripts/deploy-host.sh`: the binary built on the runner for the host's
+`GOARCH` (prod arm64, dev amd64), rsynced as a release, migrated, `current` switched, the daemons
+restarted through the Forge API, `/health` read on the host and a failing release rolled back to
+the previous one; releases are pruned by age, the active one kept. Its settings are repository
+variables (`FORGE_ORG`, `{PROD,DEV}_SERVER_SSH`, `_BACKEND_SITE_DIR`, `_FORGE_SERVER`,
+`_BACKEND_DAEMON_IDS`, `_GOARCH`) and secrets (`FORGE_TOKEN`, `{PROD,DEV}_SSH_PRIVATE_KEY`,
+`_SSH_KNOWN_HOSTS`; the keys are the Forge server keys `github-actions-deploy-{prod,dev}`); from a
+workstation the same script reads `~/.config/macro-wallets/deploy-<env>.conf`.
+
 ```bash
 make deploy ENV=dev     # template.dev.yaml: queues, KMS key, the host's IAM user (docs/AWS_DEV_STACK.md)
 make deploy ENV=prod STACK=host  # template.dev.yaml with Environment=prod: the same host layout as dev (production on a Forge server)
