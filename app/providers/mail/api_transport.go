@@ -147,7 +147,7 @@ type attachment struct {
 func (m message) readAttachments() ([]attachment, error) {
 	out := make([]attachment, 0, len(m.attachments))
 	for _, path := range m.attachments {
-		content, err := os.ReadFile(path)
+		content, err := os.ReadFile(path) //nolint:gosec // G304: the mailable names its own attachment files; no request input reaches it
 		if err != nil {
 			return nil, fmt.Errorf("mail: read attachment %s: %w", filepath.Base(path), err)
 		}

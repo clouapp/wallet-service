@@ -19,7 +19,7 @@ func TestFrontend_Base_URLUsesTheEnvWithoutASetting(t *testing.T) {
 	}
 
 	t.Setenv(frontendURLEnv, "   ")
-	if _, err := FrontendBase(ctx, nil); err == nil {
+	if _, err = FrontendBase(ctx, nil); err == nil {
 		t.Fatal("blank APP_FRONTEND_URL was accepted")
 	}
 

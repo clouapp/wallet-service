@@ -175,8 +175,8 @@ func newDepositService(app foundation.Application) (*deposit.Service, error) {
 	service.SetStaleOutboundAfter(time.Duration(facades.Config().GetInt("vault.withdrawals.stale_after_hours")) * time.Hour)
 	// withdrawals.stale_after_hours, read at each use, wins over WITHDRAWAL_STALE_AFTER_HOURS.
 	service.SetStaleOutboundAfterSource(func(ctx context.Context) time.Duration {
-		hours, err := accountSettings.StaleOutboundHours(ctx)
-		if err != nil {
+		hours, readErr := accountSettings.StaleOutboundHours(ctx)
+		if readErr != nil {
 			return 0
 		}
 		return time.Duration(hours) * time.Hour
@@ -226,12 +226,12 @@ func newDepositService(app foundation.Application) (*deposit.Service, error) {
 	// deposit_scan's alert_lag_blocks and alert_stale_minutes, read on every pass, win
 	// over DEPOSIT_SCAN_ALERT_*; a chain's DEPOSIT_SCAN_ALERT_*_<CHAIN> wins over both.
 	service.SetScanAlertSource(func(ctx context.Context) deposit.ScanAlertThresholds {
-		stored, err := accountSettings.EffectiveDepositScan(ctx)
-		if err != nil {
+		stored, readErr := accountSettings.EffectiveDepositScan(ctx)
+		if readErr != nil || stored.AlertLagBlocks < 0 {
 			return deposit.ScanAlertThresholds{}
 		}
 		return deposit.ScanAlertThresholds{
-			LagBlocks:  uint64(max(stored.AlertLagBlocks, 0)),
+			LagBlocks:  uint64(stored.AlertLagBlocks),
 			StaleAfter: time.Duration(stored.AlertStaleMinutes) * time.Minute,
 		}
 	})

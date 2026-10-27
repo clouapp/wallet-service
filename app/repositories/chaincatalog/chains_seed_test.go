@@ -283,18 +283,18 @@ func TestSeed_Chains_KeepsAnOperatorEndpointAndResealsOnlyOneThatDoesNotOpen(t *
 	if err != nil {
 		t.Fatalf("seal operator endpoint: %v", err)
 	}
-	if err := chains.UpdateRPCURL(ctx, models.ChainETH, operator); err != nil {
+	if err = chains.UpdateRPCURL(ctx, models.ChainETH, operator); err != nil {
 		t.Fatalf("point eth at the operator endpoint: %v", err)
 	}
 	foreign, err := settings.Seal(foreignCipher{}, "https://sealed-under-another-key.example.com")
 	if err != nil {
 		t.Fatalf("seal under another key: %v", err)
 	}
-	if err := chains.UpdateRPCURL(ctx, models.ChainBTC, foreign); err != nil {
+	if err = chains.UpdateRPCURL(ctx, models.ChainBTC, foreign); err != nil {
 		t.Fatalf("store a btc endpoint the key cannot open: %v", err)
 	}
 
-	if err := newCatalog().SeedChains(ctx); err != nil {
+	if err = newCatalog().SeedChains(ctx); err != nil {
 		t.Fatalf("reseed chains: %v", err)
 	}
 
