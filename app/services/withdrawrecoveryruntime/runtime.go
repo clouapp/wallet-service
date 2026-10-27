@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
 	"net/url"
 	"reflect"
@@ -187,7 +188,7 @@ func (r *Runtime) read(ctx context.Context, op, originalID uuid.UUID) (*records,
 		return nil, refuse("active EVM test chain required")
 	}
 	source, err := r.deps.Addresses.FindByID(ctx, *tx.AddressID)
-	if err != nil || source == nil || source.ID != *tx.AddressID || source.WalletID != wallet.ID || source.Chain != tx.Chain || !source.IsActive || source.DerivationType != "bip32" || source.DerivationIndex < 1 || uint64(source.DerivationIndex) >= 1<<31 || source.ExternalUserID == "" || source.ExternalUserID == "system" || !sameAddress(source.Address, tx.FromAddress) {
+	if err != nil || source == nil || source.ID != *tx.AddressID || source.WalletID != wallet.ID || source.Chain != tx.Chain || !source.IsActive || source.DerivationType != "bip32" || source.DerivationIndex < 1 || source.DerivationIndex > math.MaxInt32 || source.ExternalUserID == "" || source.ExternalUserID == "system" || !sameAddress(source.Address, tx.FromAddress) {
 		return nil, refuse("active owned non-hardened child required")
 	}
 	public, err := hex.DecodeString(wallet.MPCPublicKey)
