@@ -104,3 +104,13 @@ func TestNewPreview(t *testing.T) {
 		t.Fatalf("wire changed\n got %s\nwant %s", got, empty)
 	}
 }
+
+func TestNewPreview_ShowsDirectChildGasPreparationWithoutInventingASweep(t *testing.T) {
+	plan := &sweepsvc.Plan{Strategy: sweepsvc.StrategyDirectFromChild, ReachesTarget: true,
+		GasPreparation:        &sweepsvc.DirectChildGasPlan{BaseAddress: "base", AmountWei: "248", MaxFeeWei: "27", MinFunderBalanceWei: "100"},
+		GasPreparationBinding: &sweepsvc.DirectChildGasBinding{SourceAddress: "child", Chain: "test-evm"}}
+	view := sweep.NewPreview(plan)
+	if view.GasPreparation == nil || view.GasPreparation.From != "base" || view.GasPreparation.To != "child" || !view.GasPreparation.RequiresConfirmation || view.GasPreparation.AmountWei != "248" || view.SweepsRequired != 0 || view.Strategy != "direct_from_child" {
+		t.Fatalf("misleading preparation preview: %+v", view)
+	}
+}

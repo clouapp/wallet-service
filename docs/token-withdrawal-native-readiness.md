@@ -24,14 +24,15 @@ Preparation awaits the existing seed-inclusion step, then checks the child's
 observed native balance before signing the token sweep. A stale plan or an
 included seed without available funds cannot authorize a child signature.
 
-## Current conservative boundary
+## Direct child preparation and the remaining aggregation boundary
 
-A base with no tokens may be unable to simulate the final token transfer before
-the sweep arrives. This guard refuses that plan with the typed gas-estimate
-error instead of inventing the base's future state or simulating a different
-sender as if it were the base. It is a safety fix, not completion of the
-zero-token-base preparation scenario. A separate resumable direct-child gas
-preparation design is needed to preserve the original sender in that case.
+When one child holds the complete token amount but lacks native gas, the planner
+now retains that direct child and explicitly quotes a base-to-child gas seed.
+The seed has durable signed-before-send storage and must be included, with gas
+actually available, before the child signs. See
+`direct-child-gas-preparation.md`. A zero-token base is not simulated as a token
+sender in this flow. Multi-address aggregation still refuses an unestimable
+final base token transfer; it does not invent future state.
 
 This change neither retries nor releases any existing failed withdrawal,
 idempotency key, owner intent or central funding fence. Recovery of an existing
