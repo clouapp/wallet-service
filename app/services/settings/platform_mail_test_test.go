@@ -1,8 +1,10 @@
 package settings
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -159,4 +161,42 @@ func (c *countingMailTestActivity) Within(ctx context.Context, fn func(context.C
 func (c *countingMailTestActivity) Append(context.Context, models.AccountActivity) error {
 	c.n++
 	return nil
+}
+
+type safeMailFailure struct{ reason string }
+
+func (e safeMailFailure) Error() string      { return e.reason }
+func (e safeMailFailure) SafeReason() string { return e.reason }
+
+// TestSend_Platform_MailTestLogsOnlyAReasonTheTransportMarksSafe: a provider refusal
+// is logged with its reason (which provider, which status), so an operator can tell a
+// refused key from a missing one; a plain transport error (smtp) is never logged.
+func TestSend_Platform_MailTestLogsOnlyAReasonTheTransportMarksSafe(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	actor := uuid.New()
+	send := func(err error) error {
+		service := NewService(Deps{Store: newMemoryStore(), Sealer: prefixSealer{}, Cache: nopCache{}, Activity: &countingMailTestActivity{}}).
+			WithPlatformAdmins(allowPlatformAdmins{ids: map[uuid.UUID]bool{actor: true}}).
+			WithPlatformTestMailer(&recordingTestMailer{err: err})
+		return service.SendPlatformMailTest(context.Background(), actor, recipient("mail-test@example.test"))
+	}
+
+	if err := send(safeMailFailure{reason: "mail: postmark refused the message (HTTP 401)"}); !errors.Is(err, ErrPlatformTestMail) {
+		t.Fatalf("err = %v", err)
+	}
+	if !strings.Contains(logs.String(), "postmark refused the message (HTTP 401)") {
+		t.Fatalf("the safe reason was not logged: %s", logs.String())
+	}
+	logs.Reset()
+	_ = send(errors.New("dial smtp.mail-test.invalid password mail-test-smtp-secret"))
+	if strings.Contains(logs.String(), "mail-test-smtp-secret") || strings.Contains(logs.String(), "smtp.mail-test.invalid") {
+		t.Fatalf("an smtp error reached the log: %s", logs.String())
+	}
+	if !strings.Contains(logs.String(), "platform mail test failed") {
+		t.Fatal("the failure itself must still be logged")
+	}
 }

@@ -54,8 +54,20 @@ var defaultAPIBases = APIBases{
 // mailgunHosts are the API hosts a mailgun endpoint may name.
 var mailgunHosts = map[string]bool{"api.mailgun.net": true, "api.eu.mailgun.net": true}
 
+// deliveryError is a failed send whose message names the provider, the status or
+// the missing piece, never an address, a host of the smtp transport or a key, so it
+// can be logged as it is (SafeReason).
+type deliveryError struct{ reason string }
+
+func (e *deliveryError) Error() string      { return e.reason }
+func (e *deliveryError) SafeReason() string { return e.reason }
+
+func deliveryFailure(format string, args ...any) error {
+	return &deliveryError{reason: fmt.Sprintf(format, args...)}
+}
+
 // errMissingCredential is a send through a provider whose group lacks a credential.
-var errMissingCredential = errors.New("mail: the selected transport has no credential stored; it does not fall back to another one")
+var errMissingCredential error = &deliveryError{reason: "mail: the selected transport has no credential stored; it does not fall back to another one"}
 
 // message is what a send carries, gathered from the builder calls and the
 // mailables, for a transport that does not go through the framework (an HTTP API).
@@ -173,10 +185,10 @@ func (t *apiTransport) send(ctx context.Context, provider settings.MailProvider,
 		return errMissingCredential
 	}
 	if len(msg.to) == 0 {
-		return errors.New("mail: a message needs a recipient")
+		return deliveryFailure("mail: a message needs a recipient")
 	}
 	if msg.from.Address == "" {
-		return errors.New("mail: a message needs a from address")
+		return deliveryFailure("mail: a message needs a from address")
 	}
 	attachments, err := msg.readAttachments()
 	if err != nil {
@@ -191,7 +203,7 @@ func (t *apiTransport) send(ctx context.Context, provider settings.MailProvider,
 	case driverPostmark:
 		req, err = t.postmarkRequest(provider, msg, attachments)
 	default:
-		return fmt.Errorf("mail: transport %q has no HTTP API", provider.Driver)
+		return deliveryFailure("mail: transport %q has no HTTP API", provider.Driver)
 	}
 	if err != nil {
 		return err
@@ -199,10 +211,10 @@ func (t *apiTransport) send(ctx context.Context, provider settings.MailProvider,
 	req.Method, req.HasBody, req.MaxBytes = http.MethodPost, true, apiErrorBodyLimit
 	resp, err := t.client.Do(ctx, req)
 	if err != nil {
-		return fmt.Errorf("mail: %s did not answer", provider.Driver)
+		return deliveryFailure("mail: %s did not answer", provider.Driver)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("mail: %s refused the message (HTTP %d)", provider.Driver, resp.StatusCode)
+		return deliveryFailure("mail: %s refused the message (HTTP %d)", provider.Driver, resp.StatusCode)
 	}
 	return nil
 }
@@ -217,13 +229,13 @@ func formatAddress(address contractsmail.Address) string {
 func (t *apiTransport) mailgunRequest(provider settings.MailProvider, msg message, attachments []attachment) (httpclient.Request, error) {
 	domain := strings.TrimSpace(provider.Domain)
 	if domain == "" || strings.ContainsAny(domain, "/?#@ ") {
-		return httpclient.Request{}, errors.New("mail: mailgun needs its sending domain")
+		return httpclient.Request{}, deliveryFailure("mail: mailgun needs its sending domain")
 	}
 	base := t.bases.Mailgun
 	if endpoint := strings.TrimSpace(provider.Endpoint); endpoint != "" && base == defaultAPIBases.Mailgun {
 		host := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(endpoint, "https://"), "http://"), "/")
 		if !mailgunHosts[host] {
-			return httpclient.Request{}, errors.New("mail: the mailgun endpoint must be api.mailgun.net or api.eu.mailgun.net")
+			return httpclient.Request{}, deliveryFailure("mail: the mailgun endpoint must be api.mailgun.net or api.eu.mailgun.net")
 		}
 		base = "https://" + host
 	}

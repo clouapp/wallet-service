@@ -7,7 +7,6 @@ package mail
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -191,7 +190,7 @@ func (m *Mailer) Send(mailable ...contractsmail.Mailable) error {
 	case driverMailgun, driverResend, driverPostmark:
 		return m.sendAPI(ctx, driver, doc, mailable)
 	case driverSES:
-		return errors.New("mail: the ses transport is not available yet")
+		return deliveryFailure("mail: the ses transport is not available yet")
 	}
 	return m.transport.Send(mailable...)
 }
@@ -206,7 +205,7 @@ func (m *Mailer) sendAPI(ctx context.Context, driver string, doc map[string]any,
 	}
 	provider, err := m.settings.EffectiveMailProvider(ctx, driver)
 	if err != nil {
-		return fmt.Errorf("mail: %s settings unread", driver)
+		return deliveryFailure("mail: %s settings unread", driver)
 	}
 	if len(mailables) == 0 {
 		mailables = []contractsmail.Mailable{nil}
