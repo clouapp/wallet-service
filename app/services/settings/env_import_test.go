@@ -60,6 +60,7 @@ func TestImport_PlatformEnv_CopiesWhatIsSetSealsSecretsAndKeepsStoredFields(t *t
 	assert.Equal(t, "not set", fieldPlan(t, plan, GroupXRPStream, KeyStreamURL).Skipped)
 	assert.Equal(t, "keeps the default", fieldPlan(t, plan, groupDepositScan, keyAlertLagBlocks).Skipped)
 	assert.True(t, fieldPlan(t, plan, GroupProviderTron, keyProviderAPIKey).Secret)
+	assert.Empty(t, fieldPlan(t, plan, GroupProviderTron, keyProviderEnabled).Skipped, "the enabled flag the import sets is in the plan")
 	got, err := service.EffectiveLocalWorkers(ctx)
 	require.NoError(t, err)
 	assert.False(t, got.ScanChainsStored, "a dry run writes nothing")

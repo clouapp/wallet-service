@@ -163,6 +163,7 @@ func (s *Service) ImportPlatformEnv(ctx context.Context, actorID uuid.UUID, look
 	if body := bodies[GroupProviderTron]; body != nil {
 		// A key copied from TRON_API_KEY is in use, as it was.
 		body[keyProviderEnabled] = true
+		plans[GroupProviderTron].Fields = append(plans[GroupProviderTron].Fields, EnvImportField{Key: keyProviderEnabled, Env: "TRON_API_KEY"})
 	}
 	out := make([]EnvImportGroup, 0, len(order))
 	for _, name := range order {
