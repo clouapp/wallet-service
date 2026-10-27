@@ -62,6 +62,7 @@ func RegisterExternalAPI() {
 		// A route the plan does not name stays behind APITokenAuth only.
 		// Wallet routes resolve the wallet (404) before the scope check (403).
 		router.Get("/chains", chainCtrl.Index)
+		router.Get("/chains/{chainId}/tokens", chainCtrl.Tokens)
 
 		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWalletsCreate)).Post("/wallets", walletCtrl.Store)
 		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermWalletsRead)).Get("/wallets", walletCtrl.Index)

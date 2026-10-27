@@ -43,17 +43,42 @@ type TokenAlignment struct {
 // created, an inactive one re-activated, and an active token of the record's mainnet
 // list (the contract of another network) deactivated. The network is the one the row
 // stores (network_id, is_testnet), not the profile. A record on a mainnet network and
-// every t-prefixed record are never touched, so a mainnet database is left as it is.
+// t-prefixed records are otherwise left alone. The one exception retires the known
+// invalid legacy USDT contract on polygon/tpolygon only when their actual network
+// is Amoy; it has no bytecode on that network. Mainnet networks remain unchanged.
 // Rows are never deleted. With apply false it only reports; a second run changes
 // nothing.
 func (cat *Catalog) AlignNetworkTokens(ctx context.Context, apply bool) (TokenAlignment, error) {
+	if !apply {
+		if err := cat.preflightPublicTestUSDT(ctx, false, publicTestAlignment); err != nil {
+			return TokenAlignment{}, err
+		}
+		return cat.alignNetworkTokens(ctx, false)
+	}
+	var result TokenAlignment
+	err := repositories.NewTokenRepository(nil).WithinCatalog(ctx, func(txCtx context.Context) error {
+		if err := cat.preflightPublicTestUSDT(txCtx, true, publicTestAlignment); err != nil {
+			return err
+		}
+		var alignErr error
+		result, alignErr = cat.alignNetworkTokens(txCtx, true)
+		return alignErr
+	})
+	return result, err
+}
+
+func (cat *Catalog) alignNetworkTokens(ctx context.Context, apply bool) (TokenAlignment, error) {
 	var result TokenAlignment
 	chains := repositories.NewChainRepository(nil)
 	tokens := repositories.NewTokenRepository(nil)
-	for _, chainID := range models.PrimaryChainIDs {
+	chainIDs := append(append([]string(nil), models.PrimaryChainIDs...), models.ChainTPolygon)
+	for _, chainID := range chainIDs {
+		retirementOnly := chainID == models.ChainTPolygon
 		row, err := chains.FindByID(ctx, chainID)
 		if errors.Is(err, models.ErrRepositoryNotFound) {
-			result.Missing = append(result.Missing, chainID)
+			if !retirementOnly {
+				result.Missing = append(result.Missing, chainID)
+			}
 			continue
 		}
 		if err != nil {
@@ -61,19 +86,31 @@ func (cat *Catalog) AlignNetworkTokens(ctx context.Context, apply bool) (TokenAl
 		}
 		network := row.Network()
 		if !models.IsTestnetNetwork(network) {
-			result.Mainnet = append(result.Mainnet, chainID)
+			if !retirementOnly {
+				result.Mainnet = append(result.Mainnet, chainID)
+			}
 			continue
-		}
-		mainnet, _, err := models.PrimaryChainNetwork(models.ChainNetworkProfileMainnet, chainID)
-		if err != nil {
-			return result, err
 		}
 		rows, err := tokens.FindAllByChainID(ctx, chainID)
 		if err != nil {
 			return result, err
 		}
-		changes, unknown := planNetworkTokens(chainID, network, rows, tokensOfNetwork(network), tokensOfNetwork(mainnet.Network))
-		result.Unknown = append(result.Unknown, unknown...)
+		var changes []TokenChange
+		if retirementOnly {
+			for _, token := range rows {
+				if retiredAmoyUSDT(chainID, network, token) {
+					changes = append(changes, TokenChange{ChainID: chainID, Network: network, Symbol: token.Symbol, Contract: token.ContractAddress, Action: TokenActionDeactivate})
+				}
+			}
+		} else {
+			mainnet, _, networkErr := models.PrimaryChainNetwork(models.ChainNetworkProfileMainnet, chainID)
+			if networkErr != nil {
+				return result, networkErr
+			}
+			var unknown []string
+			changes, unknown = planNetworkTokens(chainID, network, rows, tokensOfNetwork(network), tokensOfNetwork(mainnet.Network))
+			result.Unknown = append(result.Unknown, unknown...)
+		}
 		if apply {
 			if err := applyTokenChanges(ctx, tokens, rows, changes); err != nil {
 				return result, err
@@ -103,7 +140,7 @@ func planNetworkTokens(chainID, network string, rows []models.Token, expected, f
 		if row.Status != models.TokenStatusActive || listsContract(expected, row.ContractAddress) {
 			continue
 		}
-		if listsContract(foreign, row.ContractAddress) {
+		if listsContract(foreign, row.ContractAddress) || retiredAmoyUSDT(chainID, network, row) {
 			changes = append(changes, TokenChange{ChainID: chainID, Network: network, Symbol: row.Symbol, Contract: row.ContractAddress, Action: TokenActionDeactivate})
 			continue
 		}
@@ -125,9 +162,16 @@ func applyTokenChanges(ctx context.Context, tokens *repositories.TokenRepository
 				return err
 			}
 		case TokenActionActivate, TokenActionDeactivate:
-			row := findTokenRow(rows, change.Contract)
+			row := findTokenChangeRow(rows, change)
 			if row == nil {
 				return fmt.Errorf("token %s %s vanished during the alignment", change.ChainID, change.Contract)
+			}
+			if change.Action == TokenActionDeactivate && retiredAmoyUSDT(change.ChainID, change.Network, *row) {
+				if retirementErr := tokens.RetireInvalidAmoyUSDT(ctx, row.ID, change.ChainID, row.ContractAddress); retirementErr != nil {
+					return retirementErr
+				}
+				slog.Info("invalid Amoy token retired", "chain_id", change.ChainID, "symbol", change.Symbol)
+				continue
 			}
 			status := models.TokenStatusActive
 			if change.Action == TokenActionDeactivate {
@@ -176,4 +220,20 @@ func sameContract(a, b string) bool {
 		return strings.EqualFold(a, b)
 	}
 	return a == b
+}
+
+// This exact legacy test token has no code on Amoy. Do not generalize this
+// retirement to unknown custom tokens, another symbol or another physical network.
+const retiredAmoyUSDTContract = repositories.InvalidAmoyUSDTContract
+
+func retiredAmoyUSDT(chainID, network string, token models.Token) bool {
+	return (chainID == models.ChainPolygon || chainID == models.ChainTPolygon) && network == models.NetworkPolygonAmoy && token.ChainID == chainID && token.Symbol == models.SymbolUSDT && token.Status == models.TokenStatusActive && sameContract(token.ContractAddress, retiredAmoyUSDTContract)
+}
+func findTokenChangeRow(rows []models.Token, change TokenChange) *models.Token {
+	for i := range rows {
+		if rows[i].ChainID == change.ChainID && rows[i].Symbol == change.Symbol && rows[i].ContractAddress == change.Contract {
+			return &rows[i]
+		}
+	}
+	return nil
 }

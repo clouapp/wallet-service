@@ -3,23 +3,27 @@ package chaincatalog
 import "github.com/macrowallets/waas/app/models"
 
 const (
-	iconWETH = cmcIconBase + "/2396.png"
-	iconWBTC = cmcIconBase + "/3717.png"
-	iconDAI  = cmcIconBase + "/4943.png"
-	iconLINK = cmcIconBase + "/1975.png"
-	iconUNI  = cmcIconBase + "/7083.png"
-	iconSOL  = cmcIconBase + "/5426.png"
-	iconBONK = cmcIconBase + "/23095.png"
-	iconJUP  = cmcIconBase + "/29210.png"
-	iconWIF  = cmcIconBase + "/28752.png"
+	// sepoliaUSDTMock is the existing BRLA sandbox deployment, not issuer USDT.
+	// https://brla-superuser-api.readme.io/reference/smart-contracts-addresses
+	sepoliaUSDTMock = "0x7169D38820dfd117C3FA1f22a697dBA58d90BA06"
+	iconWETH        = cmcIconBase + "/2396.png"
+	iconWBTC        = cmcIconBase + "/3717.png"
+	iconDAI         = cmcIconBase + "/4943.png"
+	iconLINK        = cmcIconBase + "/1975.png"
+	iconUNI         = cmcIconBase + "/7083.png"
+	iconSOL         = cmcIconBase + "/5426.png"
+	iconBONK        = cmcIconBase + "/23095.png"
+	iconJUP         = cmcIconBase + "/29210.png"
+	iconWIF         = cmcIconBase + "/28752.png"
 )
 
 // primaryNetworkTokens are the tokens of the networks eth, polygon and sol point at,
 // chosen like the added records' by the network the record points at, so a "sol" on
-// devnet lists the devnet USDC mint. A test network lists only the deployments the
-// issuer publishes (see the models constants): Circle's USDC, Chainlink's LINK and the
-// native mint. Tether, Dai, Wrapped Bitcoin, WETH, Uniswap, Bonk, Jupiter and dogwifhat
-// publish none on Sepolia, Amoy or devnet, so a testnet record does not list them.
+// devnet lists the devnet USDC mint. Known issuer test deployments (see the models
+// constants) include Circle's USDC, Chainlink's LINK and the
+// native mint. Sepolia additionally uses the explicitly labelled BRLA USDT mock
+// already present in teth; it is test data, not a Tether-issued deployment.
+// Other mainnet-only assets are not exposed on Sepolia, Amoy or devnet.
 var primaryNetworkTokens = map[string][]tokenSeed{
 	models.NetworkEthereumMainnet: {
 		{symbol: models.SymbolUSDT, name: "Tether USD", contractAddress: models.USDTContractETH, decimals: 6, iconURL: iconUSDT},
@@ -31,6 +35,7 @@ var primaryNetworkTokens = map[string][]tokenSeed{
 		{symbol: "UNI", name: "Uniswap", contractAddress: "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984", decimals: 18, iconURL: iconUNI},
 	},
 	models.NetworkEthereumSepolia: {
+		{symbol: models.SymbolUSDT, name: "Mock USDT (Sepolia Test)", contractAddress: sepoliaUSDTMock, decimals: 6, iconURL: iconUSDT},
 		{symbol: models.SymbolUSDC, name: "USD Coin (Test)", contractAddress: models.USDCContractSepolia, decimals: 6, iconURL: iconUSDC},
 		{symbol: "LINK", name: "Chainlink (Test)", contractAddress: models.LINKContractSepolia, decimals: 18, iconURL: iconLINK},
 	},
@@ -64,10 +69,9 @@ var primaryNetworkTokens = map[string][]tokenSeed{
 // test network under every profile, a mainnet database holds them too, and their list
 // is kept as it was seeded.
 var testRecordTokens = []tokenSeed{
-	{models.ChainTETH, models.SymbolUSDT, "Tether USD (Test)", "0x7169D38820dfd117C3FA1f22a697dBA58d90BA06", 6, iconUSDT},
+	{models.ChainTETH, models.SymbolUSDT, "Tether USD (Test)", sepoliaUSDTMock, 6, iconUSDT},
 	{models.ChainTETH, models.SymbolUSDC, "USD Coin (Test)", models.USDCContractSepolia, 6, iconUSDC},
 	{models.ChainTETH, "LINK", "Chainlink (Test)", models.LINKContractSepolia, 18, iconLINK},
-	{models.ChainTPolygon, models.SymbolUSDT, "Tether USD (Test)", "0xBDE550eCd4C18B3A3C522E1298DC6B1530710B13", 6, iconUSDT},
 	{models.ChainTPolygon, models.SymbolUSDC, "USD Coin (Test)", models.USDCContractAmoy, 6, iconUSDC},
 	{models.ChainTSOL, models.SymbolUSDC, "USD Coin (Test)", models.USDCMintSolanaDevnet, 6, iconUSDC},
 }
