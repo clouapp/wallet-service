@@ -179,6 +179,9 @@ func TestFailover_Call_MovesOnWhenTheEndpointCannotAnswer(t *testing.T) {
 		"header not found": func(t *testing.T) string {
 			return newFakeNode(t, answers(rpcFailure(-32000, "header not found"))).URL()
 		},
+		"chain excluded from provider plan": func(t *testing.T) string {
+			return newFakeNode(t, answers(rpcFailure(35, "chain is not available on free plan, please upgrade to paid plan"))).URL()
+		},
 		"rate limited": func(t *testing.T) string {
 			return newFakeNode(t, answers(http.StatusTooManyRequests, "slow down")).URL()
 		},
@@ -523,6 +526,7 @@ func TestFailover_Broadcast_StopsWhenTheEndpointMayHaveAcceptedIt(t *testing.T) 
 		"internal error": answers(rpcFailure(-32603, "internal error")),
 		"html body":      answers(http.StatusOK, "<html>oops</html>"),
 		"rejection":      answers(rpcFailure(-32000, "replacement transaction underpriced")),
+		"provider plan":  answers(rpcFailure(35, "chain is not available on free plan, please upgrade to paid plan")),
 	}
 	for name, failure := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -819,6 +823,9 @@ func TestClassify_RPCError_MovesOnOnlyForTheNamedFailures(t *testing.T) {
 		{-32000, "header not found", outcomeUnavailable},
 		{-32014, "Block status not yet available for slot 1", outcomeUnavailable},
 		{-32016, "Minimum context slot has not been reached", outcomeUnavailable},
+		{35, "chain is not available on free plan, please upgrade to paid plan", outcomeUnavailable},
+		{35, "invalid transaction", outcomeAnswer},
+		{35, "execution reverted: chain is not available on free plan", outcomeAnswer},
 		{3, "execution reverted", outcomeAnswer},
 		{-32602, "invalid params", outcomeAnswer},
 		{-32000, "nonce too low", outcomeAnswer},
@@ -1059,6 +1066,18 @@ func TestFailover_Identity_WithAnUnreachablePrimaryAFallbackOnTheChainsNetworkSe
 	var block string
 	require.NoError(t, client.Call(context.Background(), "eth_blockNumber", &block))
 	assert.Equal(t, "0x20", block)
+}
+
+func TestFailover_Identity_ProviderPlanRefusalUsesTheVerifiedNetwork(t *testing.T) {
+	primary := newFakeNode(t, answers(rpcFailure(35, "chain is not available on free plan, please upgrade to paid plan")))
+	sepolia := chainIDNode(t, "0xaa36a7", http.StatusOK)
+	client := sepoliaIdentityClient(primary.URL(), sepolia.URL())
+
+	var block string
+	require.NoError(t, client.Call(context.Background(), "eth_blockNumber", &block))
+	assert.Equal(t, "0x20", block)
+	assert.Equal(t, 1, sepolia.count("eth_blockNumber"))
+	assert.Positive(t, sepolia.count("eth_chainId"), "the fallback must prove its network before serving the read")
 }
 
 func TestFailover_Identity_AHangingPrimaryDoesNotStarveTheSecondOpinion(t *testing.T) {
