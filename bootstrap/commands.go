@@ -100,8 +100,8 @@ func Commands() []console.Command {
 			Profile:     configuredChainProfile,
 		})),
 		commands.NewChainsRPCEndpoints(container.MustMake[*rpcendpoints.Service]()),
-		commands.NewChainsSeedCatalog(seedCatalog),
-		commands.NewSettingsImportEnv(container.MustMake[*settings.Service](), container.MustMake[*repositories.UserRepository]()),
+		commands.NewChainsSeedCatalog(commands.CatalogSeedFunc(seedCatalog)),
+		commands.NewSettingsImportEnv(settings.EnvImportAs{Settings: container.MustMake[*settings.Service](), Actors: userIDByEmail(container.MustMake[*repositories.UserRepository]())}),
 		commands.NewChainsAddMissing(chainregistry.NewMissingChains(seedMissingAddedChains)),
 		commands.NewChainsAlignTokens(chainregistry.NewNetworkTokens(alignNetworkTokens)),
 		commands.NewWithdrawPreflight(commands.WithdrawPreflightDeps{
@@ -273,4 +273,18 @@ func evmCallSigner() evmcall.Signer {
 		panic(fmt.Errorf("sweep service cannot sign evm calls"))
 	}
 	return signer
+}
+
+// userIDByEmail is the actor lookup of settings:import-env.
+func userIDByEmail(users *repositories.UserRepository) settings.ActorLookup {
+	return func(ctx context.Context, email string) (uuid.UUID, error) {
+		user, err := users.FindByEmail(ctx, email)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		if user == nil {
+			return uuid.Nil, settings.ErrImportActorUnknown
+		}
+		return user.ID, nil
+	}
 }

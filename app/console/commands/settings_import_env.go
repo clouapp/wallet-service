@@ -7,23 +7,17 @@ import (
 	"os"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/console"
 	"github.com/goravel/framework/contracts/console/command"
 
-	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/services/settings"
 )
 
-// envImporter copies the environment's values into the platform settings
-// (*settings.Service).
+// envImporter copies the environment's values into the platform settings as the
+// platform admin actorEmail names (bootstrap wires *settings.Service over the user
+// lookup).
 type envImporter interface {
-	ImportPlatformEnv(ctx context.Context, actorID uuid.UUID, lookup func(string) (string, bool), apply, overwrite bool) ([]settings.EnvImportGroup, error)
-}
-
-// actorLookup finds the platform admin a save is recorded under.
-type actorLookup interface {
-	FindByEmail(ctx context.Context, email string) (*models.User, error)
+	ImportPlatformEnvAs(ctx context.Context, actorEmail string, lookup func(string) (string, bool), apply, overwrite bool) ([]settings.EnvImportGroup, error)
 }
 
 // SettingsImportEnv copies, once, the values of the variables a platform setting
@@ -34,16 +28,15 @@ type actorLookup interface {
 // values, and writes nothing without --apply.
 type SettingsImportEnv struct {
 	settings envImporter
-	users    actorLookup
 	lookup   func(string) (string, bool)
 }
 
 // NewSettingsImportEnv wires the command over the process environment.
-func NewSettingsImportEnv(settingsService envImporter, users actorLookup) *SettingsImportEnv {
-	if settingsService == nil || users == nil {
-		panic("settings:import-env: settings service and user lookup are required")
+func NewSettingsImportEnv(importer envImporter) *SettingsImportEnv {
+	if importer == nil {
+		panic("settings:import-env: settings importer is required")
 	}
-	return &SettingsImportEnv{settings: settingsService, users: users, lookup: os.LookupEnv}
+	return &SettingsImportEnv{settings: importer, lookup: os.LookupEnv}
 }
 
 func (c *SettingsImportEnv) Signature() string { return "settings:import-env" }
@@ -68,13 +61,8 @@ func (c *SettingsImportEnv) Handle(ctx console.Context) error {
 	if email == "" {
 		return fail(ctx, errors.New("--actor=<platform admin email> is required"))
 	}
-	background := context.Background()
-	user, err := c.users.FindByEmail(background, email)
-	if err != nil || user == nil || user.ID == uuid.Nil {
-		return fail(ctx, errors.New("no user has that email"))
-	}
 	apply := ctx.OptionBool("apply")
-	groups, err := c.settings.ImportPlatformEnv(background, user.ID, c.lookup, apply, ctx.OptionBool("overwrite"))
+	groups, err := c.settings.ImportPlatformEnvAs(context.Background(), email, c.lookup, apply, ctx.OptionBool("overwrite"))
 	for _, group := range groups {
 		writes := 0
 		for _, field := range group.Fields {

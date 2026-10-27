@@ -31,8 +31,8 @@ func TestCommands_Are_Thin(t *testing.T) {
 			violations = append(violations, file.Path+" "+problem)
 		}
 	}
-	if handlers != 26 {
-		t.Fatalf("thin command handlers = %d, want 26", handlers)
+	if handlers != 28 {
+		t.Fatalf("thin command handlers = %d, want 28", handlers)
 	}
 	for _, line := range violations {
 		t.Errorf("fat command: %s", line)

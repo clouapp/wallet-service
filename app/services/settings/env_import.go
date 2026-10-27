@@ -2,6 +2,7 @@ package settings
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -177,4 +178,29 @@ func (s *Service) ImportPlatformEnv(ctx context.Context, actorID uuid.UUID, look
 		out = append(out, *plan)
 	}
 	return slices.Clip(out), nil
+}
+
+// ActorLookup finds the user a platform save is recorded under, by email.
+type ActorLookup func(ctx context.Context, email string) (uuid.UUID, error)
+
+// ErrImportActorUnknown is an import whose actor email names no user.
+var ErrImportActorUnknown = errors.New("settings env import: no user has that email")
+
+// EnvImportAs is ImportPlatformEnv as the user an email names, for the artisan
+// command (the composition root gives it the user lookup).
+type EnvImportAs struct {
+	Settings *Service
+	Actors   ActorLookup
+}
+
+// ImportPlatformEnvAs resolves actorEmail, then runs ImportPlatformEnv as that user.
+func (i EnvImportAs) ImportPlatformEnvAs(ctx context.Context, actorEmail string, lookup func(string) (string, bool), apply, overwrite bool) ([]EnvImportGroup, error) {
+	if i.Settings == nil || i.Actors == nil {
+		return nil, fmt.Errorf("settings env import: settings and actor lookup are required")
+	}
+	actorID, err := i.Actors(ctx, strings.TrimSpace(actorEmail))
+	if err != nil || actorID == uuid.Nil {
+		return nil, ErrImportActorUnknown
+	}
+	return i.Settings.ImportPlatformEnv(ctx, actorID, lookup, apply, overwrite)
 }

@@ -11,7 +11,7 @@ import (
 )
 
 func TestChains_SeedCatalog_SignatureAndCategory(t *testing.T) {
-	cmd := NewChainsSeedCatalog(func(context.Context) error { return nil })
+	cmd := NewChainsSeedCatalog(CatalogSeedFunc(func(context.Context) error { return nil }))
 	ext := cmd.Extend()
 	if cmd.Signature() != "chains:seed-catalog" || ext.Category != "chains" || len(ext.Arguments) != 0 || len(ext.Flags) != 1 {
 		t.Fatalf("signature %q category %q arguments %d flags %d", cmd.Signature(), ext.Category, len(ext.Arguments), len(ext.Flags))
@@ -39,7 +39,7 @@ func TestChains_SeedCatalog_DryRunPrintsTheStepsAndWritesNothing(t *testing.T) {
 	}
 	ctx.EXPECT().Info("dry run: nothing written (pass --apply)").Return().Once()
 
-	err := NewChainsSeedCatalog(func(context.Context) error { calls++; return nil }).Handle(ctx)
+	err := NewChainsSeedCatalog(CatalogSeedFunc(func(context.Context) error { calls++; return nil })).Handle(ctx)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -55,7 +55,7 @@ func TestChains_SeedCatalog_ApplySeedsOnceAndNamesTheNextStep(t *testing.T) {
 	ctx.EXPECT().Warning(mock.AnythingOfType("string")).Return()
 	ctx.EXPECT().Info(mock.AnythingOfType("string")).Return()
 
-	err := NewChainsSeedCatalog(func(context.Context) error { calls++; return nil }).Handle(ctx)
+	err := NewChainsSeedCatalog(CatalogSeedFunc(func(context.Context) error { calls++; return nil })).Handle(ctx)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -80,7 +80,7 @@ func TestChains_SeedCatalog_ApplyReportsASeederFailure(t *testing.T) {
 	ctx.EXPECT().Info(mock.AnythingOfType("string")).Return()
 	ctx.EXPECT().Error(mock.MatchedBy(func(line string) bool { return strings.Contains(line, "chains table is locked") })).Return()
 
-	err := NewChainsSeedCatalog(func(context.Context) error { return errors.New("chains table is locked") }).Handle(ctx)
+	err := NewChainsSeedCatalog(CatalogSeedFunc(func(context.Context) error { return errors.New("chains table is locked") })).Handle(ctx)
 	if err == nil || !strings.Contains(err.Error(), "chains table is locked") {
 		t.Fatalf("err = %v, want the seeder failure", err)
 	}

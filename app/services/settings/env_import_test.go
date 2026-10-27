@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -94,4 +96,12 @@ func TestImport_PlatformEnv_CopiesWhatIsSetSealsSecretsAndKeepsStoredFields(t *t
 	got, err = service.EffectiveLocalWorkers(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, []string{models.ChainBTC}, got.ScanChains, "overwrite replaces a stored field")
+}
+
+func TestImport_PlatformEnvAs_RefusesAnUnknownActor(t *testing.T) {
+	t.Parallel()
+	service, _ := newPlatformTestService(newMemoryStore(), nil)
+	importer := EnvImportAs{Settings: service, Actors: func(context.Context, string) (uuid.UUID, error) { return uuid.Nil, nil }}
+	_, err := importer.ImportPlatformEnvAs(context.Background(), "ghost@example.test", envOf(nil), true, false)
+	assert.ErrorIs(t, err, ErrImportActorUnknown)
 }

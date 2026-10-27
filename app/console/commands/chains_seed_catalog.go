@@ -12,7 +12,15 @@ import (
 // sweep thresholds, tokens and explorer resources, and the currencies. It is what
 // DatabaseSeeder runs before the dev-only seeders (users, accounts, wallets), which
 // never run on a shared host.
-type CatalogSeeder func(ctx context.Context) error
+type CatalogSeeder interface {
+	SeedCatalog(ctx context.Context) error
+}
+
+// CatalogSeedFunc is a function as a CatalogSeeder.
+type CatalogSeedFunc func(ctx context.Context) error
+
+// SeedCatalog runs f.
+func (f CatalogSeedFunc) SeedCatalog(ctx context.Context) error { return f(ctx) }
 
 // ChainsSeedCatalog is the first-boot step of a fresh database: `migrate`, then
 // `chains:seed-catalog --apply`, then `chains:add-missing --apply`.
@@ -60,7 +68,7 @@ func (c *ChainsSeedCatalog) Handle(ctx console.Context) error {
 		ctx.Info("dry run: nothing written (pass --apply)")
 		return nil
 	}
-	if err := c.seed(context.Background()); err != nil {
+	if err := c.seed.SeedCatalog(context.Background()); err != nil {
 		return fail(ctx, err)
 	}
 	ctx.Info("catalog seeded; next: chains:add-missing --apply, then chains:rpc-endpoints")
