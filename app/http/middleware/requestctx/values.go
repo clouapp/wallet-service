@@ -23,7 +23,7 @@ const (
 	KeyAccountID = "account_id"
 	// KeyAccountRole is the membership role AccountContext and AccountHeader store.
 	KeyAccountRole = "account_role"
-	// KeyAccountEnvironment is the account environment AccountHeader stores.
+	// KeyAccountEnvironment is the authenticated account environment AccountHeader and APITokenAuth store.
 	KeyAccountEnvironment = "account_environment"
 	// KeyWallet is the wallet WalletContext and APIWalletContext store.
 	KeyWallet = "wallet"

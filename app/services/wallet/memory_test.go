@@ -11,8 +11,41 @@ import (
 )
 
 type memWallets struct {
+	txMu sync.Mutex
 	mu   sync.Mutex
 	rows map[uuid.UUID]models.Wallet
+}
+
+type memTransactionKey struct{}
+type memTransaction struct{ rollback []func() }
+
+func (m *memWallets) Within(ctx context.Context, fn func(context.Context) error) error {
+	if ctx.Value(memTransactionKey{}) != nil {
+		return fn(ctx)
+	}
+	m.txMu.Lock()
+	defer m.txMu.Unlock()
+	m.mu.Lock()
+	snapshot := make(map[uuid.UUID]models.Wallet, len(m.rows))
+	for id, row := range m.rows {
+		snapshot[id] = row
+	}
+	m.mu.Unlock()
+	tx := &memTransaction{}
+	err := fn(context.WithValue(ctx, memTransactionKey{}, tx))
+	if err != nil {
+		m.mu.Lock()
+		m.rows = snapshot
+		m.mu.Unlock()
+		for i := len(tx.rollback) - 1; i >= 0; i-- {
+			tx.rollback[i]()
+		}
+	}
+	return err
+}
+
+func (m *memWallets) LockByID(ctx context.Context, id uuid.UUID) (*models.Wallet, error) {
+	return m.FindByID(ctx, id)
 }
 
 func newMemWallets() *memWallets {
@@ -92,6 +125,9 @@ func (m *memWallets) Activate(_ context.Context, id uuid.UUID, status string) er
 	if !ok {
 		return fmt.Errorf("wallet not found")
 	}
+	if wallet.Status != "pending" || wallet.ActivationCode == nil || status != "active" {
+		return models.ErrRepositoryNotFound
+	}
 	wallet.Status = status
 	wallet.ActivationCode = nil
 	m.rows[id] = wallet
@@ -107,12 +143,24 @@ func newMemAddresses() *memAddresses {
 	return &memAddresses{rows: map[uuid.UUID]models.Address{}}
 }
 
-func (m *memAddresses) Create(_ context.Context, addr *models.Address) error {
+func (m *memAddresses) Create(ctx context.Context, addr *models.Address) error {
 	if addr == nil {
 		return fmt.Errorf("create address: address is nil")
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if tx, ok := ctx.Value(memTransactionKey{}).(*memTransaction); ok {
+		previous, existed := m.rows[addr.ID]
+		tx.rollback = append(tx.rollback, func() {
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			if existed {
+				m.rows[addr.ID] = previous
+			} else {
+				delete(m.rows, addr.ID)
+			}
+		})
+	}
 	m.rows[addr.ID] = *addr
 	return nil
 }

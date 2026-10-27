@@ -133,11 +133,17 @@ func (s *service) PlanForWithdrawalTo(ctx context.Context, walletID uuid.UUID, a
 
 	// 1) direct_from_base — base alone covers the full amount.
 	if baseBal.Cmp(requiredAtBase) >= 0 {
-		plan.Strategy = StrategyDirectFromBase
-		baseCopy := *wallet.DepositAddress
-		plan.SourceAddress = &baseCopy
-		plan.ReachesTarget = true
-		return s.withEstimatedGas(ctx, adapter, plan, gasTarget)
+		ready, readinessErr := s.tokenSourceGasReady(ctx, adapter, plan, wallet.DepositAddress.Address, toAddress)
+		if readinessErr != nil {
+			return nil, readinessErr
+		}
+		if ready {
+			plan.Strategy = StrategyDirectFromBase
+			baseCopy := *wallet.DepositAddress
+			plan.SourceAddress = &baseCopy
+			plan.ReachesTarget = true
+			return s.withEstimatedGas(ctx, adapter, plan, gasTarget)
+		}
 	}
 
 	// 2) Collect eligible children (balance > 0, not base, above dust threshold).
@@ -193,14 +199,29 @@ func (s *service) PlanForWithdrawalTo(ctx context.Context, walletID uuid.UUID, a
 	plan.DustIgnored = dustIgnored
 
 	// 3) direct_from_child — one child alone covers the amount.
+	var needsPreparation *models.Address
 	for _, cb := range eligible {
 		if cb.balance.Cmp(cb.reserve.requiredBalance(amount)) >= 0 {
+			ready, readinessErr := s.tokenSourceGasReady(ctx, adapter, plan, cb.addr.Address, toAddress)
+			if readinessErr != nil {
+				return nil, readinessErr
+			}
+			if !ready {
+				if needsPreparation == nil {
+					childCopy := cb.addr
+					needsPreparation = &childCopy
+				}
+				continue
+			}
 			plan.Strategy = StrategyDirectFromChild
 			addrCopy := cb.addr
 			plan.SourceAddress = &addrCopy
 			plan.ReachesTarget = true
 			return s.withEstimatedGas(ctx, adapter, plan, gasTarget)
 		}
+	}
+	if needsPreparation != nil && evmTokenGasApplies(adapter, plan.Asset) {
+		return s.directChildGasPlan(ctx, wallet, *needsPreparation, plan, toAddress)
 	}
 
 	// 4) multi_sweep — greedy, largest balance first.
@@ -237,6 +258,9 @@ func (s *service) PlanForWithdrawalTo(ctx context.Context, walletID uuid.UUID, a
 	plan.Strategy = StrategyMultiSweep
 	plan.Sweeps = sweeps
 	plan.ReachesTarget = true
+	if err := s.requireTokenPlanGas(ctx, adapter, wallet, plan, toAddress); err != nil {
+		return nil, err
+	}
 	return s.withEstimatedGas(ctx, adapter, plan, gasTarget)
 }
 

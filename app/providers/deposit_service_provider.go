@@ -200,6 +200,19 @@ func newDepositService(app foundation.Application) (*deposit.Service, error) {
 	// DEPOSIT_SCAN_*_<CHAIN> lay one chain's window and parallelism over the global
 	// window above, read at each cycle.
 	service.SetChainScanOverrides(chainScanOverrides(facades.Config()))
+	var recentChains []string
+	for _, part := range strings.Split(facades.Config().GetString("vault.deposit_scan.recent_chains"), ",") {
+		if chainID := strings.TrimSpace(part); chainID != "" {
+			recentChains = append(recentChains, chainID)
+		}
+	}
+	recentWindow := facades.Config().GetInt("vault.deposit_scan.recent_window_blocks")
+	if recentWindow < 0 {
+		return nil, fmt.Errorf("vault: recent deposit scan window must not be negative")
+	}
+	if err := service.SetRecentScanPolicy(recentChains, uint64(recentWindow)); err != nil {
+		return nil, fmt.Errorf("vault: recent deposit scan policy: %w", err)
+	}
 	failurePolicy, err := deposit.FailurePolicyFromSettings(
 		facades.Config().GetInt("vault.deposit_scan.retry_attempts"),
 		facades.Config().GetInt("vault.deposit_scan.retry_delay_ms"),

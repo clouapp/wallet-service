@@ -535,3 +535,45 @@ func TestExecute_Plan_BitcoinSharesOfAnotherWalletAreRejected(t *testing.T) {
 		t.Fatal("nothing may be broadcast with shares of another wallet")
 	}
 }
+
+// Direct-child gas preparation reuses the real EVM signature finalizer in this
+// shared custody test harness. It adds no production adapter dependency.
+type mpcGasSeedPort struct {
+	*gasSeedPort
+	live *evmchain.EVMLive
+}
+
+func (p *mpcGasSeedPort) WithFeePolicy(policy chain.FeePolicy) types.Chain {
+	copyPort := *p
+	copyPort.gasSeedPort = p.gasSeedPort.WithFeePolicy(policy).(*gasSeedPort)
+	return &copyPort
+}
+func (p *mpcGasSeedPort) FinalizeMPCSignature(unsigned *types.UnsignedTx, signature, publicKey []byte) (*types.SignedTx, error) {
+	return p.live.FinalizeMPCSignature(unsigned, signature, publicKey)
+}
+func (p *mpcGasSeedPort) VerifySignedTransaction(unsigned *types.UnsignedTx, signed *types.SignedTx, from string) error {
+	return p.live.VerifySignedTransaction(unsigned, signed, from)
+}
+func (p *mpcGasSeedPort) BuildTransfer(_ context.Context, req types.TransferRequest) (*types.UnsignedTx, error) {
+	limit := p.nativeGasLimit
+	value := new(big.Int).Set(req.Amount)
+	to := req.To
+	var data []byte
+	if req.Token != nil {
+		limit = p.tokenGasLimit
+		value.SetInt64(0)
+		to = req.Token.Contract
+		selector, _ := hex.DecodeString("a9059cbb")
+		data = append(selector, common.LeftPadBytes(common.HexToAddress(req.To).Bytes(), 32)...)
+		data = append(data, common.LeftPadBytes(req.Amount.Bytes(), 32)...)
+	}
+	price := p.pricedGas()
+	tx := gethtypes.NewTransaction(0, common.HexToAddress(to), value, limit, price, data)
+	signer := gethtypes.LatestSignerForChainID(big.NewInt(p.network))
+	return &types.UnsignedTx{ChainID: p.ID(), RawBytes: signer.Hash(tx).Bytes(), Metadata: map[string]interface{}{"nonce": uint64(0), "chain_id": p.network, "to": to, "value": value.String(), "gas_price": price.String(), "gas_limit": limit, "data": data}}, nil
+}
+
+func newMPCGasSeedPort() *mpcGasSeedPort {
+	return &mpcGasSeedPort{gasSeedPort: &gasSeedPort{tokenReadinessPort: &tokenReadinessPort{evmPlanPort: newEVMPlanPort(gasPlanChain, gasPlanNative, big.NewInt(7))}, network: 80002},
+		live: evmchain.NewEVMLive(evmchain.EVMConfig{ChainIDStr: gasPlanChain, NativeSymbol: gasPlanNative, NetworkID: 80002})}
+}

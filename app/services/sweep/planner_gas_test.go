@@ -174,6 +174,7 @@ func newEVMPlanPort(chainID, native string, l1Fee *big.Int) *evmPlanPort {
 	mockChain.NativeDecimalsVal = 18
 	return &evmPlanPort{
 		MockChain:      mockChain,
+		nativeBalance:  big.NewInt(1_000_000_000_000_000_000),
 		tokenBalance:   big.NewInt(20_000_000),
 		gasPrice:       big.NewInt(2_000_000_000),
 		nativeGasLimit: 21_000,
@@ -263,8 +264,8 @@ func TestPlan_EVM_TokenPreviewWithoutDestinationReportsUnknownGas(t *testing.T) 
 	if plan.EstimatedGas != nil {
 		t.Fatalf("without a destination the token gas is unknown; got %s", plan.EstimatedGas)
 	}
-	if len(fixture.adapter.estimates) != 0 {
-		t.Fatalf("no transfer can be simulated without a destination, got %d calls", len(fixture.adapter.estimates))
+	if len(fixture.adapter.estimates) != 1 || fixture.adapter.estimates[0].To != chain.EVMFeeProbeRecipient() {
+		t.Fatalf("native readiness must use the declared fee probe; the final fee remains unknown: %+v", fixture.adapter.estimates)
 	}
 }
 
