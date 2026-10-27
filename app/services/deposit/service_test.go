@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/queue"
+	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/pkg/types"
@@ -541,4 +542,10 @@ func TestUpdate_Confirmations_StillPendingOutboundSkipped(t *testing.T) {
 	if reloaded.Status != "confirming" {
 		t.Fatalf("expected status still confirming, got %s", reloaded.Status)
 	}
+}
+
+// newGasPreparationObserver shares the repository-backed service harness used
+// to verify confirmation tracking and custody observation on the same test DB.
+func newGasPreparationObserver(registry *chain.Registry, sealer sweep.Sealer) sweep.DirectChildGasPreparer {
+	return sweep.NewService(sweep.Deps{Registry: registry, Wallets: repositories.NewWalletRepository(nil), Addresses: repositories.NewAddressRepository(nil), Chains: repositories.NewChainRepository(nil), Transactions: repositories.NewTransactionRepository(nil), Sealer: sealer}).(sweep.DirectChildGasPreparer)
 }

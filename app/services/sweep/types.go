@@ -44,17 +44,20 @@ type PlannedSweep struct {
 
 // Plan is the output of PlanForWithdrawal / ConsolidateAll; consumed by ExecutePlan.
 type Plan struct {
-	WalletID      uuid.UUID
-	Chain         string
-	Asset         string
-	Amount        *big.Int
-	Strategy      Strategy
-	SourceAddress *models.Address // set for direct_from_base / direct_from_child
-	Sweeps        []PlannedSweep  // set for multi_sweep
-	EstimatedGas  *big.Int
-	ReachesTarget bool
-	DustIgnored   []AddressBalance
-	BaseBalance   *big.Int
+	WalletID               uuid.UUID
+	Chain                  string
+	Asset                  string
+	Amount                 *big.Int
+	Strategy               Strategy
+	SourceAddress          *models.Address // set for direct_from_base / direct_from_child
+	GasPreparation         *DirectChildGasPlan
+	GasPreparationBinding  *DirectChildGasBinding
+	gasPreparationExisting bool
+	Sweeps                 []PlannedSweep // set for multi_sweep
+	EstimatedGas           *big.Int
+	ReachesTarget          bool
+	DustIgnored            []AddressBalance
+	BaseBalance            *big.Int
 	// Shortfall explains a StrategyInsufficient plan when the chain can say more
 	// than ErrInsufficientFunds (XRP: BaseReserveShortfallError). It is ErrInsufficientFunds.
 	Shortfall error
