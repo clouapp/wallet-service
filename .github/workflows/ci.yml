@@ -69,25 +69,33 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # The suites read the local ports and credentials from .env.dev, then
-      # .env.testing overrides the safety-critical values (database, Redis index, keys).
-      - name: Local env
-        run: cp .env.dev.example .env.dev
+      - uses: ./.github/actions/test-services
 
-      # The compose services keep their container names (make docker exec's waas-postgres).
-      # LocalStack runs plain: the snapshot hooks of docker-compose.yml need a key that
-      # only a workstation has, and the suites seed what they read.
-      - name: Start PostgreSQL, Redis and LocalStack
-        run: |
-          docker run -d --name waas-localstack -p 4566:4566 \
-            -e SERVICES=sqs,secretsmanager,kms -e AWS_DEFAULT_REGION=us-east-1 \
-            localstack/localstack@sha256:3225d60a8cbc8bbd129e97ea48a9f96acb3e1f51a1d19dbe586c444c4bcf762b
-          docker compose --env-file .env.dev up -d --wait postgres redis
-          for _ in $(seq 1 60); do
-            curl -fsS http://localhost:4566/_localstack/health >/dev/null && break
-            sleep 2
-          done
-          curl -fsS http://localhost:4566/_localstack/health
-
+      # The signature sync property test runs in the property jobs below.
       - name: make test-integration
-        run: make test-integration
+        run: make test-integration TEST_FLAGS='-skip TestProperty_SignatureSync_ReadsEveryHistoryWhateverTheEndpointShows'
+
+  property:
+    name: Signature sync property test (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      SIGNATURE_PROPERTY_SHARD: ${{ matrix.shard }}/4
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: ./.github/actions/test-services
+
+      - name: make test-integration (one shard of the property cases)
+        run: >-
+          make test-integration
+          INTEGRATION_TEST_PACKAGES=github.com/macrowallets/waas/app/services/deposit
+          TEST_FLAGS='-run TestProperty_SignatureSync_ReadsEveryHistoryWhateverTheEndpointShows'

@@ -58,7 +58,7 @@ func TestEncrypted_Share_Format(t *testing.T) {
 }
 
 func TestKeygen_Secp2561_ProducesShares(t *testing.T) {
-	svc := NewTSSService()
+	svc := newTestTSSService()
 
 	result, err := svc.Keygen(context.Background(), CurveSecp256k1)
 	if err != nil {
@@ -82,7 +82,7 @@ func TestKeygen_Secp2561_ProducesShares(t *testing.T) {
 }
 
 func TestKeygen_Shares_AreDifferent(t *testing.T) {
-	svc := NewTSSService()
+	svc := newTestTSSService()
 
 	r1, err := svc.Keygen(context.Background(), CurveSecp256k1)
 	if err != nil {
@@ -103,7 +103,7 @@ func TestKeygen_Shares_AreDifferent(t *testing.T) {
 }
 
 func TestKeygen_Ed25519_ProducesShares(t *testing.T) {
-	svc := NewTSSService()
+	svc := newTestTSSService()
 
 	result, err := svc.Keygen(context.Background(), CurveEd25519)
 	if err != nil {
@@ -122,7 +122,7 @@ func TestKeygen_Ed25519_ProducesShares(t *testing.T) {
 }
 
 func TestKeygen_Ed25519_SharesAreDifferent(t *testing.T) {
-	svc := NewTSSService()
+	svc := newTestTSSService()
 
 	r1, err := svc.Keygen(context.Background(), CurveEd25519)
 	if err != nil {
@@ -142,7 +142,7 @@ func TestKeygen_Ed25519_SharesAreDifferent(t *testing.T) {
 }
 
 func TestService_Sign_Secp2561(t *testing.T) {
-	svc := NewTSSService()
+	svc := newTestTSSService()
 
 	// First keygen to get shares
 	result, err := svc.Keygen(context.Background(), CurveSecp256k1)

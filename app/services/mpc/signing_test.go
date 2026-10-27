@@ -9,7 +9,7 @@ import (
 )
 
 func TestSigning_Reconstruct_Secp2561(t *testing.T) {
-	svc := NewTSSService()
+	svc := newTestTSSService()
 	result, err := svc.Keygen(context.Background(), CurveSecp256k1)
 	if err != nil {
 		t.Fatal(err)

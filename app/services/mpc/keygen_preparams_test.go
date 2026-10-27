@@ -10,16 +10,18 @@ import (
 	"testing"
 
 	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
+
+	"github.com/macrowallets/waas/tests/tssfixture"
 )
 
-// pooledKeygen runs one secp256k1 keygen on a pool of real pre-parameters, once per
-// test binary (the safe primes take seconds), and returns it with the NTilde of every
-// set the pool generated.
+// pooledKeygen runs one secp256k1 keygen on a pool of pre-parameters (the stored test
+// sets, tests/tssfixture: searching for safe primes takes minutes on a CI runner), once
+// per test binary, and returns it with the NTilde of every set the pool handed out.
 var pooledKeygen = sync.OnceValues(func() (*pooledKeygenResult, error) {
 	var mu sync.Mutex
 	var generated []*big.Int
 	pool := NewPreParamsPool(2, func(ctx context.Context) (*keygen.LocalPreParams, error) {
-		params, err := keygen.GeneratePreParamsWithContext(ctx, runtime.NumCPU())
+		params, err := tssfixture.Generator()(ctx)
 		if err == nil {
 			mu.Lock()
 			generated = append(generated, params.NTildei)
