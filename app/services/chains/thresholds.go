@@ -478,3 +478,71 @@ func deref(value *string) string {
 	}
 	return *value
 }
+
+// PlatformChainView is one chain of the platform chain list: its identity, its
+// status and the settings ThresholdView carries. The RPC URL is not included (the
+// endpoint list is GET .../rpc-endpoints, by host only).
+type PlatformChainView struct {
+	ThresholdView
+	Name         string `json:"name"`
+	AdapterType  string `json:"adapter_type"`
+	NativeSymbol string `json:"native_symbol"`
+	NetworkID    *int64 `json:"network_id"`
+	IsTestnet    bool   `json:"is_testnet"`
+	Status       string `json:"status"`
+	DisplayOrder int    `json:"display_order"`
+}
+
+// chainLister lists every chain row, whatever its status or environment.
+type chainLister interface {
+	FindAll(ctx context.Context) ([]models.Chain, error)
+}
+
+// List returns every chain, active or not, testnet or mainnet, in display order,
+// to a platform admin (ErrPlatformForbidden otherwise). Unlike GET /v1/chains it
+// does not follow an account's environment.
+func (s *Thresholds) List(ctx context.Context, actorID uuid.UUID) ([]PlatformChainView, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("list platform chains: context is required")
+	}
+	if s == nil || s.store == nil || s.admins == nil {
+		return nil, fmt.Errorf("chain thresholds: store and platform admins are required")
+	}
+	lister, ok := s.store.(chainLister)
+	if !ok {
+		return nil, fmt.Errorf("list platform chains: the store cannot list chains")
+	}
+	if actorID == uuid.Nil {
+		return nil, fmt.Errorf("list platform chains: actor is required")
+	}
+	admin, err := s.admins.Contains(ctx, actorID)
+	if err != nil {
+		return nil, err
+	}
+	if !admin {
+		return nil, ErrPlatformForbidden
+	}
+	rows, err := lister.FindAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]PlatformChainView, 0, len(rows))
+	for i := range rows {
+		chain := &rows[i]
+		thresholds, err := thresholdView(chain)
+		if err != nil {
+			return nil, fmt.Errorf("list platform chains: chain %s: %w", chain.ID, err)
+		}
+		views = append(views, PlatformChainView{
+			ThresholdView: thresholds,
+			Name:          chain.Name,
+			AdapterType:   chain.AdapterType,
+			NativeSymbol:  chain.NativeSymbol,
+			NetworkID:     chain.NetworkID,
+			IsTestnet:     chain.IsTestnet,
+			Status:        chain.Status,
+			DisplayOrder:  chain.DisplayOrder,
+		})
+	}
+	return views, nil
+}

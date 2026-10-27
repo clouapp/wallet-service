@@ -172,6 +172,7 @@ var routeTable = map[string]routeSecurity{
 	"GET|HEAD /v1/currencies/{code}":                                   session(chainSession),
 	"GET|HEAD /v1/me/preferences":                                      session(chainSession),
 	"PATCH /v1/platform/chains/{chainId}":                              session(chainPlatform),
+	"GET /v1/platform/chains":                                          session(chainPlatform),
 	"PATCH /v1/platform/chains/{chainId}/rpc":                          session(chainPlatform),
 	"GET|HEAD /v1/platform/chains/{chainId}/rpc-endpoints":             session(chainPlatform),
 	"POST /v1/platform/chains/{chainId}/rpc-endpoints":                 session(chainPlatform),

@@ -101,6 +101,7 @@ func Commands() []console.Command {
 		})),
 		commands.NewChainsRPCEndpoints(container.MustMake[*rpcendpoints.Service]()),
 		commands.NewChainsSeedCatalog(seedCatalog),
+		commands.NewSettingsImportEnv(container.MustMake[*settings.Service](), container.MustMake[*repositories.UserRepository]()),
 		commands.NewChainsAddMissing(chainregistry.NewMissingChains(seedMissingAddedChains)),
 		commands.NewChainsAlignTokens(chainregistry.NewNetworkTokens(alignNetworkTokens)),
 		commands.NewWithdrawPreflight(commands.WithdrawPreflightDeps{
