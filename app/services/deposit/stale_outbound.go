@@ -53,7 +53,19 @@ func (s *Service) SetStaleOutboundAfter(after time.Duration) {
 	}
 }
 
-func (s *Service) staleOutboundAfter() time.Duration {
+// SetStaleOutboundAfterSource reads, at each use, a stored threshold that wins over
+// the one SetStaleOutboundAfter set (the withdrawals platform setting); a zero or
+// negative answer keeps that one.
+func (s *Service) SetStaleOutboundAfterSource(source func(ctx context.Context) time.Duration) {
+	s.staleAfterSource = source
+}
+
+func (s *Service) staleOutboundAfter(ctx context.Context) time.Duration {
+	if s.staleAfterSource != nil && ctx != nil {
+		if stored := s.staleAfterSource(ctx); stored > 0 {
+			return stored
+		}
+	}
 	if s.staleAfter > 0 {
 		return s.staleAfter
 	}
@@ -64,8 +76,8 @@ func (s *Service) staleOutboundAfter() time.Duration {
 // than the stale threshold: a transfer nothing settles (an unknown outcome the chain
 // cannot prove, a node without its index) that an operator settles with
 // withdrawals:reconcile.
-func (s *Service) warnStaleOutbound(chainID string, pending []models.Transaction) {
-	after, now := s.staleOutboundAfter(), s.now()
+func (s *Service) warnStaleOutbound(ctx context.Context, chainID string, pending []models.Transaction) {
+	after, now := s.staleOutboundAfter(ctx), s.now()
 	for _, tx := range pending {
 		if !isOutboundTxType(tx.TxType) || tx.CreatedAt == nil {
 			continue
@@ -92,7 +104,7 @@ func (s *Service) StaleOutboundHealth(ctx context.Context) StaleOutboundHealth {
 			return health, health.Err
 		},
 		Unavailable: func(err error) StaleOutboundHealth {
-			return StaleOutboundHealth{After: s.staleOutboundAfter(), Err: err}
+			return StaleOutboundHealth{After: s.staleOutboundAfter(ctx), Err: err}
 		},
 		Failure: "count stale outbound transactions",
 		Busy:    fmt.Errorf("stale outbound transactions are being counted"),
@@ -101,7 +113,7 @@ func (s *Service) StaleOutboundHealth(ctx context.Context) StaleOutboundHealth {
 
 // countStaleOutbound counts under pendingHealthTimeout.
 func (s *Service) countStaleOutbound(ctx context.Context, now time.Time) StaleOutboundHealth {
-	health := StaleOutboundHealth{After: s.staleOutboundAfter()}
+	health := StaleOutboundHealth{After: s.staleOutboundAfter(ctx)}
 	counter, ok := s.txRepo.(staleOutboundCounter)
 	if !ok {
 		health.Err = fmt.Errorf("stale outbound transactions cannot be counted")

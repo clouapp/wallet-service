@@ -1,0 +1,27 @@
+name: Test services
+description: PostgreSQL and Redis from docker-compose.yml, and a plain LocalStack, for the integration tests.
+
+runs:
+  using: composite
+  steps:
+    # The suites read the local ports and credentials from .env.dev, then
+    # .env.testing overrides the safety-critical values (database, Redis index, keys).
+    - name: Local env
+      shell: bash
+      run: cp .env.dev.example .env.dev
+
+    # The compose services keep their container names (make docker exec's waas-postgres).
+    # LocalStack runs plain: the snapshot hooks of docker-compose.yml need a key that
+    # only a workstation has, and the suites seed what they read.
+    - name: Start PostgreSQL, Redis and LocalStack
+      shell: bash
+      run: |
+        docker run -d --name waas-localstack -p 4566:4566 \
+          -e SERVICES=sqs,secretsmanager,kms -e AWS_DEFAULT_REGION=us-east-1 \
+          localstack/localstack@sha256:3225d60a8cbc8bbd129e97ea48a9f96acb3e1f51a1d19dbe586c444c4bcf762b
+        docker compose --env-file .env.dev up -d --wait postgres redis
+        for _ in $(seq 1 60); do
+          curl -fsS http://localhost:4566/_localstack/health >/dev/null && break
+          sleep 2
+        done
+        curl -fsS http://localhost:4566/_localstack/health

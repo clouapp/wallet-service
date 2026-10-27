@@ -42,6 +42,8 @@ SERVER_SSH=forge@<host>
 
 ```bash
 make deploy ENV=dev          # check-account, cfn-lint, cloudformation deploy, outputs
+make deploy ENV=prod STACK=host   # the same template as waas-prod for a production host (Environment=prod);
+                                  # CREATE_SERVER_USER and ALARM_TOPIC_ARN in .env.prod set the other parameters
 make server-credentials      # host access key -> AWS profile waas-dev on SERVER_SSH
 make verify-aws              # proves everything from the host, as that profile
 ```

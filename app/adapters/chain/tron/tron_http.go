@@ -170,8 +170,8 @@ func (a *TronLive) request(requestURL string, body []byte, primary bool) httpcli
 		"Accept":       "application/json",
 		"User-Agent":   tronUserAgent,
 	}
-	if primary && a.cfg.APIKey != "" {
-		header[tronAPIKeyHeader] = a.cfg.APIKey
+	if key := a.currentAPIKey(); primary && key != "" {
+		header[tronAPIKeyHeader] = key
 	}
 	return httpclient.Request{
 		Method:   httpclient.MethodPost,

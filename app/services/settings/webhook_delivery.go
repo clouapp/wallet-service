@@ -123,6 +123,9 @@ func (s *Service) SavePlatform(ctx context.Context, actorID uuid.UUID, groupName
 			return GroupView{}, err
 		}
 	}
+	if checkErr := s.checkPlainWrites(ctx, group, body); checkErr != nil {
+		return GroupView{}, checkErr
+	}
 	if group.Name == groupIngestPush {
 		if resolveErr := s.rejectResolvedIngestBase(ctx, writes); resolveErr != nil {
 			return GroupView{}, resolveErr

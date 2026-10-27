@@ -104,13 +104,19 @@ func (cat *Catalog) SeedChains(ctx context.Context) error {
 			return fmt.Errorf("find chain %s: %w", c.id, err)
 		}
 		if existing != nil && existing.ID != "" {
-			// Re-encrypt rpc_url under the current APP_KEY so a rotated key self-heals
-			// on re-seed instead of leaving the registry unable to decrypt (which shows
-			// up as "unknown chain" for every API call). Other columns stay as they are.
+			// An existing chain keeps its row, its rpc_url included: an operator may
+			// have pointed it elsewhere (chains:set-rpc, the platform API). Only an
+			// rpc_url the current APP_KEY cannot open is sealed again from the
+			// catalog, so a rotated key self-heals instead of leaving the registry
+			// unable to decrypt (which shows up as "unknown chain" for every call).
+			if _, openErr := settings.OpenStored(cat.cipher, existing.RpcURL); openErr == nil {
+				slog.Info("chain exists, rpc_url kept", "id", c.id)
+				continue
+			}
 			if err := chains.UpdateRPCURL(ctx, c.id, encRPC); err != nil {
 				return fmt.Errorf("refresh rpc_url for chain %s: %w", c.id, err)
 			}
-			slog.Info("chain exists, refreshed rpc_url", "id", c.id)
+			slog.Warn("chain exists, rpc_url did not open under APP_KEY and was sealed again from the catalog", "id", c.id)
 			continue
 		}
 

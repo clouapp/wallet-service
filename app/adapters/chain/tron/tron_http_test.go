@@ -173,3 +173,25 @@ func TestTronBroadcastTransactionLocalServer(t *testing.T) {
 		t.Fatal("tx hash not matching the raw data accepted")
 	}
 }
+
+// TestTronHTTP_SetAPIKeyReplacesTheKeyFromTheNextCall: the provider_tron setting
+// reaches a running adapter (the chain provider sync calls SetAPIKey) without a
+// restart, and a blank key stops sending the header.
+func TestTronHTTP_SetAPIKeyReplacesTheKeyFromTheNextCall(t *testing.T) {
+	var seen atomic.Value
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		seen.Store(r.Header.Get(tronAPIKeyHeader))
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}
+	adapter := newTronHTTPAdapter(t, handler, tronTestAPIKey)
+	adapter.SetAPIKey("  replaced-key-not-a-secret  ")
+	_, _ = adapter.GetLatestBlock(context.Background())
+	if seen.Load() != "replaced-key-not-a-secret" {
+		t.Fatalf("API key header after SetAPIKey = %q", seen.Load())
+	}
+	adapter.SetAPIKey("")
+	_, _ = adapter.GetLatestBlock(context.Background())
+	if seen.Load() != "" {
+		t.Fatalf("API key header after a blank SetAPIKey = %q", seen.Load())
+	}
+}

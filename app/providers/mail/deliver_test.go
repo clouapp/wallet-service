@@ -278,10 +278,17 @@ func (c *documentConfig) Add(name string, value any) {
 
 // storedSettings answers the two settings reads with fixed rows or errors.
 type storedSettings struct {
-	smtp    settings.MailSMTP
-	smtpErr error
-	from    settings.MailDelivery
-	fromErr error
+	smtp     settings.MailSMTP
+	smtpErr  error
+	from     settings.MailDelivery
+	fromErr  error
+	provider settings.MailProvider
+}
+
+func (s storedSettings) EffectiveMailProvider(_ context.Context, driver string) (settings.MailProvider, error) {
+	provider := s.provider
+	provider.Driver = driver
+	return provider, nil
 }
 
 func (s storedSettings) EffectiveMailSMTP(context.Context) (settings.MailSMTP, error) {

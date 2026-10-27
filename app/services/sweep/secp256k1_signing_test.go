@@ -25,6 +25,7 @@ import (
 	walletsvc "github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/tssfixture"
 )
 
 const (
@@ -85,7 +86,7 @@ func mustAddress(t *testing.T, chainID string, testnet bool, publicKey []byte) s
 // secp256k1KeygenOnce runs one real 2-of-2 ECDSA keygen for the whole package; the
 // ceremony is slow and the tests only need a key, not a fresh one each.
 var secp256k1KeygenOnce = sync.OnceValues(func() (*mpcpkg.KeygenResult, error) {
-	return mpcpkg.NewTSSService().Keygen(context.Background(), mpcpkg.CurveSecp256k1)
+	return mpcpkg.NewTSSServiceWithPreParamsFrom(tssfixture.Generator()).Keygen(context.Background(), mpcpkg.CurveSecp256k1)
 })
 
 // secp256k1WalletFixture is a real MPC wallet whose child comes from the production
@@ -142,7 +143,7 @@ func newSecp256k1WalletFixture(t *testing.T, adapter types.Chain, childIndex int
 		t.Fatalf("unexpected child row: %+v", child)
 	}
 	return &secp256k1WalletFixture{
-		tss:    mpcpkg.NewTSSService(),
+		tss:    mpcpkg.NewTSSServiceWithPreParamsFrom(tssfixture.Generator()),
 		wallet: wallet,
 		shareA: append([]byte(nil), keys.ShareA...),
 		shareB: append([]byte(nil), keys.ShareB...),

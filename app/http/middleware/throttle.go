@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/http/responses"
+	"github.com/macrowallets/waas/app/services/settings"
 )
 
 // Names of the registered rate limiters. A route picks one with Throttle.
@@ -52,31 +54,39 @@ func Throttle(name string) http.Middleware {
 	return frameworkmiddleware.Throttle(name)
 }
 
+// StoredThrottleLimits reads the http_throttle platform settings at each request
+// (settings.Service); a key it does not store keeps the config value.
+type StoredThrottleLimits interface {
+	EffectiveThrottle(ctx context.Context) (settings.ThrottleLimits, error)
+}
+
 // RegisterThrottles registers every limiter Throttle can name. The limits are
-// read from config on each request.
-func RegisterThrottles(limiter http.RateLimiter) {
+// read on each request: the http_throttle setting of a limit when one is stored
+// (-1: off), else its config value. stored may be nil (config only).
+func RegisterThrottles(limiter http.RateLimiter, stored StoredThrottleLimits) {
+	attempts := throttleAttempts(stored)
 	limiter.ForWithLimits(ThrottleLogin, func(ctx http.Context) []http.Limit {
 		ip := ClientIP(ctx)
 		return limits(
-			perMinute(facades.Config().GetInt(throttleLoginPerIPEmail), "ip-email:"+ip+":"+emailKey(ctx)),
-			perMinute(facades.Config().GetInt(throttleLoginPerIP), "ip:"+ip),
+			perMinute(attempts(ctx, settings.KeyThrottleLoginPerIPEmail, throttleLoginPerIPEmail), "ip-email:"+ip+":"+emailKey(ctx)),
+			perMinute(attempts(ctx, settings.KeyThrottleLoginPerIP, throttleLoginPerIP), "ip:"+ip),
 		)
 	})
 	limiter.ForWithLimits(ThrottleRecover, func(ctx http.Context) []http.Limit {
 		ip := ClientIP(ctx)
 		return limits(
-			perMinute(facades.Config().GetInt(throttleRecoverPerIPEmail), "ip-email:"+ip+":"+emailKey(ctx)),
-			perMinute(facades.Config().GetInt(throttleAuthPerIP), "ip:"+ip),
+			perMinute(attempts(ctx, settings.KeyThrottleRecoverPerIPEmail, throttleRecoverPerIPEmail), "ip-email:"+ip+":"+emailKey(ctx)),
+			perMinute(attempts(ctx, settings.KeyThrottleAuthPerIP, throttleAuthPerIP), "ip:"+ip),
 		)
 	})
 	limiter.ForWithLimits(ThrottleAuth, func(ctx http.Context) []http.Limit {
 		return limits(
-			perMinute(facades.Config().GetInt(throttleAuthPerIP), "ip:"+ClientIP(ctx)+":"+ctx.Request().Path()),
+			perMinute(attempts(ctx, settings.KeyThrottleAuthPerIP, throttleAuthPerIP), "ip:"+ClientIP(ctx)+":"+ctx.Request().Path()),
 		)
 	})
 	limiter.ForWithLimits(ThrottleAPI, func(ctx http.Context) []http.Limit {
 		return limits(
-			perMinute(facades.Config().GetInt(throttleAPIPerMinute), apiKey(ctx)),
+			perMinute(attempts(ctx, settings.KeyThrottleAPIPerMinute, throttleAPIPerMinute), apiKey(ctx)),
 		)
 	})
 	limiter.ForWithLimits(ThrottleGasCheck, func(ctx http.Context) []http.Limit {
@@ -86,6 +96,30 @@ func RegisterThrottles(limiter http.RateLimiter) {
 				Response(gasCheckLimited),
 		}
 	})
+}
+
+// throttleAttempts resolves one limit's attempts per minute: the stored setting
+// (a negative one turns the limit off), else the config value. A failed settings
+// read keeps the config value.
+func throttleAttempts(stored StoredThrottleLimits) func(ctx http.Context, key, configKey string) int {
+	return func(ctx http.Context, key, configKey string) int {
+		configured := facades.Config().GetInt(configKey)
+		if stored == nil {
+			return configured
+		}
+		values, err := stored.EffectiveThrottle(ctx.Context())
+		if err != nil {
+			return configured
+		}
+		attempts, ok := values[key]
+		if !ok {
+			return configured
+		}
+		if attempts < 0 {
+			return 0
+		}
+		return attempts
+	}
 }
 
 // perMinute builds one limit, or nil when attempts is not positive. The

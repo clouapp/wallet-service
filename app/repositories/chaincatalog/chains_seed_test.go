@@ -31,7 +31,7 @@ func TestChains_Seed_DoesNotQueryOutsideTheRepository(t *testing.T) {
 	}
 }
 
-func TestSeed_Chains_InsertsChainsAndRefreshesOnlyTheSealedEndpointOnRerun(t *testing.T) {
+func TestSeed_Chains_InsertsChainsAndKeepsAnExistingChainOnRerun(t *testing.T) {
 	fixtures.TestDB(t)
 	ctx := context.Background()
 	if profile := strings.TrimSpace(facades.Config().GetString("vault.chains.network_profile")); profile != "" {
@@ -73,8 +73,8 @@ func TestSeed_Chains_InsertsChainsAndRefreshesOnlyTheSealedEndpointOnRerun(t *te
 	if eth.Name != "Ethereum" || eth.Status != "active" || eth.RequiredConfirmations != 12 || eth.DisplayOrder != 1 {
 		t.Fatalf("reseed rewrote eth identity: name=%q status=%q confirmations=%d order=%d", eth.Name, eth.Status, eth.RequiredConfirmations, eth.DisplayOrder)
 	}
-	if eth.RpcURL == sealedBefore {
-		t.Fatal("reseed did not refresh the sealed endpoint")
+	if eth.RpcURL != sealedBefore {
+		t.Fatal("reseed rewrote the rpc_url of an existing chain that opens under APP_KEY")
 	}
 	requireSealedEndpoint(t, eth.RpcURL, seedEndpointPlaintext("ETH_RPC_URL", false))
 
@@ -266,3 +266,55 @@ func sameOptionalString(got *string, want string) bool {
 	}
 	return got != nil && *got == want
 }
+
+// TestSeed_Chains_KeepsAnOperatorEndpointAndResealsOnlyOneThatDoesNotOpen: a rerun
+// leaves an rpc_url an operator wrote (chains:set-rpc, the platform API) as it is,
+// and seals the catalog's endpoint again only where the stored one no longer opens
+// under APP_KEY (a rotated key).
+func TestSeed_Chains_KeepsAnOperatorEndpointAndResealsOnlyOneThatDoesNotOpen(t *testing.T) {
+	fixtures.TestDB(t)
+	ctx := context.Background()
+	if err := newCatalog().SeedChains(ctx); err != nil {
+		t.Fatalf("seed chains: %v", err)
+	}
+
+	chains := repositories.NewChainRepository(nil)
+	operator, err := settings.Seal(facades.Crypt(), "https://operator-node.example.com/rpc")
+	if err != nil {
+		t.Fatalf("seal operator endpoint: %v", err)
+	}
+	if err = chains.UpdateRPCURL(ctx, models.ChainETH, operator); err != nil {
+		t.Fatalf("point eth at the operator endpoint: %v", err)
+	}
+	foreign, err := settings.Seal(foreignCipher{}, "https://sealed-under-another-key.example.com")
+	if err != nil {
+		t.Fatalf("seal under another key: %v", err)
+	}
+	if err = chains.UpdateRPCURL(ctx, models.ChainBTC, foreign); err != nil {
+		t.Fatalf("store a btc endpoint the key cannot open: %v", err)
+	}
+
+	if err = newCatalog().SeedChains(ctx); err != nil {
+		t.Fatalf("reseed chains: %v", err)
+	}
+
+	eth, err := chains.FindByID(ctx, models.ChainETH)
+	if err != nil {
+		t.Fatalf("find eth: %v", err)
+	}
+	requireSealedEndpoint(t, eth.RpcURL, "https://operator-node.example.com/rpc")
+	btc, err := chains.FindByID(ctx, models.ChainBTC)
+	if err != nil {
+		t.Fatalf("find btc: %v", err)
+	}
+	requireSealedEndpoint(t, btc.RpcURL, seedEndpointPlaintext("BTC_RPC_URL", false))
+}
+
+// foreignCipher seals a value the application key cannot open.
+type foreignCipher struct{}
+
+func (foreignCipher) EncryptString(string) (string, error) {
+	return `eyJpdiI6IkFBQUFBQUFBQUFBQUFBQUEiLCJ2YWx1ZSI6IkFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE9In0=`, nil
+}
+
+func (foreignCipher) DecryptString(string) (string, error) { return "", nil }
