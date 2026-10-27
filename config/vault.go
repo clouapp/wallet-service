@@ -123,9 +123,13 @@ func registerVault() {
 		// Block window and parallelism of every deposit scan (Lambda and local); 0 keeps
 		// the scanner defaults (50 blocks, 500 while catching up, 8 parallel fetches).
 		"deposit_scan": map[string]any{
-			"batch_blocks":    envInt("DEPOSIT_SCAN_BATCH_BLOCKS", 0),
-			"catch_up_blocks": envInt("DEPOSIT_SCAN_CATCH_UP_BLOCKS", 0),
-			"concurrency":     envInt("DEPOSIT_SCAN_CONCURRENCY", 0),
+			// Opt-in recent cursor alongside historical backfill. The initial window
+			// only sets its first floor; restarts resume the durable cursor.
+			"recent_chains":        envString("DEPOSIT_SCAN_RECENT_CHAINS", ""),
+			"recent_window_blocks": envInt("DEPOSIT_SCAN_RECENT_WINDOW_BLOCKS", 128),
+			"batch_blocks":         envInt("DEPOSIT_SCAN_BATCH_BLOCKS", 0),
+			"catch_up_blocks":      envInt("DEPOSIT_SCAN_CATCH_UP_BLOCKS", 0),
+			"concurrency":          envInt("DEPOSIT_SCAN_CONCURRENCY", 0),
 			// The same three per chain, for an RPC that rate-limits the scan (a public
 			// endpoint without a key): DEPOSIT_SCAN_BATCH_BLOCKS_<CHAIN>,
 			// DEPOSIT_SCAN_CATCH_UP_BLOCKS_<CHAIN> and DEPOSIT_SCAN_CONCURRENCY_<CHAIN>, e.g.

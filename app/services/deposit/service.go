@@ -61,6 +61,8 @@ type Service struct {
 	scanFallback         ScanOptions
 	scanSource           scanOptionSource
 	chainScan            chainScanOverrideSource
+	recentChains         map[string]struct{}
+	recentWindow         uint64
 	failure              FailurePolicy
 	pending              pending.Store
 	sleep                func(ctx context.Context, d time.Duration) error
@@ -290,7 +292,30 @@ func (s *Service) scanLatestBlocks(ctx context.Context, chainID string) error {
 	}
 
 	lag := latestBlock - lastBlock
+	recentActive, recentCaughtUp, recentErr := s.scanRecentBlocks(ctx, chainID, adapter, lastBlock, latestBlock, opts)
+	if recentActive {
+		// Recent deposits must still confirm when a backfill RPC fails. Disabled
+		// chains retain their existing scan/confirmation behavior.
+		defer func() {
+			if err := s.updateConfirmations(ctx, chainID, adapter, latestBlock); err != nil {
+				slog.Error("update confirmations failed", "chain", chainID, "error", err)
+			}
+		}()
+	}
+	if recentErr != nil {
+		return recentErr
+	}
+	if recentActive && !recentCaughtUp {
+		// A resumed recent cursor is never reseeded to the tip. Prioritize its
+		// contiguous catch-up before spending another window on old history.
+		s.recordScan(ctx, chainID, latestBlock, lastBlock)
+		return nil
+	}
 	endBlock := lastBlock + opts.window(lag)
+	if recentActive {
+		// Bound historical work so a large backlog cannot starve live deposits.
+		endBlock = lastBlock + min(opts.BatchBlocks, lag)
+	}
 	if lag > opts.BatchBlocks {
 		slog.Warn("deposit scanner behind the head, catching up", "chain", chainID, "checkpoint", lastBlock, "head", latestBlock, "lag", lag, "window", endBlock-lastBlock, "concurrency", opts.Concurrency)
 	}
@@ -311,8 +336,10 @@ func (s *Service) scanLatestBlocks(ctx context.Context, chainID string) error {
 		return scanErr
 	}
 
-	if err := s.updateConfirmations(ctx, chainID, adapter, latestBlock); err != nil {
-		slog.Error("update confirmations failed", "chain", chainID, "error", err)
+	if !recentActive {
+		if err := s.updateConfirmations(ctx, chainID, adapter, latestBlock); err != nil {
+			slog.Error("update confirmations failed", "chain", chainID, "error", err)
+		}
 	}
 
 	s.recordScan(ctx, chainID, latestBlock, saved)
