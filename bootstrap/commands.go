@@ -35,6 +35,8 @@ import (
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/sharemigration"
 	"github.com/macrowallets/waas/app/services/sweep"
+	"github.com/macrowallets/waas/app/services/wallet"
+	"github.com/macrowallets/waas/app/services/walletactivation"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/database/seeders"
@@ -52,6 +54,12 @@ func Commands() []console.Command {
 	addresses := container.MustMake[*walletrecords.Addresses]()
 	transactions := container.MustMake[*walletrecords.Transactions]()
 	return exitOnFailures([]console.Command{
+		commands.NewWalletsActivateTest(walletactivation.NewService(walletactivation.Deps{
+			Wallets:  container.MustMake[*repositories.WalletRepository](),
+			Accounts: container.MustMake[*repositories.AccountRepository](),
+			Chains:   container.MustMake[*repositories.ChainRepository](),
+			Activate: container.MustMake[*wallet.Service](),
+		})),
 		commands.NewRefreshWallet(commands.RefreshWalletDeps{
 			Balances: balances,
 			Wallets:  wallets,

@@ -201,19 +201,20 @@ func (s *WalletRecoveryMaterialTestSuite) assertNoShareLeak(content string) {
 }
 
 func (s *WalletRecoveryMaterialTestSuite) TestExternal_Create_OmitsShareAndPassphrase() {
-	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
+	_, bearer := s.externalCreationAuth(false)
 
 	content, payload := s.createExternalWallet(bearer)
 
 	walletID, ok := payload["id"].(string)
 	s.Require().True(ok)
 	s.Equal(recoveryTestChain, payload["chain"])
-	s.Equal(walletStatusPending, payload["status"])
+	s.Equal("active", payload["status"])
 	s.Contains(payload, "deposit_address")
 	s.NotContains(payload, activationCodeField)
 	s.NotContains(payload, adminCreateWalletField)
 
 	stored := s.findWallet(walletID)
+	s.Nil(stored.ActivationCode)
 	keygen := s.mpcService.lastKeygen
 	s.Require().NotNil(keygen)
 	s.Equal(hex.EncodeToString(keygen.CombinedPubKey), payload[servicePublicKeyField])
@@ -231,7 +232,7 @@ func (s *WalletRecoveryMaterialTestSuite) TestExternal_Create_OmitsShareAndPassp
 }
 
 func (s *WalletRecoveryMaterialTestSuite) TestExternal_Create_MaterialIsNotReturnedAgain() {
-	_, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
+	_, bearer := s.externalCreationAuth(false)
 	createdContent, created := s.createExternalWallet(bearer)
 	walletID := created["id"].(string)
 	stored := s.findWallet(walletID)
@@ -254,6 +255,49 @@ func (s *WalletRecoveryMaterialTestSuite) TestExternal_Create_MaterialIsNotRetur
 	s.Equal(walletID, list.Data[0]["id"])
 	s.assertShareStaysOffTheWire(listContent, list.Data[0], stored)
 	s.NotContains(list.Data[0], servicePublicKeyField)
+}
+
+func (s *WalletRecoveryMaterialTestSuite) externalCreationAuth(wrongEnvironment bool) (uuid.UUID, string) {
+	accountID, bearer, _ := ctltestutil.SetupAPIAuth(s.T(), false)
+	chain, err := container.MustMake[*chainsvc.Service]().FindByID(context.Background(), recoveryTestChain)
+	s.Require().NoError(err)
+	environment := models.EnvironmentProd
+	if chain.IsTestnet != wrongEnvironment {
+		environment = models.EnvironmentTest
+	}
+	s.Require().NoError(container.MustMake[*repositories.AccountRepository]().SetEnvironment(context.Background(), accountID, environment))
+	return accountID, bearer
+}
+
+func (s *WalletRecoveryMaterialTestSuite) TestExternal_Create_RefusesWrongEnvironmentBeforeKeygen() {
+	accountID, bearer := s.externalCreationAuth(true)
+	body := fmt.Sprintf(`{"chain":%q,"label":"headless","passphrase":%q}`, recoveryTestChain, recoveryTestPassphrase)
+	response := s.External(externalCreateWalletPath, ctltestutil.Token{Bearer: bearer}).Post(body)
+	s.AssertError(response, 403, "forbidden", chainsvc.ErrChainNotInEnvironment.Error())
+	s.Nil(s.mpcService.lastKeygen)
+	_, count, err := container.MustMake[*repositories.WalletRepository]().PaginateByAccount(context.Background(), accountID, "", 10, 0)
+	s.Require().NoError(err)
+	s.Zero(count)
+}
+
+type failedExternalAddressCreation struct{ wallet.AddressStore }
+
+func (f failedExternalAddressCreation) Create(context.Context, *models.Address) error {
+	return fmt.Errorf("synthetic address persistence failure")
+}
+
+func (s *WalletRecoveryMaterialTestSuite) TestExternal_Create_RollsBackAnActiveWalletWithoutItsBaseAddress() {
+	accountID, bearer := s.externalCreationAuth(false)
+	registry := chain.NewRegistry()
+	registry.RegisterChain(mocks.NewMockChain(recoveryTestChain))
+	s.walletService = wallet.NewService(wallet.Deps{Registry: registry, MPC: s.mpcService, Secrets: mocks.NewMockSecretsManager(),
+		Wallets: container.MustMake[*repositories.WalletRepository](), Addresses: failedExternalAddressCreation{container.MustMake[*repositories.AddressRepository]()}})
+	body := fmt.Sprintf(`{"chain":%q,"label":"headless","passphrase":%q}`, recoveryTestChain, recoveryTestPassphrase)
+	response := s.External(externalCreateWalletPath, ctltestutil.Token{Bearer: bearer}).Post(body)
+	response.AssertInternalServerError()
+	_, count, err := container.MustMake[*repositories.WalletRepository]().PaginateByAccount(context.Background(), accountID, "", 10, 0)
+	s.Require().NoError(err)
+	s.Zero(count)
 }
 
 func (s *WalletRecoveryMaterialTestSuite) TestAdmin_Create_ResponseShapeUnchanged() {
@@ -341,6 +385,10 @@ type currentWalletService struct {
 
 func (c currentWalletService) CreateWallet(ctx context.Context, accountID uuid.UUID, chainID, label, passphrase string) (*wallet.CreateWalletResult, error) {
 	return c.suite.walletService.CreateWallet(ctx, accountID, chainID, label, passphrase)
+}
+
+func (c currentWalletService) CreateExternalWallet(ctx context.Context, accountID uuid.UUID, chainID, label, passphrase string) (*wallet.CreateWalletResult, error) {
+	return c.suite.walletService.CreateExternalWallet(ctx, accountID, chainID, label, passphrase)
 }
 
 func (c currentWalletService) ActivateWallet(ctx context.Context, walletID uuid.UUID, code string) (*models.Wallet, error) {

@@ -33,7 +33,7 @@ const (
 	// USDC) and first-time recipients cost more than a plain ERC-20 transfer.
 	evmERC20GasMarginPercent = uint64(125)
 	// evmGasSeedBufferPercent sizes a gas_seed above the child's token sweep fee.
-	evmGasSeedBufferPercent = int64(120)
+	evmGasSeedBufferPercent = chain.EVMGasSeedBufferPercent
 	percentDenominator      = 100
 )
 
@@ -422,8 +422,7 @@ func (a *EVMLive) BuildSweep(ctx context.Context, req types.SweepRequest) ([]typ
 
 	result := make([]types.UnsignedTx, 0, 2)
 	if req.NativeBalance == nil || req.NativeBalance.Cmp(feeNeeded) < 0 {
-		seedAmount := new(big.Int).Mul(feeNeeded, big.NewInt(evmGasSeedBufferPercent))
-		seedAmount.Div(seedAmount, big.NewInt(percentDenominator))
+		seedAmount := chain.EVMGasSeedAmount(feeNeeded)
 		seedTx, err := a.BuildTransfer(ctx, types.TransferRequest{
 			From: req.To, To: req.From, Amount: seedAmount, Asset: a.cfg.NativeSymbol,
 			GasPrice: gasPrice,

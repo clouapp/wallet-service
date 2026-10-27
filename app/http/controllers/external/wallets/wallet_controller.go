@@ -38,7 +38,7 @@ func NewWalletController(view *walletview.Service, ops *walletops.Service) *Wall
 //
 //	@Summary		Create a new wallet
 //	@Description	Creates a new HD wallet for the specified blockchain. Only one wallet per chain is allowed.
-//	@Description	The response carries the wallet fields and `service_public_key`.
+//	@Description	Creates an active headless API wallet; no dashboard activation code is issued. The response carries the wallet fields and `service_public_key`.
 //	@Tags			Wallets
 //	@Accept			json
 //	@Produce		json
@@ -54,6 +54,7 @@ func NewWalletController(view *walletview.Service, ops *walletops.Service) *Wall
 //	@Router			/v1/wallets [post]
 func (c *WalletController) Store(ctx http.Context) http.Response {
 	accountID, _ := requestctx.AccountID(ctx)
+	environment, _ := requestctx.AccountEnvironment(ctx)
 
 	var req walletsrequests.StoreRequest
 	defer controllers.DiscardPassphrase(&req.Passphrase)
@@ -61,7 +62,7 @@ func (c *WalletController) Store(ctx http.Context) http.Response {
 		return response
 	}
 
-	result, err := c.ops.CreateWallet(ctx.Context(), accountID, req.Chain, req.Label, req.Passphrase)
+	result, err := c.ops.CreateExternalWallet(ctx.Context(), walletops.CreateWalletInput{AccountID: accountID, Environment: environment, Chain: req.Chain, Label: req.Label, Passphrase: req.Passphrase})
 	if err != nil {
 		return mapError(ctx, err, "create wallet")
 	}
