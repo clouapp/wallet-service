@@ -72,7 +72,6 @@ var testRecordTokens = []tokenSeed{
 	{models.ChainTETH, models.SymbolUSDT, "Tether USD (Test)", sepoliaUSDTMock, 6, iconUSDT},
 	{models.ChainTETH, models.SymbolUSDC, "USD Coin (Test)", models.USDCContractSepolia, 6, iconUSDC},
 	{models.ChainTETH, "LINK", "Chainlink (Test)", models.LINKContractSepolia, 18, iconLINK},
-	{models.ChainTPolygon, models.SymbolUSDT, "Tether USD (Test)", "0xBDE550eCd4C18B3A3C522E1298DC6B1530710B13", 6, iconUSDT},
 	{models.ChainTPolygon, models.SymbolUSDC, "USD Coin (Test)", models.USDCContractAmoy, 6, iconUSDC},
 	{models.ChainTSOL, models.SymbolUSDC, "USD Coin (Test)", models.USDCMintSolanaDevnet, 6, iconUSDC},
 }
