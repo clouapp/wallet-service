@@ -56,7 +56,8 @@ func (p *SettingsServiceProvider) Boot(foundation.Application) {}
 
 // platformSettingsFallback shows, on the platform views, the environment value of a
 // platform field that takes it while no row stores it: the chains of
-// deposit_signatures (DEPOSIT_SIGNATURE_CHAINS). A form that sends the whole group
+// deposit_signatures (DEPOSIT_SIGNATURE_CHAINS) and the scanned chains of
+// local_workers (LOCAL_DEPOSIT_SCAN_CHAINS). A form that sends the whole group
 // back then stores the chains in effect, and an env-listed chain is never turned off
 // by a save that did not mean to change it; sending an empty list still does.
 func platformSettingsFallback(cfg configReader) settings.PlatformFallback {

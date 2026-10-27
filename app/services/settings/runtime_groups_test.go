@@ -206,8 +206,13 @@ func TestSave_MailDelivery_RefusesTheSESDriverUntilItShips(t *testing.T) {
 	t.Parallel()
 	store := newMemoryStore()
 	service, actor := newPlatformTestService(store, nil)
-	_, err := service.SavePlatform(context.Background(), actor, groupMailDelivery, map[string]any{keyMailDriver: mailDriverSES})
+	_, err := service.SavePlatform(context.Background(), actor, groupMailDelivery, map[string]any{keyMailDriver: "ses"})
 	var validation *ValidationError
 	require.True(t, errors.As(err, &validation))
-	assert.Contains(t, validation.Fields[keyMailDriver][0], "ses is not available yet")
+	assert.NotContains(t, validation.Fields[keyMailDriver][0], "ses", "ses is not offered")
+
+	store.PutPlatform(groupMailDelivery, map[string]string{keyMailDriver: "ses"})
+	delivery, err := service.EffectiveMailDelivery(context.Background())
+	require.NoError(t, err)
+	assert.False(t, delivery.UseDriver, "a ses stored before keeps MAIL_MAILER")
 }

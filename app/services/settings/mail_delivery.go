@@ -16,7 +16,6 @@ const (
 
 	mailDriverLog      = "log"
 	mailDriverSMTP     = "smtp"
-	mailDriverSES      = "ses"
 	mailDriverMailgun  = "mailgun"
 	mailDriverResend   = "resend"
 	mailDriverPostmark = "postmark"
@@ -81,13 +80,13 @@ func mailDeliveryGroup() Group {
 }
 
 // mailDeliveryDrivers is the closed vocabulary S1.4.4 names for
-// mailer.AllDrivers. The credential groups for the non-SMTP drivers are not
-// part of this group.
+// mailer.AllDrivers, without ses until its transport ships: a stored ses (from
+// before) is not a known driver, so the send keeps MAIL_MAILER. The credential
+// groups for the non-SMTP drivers are not part of this group.
 func mailDeliveryDrivers() []string {
 	return []string{
 		mailDriverLog,
 		mailDriverSMTP,
-		mailDriverSES,
 		mailDriverMailgun,
 		mailDriverResend,
 		mailDriverPostmark,
@@ -216,9 +215,6 @@ func mailDriverMessage(raw string) string {
 	}
 	if driver == mailDriverLog && productionMailEnv() {
 		return "must not be log in production"
-	}
-	if driver == mailDriverSES {
-		return "ses is not available yet: use smtp, mailgun, resend or postmark"
 	}
 	return ""
 }

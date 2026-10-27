@@ -614,7 +614,7 @@ on save), so a save reaches every process on its next read.
 | `deposit_scan.{alert_lag_blocks,alert_stale_minutes}` | `DEPOSIT_SCAN_ALERT_LAG_BLOCKS`, `_STALE_MINUTES` | next tracker pass; a chain's `_<CHAIN>` variable still wins for that chain |
 | `withdrawals.stale_after_hours` | `WITHDRAWAL_STALE_AFTER_HOURS` | next tracker pass and `/health` count |
 | `platform_urls.frontend_url` | `APP_FRONTEND_URL` | next invite (an absolute http(s) URL, no query or fragment) |
-| `mail_delivery.driver` | `MAIL_MAILER` | next send: `smtp` (`mail_smtp`), `mailgun`, `resend` or `postmark` over their HTTP APIs (`app/providers/mail/api_transport.go`, their groups' credentials and sender overrides; a Mailgun endpoint is `api.mailgun.net` or `api.eu.mailgun.net` only); a transport without its credential fails the send and never falls back to another; `ses` is refused on write and on send until it ships; `log` is refused in production |
+| `mail_delivery.driver` | `MAIL_MAILER` | next send: `smtp` (`mail_smtp`), `mailgun`, `resend` or `postmark` over their HTTP APIs (`app/providers/mail/api_transport.go`, their groups' credentials and sender overrides; a Mailgun endpoint is `api.mailgun.net` or `api.eu.mailgun.net` only); a transport without its credential fails the send and never falls back to another; `ses` is not offered until it ships (a stored `ses` keeps `MAIL_MAILER`, and `MAIL_MAILER=ses` fails the send); `log` is refused in production |
 
 - **Chain sync** (`app/services/chainsync`, run by the local workers): every
   `LOCAL_CHAIN_SYNC_INTERVAL_SECONDS` it reads each active chain's endpoint list (primary and enabled

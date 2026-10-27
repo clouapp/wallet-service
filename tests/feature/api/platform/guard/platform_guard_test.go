@@ -104,6 +104,7 @@ var refusals = map[string]string{
 	"GET /v1/platform/settings":                                     "you do not have permission to view settings",
 	"GET /v1/platform/settings/{group}":                             "you do not have permission to view settings",
 	"GET /v1/platform/users":                                        "you do not have permission to view users",
+	"GET /v1/platform/chains":                                       "you do not have permission to update chains",
 	"PATCH /v1/platform/chains/{chainId}":                           "you do not have permission to update chains",
 	"PATCH /v1/platform/chains/{chainId}/rpc":                       "you do not have permission to update chains",
 	"GET /v1/platform/chains/{chainId}/rpc-endpoints":               "you do not have permission to update chains",

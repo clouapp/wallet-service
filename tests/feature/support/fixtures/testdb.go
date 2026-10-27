@@ -402,3 +402,13 @@ func pgArray(arr []string) string {
 	}
 	return s + "}"
 }
+
+// UpsertPlatformSetting stores one platform settings field (account_id NULL), as a
+// platform save would, and forgets the group's settings cache so the next read sees it.
+func UpsertPlatformSetting(t *testing.T, group, key, value string) {
+	t.Helper()
+	if err := repositories.NewSettingRepository(nil).UpsertPlatform(context.Background(), group, map[string]string{key: value}); err != nil {
+		t.Fatalf("upsert platform setting %s.%s: %v", group, key, err)
+	}
+	facades.Cache().Forget("settings:platform:" + group)
+}
