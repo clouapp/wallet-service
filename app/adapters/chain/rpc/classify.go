@@ -43,6 +43,7 @@ const (
 	solanaSlotMissingLongTerm   = -32009
 	solanaHistoryNotAvailable   = -32011
 	jsonRPCExecutionReverted    = 3
+	jsonRPCDRPCPlanUnavailable  = 35
 	jsonRPCServerError          = -32000
 	jsonRPCInvalidParams        = -32602
 	jsonRPCMethodNotFound       = -32601
@@ -101,6 +102,13 @@ func classifyRPCErrorOf(rpcErr *rpcError, httpFailure bool) outcome {
 	message := strings.ToLower(rpcErr.Message)
 	if rpcErr.Code == jsonRPCExecutionReverted || strings.Contains(message, executionRevertedPhrase) {
 		return outcomeAnswer
+	}
+	// dRPC returns HTTP 200/code 35 when its free plan no longer serves a chain.
+	// Reads must use another endpoint instead of treating this as a valid node
+	// answer. Keep the conservative broadcast rule: unavailable never resends
+	// bytes unless the transport proves they were not sent.
+	if rpcErr.Code == jsonRPCDRPCPlanUnavailable && strings.Contains(message, "chain is not available on free plan") {
+		return outcomeUnavailable
 	}
 	switch rpcErr.Code {
 	case jsonRPCRateLimitedCode, jsonRPCLimitExceeded:
