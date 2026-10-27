@@ -30,7 +30,7 @@ func TestRetireAmoyUSDTOnlyExactRowsPreservingHistoryAndOtherCustomTokens(t *tes
 		token := models.Token{ID: uuid.New(), ChainID: chainID, Symbol: models.SymbolUSDT, Name: "Legacy nonexistent test contract", ContractAddress: nonexistentAmoyUSDT, Decimals: 6, Status: "active"}
 		require.NoError(t, q.Create(&token))
 		ids[chainID] = token.ID
-		require.NoError(t, q.Create(&models.Token{ID: uuid.New(), ChainID: chainID, Symbol: models.SymbolUSDT, Name: "Operator custom USDT", ContractAddress: "0x00000000000000000000000000000000000000a1", Decimals: 6, Status: "active"}))
+		require.NoError(t, q.Create(&models.Token{ID: uuid.New(), ChainID: chainID, Symbol: "CUSTOM", Name: "Operator custom token", ContractAddress: "0x00000000000000000000000000000000000000a1", Decimals: 6, Status: "active"}))
 	}
 	dry, err := cat.AlignNetworkTokens(ctx, false)
 	require.NoError(t, err)

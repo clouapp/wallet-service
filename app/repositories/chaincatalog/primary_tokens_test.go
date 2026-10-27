@@ -36,10 +36,12 @@ func TestPrimary_Records_OnTheTestnetProfileListKnownTestDeployments(t *testing.
 			"LINK":            {"0x779877A7B0D9E8603169DdbD7836e478b4624789", 18},
 		},
 		models.ChainPolygon: {
+			models.SymbolUSDT: {amoyZamaUSDT, 6},
 			models.SymbolUSDC: {"0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582", 6},
 			"LINK":            {"0x0Fd9e8d3aF1aaee056EB9e802c3A762a667b1904", 18},
 		},
 		models.ChainSOL: {
+			models.SymbolUSDT: {devnetOrcaUSDT, 6},
 			models.SymbolUSDC: {"4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", 6},
 			"WSOL":            {"So11111111111111111111111111111111111111112", 9},
 		},
@@ -98,7 +100,8 @@ func TestSepoliaMockUSDTIsExplicitAndTokenAlignmentIsIdempotent(t *testing.T) {
 	if mainnet.contractAddress != models.USDTContractETH || mainnet.name != "Tether USD" {
 		t.Fatalf("mainnet USDT changed: %+v", mainnet)
 	}
-	if _, exists := primaryTokensByChain(t, models.ChainNetworkProfileTestnet)[models.ChainSOL][models.SymbolUSDT]; exists {
-		t.Fatal("Solana devnet must not expose an unverified USDT mint")
+	devnet := primaryTokensByChain(t, models.ChainNetworkProfileTestnet)[models.ChainSOL][models.SymbolUSDT]
+	if devnet.contractAddress != devnetOrcaUSDT || devnet.name != "devUSDT (Orca public test token)" {
+		t.Fatalf("Solana devnet must expose only the explicitly documented public test mint: %+v", devnet)
 	}
 }

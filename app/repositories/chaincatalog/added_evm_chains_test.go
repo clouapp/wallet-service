@@ -103,8 +103,15 @@ func TestTestnet_Profile_SeedsTestnetContractsOnTheFlippedPrimaries(t *testing.T
 		models.ChainArbitrum: models.USDCContractArbSepolia, models.ChainTArbitrum: models.USDCContractArbSepolia,
 	} {
 		tokens := byChain[chainID]
-		if len(tokens) != 1 || tokens[0].symbol != models.SymbolUSDC || tokens[0].contractAddress != contract || tokens[0].decimals != 6 {
-			t.Errorf("%s: tokens %+v, want only USDC %s with 6 decimals", chainID, tokens, contract)
+		wantCount := 1
+		if chainID == models.ChainArbitrum {
+			wantCount = 2
+		}
+		if len(tokens) != wantCount || tokens[0].symbol != models.SymbolUSDC || tokens[0].contractAddress != contract || tokens[0].decimals != 6 {
+			t.Errorf("%s: tokens %+v, want %d tokens including USDC %s with 6 decimals", chainID, tokens, wantCount, contract)
+		}
+		if chainID == models.ChainArbitrum && len(tokens) == 2 && (tokens[1].symbol != models.SymbolUSDT || tokens[1].contractAddress != arbPushUSDT || tokens[1].decimals != 6) {
+			t.Errorf("Arbitrum Sepolia public USDT metadata: %+v", tokens[1])
 		}
 	}
 	for _, chainID := range []string{models.ChainBSC, models.ChainTBSC} {

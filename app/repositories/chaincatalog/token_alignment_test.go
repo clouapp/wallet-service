@@ -16,13 +16,16 @@ import (
 )
 
 const (
-	sepoliaUSDTMock = "0x7169D38820dfd117C3FA1f22a697dBA58d90BA06"
-	sepoliaUSDC     = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
-	sepoliaLINK     = "0x779877A7B0D9E8603169DdbD7836e478b4624789"
-	amoyUSDC        = "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582"
-	amoyLINK        = "0x0Fd9e8d3aF1aaee056EB9e802c3A762a667b1904"
-	devnetUSDC      = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
-	wrappedSOLMint  = "So11111111111111111111111111111111111111112"
+	sepoliaUSDTMock  = "0x7169D38820dfd117C3FA1f22a697dBA58d90BA06"
+	sepoliaUSDC      = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
+	sepoliaLINK      = "0x779877A7B0D9E8603169DdbD7836e478b4624789"
+	amoyUSDC         = "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582"
+	amoyPublicUSDT   = "0x164F5A056166d8F2ce09FdAc6d040209a8C94d01"
+	devnetPublicUSDT = "H8UekPGwePSmQ3ttuYGPU1szyFfjZR4N53rymSFwpLPm"
+	arbPublicUSDT    = "0xE30928528f52CAEeB75fB07837e22d77D47e9c07"
+	amoyLINK         = "0x0Fd9e8d3aF1aaee056EB9e802c3A762a667b1904"
+	devnetUSDC       = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+	wrappedSOLMint   = "So11111111111111111111111111111111111111112"
 )
 
 func TestToken_Alignment_DoesNotQueryOutsideTheRepository(t *testing.T) {
@@ -88,8 +91,8 @@ func TestSeed_Tokens_TheTestnetProfileSeedsTheTestnetContractsOfThePrimaryRecord
 	if repeatErr != nil || len(repeated) != 3 {
 		t.Fatalf("repeated seed must keep exactly 3 canonical tokens: tokens=%+v err=%v", repeated, repeatErr)
 	}
-	assertActive(t, ctx, models.ChainPolygon, amoyUSDC, amoyLINK)
-	assertActive(t, ctx, models.ChainSOL, devnetUSDC, wrappedSOLMint)
+	assertActive(t, ctx, models.ChainPolygon, amoyUSDC, amoyLINK, amoyPublicUSDT)
+	assertActive(t, ctx, models.ChainSOL, devnetUSDC, wrappedSOLMint, devnetPublicUSDT)
 	assertActive(t, ctx, models.ChainTron, models.USDTContractTronNile)
 
 	aligned, err := newCatalog().AlignNetworkTokens(ctx, false)
@@ -136,10 +139,10 @@ func TestAlign_Network_TokensMovesTheFlippedPrimaryRecordsOntoTestnetContracts(t
 	}
 	for chainID, want := range map[string]map[string]int{
 		models.ChainETH:      {chaincatalog.TokenActionCreate: 3, chaincatalog.TokenActionDeactivate: 7},
-		models.ChainPolygon:  {chaincatalog.TokenActionCreate: 2, chaincatalog.TokenActionDeactivate: 6},
-		models.ChainSOL:      {chaincatalog.TokenActionCreate: 1, chaincatalog.TokenActionDeactivate: 5},
+		models.ChainPolygon:  {chaincatalog.TokenActionCreate: 3, chaincatalog.TokenActionDeactivate: 6},
+		models.ChainSOL:      {chaincatalog.TokenActionCreate: 2, chaincatalog.TokenActionDeactivate: 5},
 		models.ChainBase:     {chaincatalog.TokenActionCreate: 1, chaincatalog.TokenActionDeactivate: 1},
-		models.ChainArbitrum: {chaincatalog.TokenActionCreate: 1, chaincatalog.TokenActionDeactivate: 2},
+		models.ChainArbitrum: {chaincatalog.TokenActionCreate: 2, chaincatalog.TokenActionDeactivate: 2},
 		models.ChainBSC:      {chaincatalog.TokenActionDeactivate: 2},
 		models.ChainTron:     {chaincatalog.TokenActionCreate: 1, chaincatalog.TokenActionDeactivate: 1},
 	} {
@@ -168,10 +171,10 @@ func TestAlign_Network_TokensMovesTheFlippedPrimaryRecordsOntoTestnetContracts(t
 		t.Fatalf("apply made %d changes, the dry run planned %d", len(applied.Changes), len(dry.Changes))
 	}
 	assertActive(t, ctx, models.ChainETH, sepoliaUSDC, sepoliaLINK, sepoliaUSDTMock, custom.ContractAddress)
-	assertActive(t, ctx, models.ChainPolygon, amoyUSDC, amoyLINK)
-	assertActive(t, ctx, models.ChainSOL, devnetUSDC, wrappedSOLMint)
+	assertActive(t, ctx, models.ChainPolygon, amoyUSDC, amoyLINK, amoyPublicUSDT)
+	assertActive(t, ctx, models.ChainSOL, devnetUSDC, wrappedSOLMint, devnetPublicUSDT)
 	assertActive(t, ctx, models.ChainBase, models.USDCContractBaseSepolia)
-	assertActive(t, ctx, models.ChainArbitrum, models.USDCContractArbSepolia)
+	assertActive(t, ctx, models.ChainArbitrum, models.USDCContractArbSepolia, arbPublicUSDT)
 	assertActive(t, ctx, models.ChainBSC)
 	assertActive(t, ctx, models.ChainTron, models.USDTContractTronNile)
 	if got := activeContracts(t, ctx, models.ChainTETH); strings.Join(got, ",") != strings.Join(tethBefore, ",") {
