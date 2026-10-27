@@ -81,9 +81,9 @@ type tokenSeed struct {
 	iconURL         string
 }
 
-// networkTokens are the tokens of each added network. Base and Arbitrum Sepolia
-// only have Circle's USDC; BSC testnet has no issuer-deployed stablecoin, so it is
-// native-only. Decimals were read on-chain: BSC's Binance-Peg USDT/USDC use 18.
+// networkTokens are the existing token lists of each added network. The explicit
+// public test USDT overlay is applied only to primary records by tokensForChains.
+// BSC testnet stays native-only. BSC's Binance-Peg USDT/USDC use 18 decimals.
 var networkTokens = map[string][]tokenSeed{
 	models.NetworkBaseMainnet: {
 		{symbol: models.SymbolUSDC, name: "USD Coin", contractAddress: models.USDCContractBase, decimals: 6, iconURL: iconUSDC},
@@ -148,6 +148,14 @@ func (cat *Catalog) addedChainTokens(profile string) ([]tokenSeed, error) {
 // tokensOfNetwork is the catalog's token list of a network; nil for a network without
 // tokens (Bitcoin, Litecoin, XRP Ledger, BSC testnet).
 func tokensOfNetwork(network string) []tokenSeed {
+	tokens := baseTokensOfNetwork(network)
+	if token, found := publicTestUSDTForNetwork(network); found {
+		return append(append([]tokenSeed(nil), tokens...), token)
+	}
+	return tokens
+}
+
+func baseTokensOfNetwork(network string) []tokenSeed {
 	if tokens, ok := primaryNetworkTokens[network]; ok {
 		return tokens
 	}
@@ -174,7 +182,11 @@ func tokensForChains(chains []chainSeed, profile string) ([]tokenSeed, error) {
 		if err != nil {
 			return nil, err
 		}
-		for _, t := range tokensOfNetwork(network) {
+		networkTokenSeeds := tokensOfNetwork(network)
+		if models.IsTestChainID(c.id) {
+			networkTokenSeeds = baseTokensOfNetwork(network)
+		}
+		for _, t := range networkTokenSeeds {
 			t.chainID = c.id
 			tokens = append(tokens, t)
 		}
@@ -289,6 +301,19 @@ type AddedChain struct {
 // (unlike SeedChains, which re-encrypts every rpc_url), so it is safe on a live
 // database. With apply false it only reports what it would create.
 func (cat *Catalog) SeedMissingAddedChains(ctx context.Context, apply bool) (AddedChainsResult, error) {
+	if !apply {
+		return cat.seedMissingAddedChains(ctx, false)
+	}
+	var result AddedChainsResult
+	err := repositories.NewTokenRepository(nil).WithinCatalog(ctx, func(txCtx context.Context) error {
+		var seedErr error
+		result, seedErr = cat.seedMissingAddedChains(txCtx, true)
+		return seedErr
+	})
+	return result, err
+}
+
+func (cat *Catalog) seedMissingAddedChains(ctx context.Context, apply bool) (AddedChainsResult, error) {
 	var result AddedChainsResult
 	profile, err := cat.profile()
 	if err != nil {
@@ -355,6 +380,11 @@ func (cat *Catalog) SeedMissingAddedChains(ctx context.Context, apply bool) (Add
 	for _, c := range result.Chains {
 		created[c.ID] = true
 	}
+	if profile == models.ChainNetworkProfileTestnet && created[models.ChainArbitrum] {
+		if preflightErr := cat.preflightPublicTestUSDT(ctx, apply, publicTestAddedChainSeed); preflightErr != nil {
+			return result, preflightErr
+		}
+	}
 	for _, t := range tokens {
 		if !created[t.chainID] {
 			continue
@@ -401,6 +431,9 @@ func insertTokenUnlessPresent(ctx context.Context, tokens *repositories.TokenRep
 	}
 	if existing != nil && existing.ID != uuid.Nil {
 		return false, nil
+	}
+	if err := guardPublicTestSeed(ctx, t); err != nil {
+		return false, err
 	}
 	iconURL := t.iconURL
 	tok := models.Token{

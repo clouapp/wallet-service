@@ -49,6 +49,25 @@ type TokenAlignment struct {
 // Rows are never deleted. With apply false it only reports; a second run changes
 // nothing.
 func (cat *Catalog) AlignNetworkTokens(ctx context.Context, apply bool) (TokenAlignment, error) {
+	if !apply {
+		if err := cat.preflightPublicTestUSDT(ctx, false, publicTestAlignment); err != nil {
+			return TokenAlignment{}, err
+		}
+		return cat.alignNetworkTokens(ctx, false)
+	}
+	var result TokenAlignment
+	err := repositories.NewTokenRepository(nil).WithinCatalog(ctx, func(txCtx context.Context) error {
+		if err := cat.preflightPublicTestUSDT(txCtx, true, publicTestAlignment); err != nil {
+			return err
+		}
+		var alignErr error
+		result, alignErr = cat.alignNetworkTokens(txCtx, true)
+		return alignErr
+	})
+	return result, err
+}
+
+func (cat *Catalog) alignNetworkTokens(ctx context.Context, apply bool) (TokenAlignment, error) {
 	var result TokenAlignment
 	chains := repositories.NewChainRepository(nil)
 	tokens := repositories.NewTokenRepository(nil)
