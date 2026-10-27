@@ -4,6 +4,7 @@ package routes
 func RegisterHTTP() {
 	RegisterDocs()
 	RegisterInboundWebhooks()
+	RegisterTenantProvisioning()
 	RegisterAdminRoutes()
 	RegisterExternalAPI()
 }

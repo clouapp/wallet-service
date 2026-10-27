@@ -10,11 +10,12 @@ import (
 func registerVault() {
 	cfg := facades.Config()
 	cfg.Add("vault", map[string]any{
-		"lambda_mode":        envString("LAMBDA_MODE", ""),
-		"port":               envString("PORT", "8080"),
-		"api_key_secret":     envString("API_KEY_SECRET", ""),
-		"master_key_ref":     envString("MASTER_KEY_REF", ""),
-		"wallet_service_key": envString("WALLET_SERVICE_KEY", ""),
+		"lambda_mode":             envString("LAMBDA_MODE", ""),
+		"port":                    envString("PORT", "8080"),
+		"api_key_secret":          envString("API_KEY_SECRET", ""),
+		"master_key_ref":          envString("MASTER_KEY_REF", ""),
+		"wallet_service_key":      envString("WALLET_SERVICE_KEY", ""),
+		"tenant_provisioning_key": envString("TENANT_PROVISIONING_KEY", ""),
 
 		// Local HTTP mode: SIGINT/SIGTERM drain HTTP and stop the local workers within
 		// this deadline. Keep it below the e2e starter's 20 s SIGTERM grace, after which
