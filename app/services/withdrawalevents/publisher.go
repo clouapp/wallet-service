@@ -40,6 +40,23 @@ type WithdrawalStore interface {
 	MarkFailed(ctx context.Context, id uuid.UUID, failureReason string) error
 }
 
+// TransactionFailureGuard atomically refuses a stale execution's callback.
+type TransactionFailureGuard interface {
+	MarkFailedForTransaction(context.Context, uuid.UUID, uuid.UUID, string) error
+}
+
+// CommittedOutcomeStore commits an aggregate outcome and staged outbox before
+// returning. It must refuse ambient outer transactions.
+type CommittedOutcomeStore interface {
+	WithinCommitted(context.Context, func(context.Context) error) error
+}
+
+type recoveryPredecessorLookup interface {
+	FindByOriginalRecoveryTransactionID(context.Context, uuid.UUID) (*models.Withdrawal, error)
+}
+
+var errStaleWithdrawalTransaction = errors.New("withdrawal event belongs to a superseded transaction")
+
 type TransactionStore interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Transaction, error)
 }
@@ -158,10 +175,9 @@ func (p *Publisher) PublishFailed(ctx context.Context, withdrawal *models.Withdr
 	return p.publish(ctx, types.EventWithdrawalFailed, withdrawal.WalletID, withdrawal.AccountID, nil, payload)
 }
 
-// MarkConfirmed is called once a withdrawal transaction reached its required
-// confirmations: it publishes withdrawal.confirmed and then marks the withdrawal row
-// confirmed. Publishing first means a crash in between is repaired by the backfill,
-// and the per-subject dedup keeps that repair from delivering twice.
+// MarkConfirmed publishes a confirmed current execution. Physical stores stage
+// the event with the guarded aggregate outcome in one owned commit. Legacy stores
+// retain publish-before-mark behavior; the per-subject dedup repairs backfill.
 func (p *Publisher) MarkConfirmed(ctx context.Context, tx *models.Transaction) error {
 	if tx == nil || tx.ID == uuid.Nil {
 		return errors.New("mark withdrawal confirmed: transaction is required")
@@ -174,8 +190,18 @@ func (p *Publisher) MarkConfirmed(ctx context.Context, tx *models.Transaction) e
 	}
 
 	withdrawal, err := p.withdrawalForTransaction(ctx, tx)
+	if errors.Is(err, errStaleWithdrawalTransaction) {
+		return nil
+	}
 	if err != nil {
 		return err
+	}
+	if withdrawal != nil {
+		if runner, ok := p.withdrawals.(CommittedOutcomeStore); ok {
+			if stager, ok := p.enqueuer.(Stager); ok {
+				return p.confirmCommitted(ctx, withdrawal, tx, runner, stager)
+			}
+		}
 	}
 
 	var accountID *uuid.UUID
@@ -222,6 +248,9 @@ func (p *Publisher) StageFailed(ctx context.Context, tx *models.Transaction, fai
 	}
 
 	withdrawal, err := p.withdrawalForTransaction(ctx, tx)
+	if errors.Is(err, errStaleWithdrawalTransaction) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +272,11 @@ func (p *Publisher) StageFailed(ctx context.Context, tx *models.Transaction, fai
 	if withdrawal == nil {
 		return send, nil
 	}
-	if err := p.withdrawals.MarkFailed(ctx, withdrawal.ID, code); err != nil {
+	if guard, ok := p.withdrawals.(TransactionFailureGuard); ok {
+		if err := guard.MarkFailedForTransaction(ctx, withdrawal.ID, tx.ID, code); err != nil {
+			return nil, fmt.Errorf("mark withdrawal %s failed: %w", withdrawal.ID, err)
+		}
+	} else if err := p.withdrawals.MarkFailed(ctx, withdrawal.ID, code); err != nil {
 		return nil, fmt.Errorf("mark withdrawal %s failed: %w", withdrawal.ID, err)
 	}
 	return send, nil
@@ -287,19 +320,64 @@ func (p *Publisher) withdrawalForTransaction(ctx context.Context, tx *models.Tra
 	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
 		return nil, fmt.Errorf("find withdrawal for transaction %s: %w", tx.ID, err)
 	}
-	if withdrawal != nil || tx.IdempotencyKey == nil {
-		return withdrawal, nil
+	if withdrawal != nil {
+		return currentWithdrawalFor(tx, withdrawal)
 	}
+	if tx.IdempotencyKey != nil {
+		withdrawalID, parseErr := uuid.Parse(strings.TrimSpace(*tx.IdempotencyKey))
+		if parseErr == nil {
+			withdrawal, err = p.withdrawals.FindByIDAndWallet(ctx, withdrawalID, tx.WalletID)
+			if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+				return nil, fmt.Errorf("find withdrawal %s by idempotency key: %w", withdrawalID, err)
+			}
+			if withdrawal != nil {
+				return currentWithdrawalFor(tx, withdrawal)
+			}
+		}
+	}
+	if predecessors, ok := p.withdrawals.(recoveryPredecessorLookup); ok {
+		withdrawal, err = predecessors.FindByOriginalRecoveryTransactionID(ctx, tx.ID)
+		if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
+			return nil, fmt.Errorf("find withdrawal for recovery predecessor %s: %w", tx.ID, err)
+		}
+		if withdrawal != nil {
+			return currentWithdrawalFor(tx, withdrawal)
+		}
+	}
+	return nil, nil
+}
 
-	withdrawalID, parseErr := uuid.Parse(strings.TrimSpace(*tx.IdempotencyKey))
-	if parseErr != nil {
-		return nil, nil
+func currentWithdrawalFor(tx *models.Transaction, w *models.Withdrawal) (*models.Withdrawal, error) {
+	if w.WalletID != tx.WalletID || (w.TransactionID != nil && *w.TransactionID != tx.ID) {
+		return nil, errStaleWithdrawalTransaction
 	}
-	withdrawal, err = p.withdrawals.FindByIDAndWallet(ctx, withdrawalID, tx.WalletID)
-	if err != nil && !errors.Is(err, models.ErrRepositoryNotFound) {
-		return nil, fmt.Errorf("find withdrawal %s by idempotency key: %w", withdrawalID, err)
+	return w, nil
+}
+
+// confirmCommitted avoids publishing a predecessor confirmation if the current
+// link changes between lookup and CAS. An outbox failure rolls the outcome back;
+// its queue send can only run after the owned transaction commits.
+func (p *Publisher) confirmCommitted(ctx context.Context, w *models.Withdrawal, tx *models.Transaction, runner CommittedOutcomeStore, stager Stager) error {
+	var send func(context.Context)
+	err := runner.WithinCommitted(ctx, func(txCtx context.Context) error {
+		if err := p.withdrawals.MarkConfirmed(txCtx, w.ID, tx.ID); err != nil {
+			return err
+		}
+		payload := p.transactionPayload(w, tx, models.WithdrawalStatusConfirmed)
+		var err error
+		send, _, err = stager.StageScoped(txCtx, p.scopedEvent(txCtx, types.EventWithdrawalConfirmed, tx.WalletID, w.AccountID, &tx.ID, payload))
+		return err
+	})
+	if errors.Is(err, models.ErrTransactionSettled) {
+		return nil
 	}
-	return withdrawal, nil
+	if err != nil {
+		return fmt.Errorf("commit withdrawal %s confirmed: %w", w.ID, err)
+	}
+	if send != nil {
+		send(ctx)
+	}
+	return nil
 }
 
 func (p *Publisher) transactionPayload(withdrawal *models.Withdrawal, tx *models.Transaction, status string) Payload {

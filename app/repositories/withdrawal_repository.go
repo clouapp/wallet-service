@@ -168,12 +168,48 @@ func (r *WithdrawalRepository) MarkBroadcast(ctx context.Context, id uuid.UUID, 
 	}, "mark withdrawal broadcast")
 }
 
-// MarkConfirmed stores the confirmed status and the transaction that settled it.
+// MarkConfirmed settles only the transaction currently linked to this withdrawal.
+// A NULL legacy link may be filled; an older transaction can never replace a
+// current candidate. The predicate, not a prior read, closes the callback race.
 func (r *WithdrawalRepository) MarkConfirmed(ctx context.Context, id uuid.UUID, transactionID uuid.UUID) error {
-	return r.updateColumns(ctx, id, map[string]any{
-		"status":         models.WithdrawalStatusConfirmed,
-		"transaction_id": transactionID,
+	return r.markOutcomeForTransaction(ctx, id, transactionID, map[string]any{
+		"status": models.WithdrawalStatusConfirmed, "transaction_id": transactionID,
 	}, "mark withdrawal confirmed")
+}
+
+// MarkFailedForTransaction records a failure only for the current execution.
+// It does not replace the link or overwrite the reason of a newer candidate.
+func (r *WithdrawalRepository) MarkFailedForTransaction(ctx context.Context, id, transactionID uuid.UUID, failureReason string) error {
+	return r.markOutcomeForTransaction(ctx, id, transactionID, map[string]any{
+		"status": models.WithdrawalStatusFailed, "failure_reason": failureReason,
+	}, "mark withdrawal failed for transaction")
+}
+
+func (r *WithdrawalRepository) markOutcomeForTransaction(ctx context.Context, id, transactionID uuid.UUID, columns map[string]any, operation string) error {
+	if id == uuid.Nil || transactionID == uuid.Nil {
+		return fmt.Errorf("%s: withdrawal and transaction ids are required", operation)
+	}
+	result, err := r.Query(ctx).Model(&models.Withdrawal{}).Where("id = ? AND (transaction_id = ? OR transaction_id IS NULL)", id, transactionID).Update(columns)
+	if err != nil {
+		return fmt.Errorf("%s: %w", operation, err)
+	}
+	if result == nil || result.RowsAffected != 1 {
+		return models.ErrTransactionSettled
+	}
+	return nil
+}
+
+// WithinCommitted runs an outcome and its outbox write on an owned transaction.
+// A caller with an outer transaction must use the staging API instead; returning
+// its send before the outer commit would publish an uncommitted outcome.
+func (r *WithdrawalRepository) WithinCommitted(ctx context.Context, fn func(context.Context) error) error {
+	if ctx == nil || fn == nil {
+		return fmt.Errorf("withdrawal committed transaction: context and callback are required")
+	}
+	if r.Query(ctx).InTransaction() {
+		return fmt.Errorf("withdrawal committed transaction: outer transaction is not supported")
+	}
+	return r.Transaction(ctx, func(tx orm.Query) error { return fn(db.WithTx(ctx, tx)) })
 }
 
 // SetFeeEstimate sets withdrawals.fee_estimate.

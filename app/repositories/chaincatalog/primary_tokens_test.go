@@ -22,7 +22,7 @@ func primaryTokensByChain(t *testing.T, profile string) map[string]map[string]to
 	return byChain
 }
 
-func TestPrimary_Records_OnTheTestnetProfileListOnlyIssuerTestnetDeployments(t *testing.T) {
+func TestPrimary_Records_OnTheTestnetProfileListKnownTestDeployments(t *testing.T) {
 	t.Parallel()
 
 	byChain := primaryTokensByChain(t, models.ChainNetworkProfileTestnet)
@@ -31,14 +31,17 @@ func TestPrimary_Records_OnTheTestnetProfileListOnlyIssuerTestnetDeployments(t *
 		decimals int
 	}{
 		models.ChainETH: {
+			models.SymbolUSDT: {"0x7169D38820dfd117C3FA1f22a697dBA58d90BA06", 6},
 			models.SymbolUSDC: {"0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238", 6},
 			"LINK":            {"0x779877A7B0D9E8603169DdbD7836e478b4624789", 18},
 		},
 		models.ChainPolygon: {
+			models.SymbolUSDT: {amoyZamaUSDT, 6},
 			models.SymbolUSDC: {"0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582", 6},
 			"LINK":            {"0x0Fd9e8d3aF1aaee056EB9e802c3A762a667b1904", 18},
 		},
 		models.ChainSOL: {
+			models.SymbolUSDT: {devnetOrcaUSDT, 6},
 			models.SymbolUSDC: {"4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", 6},
 			"WSOL":            {"So11111111111111111111111111111111111111112", 9},
 		},
@@ -74,5 +77,31 @@ func TestPrimary_Records_OnTheMainnetProfileKeepTheMainnetContracts(t *testing.T
 	if len(byChain[models.ChainSOL]) != 6 || byChain[models.ChainSOL][models.SymbolUSDC].contractAddress != models.USDCMintSOL ||
 		byChain[models.ChainSOL]["BONK"].decimals != 5 {
 		t.Errorf("sol mainnet tokens %+v", byChain[models.ChainSOL])
+	}
+}
+
+func TestSepoliaMockUSDTIsExplicitAndTokenAlignmentIsIdempotent(t *testing.T) {
+	t.Parallel()
+	testTokens := primaryTokensByChain(t, models.ChainNetworkProfileTestnet)[models.ChainETH]
+	mock := testTokens[models.SymbolUSDT]
+	if mock.name != "Mock USDT (Sepolia Test)" || mock.contractAddress != sepoliaUSDTMock || mock.decimals != 6 {
+		t.Fatalf("Sepolia mock must retain explicit test identity, got %+v", mock)
+	}
+	var rows []models.Token
+	for _, seed := range testTokens {
+		rows = append(rows, models.Token{ChainID: models.ChainETH, Symbol: seed.symbol, Name: seed.name, ContractAddress: seed.contractAddress, Decimals: seed.decimals, Status: models.TokenStatusActive})
+	}
+	// Existing rows on the correct test network require no writes or activation.
+	changes, unknown := planNetworkTokens(models.ChainETH, models.NetworkEthereumSepolia, rows, tokensOfNetwork(models.NetworkEthereumSepolia), tokensOfNetwork(models.NetworkEthereumMainnet))
+	if len(changes) != 0 || len(unknown) != 0 {
+		t.Fatalf("an aligned seed must remain idempotent: changes=%+v unknown=%v", changes, unknown)
+	}
+	mainnet := primaryTokensByChain(t, models.ChainNetworkProfileMainnet)[models.ChainETH][models.SymbolUSDT]
+	if mainnet.contractAddress != models.USDTContractETH || mainnet.name != "Tether USD" {
+		t.Fatalf("mainnet USDT changed: %+v", mainnet)
+	}
+	devnet := primaryTokensByChain(t, models.ChainNetworkProfileTestnet)[models.ChainSOL][models.SymbolUSDT]
+	if devnet.contractAddress != devnetOrcaUSDT || devnet.name != "devUSDT (Orca public test token)" {
+		t.Fatalf("Solana devnet must expose only the explicitly documented public test mint: %+v", devnet)
 	}
 }
