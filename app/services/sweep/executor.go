@@ -70,6 +70,9 @@ func (s *service) ExecutePlan(
 	if err != nil {
 		return nil, fmt.Errorf("sweep: adapter for %q: %w", plan.Chain, err)
 	}
+	if err = s.requireTokenPlanGas(ctx, adapter, wallet, plan, toAddress); err != nil {
+		return nil, err
+	}
 
 	shareB, err := s.fetchShareB(ctx, wallet)
 	if err != nil {
@@ -210,6 +213,15 @@ func (s *service) broadcastLeg(
 		}
 		if err := s.fundSweep(ctx, adapter, curve, keys, wallet, plan, leg, &unsigned, opts); err != nil {
 			return CompletedSweep{}, err
+		}
+		legPlan := *plan
+		legPlan.Amount = leg.Amount
+		ready, err := s.tokenSourceGasReady(ctx, adapter, &legPlan, signer.Address, wallet.DepositAddress.Address)
+		if err != nil {
+			return CompletedSweep{}, err
+		}
+		if !ready {
+			return CompletedSweep{}, ErrWalletNotGasReady
 		}
 
 		signed, signErr := s.signUnsigned(ctx, adapter, curve, keys, wallet, signer, &unsigned)
@@ -759,6 +771,13 @@ func (s *service) signWithdrawalTransfer(
 	source models.Address,
 	toAddress string,
 ) (*types.SignedTx, *types.Token, error) {
+	ready, err := s.tokenSourceGasReady(ctx, adapter, plan, source.Address, toAddress)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !ready {
+		return nil, nil, ErrWalletNotGasReady
+	}
 	token, err := s.planAssetToken(adapter, plan)
 	if err != nil {
 		return nil, nil, err
