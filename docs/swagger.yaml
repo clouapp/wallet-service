@@ -338,6 +338,42 @@ definitions:
       wallet_id:
         type: string
     type: object
+  chains.PlatformChainList:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/chains.PlatformChainView'
+        type: array
+    type: object
+  chains.PlatformChainView:
+    properties:
+      adapter_type:
+        type: string
+      display_order:
+        type: integer
+      dust_threshold_native_raw:
+        type: string
+      dust_threshold_usd:
+        type: string
+      finality:
+        type: string
+      gas_readiness_threshold_raw:
+        type: string
+      id:
+        type: string
+      is_testnet:
+        type: boolean
+      name:
+        type: string
+      native_symbol:
+        type: string
+      network_id:
+        type: integer
+      required_confirmations:
+        type: integer
+      status:
+        type: string
+    type: object
   chains.RPCEndpoint:
     properties:
       enabled:
@@ -3936,6 +3972,33 @@ paths:
       summary: Platform activity
       tags:
       - Platform Activity
+  /platform/chains:
+    get:
+      description: 'Every chain row, active or not, mainnet and testnet, in display
+        order: identity, status, sweep thresholds, required confirmations and finality.
+        Unlike GET /v1/chains it does not follow an account''s environment. A caller
+        that is not a platform admin is 403. The RPC URL is not returned (GET /v1/platform/chains/{chainId}/rpc-endpoints
+        lists the endpoints by host).'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/chains.PlatformChainList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: List every chain for the platform
+      tags:
+      - Platform Chains
   /platform/chains/{chainId}:
     patch:
       consumes:
@@ -4080,8 +4143,8 @@ paths:
         network, one that does not answer, a URL already in the list or a chain whose
         adapter does not use the list (the Bitcoin family) is 422 and nothing is written.
         The URL is sealed and never returned. The process that answers uses the new
-        list at once; the others load it on restart. An unknown chain is 404 for a
-        platform admin.'
+        list at once; every process running the local workers reloads it within LOCAL_CHAIN_SYNC_INTERVAL_SECONDS
+        (30 s). An unknown chain is 404 for a platform admin.'
       parameters:
       - description: Chain id
         in: path

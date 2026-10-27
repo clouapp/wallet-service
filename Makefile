@@ -19,14 +19,29 @@ else
   STACK_NAME = waas-dev
 endif
 
-# dev runs on one host outside AWS and only needs the stateful AWS resources:
-# template.dev.yaml (queues, master KMS key, the host's IAM user). staging and prod
-# deploy the Lambda application in template.yaml. See docs/AWS_DEV_STACK.md.
+# STACK picks what an environment deploys. `host`: the service runs on one host
+# outside Lambda (a Forge server) and only needs the stateful AWS resources of
+# template.dev.yaml (queues, master KMS key, the host's IAM user). `lambda`: the
+# Lambda application in template.yaml. dev is always `host`; staging and prod
+# default to `lambda` and take STACK=host (or STACK=host in .env.$(ENV)) to run
+# like dev. See docs/AWS_DEV_STACK.md and docs/PRODUCTION_RUNTIME.md.
 ifeq ($(ENV),dev)
-  TEMPLATE_FILE = template.dev.yaml
+  STACK := host
 else
-  TEMPLATE_FILE = template.yaml
+  STACK ?= lambda
 endif
+ifeq ($(STACK),host)
+  TEMPLATE_FILE = template.dev.yaml
+else ifeq ($(STACK),lambda)
+  TEMPLATE_FILE = template.yaml
+else
+  $(error STACK must be host or lambda, got "$(STACK)")
+endif
+# template.dev.yaml parameters, from .env.$(ENV) or the command line:
+# CREATE_SERVER_USER=false once the host runs with an instance role, ALARM_TOPIC_ARN
+# the SNS topic the DLQ alarm notifies (empty: the alarm only changes state).
+CREATE_SERVER_USER ?= true
+ALARM_TOPIC_ARN ?=
 
 # Project paths
 FRONT_DIR = ../front
@@ -312,20 +327,20 @@ check-account: ## Refuse unless the AWS credentials belong to AWS_ACCOUNT_ID of 
 	fi; \
 	echo "check-account: OK — account $$actual, region $(AWS_REGION), stack $(STACK_NAME)"
 
-ifeq ($(ENV),dev)
+ifeq ($(STACK),host)
 DEPLOY_PREREQUISITES = check-account validate
 else
 DEPLOY_PREREQUISITES = validate build check-account
 endif
 
-deploy: $(DEPLOY_PREREQUISITES) ## Deploy ENV: dev applies template.dev.yaml (queues, KMS key, server user); staging/prod deploy template.yaml with SAM
+deploy: $(DEPLOY_PREREQUISITES) ## Deploy ENV: STACK=host applies template.dev.yaml (queues, KMS key, server user; always for dev); STACK=lambda (default for staging/prod) deploys template.yaml with SAM
 	@echo "🚀 Deploying $(TEMPLATE_FILE) to $(ENV) (stack $(STACK_NAME))..."
-ifeq ($(ENV),dev)
+ifeq ($(STACK),host)
 	$(AWS_ENV) aws cloudformation deploy \
 		--stack-name $(STACK_NAME) \
 		--template-file $(TEMPLATE_FILE) \
 		--capabilities CAPABILITY_NAMED_IAM \
-		--parameter-overrides Environment=$(ENV) \
+		--parameter-overrides Environment=$(ENV) CreateServerUser=$(CREATE_SERVER_USER) $(if $(strip $(ALARM_TOPIC_ARN)),AlarmTopicArn=$(ALARM_TOPIC_ARN)) \
 		--tags Project=macro-wallets Environment=$(ENV) \
 		--no-fail-on-empty-changeset
 	@$(AWS_ENV) aws cloudformation describe-stacks --stack-name $(STACK_NAME) \
@@ -342,7 +357,7 @@ endif
 	@echo "✅ Deployment complete"
 
 require-sam-env:
-	@test "$(ENV)" != dev || { echo "this target deploys the Lambda application (template.yaml); dev deploys template.dev.yaml with make deploy ENV=dev" >&2; exit 1; }
+	@test "$(STACK)" != host || { echo "this target deploys the Lambda application (template.yaml); a host stack deploys template.dev.yaml with make deploy ENV=$(ENV) STACK=host" >&2; exit 1; }
 
 deploy-guided: require-sam-env build ## Deploy with guided prompts (first time setup, staging/prod)
 	@echo "🚀 Running guided deployment..."

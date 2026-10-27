@@ -1,0 +1,101 @@
+name: CI
+
+# Pull requests run it directly; a push to main or dev runs it through deploy.yml
+# (workflow_call), so a deploy never starts before its CI passed.
+on:
+  pull_request:
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # Integration test binaries at once: the hosted runner has 4 vCPUs.
+  TEST_PARALLEL: 4
+
+jobs:
+  build:
+    name: Build, vet and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      # The repository lint is report mode (make lint); here a pull request fails only on
+      # findings it introduces.
+      - name: golangci-lint (new issues)
+        if: github.event_name == 'pull_request'
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.5.0
+          only-new-issues: true
+
+  unit:
+    name: Unit tests (architecture in ratchet mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: make test-unit
+        run: make test-unit
+
+  integration:
+    name: Integration tests (PostgreSQL, Redis, LocalStack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: ./.github/actions/test-services
+
+      # The signature sync property test runs in the property jobs below.
+      - name: make test-integration
+        run: make test-integration TEST_FLAGS='-skip TestProperty_SignatureSync_ReadsEveryHistoryWhateverTheEndpointShows'
+
+  property:
+    name: Signature sync property test (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      SIGNATURE_PROPERTY_SHARD: ${{ matrix.shard }}/4
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: ./.github/actions/test-services
+
+      - name: make test-integration (one shard of the property cases)
+        run: >-
+          make test-integration
+          INTEGRATION_TEST_PACKAGES=github.com/macrowallets/waas/app/services/deposit
+          TEST_FLAGS='-run TestProperty_SignatureSync_ReadsEveryHistoryWhateverTheEndpointShows'

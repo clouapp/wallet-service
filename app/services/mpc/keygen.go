@@ -20,6 +20,8 @@ type TSSService struct {
 	// preParams, when running, supplies the secp256k1 keygen pre-parameters; with no
 	// pool, or a pool that is not running, each party generates its own inline.
 	preParams *PreParamsPool
+	// preParamsFrom, when set, supplies them instead of the pool (one call per party).
+	preParamsFrom PreParamsGenerator
 }
 
 // NewTSSService creates a new TSSService.
@@ -33,11 +35,27 @@ func NewTSSServiceWithPreParams(pool *PreParamsPool) *TSSService {
 	return &TSSService{preParams: pool}
 }
 
+// NewTSSServiceWithPreParamsFrom creates a TSSService whose secp256k1 keygen takes each
+// party's pre-parameters from generate (the test suites serve stored sets,
+// tests/tssfixture, instead of searching for safe primes at every keygen).
+func NewTSSServiceWithPreParamsFrom(generate PreParamsGenerator) *TSSService {
+	return &TSSService{preParamsFrom: generate}
+}
+
+// takePreParams is the pre-parameters of one keygen party; nil makes the party
+// generate its own.
+func (s *TSSService) takePreParams(ctx context.Context) (*keygen.LocalPreParams, error) {
+	if s.preParamsFrom != nil {
+		return s.preParamsFrom(ctx)
+	}
+	return s.preParams.Take(ctx)
+}
+
 // Keygen runs a 2-party MPC key generation ceremony for the given curve.
 func (s *TSSService) Keygen(ctx context.Context, curve Curve) (*KeygenResult, error) {
 	switch curve {
 	case CurveSecp256k1:
-		return keygenSecp256k1(ctx, s.preParams)
+		return keygenSecp256k1(ctx, s.takePreParams)
 	case CurveEd25519:
 		return keygenEd25519(ctx)
 	default:
@@ -46,13 +64,13 @@ func (s *TSSService) Keygen(ctx context.Context, curve Curve) (*KeygenResult, er
 }
 
 // keygenSecp256k1 performs a 2-of-2 MPC keygen on secp256k1.
-func keygenSecp256k1(ctx context.Context, pool *PreParamsPool) (*KeygenResult, error) {
+func keygenSecp256k1(ctx context.Context, take func(context.Context) (*keygen.LocalPreParams, error)) (*KeygenResult, error) {
 	// One set of pre-parameters per party, never shared between them.
-	preParamsA, err := pool.Take(ctx)
+	preParamsA, err := take(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("keygen pre-params A: %w", err)
 	}
-	preParamsB, err := pool.Take(ctx)
+	preParamsB, err := take(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("keygen pre-params B: %w", err)
 	}

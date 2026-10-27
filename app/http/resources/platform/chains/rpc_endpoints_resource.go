@@ -54,7 +54,8 @@ type RPCEndpointProbe struct {
 
 // RPCEndpointChange is the list after a change. changed is false when the list
 // already was so (nothing written); reloaded is true when the adapters of the
-// process that answered already use it (the others load it on restart).
+// process that answered already use it (the processes running the local workers reload it
+// within LOCAL_CHAIN_SYNC_INTERVAL_SECONDS, app/services/chainsync).
 type RPCEndpointChange struct {
 	RPCEndpointList
 	Changed  bool `json:"changed" example:"true"`

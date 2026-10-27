@@ -171,7 +171,14 @@ func refreshChainRegistry(app foundation.Application) {
 // returns the same chains' network names for the block-height providers.
 // A chain whose rpc_url does not open is skipped. The URL is not logged.
 func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByChain map[string][]types.Token) map[string]string {
+	return installActiveChains(reg, rows, tokensByChain, nil)
+}
+
+// installActiveChains is registerActiveChains with the TronGrid key and the
+// Bitcoin-family fallbacks read from stored (nil: the environment only).
+func installActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByChain map[string][]types.Token, stored chainProviderSettings) map[string]string {
 	networkByChain := make(map[string]string)
+	tronKey, tronKeyRead := "", false
 	for _, ch := range rows {
 		rpcURL, openErr := openActiveChainEndpoint(ch.RpcURL)
 		if openErr != nil {
@@ -221,14 +228,9 @@ func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByC
 			if depth := facades.Config().GetInt("vault.utxo_double_spend_depth"); depth > 0 {
 				btcCfg.DoubleSpendDepth = uint64(depth)
 			}
-			fallbackKey := "vault.utxo_fallbacks." + ch.ID
-			tatumKey := facades.Config().GetString(fallbackKey + ".api_key")
-			btcCfg.Fallbacks = bitcoinFallbacks(
-				facades.Config().GetString(fallbackKey+".rpc_urls"),
-				tatumKey,
-				bitcoinchain.DefaultBitcoinFallbackURLs(btcCfg),
-			)
-			btcCfg.TatumDataAPIURL = facades.Config().GetString(fallbackKey + ".tatum_data_api_url")
+			fallbackURLs, tatumKey, dataAPI := utxoFallbackConfig(stored, ch.ID)
+			btcCfg.Fallbacks = bitcoinFallbacks(fallbackURLs, tatumKey, bitcoinchain.DefaultBitcoinFallbackURLs(btcCfg))
+			btcCfg.TatumDataAPIURL = dataAPI
 			slog.Info("btc fallback providers", "chain", ch.ID, "count", len(btcCfg.Fallbacks), "tatum_key_set", tatumKey != "")
 			adapter = bitcoinchain.NewBitcoinLive(btcCfg)
 		case models.AdapterTypeXRP:
@@ -246,6 +248,9 @@ func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByC
 				DustThresholdNative:   resolveDustThresholdNative(&ch),
 			})
 		case models.AdapterTypeTron:
+			if !tronKeyRead {
+				tronKey, tronKeyRead = tronAPIKey(stored), true
+			}
 			adapter = tronchain.NewTronLive(tronchain.TronConfig{
 				ChainIDStr:            ch.ID,
 				ChainName:             ch.Name,
@@ -254,7 +259,7 @@ func registerActiveChains(reg *chainpkg.Registry, rows []models.Chain, tokensByC
 				RPCFallbacks:          fallbacks,
 				GenesisBlockID:        models.TronGenesisBlockID(network),
 				RPCHealth:             chainRPCHealth(),
-				APIKey:                facades.Config().GetString("vault.tron.api_key"),
+				APIKey:                tronKey,
 				IsTestnet:             ch.IsTestnet,
 				Confirmations:         uint64(ch.RequiredConfirmations),
 				Tokens:                tokensByChain[ch.ID],

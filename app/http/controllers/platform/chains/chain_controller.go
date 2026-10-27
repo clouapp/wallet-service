@@ -43,6 +43,31 @@ func NewChainController(deps ChainControllerDeps) *ChainController {
 	return &ChainController{thresholds: deps.Thresholds, rpc: deps.RPC, endpoints: deps.Endpoints}
 }
 
+// Index godoc
+//
+//	@Summary		List every chain for the platform
+//	@Description	Every chain row, active or not, mainnet and testnet, in display order: identity, status, sweep thresholds, required confirmations and finality. Unlike GET /v1/chains it does not follow an account's environment. A caller that is not a platform admin is 403. The RPC URL is not returned (GET /v1/platform/chains/{chainId}/rpc-endpoints lists the endpoints by host).
+//	@Tags			Platform Chains
+//	@Security		BearerAuth
+//	@Produce		json
+//	@Success		200	{object}	PlatformChainList
+//	@Failure		401	{object}	responses.ErrorBody
+//	@Failure		403	{object}	responses.ErrorBody
+//	@Router			/platform/chains [get]
+func (c *ChainController) Index(ctx http.Context) http.Response {
+	actorID := requestctx.MustUserID(ctx)
+	chains, err := c.thresholds.List(ctx.Context(), actorID)
+	if err != nil {
+		return mapError(ctx, err, "list platform chains")
+	}
+	return ctx.Response().Success().Json(PlatformChainList{Data: chains})
+}
+
+// PlatformChainList is the answer of GET /v1/platform/chains.
+type PlatformChainList struct {
+	Data []chainsvc.PlatformChainView `json:"data"`
+}
+
 // Update godoc
 //
 //	@Summary		Update chain sweep thresholds, confirmations and finality

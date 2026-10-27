@@ -118,6 +118,25 @@ func NewBitcoinLive(cfg BitcoinConfig) *BitcoinLive {
 
 const btcPrimaryProviderName = "primary"
 
+// CheckFallbackURL is the rule one fallback provider URL must pass (an Electrum
+// server, or an http(s) Esplora, bitcoind or Tatum URL), for the utxo_fallbacks
+// settings' write check: what NewBitcoinLive would refuse and log. The error never
+// carries the URL.
+func CheckFallbackURL(rawURL string) error {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return fmt.Errorf("empty URL")
+	}
+	if isElectrumURL(rawURL) {
+		_, err := newElectrumProvider("check", rawURL, bitcoinNetwork{}, "")
+		return err
+	}
+	if !strings.HasPrefix(rawURL, "https://") && !strings.HasPrefix(rawURL, "http://") {
+		return fmt.Errorf("unsupported scheme: want https://, http:// or %s", electrumSSLScheme)
+	}
+	return nil
+}
+
 // fallbackProvider builds the n-th fallback: an Electrum server, or a copy of this
 // adapter pointed at another Esplora/JSON-RPC URL that must prove its network first.
 func (a *BitcoinLive) fallbackProvider(n int, fallback BitcoinFallback) (bitcoinProvider, error) {

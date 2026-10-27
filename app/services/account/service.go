@@ -127,6 +127,8 @@ type Deps struct {
 	// SweepLimits and Features are required by the dashboard account views.
 	SweepLimits SweepLimitsReader
 	Features    FeatureReader
+	// FrontendURLs is the stored base of invite links; nil keeps APP_FRONTEND_URL.
+	FrontendURLs FrontendURLSource
 }
 
 // MemberChange is a PATCH of one membership. A nil field is left as stored.
@@ -137,32 +139,34 @@ type MemberChange struct {
 
 // Service creates accounts and manages their memberships.
 type Service struct {
-	accounts    AccountStore
-	memberships MembershipStore
-	users       UserStore
-	tokens      TokenStore
-	activity    ActivityLog
-	invites     InviteStore
-	admins      PlatformAdmins
-	inviteMail  InviteMailDispatcher
-	passwords   PasswordHasher
-	sweepLimits SweepLimitsReader
-	features    FeatureReader
+	accounts     AccountStore
+	memberships  MembershipStore
+	users        UserStore
+	tokens       TokenStore
+	activity     ActivityLog
+	invites      InviteStore
+	admins       PlatformAdmins
+	inviteMail   InviteMailDispatcher
+	passwords    PasswordHasher
+	sweepLimits  SweepLimitsReader
+	features     FeatureReader
+	frontendURLs FrontendURLSource
 }
 
 // NewService builds an account service from Deps.
 func NewService(deps Deps) *Service {
 	return &Service{
-		accounts:    deps.Accounts,
-		memberships: deps.Memberships,
-		users:       deps.Users,
-		tokens:      deps.Tokens,
-		activity:    deps.Activity,
-		invites:     deps.Invites,
-		inviteMail:  deps.InviteMail,
-		passwords:   deps.Passwords,
-		sweepLimits: deps.SweepLimits,
-		features:    deps.Features,
+		accounts:     deps.Accounts,
+		memberships:  deps.Memberships,
+		users:        deps.Users,
+		tokens:       deps.Tokens,
+		activity:     deps.Activity,
+		invites:      deps.Invites,
+		inviteMail:   deps.InviteMail,
+		passwords:    deps.Passwords,
+		sweepLimits:  deps.SweepLimits,
+		features:     deps.Features,
+		frontendURLs: deps.FrontendURLs,
 	}
 }
 

@@ -83,11 +83,11 @@ type InviteInput struct {
 	Role      string
 }
 
-// InviteMember is IssueInvite with the link based at APP_FRONTEND_URL. A
-// missing APP_FRONTEND_URL is ErrFrontendURLRequired and nothing is stored. An
+// InviteMember is IssueInvite with the link based at the front-end URL
+// (FrontendBase). A missing one is ErrFrontendURLRequired and nothing is stored. An
 // invite mail that could not be queued is logged; the invite stands.
 func (s *Service) InviteMember(ctx context.Context, in InviteInput) (*IssuedInvite, error) {
-	base, err := FrontendBase()
+	base, err := FrontendBase(ctx, s.frontendURLs)
 	if err != nil {
 		return nil, err
 	}
@@ -99,10 +99,10 @@ func (s *Service) InviteMember(ctx context.Context, in InviteInput) (*IssuedInvi
 	return issued, nil
 }
 
-// ResendInviteLink is ResendInvite with the link based at APP_FRONTEND_URL,
+// ResendInviteLink is ResendInvite with the link based at the front-end URL,
 // on the same terms as InviteMember.
 func (s *Service) ResendInviteLink(ctx context.Context, accountID, inviteID uuid.UUID) (*IssuedInvite, error) {
-	base, err := FrontendBase()
+	base, err := FrontendBase(ctx, s.frontendURLs)
 	if err != nil {
 		return nil, err
 	}

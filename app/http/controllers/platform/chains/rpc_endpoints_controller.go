@@ -48,7 +48,7 @@ func (c *ChainController) ListRPCEndpoints(ctx http.Context) http.Response {
 // AddRPCEndpoint godoc
 //
 //	@Summary		Add a chain RPC endpoint
-//	@Description	Body {"url", "position"}: an http(s) URL or env:NAME, at the end of the list or at position (1 makes it the primary and moves the others down). The endpoint is first asked which network it serves (eth_chainId on EVM, getGenesisHash on Solana, block 0 on TRON, server_info network_id on XRP); one on another network, one that does not answer, a URL already in the list or a chain whose adapter does not use the list (the Bitcoin family) is 422 and nothing is written. The URL is sealed and never returned. The process that answers uses the new list at once; the others load it on restart. An unknown chain is 404 for a platform admin.
+//	@Description	Body {"url", "position"}: an http(s) URL or env:NAME, at the end of the list or at position (1 makes it the primary and moves the others down). The endpoint is first asked which network it serves (eth_chainId on EVM, getGenesisHash on Solana, block 0 on TRON, server_info network_id on XRP); one on another network, one that does not answer, a URL already in the list or a chain whose adapter does not use the list (the Bitcoin family) is 422 and nothing is written. The URL is sealed and never returned. The process that answers uses the new list at once; every process running the local workers reloads it within LOCAL_CHAIN_SYNC_INTERVAL_SECONDS (30 s). An unknown chain is 404 for a platform admin.
 //	@Tags			Platform Chains
 //	@Security		BearerAuth
 //	@Accept			json

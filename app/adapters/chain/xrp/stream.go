@@ -106,6 +106,10 @@ func (d *StreamDialer) Dial(ctx context.Context) (xrpstream.Session, error) {
 	return session, nil
 }
 
+// CheckStreamURL is the rule a stream endpoint must pass (checkStreamURL), for the
+// xrp_stream setting's write check. The error never carries the URL.
+func CheckStreamURL(rawURL string) error { return checkStreamURL(rawURL) }
+
 // checkStreamURL accepts wss://, and ws:// only to a loopback host: a plain
 // WebSocket elsewhere would carry the subscription, and any key in the URL, in the
 // clear.

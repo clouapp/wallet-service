@@ -16,6 +16,10 @@ type DepositScanValues struct {
 	BatchBlocks   int
 	CatchUpBlocks int
 	Concurrency   int
+	// AlertLagBlocks and AlertStaleMinutes are the tracker's global alert
+	// thresholds; 0 keeps DEPOSIT_SCAN_ALERT_*.
+	AlertLagBlocks    int
+	AlertStaleMinutes int
 }
 
 // platformReader loads one platform group. Account rows are not part of it.
@@ -49,9 +53,11 @@ func (s *Service) EffectiveDepositScan(ctx context.Context) (DepositScanValues, 
 
 func parseDepositScan(stored map[string]string) DepositScanValues {
 	return DepositScanValues{
-		BatchBlocks:   scanOverride(stored, keyBatchBlocks, 0),
-		CatchUpBlocks: scanOverride(stored, keyCatchUpBlocks, 0),
-		Concurrency:   scanOverride(stored, keyScanConcurrency, maxDepositScanConcurrency),
+		BatchBlocks:       scanOverride(stored, keyBatchBlocks, 0),
+		CatchUpBlocks:     scanOverride(stored, keyCatchUpBlocks, 0),
+		Concurrency:       scanOverride(stored, keyScanConcurrency, maxDepositScanConcurrency),
+		AlertLagBlocks:    scanAlertOverride(stored, keyAlertLagBlocks),
+		AlertStaleMinutes: scanAlertOverride(stored, keyAlertStaleMinutes),
 	}
 }
 

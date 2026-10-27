@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
@@ -11,6 +12,7 @@ import (
 	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/chainregistry"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
+	"github.com/macrowallets/waas/app/services/chainsync"
 	"github.com/macrowallets/waas/app/services/currencies"
 	"github.com/macrowallets/waas/app/services/rpcendpoints"
 	"github.com/macrowallets/waas/app/services/settings"
@@ -44,15 +46,47 @@ func (p *ChainServiceProvider) Register(app foundation.Application) {
 		if err != nil {
 			return nil, err
 		}
+		stored, err := resolve[*settings.Service](app)
+		if err != nil {
+			return nil, err
+		}
 		return chainregistry.NewChainRegistryService(chainregistry.ChainRegistryDeps{
 			Store:    chainCatalog{repo: chains, endpoints: endpoints},
 			Cache:    chainregistry.NewCatalogCache(),
-			Install:  registerActiveChains,
+			Install:  activeChainInstaller(stored),
 			Registry: chainpkg.NewRegistry(),
 		}), nil
 	})
 	app.Singleton((*chainpkg.Registry)(nil), func(app foundation.Application) (any, error) {
 		return loadChainRegistry(app)
+	})
+	// The local workers run it: an endpoint list or TronGrid key written by another
+	// process reaches this process's adapters within one interval.
+	app.Singleton((*chainsync.Service)(nil), func(app foundation.Application) (any, error) {
+		chains, err := resolve[*repositories.ChainRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		endpoints, err := resolve[*repositories.ChainRPCEndpointRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		registry, err := resolve[*chainpkg.Registry](app)
+		if err != nil {
+			return nil, err
+		}
+		stored, err := resolve[*settings.Service](app)
+		if err != nil {
+			return nil, err
+		}
+		return chainsync.New(chainsync.Deps{
+			Registry:  registry,
+			Endpoints: chainEndpointLister(chainCatalog{repo: chains, endpoints: endpoints}),
+			TronAPIKey: func(ctx context.Context) string {
+				return stored.TronAPIKey(ctx, facades.Config().GetString("vault.tron.api_key"))
+			},
+			Interval: chainSyncInterval(),
+		}), nil
 	})
 	app.Singleton((*chainsvc.Service)(nil), func(app foundation.Application) (any, error) {
 		chains, err := resolve[*repositories.ChainRepository](app)

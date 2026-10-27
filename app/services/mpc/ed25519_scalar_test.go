@@ -28,7 +28,7 @@ func ed25519PublicFromBigEndianScalar(t *testing.T, scalarBigEndian []byte) []by
 }
 
 func TestReconstruct_Ed25519Scalar_MatchesWalletPublicKey(t *testing.T) {
-	svc := NewTSSService()
+	svc := newTestTSSService()
 	keys, err := svc.Keygen(context.Background(), CurveEd25519)
 	if err != nil {
 		t.Fatal(err)
@@ -56,7 +56,7 @@ func TestReconstruct_Ed25519Scalar_MatchesWalletPublicKey(t *testing.T) {
 
 // The legacy share sum seeds SLIP-0010 child derivation; it is not the genesis key.
 func TestReconstruct_Ed25519PrivateKey_IsNotTheGenesisKey(t *testing.T) {
-	svc := NewTSSService()
+	svc := newTestTSSService()
 	keys, err := svc.Keygen(context.Background(), CurveEd25519)
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func TestReconstruct_Ed25519PrivateKey_IsNotTheGenesisKey(t *testing.T) {
 }
 
 func TestReconstruct_Ed25519Scalar_RejectsMismatchedShares(t *testing.T) {
-	svc := NewTSSService()
+	svc := newTestTSSService()
 	first, err := svc.Keygen(context.Background(), CurveEd25519)
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +115,7 @@ func TestReconstruct_Ed25519Scalar_RejectsMismatchedShares(t *testing.T) {
 
 func TestReconstruct_Ed25519Scalar_MalformedShareErrorHidesInput(t *testing.T) {
 	secretLooking := []byte(`{"Xi":"not-a-number-but-looks-secret"}`)
-	_, err := NewTSSService().ReconstructEd25519Scalar(secretLooking, secretLooking)
+	_, err := newTestTSSService().ReconstructEd25519Scalar(secretLooking, secretLooking)
 	if err == nil || strings.Contains(err.Error(), "looks-secret") {
 		t.Fatalf("error must not echo share content: %v", err)
 	}
