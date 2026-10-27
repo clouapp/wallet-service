@@ -16,10 +16,10 @@ var (
 	errMailQueueRequired  = errors.New("mail: queue is required")
 )
 
-// MailServiceProvider binds facades.Mail() to mail.Mailer: the framework SMTP
-// application, sent with the mail_smtp row and the mail_delivery From header
-// the settings service reads at send time. The process driver is MAIL_MAILER;
-// mail_delivery.driver does not select a transport.
+// MailServiceProvider binds facades.Mail() to mail.Mailer: the transport
+// mail_delivery.driver (else MAIL_MAILER) selects at send time, the framework
+// SMTP application with the mail_smtp row or the HTTP API of mailgun, resend or
+// postmark with their groups, under the mail_delivery From header.
 //
 // The framework mail provider binds binding.Mail first. This provider declares
 // no Relationship, so it registers after it and this Bind is the one that

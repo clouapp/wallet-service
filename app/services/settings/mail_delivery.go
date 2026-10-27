@@ -30,13 +30,14 @@ const (
 	maxMailFromAddressLength = 254
 )
 
-// MailDelivery is the From header the mailer may apply at send time.
-// A false Use field means that value is missing or invalid and the env
-// From header keeps its own. Driver is validated on write and is not applied
-// here: the process mailer stays the SMTP mailer.
+// MailDelivery is the transport and From header the mailer applies at send
+// time. A false Use field means that value is missing or invalid and the env
+// value (MAIL_MAILER, MAIL_FROM_*) keeps its own.
 type MailDelivery struct {
+	Driver     string
 	Address    string
 	Name       string
+	UseDriver  bool
 	UseAddress bool
 	UseName    bool
 }
@@ -55,7 +56,7 @@ func mailDeliveryGroup() Group {
 			{
 				Key:     keyMailDriver,
 				Label:   "Driver",
-				Help:    "Which mail transport sends. log is refused in production.",
+				Help:    "Which mail transport sends: smtp (mail_smtp), mailgun, resend or postmark (their groups below). log is refused in production; ses is not available yet. A transport without its credentials fails the send, it never falls back to another one.",
 				Type:    TypeString,
 				Options: mailDeliveryDrivers(),
 				Default: func() any { return mailDriverSMTP },
@@ -134,6 +135,14 @@ func (s *Service) EffectiveMailDelivery(ctx context.Context) (MailDelivery, erro
 
 func parseMailDelivery(stored map[string]string) MailDelivery {
 	var out MailDelivery
+	if driver := strings.TrimSpace(stored[keyMailDriver]); driver != "" {
+		if mailDriverKnown(driver) {
+			out.Driver = driver
+			out.UseDriver = true
+		} else {
+			slog.Warn("mail delivery setting fell back to the env mailer", "key", keyMailDriver)
+		}
+	}
 	if !mailDeliveryKeyPresent(stored, keyMailFromAddress) {
 		// A missing address keeps the env From address.
 	} else if address, ok := usableMailFromAddress(stored[keyMailFromAddress]); ok {
