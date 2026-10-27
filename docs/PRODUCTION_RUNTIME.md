@@ -391,6 +391,16 @@ role (`vault.aws.*`).
   cover that hop too.
 - **Other settings:** `CORS_ALLOWED_ORIGINS` names the dashboard origin, and `APP_URL` the
   public base URL.
+- **Settings on the panel, not the environment:** the scanned chains, the XRP stream, the TronGrid
+  key, the Bitcoin-family fallbacks, the rate limits, the scan alert thresholds, the stale outbound
+  threshold, the front-end URL and the mail transport are platform settings; their variables are
+  only fallbacks (CLAUDE.md, "Platform settings over the environment"). After a deploy that ships a
+  new setting, `artisan settings:import-env --actor=<admin> --apply` copies the variables in use, and
+  they can then leave the environment. What stays in the environment: database, Redis, `APP_KEY`,
+  `JWT_SECRET`, `API_KEY_SECRET`, `MASTER_KEY_REF`, AWS and queues, `PORT`, `TRUSTED_PROXIES`, the
+  egress switches (`WEBHOOK_ALLOW_HTTP`, `WEBHOOK_ALLOWED_PORTS`, `RPC_ALLOW_LINK_LOCAL`),
+  `MPC_PREPARAMS_POOL_SIZE`, `HTTP_REQUEST_TIMEOUT`, `SHUTDOWN_TIMEOUT_SECONDS`,
+  `CHAIN_NETWORK_PROFILE` and `LOCAL_WORKERS_ENABLED`.
 
 ## 8. Deploy and rollback
 

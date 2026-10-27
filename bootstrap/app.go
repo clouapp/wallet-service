@@ -17,6 +17,7 @@ import (
 	"github.com/macrowallets/waas/app/policies"
 	"github.com/macrowallets/waas/app/providers"
 	"github.com/macrowallets/waas/app/services/ingest"
+	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/config"
 	"github.com/macrowallets/waas/database/seeders"
 	"github.com/macrowallets/waas/routes"
@@ -53,7 +54,7 @@ func defineGates() {
 // registerRoutes names the rate limiters before the routes that use them, then
 // registers every route group.
 func registerRoutes() {
-	middleware.RegisterThrottles(appfacades.RateLimiter())
+	middleware.RegisterThrottles(appfacades.RateLimiter(), container.MustMake[*settings.Service]())
 	routes.RegisterHTTP()
 }
 

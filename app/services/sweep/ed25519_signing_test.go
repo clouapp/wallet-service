@@ -23,6 +23,7 @@ import (
 	walletsvc "github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/mocks"
+	"github.com/macrowallets/waas/tests/tssfixture"
 )
 
 const (
@@ -80,7 +81,7 @@ func (r *indexedWalletRepo) IncrementAddressIndex(context.Context, uuid.UUID) (i
 func newSolanaWalletFixture(t *testing.T) *solanaWalletFixture {
 	t.Helper()
 	ctx := context.Background()
-	tss := mpcpkg.NewTSSService()
+	tss := mpcpkg.NewTSSServiceWithPreParamsFrom(tssfixture.Generator())
 	keys, err := tss.Keygen(ctx, mpcpkg.CurveEd25519)
 	if err != nil {
 		t.Fatal(err)

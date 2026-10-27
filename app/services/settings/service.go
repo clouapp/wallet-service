@@ -76,7 +76,17 @@ type Service struct {
 	// ingestBase checks what a written ingest_push.base_url's host resolves to; nil
 	// is the base URL guard over the system resolver (ingestBaseGuard).
 	ingestBase baseURLGuard
+	// writeChecks check, per platform group, the plaintext a save writes.
+	writeChecks map[string]WriteCheck
 }
+
+// WriteCheck checks, before a platform group is stored, the plaintext values one save
+// writes, a secret included before it is sealed (a blank secret, which keeps the
+// stored one, is left out). A *ValidationError refuses the save with its fields; the
+// message must name the rule, never the value. The composition root registers the
+// checks that need what this package does not hold (the RPC destination guard, an
+// adapter's URL parser).
+type WriteCheck func(ctx context.Context, plain map[string]string) error
 
 // PlatformFallback is the value a platform field takes while no row stores it, when
 // that value comes from outside the registry (the environment): ok false keeps the
@@ -98,6 +108,8 @@ type Deps struct {
 	// host resolves to, by the base URL rule (egress.PublicBaseGuard); nil is that
 	// guard over the system resolver.
 	IngestBaseDestinations baseURLGuard
+	// WriteChecks are the checks of each platform group's plaintext writes.
+	WriteChecks map[string]WriteCheck
 }
 
 // NewService builds the account settings service.
@@ -116,7 +128,7 @@ func NewService(deps Deps) *Service {
 		cache = nopCache{}
 	}
 	return &Service{store: deps.Store, sealer: deps.Sealer, cache: cache, activity: deps.Activity, fallback: deps.Fallback,
-		ingestBase: deps.IngestBaseDestinations}
+		ingestBase: deps.IngestBaseDestinations, writeChecks: deps.WriteChecks}
 }
 
 // WithPlatformAdmins sets the gate for platform groups. A nil reader leaves
@@ -694,4 +706,32 @@ func cacheKey(accountID uuid.UUID, group string) string {
 
 func platformCacheKey(group string) string {
 	return platformCacheKeyPrefix + group
+}
+
+// checkPlainWrites runs the group's WriteCheck on the plaintext of body, once body
+// passed the group's own validation.
+func (s *Service) checkPlainWrites(ctx context.Context, group Group, body map[string]any) error {
+	check := s.writeChecks[group.Name]
+	if check == nil {
+		return nil
+	}
+	plain := map[string]string{}
+	for key, incoming := range body {
+		definition, known := Find(group.Name, key)
+		if !known {
+			continue
+		}
+		value, err := castIn(incoming, definition)
+		if err != nil {
+			continue
+		}
+		if definition.Secret && strings.TrimSpace(value) == "" {
+			continue
+		}
+		plain[key] = value
+	}
+	if len(plain) == 0 {
+		return nil
+	}
+	return check(ctx, plain)
 }

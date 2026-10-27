@@ -3,7 +3,9 @@ package deposit
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"math/rand"
+	"os"
 	"sync"
 	"testing"
 
@@ -444,12 +446,33 @@ func TestProperty_SignatureSync_ReadsEveryHistoryWhateverTheEndpointShows(t *tes
 		t.Run(name, func(t *testing.T) {
 			for i, seed := range tc.seeds {
 				t.Run(fmt.Sprintf("%d#%d", seed, i), func(t *testing.T) {
+					skipOutsidePropertyShard(t, fmt.Sprintf("%s/%d#%d", name, seed, i))
 					missing, violations := runSignatureProperty(t, seed, tc.run)
 					assert.Zero(t, missing, "deposits never recorded")
 					assert.Zero(t, violations, "stretches or coverage claimed over unrecorded deposits")
 				})
 			}
 		})
+	}
+}
+
+// skipOutsidePropertyShard skips a property case outside SIGNATURE_PROPERTY_SHARD=k/n
+// (1 <= k <= n), so CI runs the property test in n jobs; each case falls in one shard
+// by the hash of its name. Unset runs every case.
+func skipOutsidePropertyShard(t *testing.T, caseName string) {
+	t.Helper()
+	raw := os.Getenv("SIGNATURE_PROPERTY_SHARD")
+	if raw == "" {
+		return
+	}
+	var shard, total int
+	if _, err := fmt.Sscanf(raw, "%d/%d", &shard, &total); err != nil || total < 1 || shard < 1 || shard > total {
+		t.Fatalf("SIGNATURE_PROPERTY_SHARD=%q: want k/n with 1 <= k <= n", raw)
+	}
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(caseName))
+	if int(hash.Sum32()%uint32(total)) != shard-1 { //nolint:gosec // G115: total is a small positive shard count
+		t.Skipf("case in another shard of %d", total)
 	}
 }
 

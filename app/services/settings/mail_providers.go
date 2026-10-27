@@ -1,6 +1,8 @@
 package settings
 
 import (
+	"context"
+	"fmt"
 	"strings"
 
 	"github.com/macrowallets/waas/app/policies"
@@ -22,10 +24,9 @@ const (
 )
 
 // S1.4.4 registers mail_ses, mail_mailgun, mail_resend, and mail_postmark
-// with the xip keys. The row does not select a transport from
-// mail_delivery.driver, so these groups are stored and the process mailer
-// stays the SMTP mailer. A missing row, an invalid write, or a failed read
-// of these groups cannot replace that transport.
+// with the xip keys. mail_delivery.driver selects the transport at send time:
+// mailgun, resend and postmark send over their HTTP APIs with these groups
+// (EffectiveMailProvider); ses is refused until it ships.
 
 func mailSESGroup() Group {
 	return Group{
@@ -210,4 +211,55 @@ func credentialKeyPresent(stored, writes map[string]string, key string) bool {
 	}
 	value, ok := stored[key]
 	return ok && strings.TrimSpace(value) != ""
+}
+
+// MailProvider is one HTTP mail provider's stored credentials, opened, and its
+// sender override. A blank field is not stored.
+type MailProvider struct {
+	Driver        string
+	Domain        string
+	APIKey        string
+	Endpoint      string
+	MessageStream string
+	FromAddress   string
+	FromName      string
+}
+
+// EffectiveMailProvider reads the group of driver (mailgun, resend, postmark) at
+// send time and opens its secret. A database failure is returned; a secret that
+// does not open is left blank (the send then fails for a missing credential).
+func (s *Service) EffectiveMailProvider(ctx context.Context, driver string) (MailProvider, error) {
+	if s == nil {
+		return MailProvider{}, errServiceRequired
+	}
+	if ctx == nil {
+		return MailProvider{}, fmt.Errorf("mail provider settings: context is required")
+	}
+	group, secretKey := "", ""
+	switch driver {
+	case mailDriverMailgun:
+		group, secretKey = groupMailMailgun, keyMailProviderSecret
+	case mailDriverResend:
+		group, secretKey = groupMailResend, keyMailAPIKey
+	case mailDriverPostmark:
+		group, secretKey = groupMailPostmark, keyMailToken
+	default:
+		return MailProvider{}, ErrGroupNotFound
+	}
+	stored, err := s.platformValues(ctx, group)
+	if err != nil {
+		return MailProvider{}, err
+	}
+	out := MailProvider{
+		Driver:        driver,
+		Domain:        trimmedValue(stored, keyMailDomain),
+		Endpoint:      trimmedValue(stored, keyMailEndpoint),
+		MessageStream: trimmedValue(stored, keyMailMessageStream),
+		FromAddress:   trimmedValue(stored, keyMailFromAddress),
+		FromName:      trimmedValue(stored, keyMailFromName),
+	}
+	if secret, ok := s.openSealed(stored[secretKey]); ok {
+		out.APIKey = secret
+	}
+	return out, nil
 }

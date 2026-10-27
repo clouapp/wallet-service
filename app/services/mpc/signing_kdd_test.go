@@ -21,7 +21,7 @@ import (
 const kddTestChildIndex = 25
 
 var kddKeygenOnce = sync.OnceValues(func() (*KeygenResult, error) {
-	return NewTSSService().Keygen(context.Background(), CurveSecp256k1)
+	return newTestTSSService().Keygen(context.Background(), CurveSecp256k1)
 })
 
 func kddKeys(t *testing.T) *KeygenResult {
@@ -69,7 +69,7 @@ func TestSign_With_KeyDerivationDeltaSignsForTheChildKey(t *testing.T) {
 	child := kddChild(t, keys)
 	digest := sha256.Sum256([]byte("child sweep"))
 
-	der, err := NewTSSService().Sign(context.Background(), CurveSecp256k1, keys.ShareA, keys.ShareB, SignInputs{
+	der, err := newTestTSSService().Sign(context.Background(), CurveSecp256k1, keys.ShareA, keys.ShareB, SignInputs{
 		TxHashes:           [][]byte{digest[:]},
 		KeyDerivationDelta: child.Tweak,
 		ExpectedPublicKey:  child.PublicKey,
@@ -89,7 +89,7 @@ func TestSign_Without_DeltaStillSignsForTheWalletKey(t *testing.T) {
 	keys := kddKeys(t)
 	digest := sha256.Sum256([]byte("base withdrawal"))
 
-	der, err := NewTSSService().Sign(context.Background(), CurveSecp256k1, keys.ShareA, keys.ShareB, SignInputs{
+	der, err := newTestTSSService().Sign(context.Background(), CurveSecp256k1, keys.ShareA, keys.ShareB, SignInputs{
 		TxHashes:          [][]byte{digest[:]},
 		ExpectedPublicKey: keys.CombinedPubKey,
 	})
@@ -108,7 +108,7 @@ func TestSign_Does_NotMutateTheCallersShares(t *testing.T) {
 	shareB := append([]byte(nil), keys.ShareB...)
 	digest := sha256.Sum256([]byte("no mutation"))
 
-	if _, err := NewTSSService().Sign(context.Background(), CurveSecp256k1, shareA, shareB, SignInputs{
+	if _, err := newTestTSSService().Sign(context.Background(), CurveSecp256k1, shareA, shareB, SignInputs{
 		TxHashes: [][]byte{digest[:]}, KeyDerivationDelta: child.Tweak, ExpectedPublicKey: child.PublicKey,
 	}); err != nil {
 		t.Fatal(err)
@@ -163,7 +163,7 @@ func TestApply_KeyDerivationDelta_RejectsMismatchedInputs(t *testing.T) {
 
 func TestApply_KeyDerivationDelta_RejectsSharesOfDifferentWallets(t *testing.T) {
 	keys := kddKeys(t)
-	other, err := NewTSSService().Keygen(context.Background(), CurveSecp256k1)
+	other, err := newTestTSSService().Keygen(context.Background(), CurveSecp256k1)
 	if err != nil {
 		t.Fatal(err)
 	}

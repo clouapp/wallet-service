@@ -16,6 +16,7 @@ import (
 	mpcpkg "github.com/macrowallets/waas/app/services/mpc"
 	walletsvc "github.com/macrowallets/waas/app/services/wallet"
 	"github.com/macrowallets/waas/pkg/types"
+	"github.com/macrowallets/waas/tests/tssfixture"
 )
 
 const (
@@ -27,7 +28,7 @@ const (
 // secp256k1TestKeys runs one real 2-of-2 ECDSA keygen for the package: the ceremony
 // is slow and the tests only need some real shares.
 var secp256k1TestKeys = sync.OnceValues(func() (*mpcpkg.KeygenResult, error) {
-	return mpcpkg.NewTSSService().Keygen(context.Background(), mpcpkg.CurveSecp256k1)
+	return mpcpkg.NewTSSServiceWithPreParamsFrom(tssfixture.Generator()).Keygen(context.Background(), mpcpkg.CurveSecp256k1)
 })
 
 func mustSecp256k1Keys(t *testing.T) *mpcpkg.KeygenResult {
@@ -41,7 +42,7 @@ func mustSecp256k1Keys(t *testing.T) *mpcpkg.KeygenResult {
 
 func mustEd25519Keys(t *testing.T) *mpcpkg.KeygenResult {
 	t.Helper()
-	keys, err := mpcpkg.NewTSSService().Keygen(context.Background(), mpcpkg.CurveEd25519)
+	keys, err := mpcpkg.NewTSSServiceWithPreParamsFrom(tssfixture.Generator()).Keygen(context.Background(), mpcpkg.CurveEd25519)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +187,7 @@ func newWalletFixture(t *testing.T, keys *mpcpkg.KeygenResult, curve mpcpkg.Curv
 	addressRepo := &fixtureAddressRepo{}
 	issuer := walletsvc.NewService(walletsvc.Deps{
 		Registry:  registryFor(network),
-		MPC:       mpcpkg.NewTSSService(),
+		MPC:       mpcpkg.NewTSSServiceWithPreParamsFrom(tssfixture.Generator()),
 		Secrets:   fixtureSecretStore{shareB: keys.ShareB},
 		Wallets:   walletRepo,
 		Addresses: addressRepo,
@@ -289,7 +290,7 @@ func (s *fakeStore) FetchShareB(_ context.Context, wallet models.Wallet) ([]byte
 
 func (s *fakeStore) service(t *testing.T) *Service {
 	t.Helper()
-	service, err := NewService(Dependencies{Wallets: s, Addresses: s, Networks: s, ShareB: s, MPC: mpcpkg.NewTSSService()})
+	service, err := NewService(Dependencies{Wallets: s, Addresses: s, Networks: s, ShareB: s, MPC: mpcpkg.NewTSSServiceWithPreParamsFrom(tssfixture.Generator())})
 	if err != nil {
 		t.Fatal(err)
 	}

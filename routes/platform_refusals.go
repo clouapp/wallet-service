@@ -19,6 +19,7 @@ var platformRefusals = map[string]error{
 	"PUT /v1/platform/features/{scope}/{id}/{feature}": featuressvc.ErrPlatformForbidden,
 	"PUT /v1/platform/features/{scope}/{id}":           featuressvc.ErrPlatformForbidden,
 
+	"GET /v1/platform/chains":                                       chainsvc.ErrPlatformForbidden,
 	"PATCH /v1/platform/chains/{chainId}/rpc":                       chainsvc.ErrPlatformForbidden,
 	"PATCH /v1/platform/chains/{chainId}":                           chainsvc.ErrPlatformForbidden,
 	"GET /v1/platform/chains/{chainId}/rpc-endpoints":               chainsvc.ErrPlatformForbidden,

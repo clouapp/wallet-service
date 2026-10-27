@@ -1,0 +1,55 @@
+name: Deploy
+
+# A merge (push) to main deploys production; to dev, the dev host. CI runs first and
+# gates the deploy. The hosts are Forge servers that run the binary as daemons
+# (scripts/deploy-host.sh, docs/AWS_DEV_STACK.md); every setting is a repository
+# variable or secret named PROD_* or DEV_*.
+on:
+  push:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Deploy to ${{ github.ref_name == 'main' && 'production' || 'dev' }}
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # One deploy per target at a time; a newer push waits instead of cancelling one midway.
+    concurrency:
+      group: deploy-${{ github.ref_name }}
+      cancel-in-progress: false
+    env:
+      SERVER_SSH: ${{ github.ref_name == 'main' && vars.PROD_SERVER_SSH || vars.DEV_SERVER_SSH }}
+      SITE_DIR: ${{ github.ref_name == 'main' && vars.PROD_BACKEND_SITE_DIR || vars.DEV_BACKEND_SITE_DIR }}
+      FORGE_ORG: ${{ vars.FORGE_ORG }}
+      FORGE_SERVER: ${{ github.ref_name == 'main' && vars.PROD_FORGE_SERVER || vars.DEV_FORGE_SERVER }}
+      DAEMON_IDS: ${{ github.ref_name == 'main' && vars.PROD_BACKEND_DAEMON_IDS || vars.DEV_BACKEND_DAEMON_IDS }}
+      GOARCH: ${{ github.ref_name == 'main' && vars.PROD_GOARCH || vars.DEV_GOARCH }}
+      HEALTH_URL: http://127.0.0.1:2002/health
+      KEEP_RELEASES: 5
+      FORGE_TOKEN: ${{ secrets.FORGE_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: SSH key and host key
+        env:
+          SSH_PRIVATE_KEY: ${{ github.ref_name == 'main' && secrets.PROD_SSH_PRIVATE_KEY || secrets.DEV_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ github.ref_name == 'main' && secrets.PROD_SSH_KNOWN_HOSTS || secrets.DEV_SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+          echo "SSH_KEY=$HOME/.ssh/deploy_key" >> "$GITHUB_ENV"
+
+      - name: Deploy ${{ github.sha }}
+        run: scripts/deploy-host.sh ${{ github.ref_name == 'main' && 'prod' || 'dev' }} "$GITHUB_SHA"

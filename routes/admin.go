@@ -222,6 +222,8 @@ func RegisterAdminRoutes() {
 		router.Put("/features/{scope}/{id}/{feature}", platformFeaturesCtrl.UpdateScopeFeature)
 		router.Put("/features/{scope}/{id}", platformFeaturesCtrl.UpdateScope)
 		// S1.4.7: chains.view and chains.update. A platform_admins row is the gate.
+		// Every chain, whatever the account environment (GET /v1/chains follows it).
+		router.Get("/chains", platformChainsCtrl.Index)
 		router.Patch("/chains/{chainId}/rpc", platformChainsCtrl.UpdateRPC)
 		// The ordered endpoint list of a chain: rpc_url first, then the fallbacks.
 		// Same gate as the rpc_url route; no URL is ever returned.

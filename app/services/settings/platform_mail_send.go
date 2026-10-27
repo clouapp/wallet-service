@@ -2,7 +2,9 @@ package settings
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/google/uuid"
 )
@@ -46,6 +48,14 @@ func (s *Service) SendPlatformMailTest(ctx context.Context, actorID uuid.UUID, r
 		return fmt.Errorf("platform settings: recipient is required")
 	}
 	if err := s.testMail.Send(ctx, to); err != nil {
+		// Only a reason the transport marks safe is logged: an smtp error can
+		// carry the host or the password.
+		var safe interface{ SafeReason() string }
+		if errors.As(err, &safe) {
+			slog.Warn("platform mail test failed", "reason", safe.SafeReason())
+		} else {
+			slog.Warn("platform mail test failed", "reason", "the transport refused or did not answer (smtp error not logged)")
+		}
 		return ErrPlatformTestMail
 	}
 	return nil

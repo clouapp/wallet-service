@@ -109,9 +109,25 @@ func (s *Service) SetScanAlertThresholds(global ScanAlertThresholds, perChain fu
 	s.chainScanAlerts = perChain
 }
 
+// SetScanAlertSource reads, on every pass, stored global thresholds that win, field
+// by field, over the global ones SetScanAlertThresholds set (the deposit_scan
+// platform setting); a chain's own thresholds still win over both.
+func (s *Service) SetScanAlertSource(source func(ctx context.Context) ScanAlertThresholds) {
+	s.scanAlertSource = source
+}
+
 // scanAlertThresholdsFor resolves the thresholds of chainID.
 func (s *Service) scanAlertThresholdsFor(ctx context.Context, chainID string) ScanAlertThresholds {
 	resolved := s.scanAlerts
+	if s.scanAlertSource != nil && ctx != nil {
+		stored := s.scanAlertSource(ctx)
+		if stored.LagBlocks > 0 {
+			resolved.LagBlocks = stored.LagBlocks
+		}
+		if stored.StaleAfter > 0 {
+			resolved.StaleAfter = stored.StaleAfter
+		}
+	}
 	if s.chainScanAlerts != nil {
 		chain := s.chainScanAlerts(chainID)
 		if chain.LagBlocks > 0 {

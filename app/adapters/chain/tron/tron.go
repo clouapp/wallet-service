@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/macrowallets/waas/app/adapters/chain/rpc"
@@ -78,6 +79,8 @@ type TronLive struct {
 	tokensErr    error
 	now          func() time.Time
 	pollInterval time.Duration
+	// apiKey is the TronGrid key in use: cfg.APIKey until SetAPIKey replaces it.
+	apiKey atomic.Pointer[string]
 }
 
 var (
@@ -98,6 +101,7 @@ func NewTronLive(cfg TronConfig) *TronLive {
 		now:          time.Now,
 		pollInterval: tronBlockInterval,
 	}
+	adapter.SetAPIKey(cfg.APIKey)
 	adapter.endpoints = rpc.NewEndpoints(rpc.EndpointsDeps{
 		URL:       cfg.RPCURL,
 		Fallbacks: cfg.RPCFallbacks,
@@ -107,6 +111,24 @@ func NewTronLive(cfg TronConfig) *TronLive {
 		Health:    cfg.RPCHealth,
 	})
 	return adapter
+}
+
+// SetAPIKey replaces the TronGrid key sent to the primary endpoint from the next
+// call on (blank: none). It is never logged.
+func (a *TronLive) SetAPIKey(key string) {
+	if a == nil {
+		return
+	}
+	key = strings.TrimSpace(key)
+	a.apiKey.Store(&key)
+}
+
+// currentAPIKey is the key SetAPIKey last stored.
+func (a *TronLive) currentAPIKey() string {
+	if key := a.apiKey.Load(); key != nil {
+		return *key
+	}
+	return ""
 }
 
 // Endpoint is the URL of the primary endpoint. Callers must not log it.

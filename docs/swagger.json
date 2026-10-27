@@ -2569,6 +2569,43 @@
                 }
             }
         },
+        "/platform/chains": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Every chain row, active or not, mainnet and testnet, in display order: identity, status, sweep thresholds, required confirmations and finality. Unlike GET /v1/chains it does not follow an account's environment. A caller that is not a platform admin is 403. The RPC URL is not returned (GET /v1/platform/chains/{chainId}/rpc-endpoints lists the endpoints by host).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Platform Chains"
+                ],
+                "summary": "List every chain for the platform",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/chains.PlatformChainList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
         "/platform/chains/{chainId}": {
             "patch": {
                 "security": [
@@ -2828,7 +2865,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Body {\"url\", \"position\"}: an http(s) URL or env:NAME, at the end of the list or at position (1 makes it the primary and moves the others down). The endpoint is first asked which network it serves (eth_chainId on EVM, getGenesisHash on Solana, block 0 on TRON, server_info network_id on XRP); one on another network, one that does not answer, a URL already in the list or a chain whose adapter does not use the list (the Bitcoin family) is 422 and nothing is written. The URL is sealed and never returned. The process that answers uses the new list at once; the others load it on restart. An unknown chain is 404 for a platform admin.",
+                "description": "Body {\"url\", \"position\"}: an http(s) URL or env:NAME, at the end of the list or at position (1 makes it the primary and moves the others down). The endpoint is first asked which network it serves (eth_chainId on EVM, getGenesisHash on Solana, block 0 on TRON, server_info network_id on XRP); one on another network, one that does not answer, a URL already in the list or a chain whose adapter does not use the list (the Bitcoin family) is 422 and nothing is written. The URL is sealed and never returned. The process that answers uses the new list at once; every process running the local workers reloads it within LOCAL_CHAIN_SYNC_INTERVAL_SECONDS (30 s). An unknown chain is 404 for a platform admin.",
                 "consumes": [
                     "application/json"
                 ],
@@ -7219,6 +7256,61 @@
                 },
                 "wallet": {},
                 "wallet_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "chains.PlatformChainList": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/chains.PlatformChainView"
+                    }
+                }
+            }
+        },
+        "chains.PlatformChainView": {
+            "type": "object",
+            "properties": {
+                "adapter_type": {
+                    "type": "string"
+                },
+                "display_order": {
+                    "type": "integer"
+                },
+                "dust_threshold_native_raw": {
+                    "type": "string"
+                },
+                "dust_threshold_usd": {
+                    "type": "string"
+                },
+                "finality": {
+                    "type": "string"
+                },
+                "gas_readiness_threshold_raw": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_testnet": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "native_symbol": {
+                    "type": "string"
+                },
+                "network_id": {
+                    "type": "integer"
+                },
+                "required_confirmations": {
+                    "type": "integer"
+                },
+                "status": {
                     "type": "string"
                 }
             }
