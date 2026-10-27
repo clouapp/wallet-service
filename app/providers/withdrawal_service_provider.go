@@ -25,6 +25,7 @@ import (
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalevents"
 	"github.com/macrowallets/waas/app/services/withdrawalrecords"
+	"github.com/macrowallets/waas/app/services/withdrawrecoveryflow"
 )
 
 // WithdrawalServiceProvider binds the transaction and withdrawal repositories
@@ -34,6 +35,10 @@ import (
 type WithdrawalServiceProvider struct{}
 
 func (p *WithdrawalServiceProvider) Register(app foundation.Application) {
+	app.Singleton((*repositories.WithdrawalRecoveryRepository)(nil), func(foundation.Application) (any, error) {
+		return repositories.NewWithdrawalRecoveryRepository(nil), nil
+	})
+	app.Singleton((*withdrawrecoveryflow.Flow)(nil), func(app foundation.Application) (any, error) { return newWithdrawalRecoveryFlow(app), nil })
 	app.Singleton((*repositories.TransactionRepository)(nil), func(foundation.Application) (any, error) {
 		return repositories.NewTransactionRepository(nil), nil
 	})
@@ -94,7 +99,7 @@ func (p *WithdrawalServiceProvider) Boot(foundation.Application) {}
 // newSweepService signs and broadcasts consolidations and withdrawals: MPC
 // signing with share B from Secrets Manager, the account sweep limits from
 // the settings store, and the sweep-enabled flag.
-func newSweepService(app foundation.Application) (sweep.Service, error) {
+func newSweepService(app foundation.Application, extraGates ...func(context.Context, uuid.UUID) error) (sweep.Service, error) {
 	registry, err := resolve[*chainpkg.Registry](app)
 	if err != nil {
 		return nil, err
@@ -155,7 +160,17 @@ func newSweepService(app foundation.Application) (sweep.Service, error) {
 		SweepLimits:  accountSettings.EffectiveSweepLimits,
 		Chains:       chains,
 		Flags: func(ctx context.Context, accountID uuid.UUID) error {
-			return flags.Gate(ctx, accountID, features.FlagSweepEnabled, features.CodeSweepPaused)
+			if err := flags.Gate(ctx, accountID, features.FlagSweepEnabled, features.CodeSweepPaused); err != nil {
+				return err
+			}
+			for _, gate := range extraGates {
+				if gate != nil {
+					if err := gate(ctx, accountID); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
 		},
 		GasDefaults:     nil,
 		TokenPricer:     prices,

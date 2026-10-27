@@ -12,6 +12,7 @@ import (
 	exttransactions "github.com/macrowallets/waas/app/http/controllers/external/transactions"
 	extwallets "github.com/macrowallets/waas/app/http/controllers/external/wallets"
 	extwebhooks "github.com/macrowallets/waas/app/http/controllers/external/webhooks"
+	extrecovery "github.com/macrowallets/waas/app/http/controllers/external/withdrawalrecovery"
 	extwithdrawals "github.com/macrowallets/waas/app/http/controllers/external/withdrawals"
 	"github.com/macrowallets/waas/app/http/middleware"
 	accountsvc "github.com/macrowallets/waas/app/services/account"
@@ -23,6 +24,7 @@ import (
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/withdraw"
 	"github.com/macrowallets/waas/app/services/withdrawalrecords"
+	"github.com/macrowallets/waas/app/services/withdrawrecoveryflow"
 )
 
 // RegisterExternalAPI registers Bearer API-token routes under /api/v1.
@@ -40,6 +42,7 @@ func RegisterExternalAPI() {
 	addressCtrl := newExternalAddressesController()
 	sweepCtrl := newExternalSweepController()
 	withdrawalCtrl := newExternalWithdrawalsController()
+	recoveryCtrl := extrecovery.New(container.MustMake[*withdrawrecoveryflow.Flow]())
 	feeEstimateCtrl := newFeeEstimateController()
 	withdrawalsEnabled := middleware.FeatureEnabled(container.MustMake[*featuressvc.Service](),
 		featuressvc.FlagWithdrawalsEnabled, featuressvc.CodeWithdrawalsPaused, "create_wallet_withdrawal")
@@ -80,6 +83,11 @@ func RegisterExternalAPI() {
 			r.Get("/fee-estimate", feeEstimateCtrl.Show)
 			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWithdrawalsCreate), withdrawalsEnabled).Post("/withdrawals", withdrawalCtrl.Store)
 			r.Get("/withdrawals/{idempotencyKey}", withdrawalCtrl.ShowByKey)
+			recoveryScope := middleware.APIScope(scopeLookups, middleware.PermWithdrawalsCreate)
+			r.Middleware(recoveryScope).Post("/withdrawals/{idempotencyKey}/recovery/inspect", recoveryCtrl.Inspect)
+			r.Middleware(recoveryScope).Get("/withdrawals/{idempotencyKey}/recovery", recoveryCtrl.Show)
+			r.Middleware(recoveryScope, withdrawalsEnabled, sweepEnabled).Post("/withdrawals/{idempotencyKey}/recovery/apply", recoveryCtrl.Apply)
+			r.Middleware(recoveryScope, withdrawalsEnabled, sweepEnabled).Post("/withdrawals/{idempotencyKey}/recovery/resume", recoveryCtrl.Resume)
 		})
 
 		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermTransactionsRead)).Group(func(r route.Router) {

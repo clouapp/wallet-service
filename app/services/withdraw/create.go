@@ -318,6 +318,19 @@ func (s *Service) persistCreate(ctx context.Context, in CreateInput, withdrawalI
 			Resolved:       resolved,
 		}, nil
 	}
+	if existing != nil && existing.Status == models.WithdrawalStatusFailed && existing.TransactionID != nil {
+		if guard, ok := s.createRows.(interface {
+			RequiresRefusedRecovery(context.Context, uuid.UUID, uuid.UUID) (bool, error)
+		}); ok {
+			required, err := guard.RequiresRefusedRecovery(ctx, existing.ID, in.Wallet.ID)
+			if err != nil {
+				return nil, &CreateRowError{Endpoint: "check_refused_withdrawal_recovery", Err: err}
+			}
+			if required {
+				return nil, &CreateRefusal{Status: CreateStatusUnprocessable, Message: "withdrawal requires explicit same-operation recovery"}
+			}
+		}
+	}
 	w := existing
 	if w == nil {
 		w = &models.Withdrawal{
