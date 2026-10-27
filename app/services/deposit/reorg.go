@@ -228,7 +228,7 @@ func (s *Service) hashlessDepositAllowsConfirmation(ctx context.Context, pass *r
 // scanner's.
 func (s *Service) rescanReorganized(ctx context.Context, pass *reorgPass, from uint64) {
 	chainID := pass.adapter.ID()
-	checkpoint, found, err := s.loadCheckpoint(ctx, chainID)
+	checkpoint, found, err := s.reorgScanCheckpoint(ctx, chainID)
 	if err != nil || !found || checkpoint < from {
 		return
 	}

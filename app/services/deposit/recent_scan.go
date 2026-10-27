@@ -33,6 +33,44 @@ func (s *Service) SetRecentScanPolicy(chains []string, initialWindow uint64) err
 
 func recentCheckpointKey(chainID string) string { return recentCheckpointPrefix + chainID }
 
+// A recent scan plus backfill can outlive the fixed block-scan lock TTL on a
+// throttled RPC. Renew the shared chain lock and cancel work if its ownership is
+// lost, using the same hold as the signature scanner.
+func (s *Service) lockScanCycle(ctx context.Context, chainID string) (context.Context, func(), error) {
+	if _, enabled := s.recentChains[chainID]; !enabled {
+		release, err := s.lockChain(chainID)
+		return ctx, release, err
+	}
+	hold, err := s.holdChain(chainID)
+	if err != nil {
+		return ctx, nil, err
+	}
+	cycleCtx, cancel := context.WithCancel(ctx)
+	go func() {
+		select {
+		case <-hold.Lost():
+			cancel()
+		case <-cycleCtx.Done():
+		}
+	}()
+	return cycleCtx, func() { cancel(); hold.Release() }, nil
+}
+
+// reorgScanCheckpoint includes blocks already read by the recent scanner, even
+// after that policy is disabled. A replacement payment in their new fork must be
+// rescanned now rather than wait for historical backfill to reach it.
+func (s *Service) reorgScanCheckpoint(ctx context.Context, chainID string) (uint64, bool, error) {
+	historical, found, err := s.loadCheckpoint(ctx, chainID)
+	if err != nil {
+		return 0, false, err
+	}
+	recent, recentFound, err := s.loadCheckpoint(ctx, recentCheckpointKey(chainID))
+	if err != nil {
+		return 0, false, err
+	}
+	return max(historical, recent), found || recentFound, nil
+}
+
 // scanRecentBlocks runs under the same chain lock as backfill. It returns active
 // once a recent cursor exists, and caughtUp only when that cursor covers the sampled
 // head. Backfill remains the authority for historical coverage and health lag.

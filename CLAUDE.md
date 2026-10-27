@@ -407,6 +407,11 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   at the head; a Redis error with no row, or a database error, skips the cycle and moves
   nothing. — guarded by `app/services/deposit/checkpoint_test.go` and
   `TestDeposit_Scan_CheckpointRepositorySuite`.
+- Opt-in recent scanning (`DEPOSIT_SCAN_RECENT_CHAINS`) preserves the historical
+  cursor and adds a durable `recent:<chain>` cursor; neither is reseeded on restart.
+  Historical health lag remains visible, operator resets clear both cursors, and
+  reorganization rescans cover either one's already-read blocks. Details:
+  `docs/deposit-recent-scan.md`; guarded by `TestService_RecentScan_*`.
 - A checkpoint is a height of the network it was written on. A cycle whose checkpoint is
   ahead of the head by at most 1000 blocks (`checkpointAheadTolerance`: a load-balanced RPC
   answering from a lagging node) waits quietly; further ahead (the RPC now serves another

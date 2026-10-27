@@ -247,7 +247,7 @@ func (s *Service) scanLatestBlocks(ctx context.Context, chainID string) error {
 		return ErrSignatureMode
 	}
 
-	release, err := s.lockChain(chainID)
+	ctx, release, err := s.lockScanCycle(ctx, chainID)
 	if err != nil {
 		return err
 	}
