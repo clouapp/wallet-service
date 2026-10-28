@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/goravel/framework/support/carbon"
 
-	"github.com/macrowallets/waas/app/http/resources/dashboard/chains"
+	"github.com/macrowallets/waas/app/http/resources/chains"
 	"github.com/macrowallets/waas/app/models"
 )
 

@@ -77,7 +77,7 @@ func (c *ChainController) Tokens(ctx http.Context) http.Response {
 		return mapError(ctx, err, "fetch tokens")
 	}
 
-	return ctx.Response().Success().Json(http.Json{"data": chainresources.TokensFrom(tokens)})
+	return ctx.Response().Success().Json(http.Json{"data": chainresource.TokensFrom(tokens)})
 }
 
 // Resources returns the resources (explorers, faucets, docs) of a chain.

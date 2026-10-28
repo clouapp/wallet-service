@@ -61,6 +61,9 @@ func (s *Service) SetCheckpoint(ctx context.Context, chainID string, block uint6
 	if !apply {
 		return move, nil
 	}
+	if err := s.dropRecentCheckpoint(ctx, chainID); err != nil {
+		return move, err
+	}
 	if err := s.clearCachedCheckpoint(ctx, chainID); err != nil {
 		return move, err
 	}
@@ -105,6 +108,9 @@ func (s *Service) DropCheckpoint(ctx context.Context, chainID string) (uint64, b
 	defer release()
 	stored, cached, err := s.checkpointCopies(ctx, chainID)
 	if err != nil {
+		return 0, false, err
+	}
+	if err := s.dropRecentCheckpoint(ctx, chainID); err != nil {
 		return 0, false, err
 	}
 	if err := s.clearCachedCheckpoint(ctx, chainID); err != nil {

@@ -7,7 +7,7 @@ import (
 	"github.com/macrowallets/waas/app/models"
 )
 
-// Token is the chain token the dashboard reads. Field order and tags
+// Token is the chain token both surfaces read. Field order and tags
 // match the model wire, including embedded timestamps. A nil page stays nil;
 // an empty page stays empty. A non-nil empty icon URL stays "".
 type Token struct {

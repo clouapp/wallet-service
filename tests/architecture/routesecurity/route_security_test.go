@@ -107,6 +107,7 @@ func machineKey(chain string) routeSecurity {
 var routeTable = map[string]routeSecurity{
 	"GET|HEAD /api/v1/addresses/{address}":                             api(chainAPI),
 	"GET|HEAD /api/v1/chains":                                          api(chainAPI),
+	"GET|HEAD /api/v1/chains/{chainId}/tokens":                         api(chainAPI),
 	"GET|HEAD /api/v1/transactions":                                    api(chainTransactions),
 	"GET|HEAD /api/v1/transactions/{id}":                               api(chainTransactions),
 	"GET|HEAD /api/v1/users/{external_id}/addresses":                   api(chainAPI),

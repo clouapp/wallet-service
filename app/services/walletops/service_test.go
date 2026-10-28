@@ -17,11 +17,12 @@ import (
 )
 
 type fakeWallets struct {
-	created      *walletCall
-	createResult *wallet.CreateWalletResult
-	createErr    error
-	activated    string
-	activateErr  error
+	externalCreated bool
+	created         *walletCall
+	createResult    *wallet.CreateWalletResult
+	createErr       error
+	activated       string
+	activateErr     error
 
 	generated   *models.Address
 	generateErr error
@@ -50,6 +51,11 @@ type walletCall struct {
 func (f *fakeWallets) CreateWallet(_ context.Context, accountID uuid.UUID, chainID, label, passphrase string) (*wallet.CreateWalletResult, error) {
 	f.created = &walletCall{accountID, chainID, label, passphrase}
 	return f.createResult, f.createErr
+}
+
+func (f *fakeWallets) CreateExternalWallet(ctx context.Context, accountID uuid.UUID, chainID, label, passphrase string) (*wallet.CreateWalletResult, error) {
+	f.externalCreated = true
+	return f.CreateWallet(ctx, accountID, chainID, label, passphrase)
 }
 
 func (f *fakeWallets) ActivateWallet(_ context.Context, walletID uuid.UUID, code string) (*models.Wallet, error) {
@@ -377,4 +383,37 @@ func TestActivateWallet(t *testing.T) {
 
 	err := newService(&fakeWallets{activateErr: wallet.ErrInvalidActivationCode}, &fakeCache{}, fakeChainCatalog{}, nil).ActivateWallet(context.Background(), id, "000000")
 	assert.ErrorIs(t, err, wallet.ErrInvalidActivationCode)
+}
+
+func TestCreateExternalWallet_EnforcesEnvironmentBeforeHeadlessCreation(t *testing.T) {
+	input := walletops.CreateWalletInput{AccountID: uuid.New(), Environment: models.EnvironmentTest, Chain: "eth", Label: "headless", Passphrase: "synthetic-passphrase"}
+	for _, name := range []string{"matching", "mainnet", "missing", "outage", "unknown environment", "inactive"} {
+		t.Run(name, func(t *testing.T) {
+			wallets := &fakeWallets{createResult: &wallet.CreateWalletResult{Wallet: &models.Wallet{Status: "active"}}}
+			catalog := fakeChainCatalog{chain: &models.Chain{ID: "eth", Status: models.StatusActive, IsTestnet: true}}
+			selected := input
+			switch name {
+			case "mainnet":
+				catalog.chain.IsTestnet = false
+			case "missing":
+				catalog.chain = nil
+				catalog.err = models.ErrRepositoryNotFound
+			case "outage":
+				catalog.chain = nil
+				catalog.err = errors.New("catalogue unavailable")
+			case "unknown environment":
+				selected.Environment = ""
+			case "inactive":
+				catalog.chain.Status = "disabled"
+			}
+			_, err := newService(wallets, &fakeCache{}, catalog, nil).CreateExternalWallet(context.Background(), selected)
+			if name == "matching" {
+				require.NoError(t, err)
+				require.True(t, wallets.externalCreated)
+			} else {
+				require.Error(t, err)
+				require.False(t, wallets.externalCreated)
+			}
+		})
+	}
 }

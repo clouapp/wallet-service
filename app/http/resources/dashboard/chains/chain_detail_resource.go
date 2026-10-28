@@ -9,9 +9,9 @@ import (
 // the order the JSON object has always been written (sorted by key). A list the
 // service could not read is null.
 type ChainDetail struct {
-	Chain     *chainresource.Chain `json:"chain"`
-	Resources []ChainResource      `json:"resources"`
-	Tokens    []Token              `json:"tokens"`
+	Chain     *chainresource.Chain  `json:"chain"`
+	Resources []ChainResource       `json:"resources"`
+	Tokens    []chainresource.Token `json:"tokens"`
 }
 
 // NewChainDetail projects a chain with its tokens and resources.
@@ -19,6 +19,6 @@ func NewChainDetail(detail chainsvc.Detail) ChainDetail {
 	return ChainDetail{
 		Chain:     chainresource.ChainPtr(detail.Chain),
 		Resources: ChainResourcesFrom(detail.Resources),
-		Tokens:    TokensFrom(detail.Tokens),
+		Tokens:    chainresource.TokensFrom(detail.Tokens),
 	}
 }
