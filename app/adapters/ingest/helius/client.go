@@ -113,7 +113,8 @@ func (h *HeliusProvider) CreateWebhook(ctx context.Context, cfg providers.Provid
 		}
 		return nil, chain.Unavailable(fmt.Errorf("helius: create webhook call: %w", err))
 	}
-	if status != httpclient.StatusOK {
+	// Helius answers a created webhook with 201 (observed on mainnet, 2026-10-28).
+	if status != httpclient.StatusOK && status != httpclient.StatusCreated {
 		return nil, chain.FromProviderHTTP(status, string(respBody))
 	}
 

@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/egress"
 	"github.com/macrowallets/waas/pkg/pgerr"
@@ -358,6 +359,12 @@ func (s *Service) create(ctx context.Context, creator Creator, plan Plan, addres
 		ChainID: plan.ChainID, Network: plan.ProviderNetwork, WebhookURL: plan.WebhookURL, Addresses: addresses,
 	})
 	if err != nil {
+		// The provider's own answer (its HTTP status and message) is what an operator
+		// acts on: a sentinel such as "provider error" alone says nothing about a plan
+		// limit, a refused URL or a key without the webhook scope.
+		if cause := chain.CauseText(err); cause != "" {
+			return plan, fmt.Errorf("create the %s webhook: %w (%s)", plan.Provider, err, cause)
+		}
 		return plan, fmt.Errorf("create the %s webhook: %w", plan.Provider, err)
 	}
 	row, err := s.row(plan, webhook)

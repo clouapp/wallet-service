@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/egress"
 	"github.com/macrowallets/waas/tests/fakedns"
@@ -266,6 +267,20 @@ func TestSubscribe_ExplainsEveryMissingSettingAndCallsNothing(t *testing.T) {
 		assert.Empty(t, f.creator.configs)
 		assert.Empty(t, f.store.rows)
 	}
+}
+
+// A webhook the provider refuses names the provider's own answer (its status and
+// message), which is what the operator acts on, and stores nothing.
+func TestSubscribe_Apply_NamesTheProvidersAnswerWhenItRefusesTheWebhook(t *testing.T) {
+	f := newFixture(t, nil)
+	f.creator.createErr = chain.FromProviderHTTP(403, `{"error":"webhook limit reached for this plan"}`)
+
+	_, err := subscribe(f, "alchemy", "teth", true)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "upstream HTTP 403")
+	assert.Contains(t, err.Error(), "webhook limit reached for this plan")
+	assert.Empty(t, f.store.rows)
 }
 
 func TestSubscribe_NamesTheKeyOfEachProvider(t *testing.T) {
