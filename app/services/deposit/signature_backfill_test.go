@@ -50,6 +50,13 @@ func (c *stepClock) Now() time.Time {
 	return now
 }
 
+// advance moves the clock by d at once (time spent waiting on a provider).
+func (c *stepClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
 func bobHistory(f *signatureFixture, from, to uint64) {
 	for slot := from; slot <= to; slot++ {
 		f.chain.history(sigBob, f.chain.tx(fmt.Sprintf("sig-%d", slot), slot, lamports(sigBob, 1+int64(slot%1000), 1)))
@@ -311,6 +318,9 @@ func TestSync_Signatures_StopsAnAccountAtItsTimeBudgetAndGoesOnNextCycle(t *test
 	f := newSignatureFixture(t)
 	clock := &stepClock{now: activityNow, step: 30 * time.Second}
 	f.svc.now = clock.Now
+	// The clock moves on every read, whoever reads it: one owner at a time, so the
+	// reads of alice's accounts do not spend bob's budget.
+	f.settings.Concurrency = 1
 	bobHistory(f, 1001, 1040)
 
 	first := f.sync(t)

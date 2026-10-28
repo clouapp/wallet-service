@@ -185,9 +185,13 @@ func (s *Service) SyncSignaturesWhenDue(ctx context.Context, chainID string) (su
 	return summary, true, err
 }
 
-// syncSignatures is one cycle under the chain's scan lock, whose accounts start and
-// read until deadline; the wallets whose movements it confirmed are added to
-// confirmed.
+// syncSignatures is one cycle under the chain's scan lock, whose owners start until
+// deadline; the wallets whose movements it confirmed are added to confirmed. The
+// owners are read at once, settings.Concurrency at a time, each by one goroutine that
+// lists its accounts and reads them in turn: the listing is part of an owner's read,
+// so the cycle's budget bounds it like the reads, and an owner the budget leaves out
+// is read first by a later cycle (signatureProgress). What every cycle read adds up:
+// the covered slot comes from the progress, not from this cycle alone.
 func (s *Service) syncSignatures(ctx context.Context, chainID string, adapter types.Chain, reader chain.SignatureReader, settings SignatureSyncSettings, hold *cacheguard.Hold, deadline time.Time, confirmed *walletSet) (SignatureSyncSummary, error) {
 	var summary SignatureSyncSummary
 	// Read before the addresses: an address created later received nothing up to it.
@@ -196,7 +200,8 @@ func (s *Service) syncSignatures(ctx context.Context, chainID string, adapter ty
 		return summary, fmt.Errorf("deposit signature sync of %s: head: %w", chainID, err)
 	}
 	summary.ListedHead = listedAt
-	owners, err := s.addressRepo.PluckActiveAddresses(ctx, chainID)
+	headReadAt := s.now()
+	owners, err := s.addressRepo.ActiveAddressCreations(ctx, chainID)
 	if err != nil {
 		return summary, fmt.Errorf("deposit signature sync of %s: %w", chainID, err)
 	}
@@ -212,56 +217,41 @@ func (s *Service) syncSignatures(ctx context.Context, chainID string, adapter ty
 	for _, row := range rows {
 		cursors[row.Account] = row
 	}
+	created := make(map[string]time.Time, len(owners))
+	addresses := make([]string, 0, len(owners))
+	for _, owner := range owners {
+		created[owner.Address] = owner.CreatedAt
+		addresses = append(addresses, owner.Address)
+	}
 
+	progress := s.progressOf(chainID)
 	cycle := &signatureCycle{svc: s, chainID: chainID, adapter: adapter, reader: reader, settings: settings, floor: floor,
-		hold: hold, deadline: deadline,
-		transactions: map[string]*signatureOutcome{}, hashes: map[uint64]*slotHash{}}
-	accounts, unlisted, skippedMints := cycle.accounts(ctx, owners)
-	summary.Accounts = len(accounts) + unlisted
-	summary.FailedAccounts = unlisted
-	summary.SkippedMints = skippedMints
-	if len(skippedMints) > 0 {
-		slog.Error("deposit signature sync: registered tokens the chain's node does not hold as token mints are not read; fix the token registry",
-			"chain", chainID, "mints", skippedMints)
-	}
-
-	results := make([]accountSync, len(accounts))
-	forEachConcurrently(ctx, settings.Concurrency, len(accounts), func(i int) {
-		var cursor *models.DepositSignatureCursor
-		if row, ok := cursors[accounts[i]]; ok {
-			cursor = &row
-		}
-		results[i] = cycle.syncAccount(ctx, accounts[i], cursor)
+		listedAt: listedAt, headReadAt: headReadAt, hold: hold, deadline: deadline, progress: progress, cursors: cursors,
+		transactions: map[string]*signatureOutcome{}, hashes: map[uint64]*slotHash{},
+		claimed: map[string]bool{}, failed: map[string]bool{}}
+	queue := progress.queue(addresses)
+	forEachConcurrently(ctx, settings.Concurrency, len(queue), func(i int) {
+		cycle.syncOwner(ctx, queue[i], created[queue[i]])
 	})
-	// A skipped mint's accounts were not listed, so they were not read either.
-	everyAccountRead := unlisted == 0 && len(accounts) > 0 && len(skippedMints) == 0
-	coveredHead, coveredFrom := listedAt, uint64(0)
-	for i, result := range results {
-		summary.NewSignatures += result.signatures
-		summary.Deposits += result.deposits
-		switch {
-		case result.err != nil:
-			summary.FailedAccounts++
-			everyAccountRead = false
-			slog.Error("deposit signature sync of an account failed; its cursor stays before the failure and the next cycle reads it again",
-				"chain", chainID, "account", accounts[i], "error", result.err, "provider_cause", chain.CauseText(result.err))
-		case result.coveredTo == 0:
-			summary.BackfillingAccounts++
-			everyAccountRead = false
-		default:
-			coveredHead = min(coveredHead, result.coveredTo)
-			coveredFrom = max(coveredFrom, result.syncedFrom)
-		}
-	}
 	if !hold.Held() {
 		return summary, fmt.Errorf("deposit signature sync of %s: %w", chainID, ErrScanLockLost)
 	}
 	if err := ctx.Err(); err != nil {
 		return summary, fmt.Errorf("deposit signature sync of %s interrupted: %w", chainID, err)
 	}
-	if everyAccountRead {
-		summary.CoveredHead = coveredHead
-		resolved, err := s.resolveCoveredPending(ctx, chainID, coveredFrom, coveredHead)
+
+	summary.NewSignatures, summary.Deposits = cycle.signatures, cycle.deposits
+	summary.FailedAccounts = len(cycle.failed)
+	summary.SkippedMints = progress.skippedMints(cycle.listedAny, cycle.skippedMints)
+	if len(summary.SkippedMints) > 0 {
+		slog.Error("deposit signature sync: registered tokens the chain's node does not hold as token mints are not read; fix the token registry",
+			"chain", chainID, "mints", summary.SkippedMints)
+	}
+	coverage := progress.coverage(addresses, listedAt, cycle.failed)
+	summary.Accounts, summary.BackfillingAccounts = coverage.accounts, coverage.backfilling
+	if coverage.head > 0 && len(cycle.failed) == 0 {
+		summary.CoveredHead = coverage.head
+		resolved, err := s.resolveCoveredPending(ctx, chainID, coverage.from, coverage.head)
 		summary.ResolvedPending = resolved
 		if err != nil {
 			slog.Warn("pending deposit blocks the signature sync covers were not all dropped; the next cycle drops them", "chain", chainID, "error", err)
@@ -364,7 +354,9 @@ func (s *Service) confirmSignatureDeposits(ctx context.Context, chainID string, 
 
 // signatureCycle is one SyncSignatures cycle of a chain. A transaction is read and
 // recorded once per cycle, however many of its accounts list it (an owner and its
-// token account often do), and a slot's hash is read once.
+// token account often do), a slot's hash is read once, and an account is read by one
+// owner's goroutine only (claimed). listedAt is the head read before the owners were
+// listed; cursors are the accounts' cursors as stored when the cycle started.
 type signatureCycle struct {
 	svc      *Service
 	chainID  string
@@ -372,12 +364,24 @@ type signatureCycle struct {
 	reader   chain.SignatureReader
 	settings SignatureSyncSettings
 	floor    signatureFloor
-	hold     *cacheguard.Hold
-	deadline time.Time
+	listedAt uint64
+	// headReadAt is when listedAt was read (at or after it), what an owner's age is
+	// counted to.
+	headReadAt time.Time
+	hold       *cacheguard.Hold
+	deadline   time.Time
+	progress   *signatureProgress
+	cursors    map[string]models.DepositSignatureCursor
 
 	mu           sync.Mutex
 	transactions map[string]*signatureOutcome
 	hashes       map[uint64]*slotHash
+	claimed      map[string]bool
+	failed       map[string]bool
+	skippedMints []string
+	listedAny    bool
+	signatures   int
+	deposits     int
 }
 
 // signatureOutcome is a transaction's outcome in this cycle; done is closed once it
@@ -394,39 +398,94 @@ type slotHash struct {
 	err  error
 }
 
-// accounts lists the accounts of every owner, without repeats, how many owners
-// could not be listed (each skipped this cycle and counted as a failed account), and
-// the registered mints the node does not hold as token mints.
-func (c *signatureCycle) accounts(ctx context.Context, owners []string) ([]string, int, []string) {
-	listed := make([]chain.SignatureAccounts, len(owners))
-	failures := make([]error, len(owners))
-	forEachConcurrently(ctx, c.settings.Concurrency, len(owners), func(i int) {
-		listed[i], failures[i] = c.reader.SignatureAccounts(ctx, owners[i])
-	})
-	var accounts, skipped []string
-	seen := map[string]bool{}
-	unlisted := 0
-	for i, owner := range owners {
-		if failures[i] != nil {
-			unlisted++
-			slog.Error("deposit signature sync: the accounts of an address were not listed; it is read on the next cycle",
-				"chain", c.chainID, "address", owner, "error", failures[i], "provider_cause", chain.CauseText(failures[i]))
-			continue
-		}
-		for _, mint := range listed[i].SkippedMints {
-			if !slices.Contains(skipped, mint) {
-				skipped = append(skipped, mint)
-			}
-		}
-		for _, account := range listed[i].Accounts {
-			if !seen[account] {
-				seen[account] = true
-				accounts = append(accounts, account)
-			}
+// syncOwner lists the accounts of owner and reads each one this cycle has not
+// claimed for another owner, while the cycle's budget lasts: an owner is not started
+// past the deadline, an account started before it stops at its own budget, and an
+// owner whose accounts were not all started, or one of which failed, stays among the
+// first of the next cycle.
+// An owner whose accounts cannot be listed counts as one failed account; its accounts
+// as listed before keep what they were read up to.
+func (c *signatureCycle) syncOwner(ctx context.Context, owner string, created time.Time) {
+	if !c.hold.Held() || !c.svc.now().Before(c.deadline) {
+		return
+	}
+	listed, err := c.reader.SignatureAccounts(ctx, owner)
+	if err != nil {
+		c.mu.Lock()
+		c.failed[owner] = true
+		c.mu.Unlock()
+		slog.Error("deposit signature sync: the accounts of an address were not listed; it is read on a later cycle",
+			"chain", c.chainID, "address", owner, "error", err, "provider_cause", chain.CauseText(err))
+		return
+	}
+	c.progress.listed(owner, listed.Accounts, c.listedAt)
+	c.mu.Lock()
+	c.listedAny = true
+	for _, mint := range listed.SkippedMints {
+		if !slices.Contains(c.skippedMints, mint) {
+			c.skippedMints = append(c.skippedMints, mint)
+			slices.Sort(c.skippedMints)
 		}
 	}
-	slices.Sort(skipped)
-	return accounts, unlisted, skipped
+	c.mu.Unlock()
+	floor := c.ownerFloor(created)
+	readAll := true
+	for _, account := range listed.Accounts {
+		if !c.claim(account) {
+			continue
+		}
+		result := c.syncAccount(ctx, account, floor)
+		if !result.started {
+			return
+		}
+		c.progress.read(account, result)
+		c.mu.Lock()
+		c.signatures += result.signatures
+		c.deposits += result.deposits
+		if result.err != nil {
+			c.failed[account] = true
+		}
+		c.mu.Unlock()
+		if result.err != nil {
+			readAll = false
+			slog.Error("deposit signature sync of an account failed; its cursor stays before the failure and a later cycle reads it again",
+				"chain", c.chainID, "account", account, "error", result.err, "provider_cause", chain.CauseText(result.err))
+		}
+	}
+	if readAll {
+		c.progress.done(owner)
+	}
+}
+
+// claim reports whether account is still to be read this cycle, and claims it.
+func (c *signatureCycle) claim(account string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.claimed[account] {
+		return false
+	}
+	c.claimed[account] = true
+	return true
+}
+
+// ownerFloor is the floor of the accounts of an owner created at created that have no
+// cursor yet: the chain's floor, raised to the lowest slot the owner can have been
+// created at (an address receives nothing before it exists: the head read before
+// the owners were listed, less the most slots produced since its creation). An owner
+// created before that bound reaches slot 0 keeps the chain's floor.
+func (c *signatureCycle) ownerFloor(created time.Time) signatureFloor {
+	if created.IsZero() {
+		return c.floor
+	}
+	slots := c.reader.SlotsWithin(c.headReadAt.Sub(created))
+	if slots >= c.listedAt {
+		return c.floor
+	}
+	creation := c.listedAt - slots
+	if c.floor.ok && c.floor.slot >= creation {
+		return c.floor
+	}
+	return signatureFloor{slot: creation, ok: true}
 }
 
 // record records one successful transaction once per cycle and returns the deposits

@@ -26,6 +26,13 @@ const solanaSignaturePageLimit = 1000
 // account's data for the Token and the Token-2022 programs alike.
 const solanaMintAddressLength = 32
 
+// solanaFastestSlot bounds how fast slots are produced, for the floor of a new
+// address: mainnet produced 9000 slots in 32 minutes on 2026-10-28 (about 215 ms a
+// slot, faster than Agave's 400 ms target), so a quarter of that leaves the floor well
+// below the slot an address was created at, also if slots get faster still. A lower
+// floor only costs listing an older history, where an account has one.
+const solanaFastestSlot = 50 * time.Millisecond
+
 // solanaTransactionNotFoundCode is Agave's answer to a getSignaturesForAddress whose
 // before or until it does not hold ("Transaction … not found").
 const solanaTransactionNotFoundCode = -32020
@@ -158,6 +165,14 @@ func (a *SolanaLive) SignatureAccounts(ctx context.Context, owner string) (chain
 		}
 	}
 	return listed, nil
+}
+
+// SlotsWithin is the most slots produced in d, at one every solanaFastestSlot.
+func (a *SolanaLive) SlotsWithin(d time.Duration) uint64 {
+	if d <= 0 {
+		return 0
+	}
+	return uint64(d/solanaFastestSlot) + 1 //nolint:gosec // G115: d is positive here
 }
 
 // associatedTokenAccount is owner's associated token account of mint under the token

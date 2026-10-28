@@ -2,6 +2,7 @@ package chain
 
 import (
 	"context"
+	"time"
 
 	"github.com/macrowallets/waas/pkg/types"
 )
@@ -29,6 +30,10 @@ type SignatureReader interface {
 	// order and at the positions the block scan reports them, with the transaction's
 	// slot as BlockNumber and its block time; BlockHash is left empty.
 	TransactionTransfers(ctx context.Context, signature string) (TransactionTransfers, error)
+	// SlotsWithin is the most slots the chain produces in d: an address created d
+	// before a head was read received nothing below that head less SlotsWithin(d), the
+	// floor its history is read down to.
+	SlotsWithin(d time.Duration) uint64
 }
 
 // SignatureAccounts is the accounts of one owner, and the registered mints left out

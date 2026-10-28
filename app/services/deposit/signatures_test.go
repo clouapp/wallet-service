@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"sync"
 	"testing"
@@ -87,6 +88,15 @@ type signatureChain struct {
 	hashReads       map[uint64]int
 	duringRead      func()
 	onTx            func(ctx context.Context, signature string)
+	// slotsWithin is the chain's bound on the slots produced in a duration; nil
+	// counts every owner as older than the history (its accounts keep the chain's
+	// floor).
+	slotsWithin func(time.Duration) uint64
+	// listDelay makes every listing of an owner's accounts take that long on the
+	// service's clock (listClock), as a rate-limited provider does.
+	listDelay time.Duration
+	listClock *stepClock
+	listed    []string
 }
 
 func newSignatureChain() *signatureChain {
@@ -126,6 +136,10 @@ func (c *signatureChain) AssembleSolana(*types.UnsignedTx, []byte) (*types.Signe
 func (c *signatureChain) SignatureAccounts(_ context.Context, owner string) (chain.SignatureAccounts, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.listed = append(c.listed, owner)
+	if c.listDelay > 0 && c.listClock != nil {
+		c.listClock.advance(c.listDelay)
+	}
 	if err := c.accountErr[owner]; err != nil {
 		return chain.SignatureAccounts{}, err
 	}
@@ -237,6 +251,22 @@ func (c *signatureChain) TransactionTransfers(ctx context.Context, signature str
 		return chain.TransactionTransfers{}, fmt.Errorf("transaction %s unknown to the node", signature)
 	}
 	return chain.TransactionTransfers{Slot: tx.Slot, Transfers: append([]types.DetectedTransfer(nil), tx.Transfers...)}, nil
+}
+
+func (c *signatureChain) SlotsWithin(d time.Duration) uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.slotsWithin == nil {
+		return math.MaxUint64
+	}
+	return c.slotsWithin(d)
+}
+
+// listedOwners is the owners whose accounts were listed, in order.
+func (c *signatureChain) listedOwners() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.listed...)
 }
 
 func (c *signatureChain) BlockHashAt(_ context.Context, slot uint64) (string, error) {
@@ -804,6 +834,9 @@ func TestSync_Signatures_HoldsTheChainsScanLockUnderItsOwnTokenForTheWholeCycle(
 // under a lock it no longer holds, and never frees the other holder's lock.
 func TestSync_Signatures_StopsWhenItLosesTheChainsScanLock(t *testing.T) {
 	f := newSignatureFixture(t)
+	// One owner at a time: alice is read before bob, so nothing else is in flight
+	// when bob's read finds the lock taken.
+	f.settings.Concurrency = 1
 	f.keepPending(t, 1100)
 	f.chain.history(sigBob, f.chain.tx("sig-1", 1201, lamports(sigBob, 10, 1)))
 	f.chain.onTx = func(context.Context, string) {
@@ -828,6 +861,7 @@ func TestSync_Signatures_StopsWhenItLosesTheChainsScanLock(t *testing.T) {
 // another process took it the cycle stops at once, keeping what it recorded.
 func TestSync_Signatures_StopsRecordingAsSoonAsItFindsTheLockLost(t *testing.T) {
 	f := newSignatureFixture(t)
+	f.settings.Concurrency = 1
 	f.chain.history(sigBob,
 		f.chain.tx("sig-1", 1201, lamports(sigBob, 10, 1)),
 		f.chain.tx("sig-2", 1202, lamports(sigBob, 20, 1)),
