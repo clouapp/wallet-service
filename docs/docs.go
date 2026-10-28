@@ -1211,6 +1211,67 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/chains/{chainId}/tokens": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "SignatureAuth": []
+                    }
+                ],
+                "description": "Returns the active tokens the catalogue lists for the chain, the same rows as the dashboard's GET /v1/chains/{chainId}/tokens. The chain must belong to the account's environment: a chain of the other network kind is 403, an unknown chain 404.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chains"
+                ],
+                "summary": "List the tokens of a chain",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Chain id",
+                        "name": "chainId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/controllers.ChainTokenListResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Chain of the other environment (forbidden)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Unknown chain (not_found)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (too_many_requests, Retry-After header)",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/wallets/{walletId}/fee-estimate": {
             "get": {
                 "security": [
@@ -4909,7 +4970,7 @@ const docTemplate = `{
                         "SignatureAuth": []
                     }
                 ],
-                "description": "Creates a new HD wallet for the specified blockchain. Only one wallet per chain is allowed.\nThe response carries the wallet fields and ` + "`" + `service_public_key` + "`" + `.",
+                "description": "Creates a new HD wallet for the specified blockchain. Only one wallet per chain is allowed.\nCreates an active headless API wallet; no dashboard activation code is issued. The response carries the wallet fields and ` + "`" + `service_public_key` + "`" + `.",
                 "consumes": [
                     "application/json"
                 ],
@@ -7565,6 +7626,41 @@ const docTemplate = `{
                 }
             }
         },
+        "chains.Token": {
+            "type": "object",
+            "properties": {
+                "chain_id": {
+                    "type": "string"
+                },
+                "contract_address": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                },
+                "decimals": {
+                    "type": "integer"
+                },
+                "icon_url": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "symbol": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
+                }
+            }
+        },
         "controllers.AddressListResponse": {
             "type": "object",
             "properties": {
@@ -7613,6 +7709,17 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/controllers.ChainInfo"
+                    }
+                }
+            }
+        },
+        "controllers.ChainTokenListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/chains.Token"
                     }
                 }
             }

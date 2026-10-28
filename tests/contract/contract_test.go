@@ -448,6 +448,12 @@ func refusalScenario(apiRate *apiRateLimit) []step {
 			capture: map[string]string{"webhookToken": "token"}},
 		{name: "external create webhook to a cloud metadata address", method: "POST", path: "/api/v1/webhooks", bearer: "webhookToken",
 			body: `{"url":"http://169.254.169.254/latest/meta-data/","secret":"contract-webhook-secret","events":["deposit.confirmed"]}`},
+
+		// The tokens of a chain on the external API (no scope: any token of the
+		// account), then a chain of the other environment and an unknown chain.
+		{name: "external chain tokens", method: "GET", path: "/api/v1/chains/eth/tokens", bearer: "webhookToken"},
+		{name: "external chain tokens of the other environment", method: "GET", path: "/api/v1/chains/teth/tokens", bearer: "webhookToken"},
+		{name: "external tokens of an unknown chain", method: "GET", path: "/api/v1/chains/nochain/tokens", bearer: "webhookToken"},
 	}
 }
 

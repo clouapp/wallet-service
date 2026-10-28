@@ -494,3 +494,18 @@ status: 422
 content-type: application/json
 {"error":{"code":"webhook_url_not_allowed","message":"the url host must not be or resolve to a link-local or cloud metadata address"}}
 
+
+### 99 external chain tokens: GET /api/v1/chains/eth/tokens
+status: 200
+content-type: application/json; charset=utf-8
+{"data":[{"created_at":"<time>","updated_at":"<time>","id":"<uuid:7>","chain_id":"eth","symbol":"USDT","name":"Tether USD","contract_address":"0xdAC17F958D2ee523a2206206994597C13D831ec7","decimals":6,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/825.png","status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:8>","chain_id":"eth","symbol":"USDC","name":"USD Coin","contract_address":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","decimals":6,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/3408.png","status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:9>","chain_id":"eth","symbol":"WETH","name":"Wrapped Ether","contract_address":"0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2","decimals":18,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/2396.png","status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:10>","chain_id":"eth","symbol":"WBTC","name":"Wrapped Bitcoin","contract_address":"0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599","decimals":8,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/3717.png","status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:11>","chain_id":"eth","symbol":"DAI","name":"Dai Stablecoin","contract_address":"0x6B175474E89094C44Da98b954EedeAC495271d0F","decimals":18,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/4943.png","status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:12>","chain_id":"eth","symbol":"LINK","name":"Chainlink","contract_address":"0x514910771AF9Ca656af840dff83E8264EcF986CA","decimals":18,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/1975.png","status":"active"},{"created_at":"<time>","updated_at":"<time>","id":"<uuid:13>","chain_id":"eth","symbol":"UNI","name":"Uniswap","contract_address":"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984","decimals":18,"icon_url":"https://s2.coinmarketcap.com/static/img/coins/64x64/7083.png","status":"active"}]}
+
+### 100 external chain tokens of the other environment: GET /api/v1/chains/teth/tokens
+status: 403
+content-type: application/json; charset=utf-8
+{"error":{"code":"forbidden","message":"chain not available in current environment"}}
+
+### 101 external tokens of an unknown chain: GET /api/v1/chains/nochain/tokens
+status: 404
+content-type: application/json; charset=utf-8
+{"error":{"code":"not_found","message":"chain not found"}}

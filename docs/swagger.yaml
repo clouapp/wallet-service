@@ -543,6 +543,29 @@ definitions:
       required_confirmations:
         type: integer
     type: object
+  chains.Token:
+    properties:
+      chain_id:
+        type: string
+      contract_address:
+        type: string
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      decimals:
+        type: integer
+      icon_url:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      status:
+        type: string
+      symbol:
+        type: string
+      updated_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+    type: object
   controllers.AddressListResponse:
     properties:
       data:
@@ -577,6 +600,13 @@ definitions:
       data:
         items:
           $ref: '#/definitions/controllers.ChainInfo'
+        type: array
+    type: object
+  controllers.ChainTokenListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/chains.Token'
         type: array
     type: object
   controllers.ConsolidatePlanSummary:
@@ -2987,6 +3017,47 @@ paths:
       summary: Update an account member
       tags:
       - Accounts
+  /api/v1/chains/{chainId}/tokens:
+    get:
+      description: 'Returns the active tokens the catalogue lists for the chain, the
+        same rows as the dashboard''s GET /v1/chains/{chainId}/tokens. The chain must
+        belong to the account''s environment: a chain of the other network kind is
+        403, an unknown chain 404.'
+      parameters:
+      - description: Chain id
+        in: path
+        name: chainId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/controllers.ChainTokenListResponse'
+        "403":
+          description: Chain of the other environment (forbidden)
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "404":
+          description: Unknown chain (not_found)
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "429":
+          description: Rate limit exceeded (too_many_requests, Retry-After header)
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+      security:
+      - ApiKeyAuth: []
+      - SignatureAuth: []
+      summary: List the tokens of a chain
+      tags:
+      - Chains
   /api/v1/wallets/{walletId}/fee-estimate:
     get:
       description: 'Prices the withdrawal POST /withdrawals would send, with the same
@@ -5612,7 +5683,7 @@ paths:
       - application/json
       description: |-
         Creates a new HD wallet for the specified blockchain. Only one wallet per chain is allowed.
-        The response carries the wallet fields and `service_public_key`.
+        Creates an active headless API wallet; no dashboard activation code is issued. The response carries the wallet fields and `service_public_key`.
       parameters:
       - description: Wallet creation request
         in: body

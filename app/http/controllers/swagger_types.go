@@ -2,6 +2,7 @@ package controllers
 
 import (
 	addressresource "github.com/macrowallets/waas/app/http/resources/addresses"
+	chainresource "github.com/macrowallets/waas/app/http/resources/chains"
 	walletsresources "github.com/macrowallets/waas/app/http/resources/wallets"
 	webhookresource "github.com/macrowallets/waas/app/http/resources/webhooks"
 )
@@ -23,6 +24,11 @@ type ChainInfo struct {
 
 type ChainListResponse struct {
 	Data []ChainInfo `json:"data"`
+}
+
+// ChainTokenListResponse documents the tokens of one chain.
+type ChainTokenListResponse struct {
+	Data []chainresource.Token `json:"data"`
 }
 
 type WalletListResponse struct {

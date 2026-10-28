@@ -4,11 +4,13 @@ import (
 	"github.com/goravel/framework/contracts/http"
 
 	"github.com/macrowallets/waas/app/http/middleware/requestctx"
+	"github.com/macrowallets/waas/app/http/requests"
 	chainresource "github.com/macrowallets/waas/app/http/resources/chains"
+	"github.com/macrowallets/waas/app/http/responses"
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 )
 
-// ChainController serves the external chain list.
+// ChainController serves the external chain list and the tokens of a chain.
 type ChainController struct {
 	chains *chainsvc.Service
 }
@@ -42,4 +44,35 @@ func (c *ChainController) Index(ctx http.Context) http.Response {
 	}
 
 	return ctx.Response().Success().Json(http.Json{"data": chainresource.ChainsFrom(chains)})
+}
+
+// Tokens godoc
+//
+//	@Summary		List the tokens of a chain
+//	@Description	Returns the active tokens the catalogue lists for the chain, the same rows as the dashboard's GET /v1/chains/{chainId}/tokens. The chain must belong to the account's environment: a chain of the other network kind is 403, an unknown chain 404.
+//	@Tags			Chains
+//	@Produce		json
+//	@Security		ApiKeyAuth
+//	@Security		SignatureAuth
+//	@Param			chainId	path		string	true	"Chain id"
+//	@Success		200		{object}	controllers.ChainTokenListResponse
+//	@Failure		403		{object}	responses.ErrorBody	"Chain of the other environment (forbidden)"
+//	@Failure		404		{object}	responses.ErrorBody	"Unknown chain (not_found)"
+//	@Failure		500		{object}	responses.ErrorBody
+//	@Failure		429		{object}	responses.ErrorBody	"Rate limit exceeded (too_many_requests, Retry-After header)"
+//	@Router			/api/v1/chains/{chainId}/tokens [get]
+func (c *ChainController) Tokens(ctx http.Context) http.Response {
+	environment, _ := requestctx.AccountEnvironment(ctx)
+
+	chainID, err := requests.RouteParam(ctx, "chainId")
+	if err != nil {
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "chainId is required")
+	}
+
+	tokens, err := c.chains.TokensFor(ctx.Context(), chainID, environment)
+	if err != nil {
+		return mapError(ctx, err, "fetch tokens")
+	}
+
+	return ctx.Response().Success().Json(http.Json{"data": chainresource.TokensFrom(tokens)})
 }
