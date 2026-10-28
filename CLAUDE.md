@@ -1266,8 +1266,10 @@ on; the sync is its safety net, and the only detector where it is not.
   read at (below).
 - **Account states first** (`chain.AccountStateReader`, Solana `getMultipleAccounts`, migration 700):
   each cycle first reads the state of every known account of every active address, 100 a call,
-  `concurrency` calls at once, until the cycle's deadline: the lamports, the owner program and, for a
-  token account, the amount (8 bytes at offset 64), finalized, empty for an account that does not exist.
+  `concurrency` calls at once, for at most half of what is left of the cycle's budget (the moved addresses
+  are read in the other half; behind a rate-limited endpoint the batches a cycle had no time for are the
+  first of the next): the lamports, the owner program and, for a token account, the amount (8 bytes at
+  offset 64), finalized, empty for an account that does not exist.
   The accounts of an address this process never listed are the ones it derives without a call (the
   address and its associated account of each token, `DerivedAccounts`). An address with an account
   whose state differs from the one its cursor stores (`account_state`), or that sent a withdrawal, a

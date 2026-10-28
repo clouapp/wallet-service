@@ -15,13 +15,16 @@ import (
 // the chain's outbound transfers; later cycles look back to the previous one's start.
 const signatureOutboundLookback = time.Hour
 
-// movedOwners finds, among owners, those to read before the rotation: an owner with
-// an account whose state, read now in batches of chain.AccountStateBatch
-// (settings.Concurrency batches at once, until the cycle's deadline), differs from the
-// state stored after its last read (an account never read that exists, a transfer in
-// or out since; no batch starts past the cycle's deadline), and an owner that sent a withdrawal, a sweep or a gas seed since the
-// previous cycle began (a transfer out that a deposit of the same amount offsets
-// leaves the state as it was). The accounts of an owner are those last listed, or,
+// movedOwners finds, among owners (in address order), those to read before the
+// rotation: an owner with an account whose state, read now in batches of
+// chain.AccountStateBatch, differs from the state stored after its last read (an
+// account never read that exists, a transfer in or out since), and an owner that sent
+// a withdrawal, a sweep or a gas seed since the previous cycle began (a transfer out
+// that a deposit of the same amount offsets leaves the state as it was). The batches
+// run settings.Concurrency at once for at most half of what is left of the cycle's
+// budget, so the moved owners are read in the other half; behind a rate-limited
+// endpoint the batches left out are the first of the next cycle
+// (signatureProgress.stateBatches), so every account is checked within a few cycles. The accounts of an owner are those last listed, or,
 // for an owner this process never listed, those it derives without a call. A batch or
 // an owner that cannot be read flags nothing: the rotation still reads every account.
 // Only an adapter that reads states (chain.AccountStateReader) is asked; another
@@ -55,18 +58,25 @@ func (c *signatureCycle) movedOwners(ctx context.Context, owners []string, since
 	var mu sync.Mutex
 	states, slot := make(map[string]string, len(accounts)), uint64(0)
 	batches := slices.Collect(slices.Chunk(accounts, chain.AccountStateBatch))
-	failed := 0
+	start := c.progress.stateBatchStart(len(batches))
+	now := c.svc.now()
+	statesUntil := now.Add(c.deadline.Sub(now) / 2)
+	failed, started := 0, 0
 	forEachConcurrently(ctx, c.settings.Concurrency, len(batches), func(i int) {
-		if !c.svc.now().Before(c.deadline) {
+		if !c.svc.now().Before(statesUntil) {
 			return
 		}
-		batch, err := reader.AccountStates(ctx, batches[i])
+		accounts := batches[(start+i)%len(batches)]
+		mu.Lock()
+		started++
+		mu.Unlock()
+		batch, err := reader.AccountStates(ctx, accounts)
 		mu.Lock()
 		defer mu.Unlock()
 		if err != nil {
 			failed++
 			slog.Warn("deposit signature sync: account states not read; those accounts are read in turn",
-				"chain", c.chainID, "accounts", len(batches[i]), "error", err, "provider_cause", chain.CauseText(err))
+				"chain", c.chainID, "accounts", len(accounts), "error", err, "provider_cause", chain.CauseText(err))
 			return
 		}
 		if slot == 0 || batch.Slot < slot {
@@ -74,6 +84,7 @@ func (c *signatureCycle) movedOwners(ctx context.Context, owners []string, since
 		}
 		maps.Copy(states, batch.States)
 	})
+	c.progress.stateBatchesRead(started, len(batches))
 
 	due := map[string]bool{}
 	moved := 0
@@ -109,7 +120,8 @@ func (c *signatureCycle) movedOwners(ctx context.Context, owners []string, since
 		}
 	}
 	slog.Info("deposit signature sync: account states read", "chain", c.chainID, "accounts", len(accounts),
-		"read", len(states), "failed_batches", failed, "moved_accounts", moved, "addresses_first", len(first), "slot", slot)
+		"read", len(states), "batches", len(batches), "batches_started", started, "failed_batches", failed,
+		"moved_accounts", moved, "addresses_first", len(first), "slot", slot)
 	return first
 }
 

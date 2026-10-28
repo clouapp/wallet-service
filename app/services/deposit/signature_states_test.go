@@ -28,6 +28,10 @@ type stateChain struct {
 	states    map[string]string
 	statesErr error
 	batches   [][]string
+	// batchDelay makes every batch take that long on the service's clock
+	// (batchClock), as a rate-limited endpoint does.
+	batchDelay time.Duration
+	batchClock *stepClock
 }
 
 func (c *stateChain) DerivedAccounts(_ context.Context, owner string) ([]string, error) {
@@ -47,6 +51,9 @@ func (c *stateChain) AccountStates(ctx context.Context, accounts []string) (chai
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.batches = append(c.batches, slices.Clone(accounts))
+	if c.batchDelay > 0 && c.batchClock != nil {
+		c.batchClock.advance(c.batchDelay)
+	}
 	if c.statesErr != nil {
 		return chain.AccountStates{}, c.statesErr
 	}
@@ -269,4 +276,39 @@ func TestSync_Signatures_ReadsASettledAddressAgainOnlyEveryRotationWhenNothingMo
 	clock.advance(signatureRotationEvery)
 	_, listed = f.syncListing(t, clock)
 	assert.Contains(t, listed, sigAlice, "the rotation reads alice again once its pace elapsed")
+}
+
+// Behind a rate-limited endpoint the states take at most half of a cycle's budget, so
+// the addresses that moved are still read in the other half, and the batches a cycle
+// had no time for are the first of the next one: every account is checked within a
+// few cycles, a deposit to any of them read as soon as its batch is.
+func TestSync_Signatures_ReadsTheStatesInTurnWhenTheyTakeLongerThanHalfACycle(t *testing.T) {
+	f := newSignatureFixture(t)
+	states := f.withStates()
+	var owners []string
+	for i := range 250 {
+		owners = append(owners, fmt.Sprintf("owner-%03d", i))
+	}
+	f.watch(t, owners...)
+	f.settings.Concurrency = 1
+	clock := &stepClock{now: time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)}
+	f.svc.now = clock.Now
+	// A cycle of a 1-minute interval reads for 45 s, 22.5 s of it states: two batches
+	// of 15 s each start, the third waits for the next cycle.
+	states.batchDelay, states.batchClock = 15*time.Second, clock
+	last := "owner-249"
+
+	f.sync(t)
+	clock.advance(time.Minute)
+	require.Len(t, states.batches, 2, "two of three batches")
+	assert.NotContains(t, states.batches[0], last)
+	assert.NotContains(t, states.batches[1], last)
+
+	f.chain.history(last, f.chain.tx("sig-last", 1500, lamports(last, 10, 1)))
+	summary := f.sync(t)
+
+	require.Len(t, states.batches, 4)
+	assert.Contains(t, states.batches[2], last, "the batch left out comes first")
+	assert.Equal(t, 1, summary.MovedAccounts)
+	assert.Equal(t, []string{"sig-last"}, sigDepositHashes(t, last), "read in the half the states left")
 }

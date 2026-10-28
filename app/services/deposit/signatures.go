@@ -257,7 +257,7 @@ func (s *Service) syncSignatures(ctx context.Context, chainID string, adapter ty
 	if since.IsZero() {
 		since = headReadAt.Add(-signatureOutboundLookback)
 	}
-	moved := cycle.movedOwners(ctx, queue, since)
+	moved := cycle.movedOwners(ctx, addresses, since)
 	if _, readsStates := reader.(chain.AccountStateReader); readsStates {
 		queue = progress.dueForRotation(queue, headReadAt, signatureRotationEvery)
 	}

@@ -29,6 +29,8 @@ type signatureProgress struct {
 	// seen at (signature_states.go).
 	cycleAt time.Time
 	moves   map[string]accountMove
+	// stateStart is the batch of account states the next cycle reads first.
+	stateStart int
 }
 
 // accountMove is the state an account was seen in, other than its stored one, and the
@@ -113,6 +115,27 @@ func (p *signatureProgress) begin(now time.Time) time.Time {
 	previous := p.cycleAt
 	p.cycleAt = now
 	return previous
+}
+
+// stateBatchStart is the batch, of n, the cycle reads the account states of first:
+// the one after the last the previous cycle started.
+func (p *signatureProgress) stateBatchStart(n int) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if n == 0 {
+		return 0
+	}
+	return p.stateStart % n
+}
+
+// stateBatchesRead records that a cycle started read of its n batches, from its first.
+func (p *signatureProgress) stateBatchesRead(read, n int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if n == 0 {
+		return
+	}
+	p.stateStart = (p.stateStart%n + read) % n
 }
 
 // accountsOf is the accounts of owner as last listed (nil: never listed).
