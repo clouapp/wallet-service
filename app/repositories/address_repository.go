@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/database/orm"
@@ -167,6 +168,24 @@ func (r *AddressRepository) PluckActiveAddresses(ctx context.Context, chainID st
 		return nil, fmt.Errorf("pluck active addresses: %w", err)
 	}
 	return addresses, nil
+}
+
+// AddressCreation is an active address of a chain and when it was created.
+type AddressCreation struct {
+	Address   string
+	CreatedAt time.Time
+}
+
+// ActiveAddressCreations returns the active addresses of a chain, in address order,
+// with when each was created.
+func (r *AddressRepository) ActiveAddressCreations(ctx context.Context, chainID string) ([]AddressCreation, error) {
+	var rows []AddressCreation
+	if err := r.Query(ctx).Raw(
+		`SELECT address, created_at FROM addresses WHERE chain = ? AND is_active ORDER BY address`, chainID,
+	).Scan(&rows); err != nil {
+		return nil, fmt.Errorf("list active addresses with their creation: %w", err)
+	}
+	return rows, nil
 }
 
 func (r *AddressRepository) updateColumn(ctx context.Context, id uuid.UUID, column string, value any, op string) error {

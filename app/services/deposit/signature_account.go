@@ -45,12 +45,14 @@ const (
 	signatureIndexMargin = 1500
 )
 
-// accountSync is what reading one account did: the signatures it read, the deposits
-// it recorded first in this cycle, the floor its history is read down to, the slot
-// every signature up to which is recorded (coveredTo: 0 while the account is not read
-// down to its floor, a gap above its cursor is still read, or the cycle left it
-// behind), and why it stopped early.
+// accountSync is what reading one account did: whether it started (not when the
+// cycle's budget was spent or its lock lost before it), the signatures it read, the
+// deposits it recorded first in this cycle, the floor its history is read down to,
+// the slot every signature up to which is recorded (coveredTo: 0 while the account is
+// not read down to its floor, a gap above its cursor is still read, or the cycle left
+// it behind), and why it stopped early.
 type accountSync struct {
+	started    bool
 	signatures int
 	deposits   int
 	syncedFrom uint64
@@ -114,14 +116,15 @@ func indexedUpTo(head uint64) uint64 {
 	return head - signatureIndexMargin
 }
 
-// syncAccount reads one account: first the signatures above its newest recorded one
+// syncAccount reads one account, from its stored cursor or, without one, from floor:
+// first the signatures above its newest recorded one
 // (none until something was recorded, unless the account is known empty), then,
 // until it is read down to its floor, at most signatureBackfillPages pages of its
 // older history, newest first. Each signature moves the recorded stretch once its
 // transfers are all recorded; a failure stops the account there. The cursor is saved
 // every signatureCursorSaveEvery signatures and when the account stops, whatever
 // stopped it.
-func (c *signatureCycle) syncAccount(ctx context.Context, account string, row *models.DepositSignatureCursor) (result accountSync) {
+func (c *signatureCycle) syncAccount(ctx context.Context, account string, floor signatureFloor) (result accountSync) {
 	if !c.hold.Held() {
 		result.err = ErrScanLockLost
 		return result
@@ -129,7 +132,12 @@ func (c *signatureCycle) syncAccount(ctx context.Context, account string, row *m
 	if !c.svc.now().Before(c.deadline) {
 		return result
 	}
-	st := newAccountState(account, row, c.floor)
+	result.started = true
+	var row *models.DepositSignatureCursor
+	if stored, ok := c.cursors[account]; ok {
+		row = &stored
+	}
+	st := newAccountState(account, row, floor)
 	stopAt := c.svc.now().Add(signatureAccountBudget)
 	if c.deadline.Before(stopAt) {
 		stopAt = c.deadline

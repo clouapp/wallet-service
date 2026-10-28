@@ -88,10 +88,13 @@ type Service struct {
 	reconcileTransactions TransactionFinder
 	// signatureCursors and signatureSettings are the signature sync's cursors and its
 	// settings at the moment of use; signatureModes remembers, per chain, whether its
-	// block scan was last seen paused, so the change is logged once (signatures.go).
+	// block scan was last seen paused, so the change is logged once (signatures.go);
+	// signatureProgress keeps, per chain, what the sync's cycles read in this process
+	// (signature_progress.go).
 	signatureCursors  SignatureCursorStore
 	signatureSettings signatureSettingsSource
 	signatureModes    sync.Map
+	signatureProgress sync.Map
 }
 
 // transactionStore is the deposit rows the scanner writes and the tracker updates.

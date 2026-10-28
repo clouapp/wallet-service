@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gagliardetto/solana-go"
 	"github.com/stretchr/testify/assert"
@@ -1256,4 +1257,14 @@ func TestSolana_TransactionTransfers_ARegisteredMintThatIsNotAKeyFailsEveryRead(
 	assert.Error(t, err)
 	_, err = live.SignatureAccounts(context.Background(), ataFixtureOwner)
 	assert.Error(t, err)
+}
+
+func TestSolana_SlotsWithin_CountsAtTheFastestSlotSoANewAddressFloorIsNeverAboveItsCreation(t *testing.T) {
+	adapter := &SolanaLive{}
+	assert.Zero(t, adapter.SlotsWithin(0))
+	assert.Zero(t, adapter.SlotsWithin(-time.Second))
+	// An hour at mainnet's measured ~215 ms is about 16 700 slots: the bound counts
+	// four times as many.
+	assert.Equal(t, uint64(72001), adapter.SlotsWithin(time.Hour))
+	assert.Greater(t, adapter.SlotsWithin(time.Hour), 4*uint64(time.Hour/(215*time.Millisecond)))
 }
