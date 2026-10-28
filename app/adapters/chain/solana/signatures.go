@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -16,7 +17,10 @@ import (
 	"github.com/macrowallets/waas/app/services/chain"
 )
 
-var _ chain.SignatureReader = (*SolanaLive)(nil)
+var (
+	_ chain.SignatureReader    = (*SolanaLive)(nil)
+	_ chain.AccountStateReader = (*SolanaLive)(nil)
+)
 
 // solanaSignaturePageLimit is the most signatures getSignaturesForAddress returns
 // per call.
@@ -25,6 +29,13 @@ const solanaSignaturePageLimit = 1000
 // solanaMintAddressLength is the length of the mint, the first field of a token
 // account's data for the Token and the Token-2022 programs alike.
 const solanaMintAddressLength = 32
+
+// solanaTokenAmountOffset and solanaTokenAmountLength place a token account's amount
+// in its data (after the mint and the owner), for both token programs.
+const (
+	solanaTokenAmountOffset = 64
+	solanaTokenAmountLength = 8
+)
 
 // solanaFastestSlot bounds how fast slots are produced, for the floor of a new
 // address: mainnet produced 9000 slots in 32 minutes on 2026-10-28 (about 215 ms a
@@ -104,23 +115,71 @@ func (m *mintPrograms) refuse(mint string, until time.Time) {
 // one bad registry row never stops the other mints or the owners; a read that fails
 // is an error.
 func (a *SolanaLive) SignatureAccounts(ctx context.Context, owner string) (chain.SignatureAccounts, error) {
-	var listed chain.SignatureAccounts
-	if a.tokensErr != nil {
-		return listed, a.tokensErr
-	}
-	ownerKey, err := solana.PublicKeyFromBase58(strings.TrimSpace(owner))
+	ownerKey, err := a.ownerKey(owner)
 	if err != nil {
-		return listed, chain.InvalidAddress(fmt.Errorf("sol owner %q: %w", owner, err))
+		return chain.SignatureAccounts{}, err
 	}
-	listed.Accounts = []string{ownerKey.String()}
-	seen := map[string]bool{ownerKey.String(): true}
-	add := func(account string) {
-		if !seen[account] {
-			seen[account] = true
-			listed.Accounts = append(listed.Accounts, account)
+	derived, err := a.derivedAccounts(ctx, ownerKey)
+	if err != nil {
+		return chain.SignatureAccounts{}, err
+	}
+	listed := chain.SignatureAccounts{Accounts: derived.accounts, SkippedMints: derived.skipped}
+	seen := make(map[string]bool, len(listed.Accounts))
+	for _, account := range listed.Accounts {
+		seen[account] = true
+	}
+	for _, program := range derived.programs {
+		held, err := a.tokenAccountsByOwner(ctx, ownerKey, program)
+		if err != nil {
+			return chain.SignatureAccounts{}, err
+		}
+		for _, account := range held {
+			if _, registered := a.tokens[account.mint]; registered && !seen[account.pubkey] {
+				seen[account.pubkey] = true
+				listed.Accounts = append(listed.Accounts, account.pubkey)
+			}
 		}
 	}
+	return listed, nil
+}
 
+// DerivedAccounts returns owner and its associated token account of each registered
+// mint the node holds as a token mint: SignatureAccounts without its listing, so no
+// call once the mints' programs are cached.
+func (a *SolanaLive) DerivedAccounts(ctx context.Context, owner string) ([]string, error) {
+	ownerKey, err := a.ownerKey(owner)
+	if err != nil {
+		return nil, err
+	}
+	derived, err := a.derivedAccounts(ctx, ownerKey)
+	if err != nil {
+		return nil, err
+	}
+	return derived.accounts, nil
+}
+
+func (a *SolanaLive) ownerKey(owner string) (solana.PublicKey, error) {
+	if a.tokensErr != nil {
+		return solana.PublicKey{}, a.tokensErr
+	}
+	key, err := solana.PublicKeyFromBase58(strings.TrimSpace(owner))
+	if err != nil {
+		return solana.PublicKey{}, chain.InvalidAddress(fmt.Errorf("sol owner %q: %w", owner, err))
+	}
+	return key, nil
+}
+
+// ownerDerivation is owner and its associated token accounts, the registered mints
+// skipped (the node does not hold them as token mints), and the token programs the
+// other mints use, in order.
+type ownerDerivation struct {
+	accounts []string
+	skipped  []string
+	programs []solana.PublicKey
+}
+
+func (a *SolanaLive) derivedAccounts(ctx context.Context, owner solana.PublicKey) (ownerDerivation, error) {
+	derived := ownerDerivation{accounts: []string{owner.String()}}
 	mints := make([]string, 0, len(a.tokens))
 	for mint := range a.tokens {
 		mints = append(mints, mint)
@@ -130,41 +189,81 @@ func (a *SolanaLive) SignatureAccounts(ctx context.Context, owner string) (chain
 	for _, mint := range mints {
 		mintKey, err := solana.PublicKeyFromBase58(mint)
 		if err != nil {
-			return chain.SignatureAccounts{}, fmt.Errorf("sol token mint %s: %w", mint, err)
+			return ownerDerivation{}, fmt.Errorf("sol token mint %s: %w", mint, err)
 		}
 		program, err := a.mintProgram(ctx, mintKey)
 		if errors.Is(err, errNotATokenMint) {
-			listed.SkippedMints = append(listed.SkippedMints, mint)
+			derived.skipped = append(derived.skipped, mint)
 			continue
 		}
 		if err != nil {
-			return chain.SignatureAccounts{}, err
+			return ownerDerivation{}, err
 		}
 		inUse[program] = true
-		ata, err := associatedTokenAccount(ownerKey, mintKey, program)
+		ata, err := associatedTokenAccount(owner, mintKey, program)
 		if err != nil {
-			return chain.SignatureAccounts{}, err
+			return ownerDerivation{}, err
 		}
-		add(ata.String())
+		if account := ata.String(); !slices.Contains(derived.accounts, account) {
+			derived.accounts = append(derived.accounts, account)
+		}
 	}
-
-	programs := make([]solana.PublicKey, 0, len(inUse))
 	for program := range inUse {
-		programs = append(programs, program)
+		derived.programs = append(derived.programs, program)
 	}
-	sort.Slice(programs, func(i, j int) bool { return programs[i].String() < programs[j].String() })
-	for _, program := range programs {
-		held, err := a.tokenAccountsByOwner(ctx, ownerKey, program)
-		if err != nil {
-			return chain.SignatureAccounts{}, err
-		}
-		for _, account := range held {
-			if _, registered := a.tokens[account.mint]; registered {
-				add(account.pubkey)
+	sort.Slice(derived.programs, func(i, j int) bool { return derived.programs[i].String() < derived.programs[j].String() })
+	return derived, nil
+}
+
+// AccountStates reads accounts with getMultipleAccounts (finalized, chain.AccountStateBatch
+// a call): the state of an account is its lamports, its owner program and, for a token
+// account, its amount (the 8 bytes at offset 64 of the Token and Token-2022 layouts),
+// so a transfer of SOL or of a token changes it; an account that does not exist has
+// none. The slot is the lowest the calls were answered at.
+func (a *SolanaLive) AccountStates(ctx context.Context, accounts []string) (chain.AccountStates, error) {
+	read := chain.AccountStates{States: make(map[string]string, len(accounts))}
+	for batch := range slices.Chunk(accounts, chain.AccountStateBatch) {
+		for _, account := range batch {
+			if _, err := solana.PublicKeyFromBase58(account); err != nil {
+				return chain.AccountStates{}, chain.InvalidAddress(fmt.Errorf("sol account %q: %w", account, err))
 			}
 		}
+		var result struct {
+			Context struct {
+				Slot uint64 `json:"slot"`
+			} `json:"context"`
+			Value []*struct {
+				Lamports uint64   `json:"lamports"`
+				Owner    string   `json:"owner"`
+				Data     []string `json:"data"`
+			} `json:"value"`
+		}
+		if err := a.rpc.Call(ctx, "getMultipleAccounts", &result, batch, map[string]any{
+			"encoding":   "base64",
+			"commitment": solanaCommitmentFinalized,
+			"dataSlice":  map[string]int{"offset": solanaTokenAmountOffset, "length": solanaTokenAmountLength},
+		}); err != nil {
+			return chain.AccountStates{}, fmt.Errorf("sol account states: %w", err)
+		}
+		if len(result.Value) != len(batch) || result.Context.Slot == 0 {
+			return chain.AccountStates{}, fmt.Errorf("sol account states: %d answers at slot %d for %d accounts", len(result.Value), result.Context.Slot, len(batch))
+		}
+		if read.Slot == 0 || result.Context.Slot < read.Slot {
+			read.Slot = result.Context.Slot
+		}
+		for i, account := range result.Value {
+			if account == nil {
+				read.States[batch[i]] = ""
+				continue
+			}
+			data := ""
+			if len(account.Data) > 0 {
+				data = account.Data[0]
+			}
+			read.States[batch[i]] = fmt.Sprintf("%d/%s/%s", account.Lamports, account.Owner, data)
+		}
 	}
-	return listed, nil
+	return read, nil
 }
 
 // SlotsWithin is the most slots produced in d, at one every solanaFastestSlot.

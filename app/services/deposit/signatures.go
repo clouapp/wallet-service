@@ -33,9 +33,11 @@ var (
 )
 
 const (
-	// signatureCycleBudget is how long one cycle reads and records signatures: an
+	// signatureCycleBudget is the longest one cycle reads and records signatures: an
 	// account started after it waits for the next cycle, one in progress stops at
-	// its next signature, its cursor saved.
+	// its next signature, its cursor saved. A cycle reads for at most three quarters
+	// of the chain's interval (signatureBudgetOf), so the next cycle, and the account
+	// states it reads first, come about once an interval.
 	signatureCycleBudget = 8 * time.Minute
 	// signatureAccountBudget is how long one account reads and records in a cycle.
 	signatureAccountBudget = 3 * time.Minute
@@ -71,6 +73,7 @@ type SignatureCursorStore interface {
 // scan holding the chain and did nothing.
 type SignatureSyncSummary struct {
 	Accounts            int
+	MovedAccounts       int
 	NewSignatures       int
 	Deposits            int
 	FailedAccounts      int
@@ -119,7 +122,7 @@ func (s *Service) SyncSignatures(ctx context.Context, chainID string) (Signature
 	}
 	settings := s.SignatureSettings(ctx)
 	// The time left is the wall clock's; the budget is then counted on the service's.
-	budget := signatureCycleBudget
+	budget := signatureBudgetOf(settings.Interval)
 	deadline, bounded := ctx.Deadline()
 	if bounded {
 		left := time.Until(deadline)
@@ -161,9 +164,29 @@ func (s *Service) SyncSignatures(ctx context.Context, chainID string) (Signature
 	s.recordSignatureSync(ctx, chainID, summary)
 	slog.Info("deposit signature sync complete", "chain", chainID, "accounts", summary.Accounts,
 		"new_signatures", summary.NewSignatures, "deposits", summary.Deposits, "failed_accounts", summary.FailedAccounts,
-		"backfilling_accounts", summary.BackfillingAccounts, "resolved_pending", summary.ResolvedPending,
+		"backfilling_accounts", summary.BackfillingAccounts, "moved_accounts", summary.MovedAccounts, "resolved_pending", summary.ResolvedPending,
 		"covered_head", summary.CoveredHead)
 	return summary, nil
+}
+
+// signatureRotationEvery is how often the rotation reads again an address whose
+// accounts are all settled, on a chain whose account states show those that moved
+// (chain.AccountStateReader): every cycle reads the moved ones first, so the rotation
+// is the safety net and keeps the pace the sync had before it read states, whatever
+// the interval. An address with an account not settled (backfilling, a gap above its
+// cursor, a failed read) is read on every cycle it has time for.
+const signatureRotationEvery = 10 * time.Minute
+
+// signatureRotationPace is how long the rotation takes at least to read a settled
+// address again: the interval, or signatureRotationEvery when that is longer.
+func signatureRotationPace(interval time.Duration) time.Duration {
+	return max(interval, signatureRotationEvery)
+}
+
+// signatureBudgetOf is how long a cycle of a chain synced every interval reads: three
+// quarters of the interval, at most signatureCycleBudget.
+func signatureBudgetOf(interval time.Duration) time.Duration {
+	return min(signatureCycleBudget, interval*3/4)
 }
 
 // SyncSignaturesWhenDue runs one SyncSignatures cycle of chainID when
@@ -230,6 +253,15 @@ func (s *Service) syncSignatures(ctx context.Context, chainID string, adapter ty
 		transactions: map[string]*signatureOutcome{}, hashes: map[uint64]*slotHash{},
 		claimed: map[string]bool{}, failed: map[string]bool{}}
 	queue := progress.queue(addresses)
+	since := progress.begin(headReadAt)
+	if since.IsZero() {
+		since = headReadAt.Add(-signatureOutboundLookback)
+	}
+	moved := cycle.movedOwners(ctx, addresses, since)
+	if _, readsStates := reader.(chain.AccountStateReader); readsStates {
+		queue = progress.dueForRotation(queue, headReadAt, signatureRotationEvery)
+	}
+	queue = firstThen(queue, moved)
 	forEachConcurrently(ctx, settings.Concurrency, len(queue), func(i int) {
 		cycle.syncOwner(ctx, queue[i], created[queue[i]])
 	})
@@ -240,7 +272,7 @@ func (s *Service) syncSignatures(ctx context.Context, chainID string, adapter ty
 		return summary, fmt.Errorf("deposit signature sync of %s interrupted: %w", chainID, err)
 	}
 
-	summary.NewSignatures, summary.Deposits = cycle.signatures, cycle.deposits
+	summary.NewSignatures, summary.Deposits, summary.MovedAccounts = cycle.signatures, cycle.deposits, cycle.moved
 	summary.FailedAccounts = len(cycle.failed)
 	summary.SkippedMints = progress.skippedMints(cycle.listedAny, cycle.skippedMints)
 	if len(summary.SkippedMints) > 0 {
@@ -382,6 +414,9 @@ type signatureCycle struct {
 	listedAny    bool
 	signatures   int
 	deposits     int
+	// moved is how many accounts' states differed from the stored ones
+	// (signature_states.go).
+	moved int
 }
 
 // signatureOutcome is a transaction's outcome in this cycle; done is closed once it
@@ -453,7 +488,7 @@ func (c *signatureCycle) syncOwner(ctx context.Context, owner string, created ti
 		}
 	}
 	if readAll {
-		c.progress.done(owner)
+		c.progress.done(owner, c.headReadAt)
 	}
 }
 

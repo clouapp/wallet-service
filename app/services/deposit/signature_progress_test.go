@@ -46,7 +46,7 @@ func TestSync_Signatures_ReadsMoreOwnersThanOneCycleHasTimeForInTurns(t *testing
 	f.svc.now = clock.Now
 	// Each listing waits on a rate-limited provider: one owner is listed and read
 	// within a cycle's budget, the next one only listed.
-	f.chain.listDelay, f.chain.listClock = signatureCycleBudget*5/8, clock
+	f.chain.listDelay, f.chain.listClock = signatureBudgetOf(f.settings.Interval)*5/8, clock
 
 	var cycles [][]string
 	var covered SignatureSyncSummary
@@ -144,7 +144,7 @@ func TestSync_Signatures_ANewProcessClaimsNoCoverageBeforeItReadEveryAccount(t *
 	clock := &stepClock{now: time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)}
 	restarted.now = clock.Now
 	f.settings.Concurrency = 1
-	f.chain.listDelay, f.chain.listClock = signatureCycleBudget*5/8, clock
+	f.chain.listDelay, f.chain.listClock = signatureBudgetOf(f.settings.Interval)*5/8, clock
 
 	first, err := restarted.SyncSignatures(context.Background(), sigChain)
 	require.NoError(t, err)
@@ -185,7 +185,7 @@ func TestSync_Signatures_RecordsTheCreditsOfEveryRegisteredTokenReadInTurns(t *t
 	f.settings.Concurrency = 1
 	clock := &stepClock{now: time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)}
 	f.svc.now = clock.Now
-	f.chain.listDelay, f.chain.listClock = signatureCycleBudget*5/8, clock
+	f.chain.listDelay, f.chain.listClock = signatureBudgetOf(f.settings.Interval)*5/8, clock
 	var covered SignatureSyncSummary
 	for cycle := 0; cycle < 12 && covered.CoveredHead == 0; cycle++ {
 		covered = f.sync(t)

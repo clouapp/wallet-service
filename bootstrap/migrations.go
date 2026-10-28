@@ -79,5 +79,6 @@ func Migrations() []schema.Migration {
 		&migrations.M00000000000670UniqueActiveWebhookSubscription{},
 		&migrations.M00000000000680CreateDepositSignatureCursorsTable{},
 		&migrations.M00000000000690AddDepositSignatureCursorAnchors{},
+		&migrations.M00000000000700AddDepositSignatureCursorStates{},
 	}
 }

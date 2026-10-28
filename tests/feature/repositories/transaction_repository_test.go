@@ -610,3 +610,30 @@ func (s *TransactionRepositoryTestSuite) countWebhookEvents(eventID uuid.UUID) i
 	s.Require().NoError(err)
 	return count
 }
+
+// The senders of the chain's withdrawals, sweeps and gas seeds recorded since a time,
+// once each; deposits and older or other-chain rows are left out.
+func (s *TransactionRepositoryTestSuite) TestOutbound_SendersSince_ListsTheAddressesThatSentSinceATime() {
+	ctx := context.Background()
+	walletID := s.insertWallet()
+	insert := func(txType, from, chainID string, createdAt time.Time) {
+		tx := s.makeTx(walletID, txType, string(types.TxStatusConfirmed))
+		tx.FromAddress, tx.Chain = from, chainID
+		s.Require().NoError(s.repo.Create(ctx, tx))
+		_, err := facades.Orm().Query().Exec(`UPDATE transactions SET created_at = ? WHERE id = ?`, createdAt, tx.ID)
+		s.Require().NoError(err)
+	}
+	since := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	insert(models.TxTypeSweep, "0xswept", "eth", since.Add(time.Minute))
+	insert(models.TxTypeSweep, "0xswept", "eth", since.Add(2*time.Minute))
+	insert(models.TxTypeWithdrawal, "0xbase", "eth", since)
+	insert(models.TxTypeGasSeed, "0xseeder", "eth", since.Add(time.Minute))
+	insert(models.TxTypeDeposit, "0xpayer", "eth", since.Add(time.Minute))
+	insert(models.TxTypeSweep, "0xearlier", "eth", since.Add(-time.Second))
+	insert(models.TxTypeSweep, "0xother-chain", "polygon", since.Add(time.Minute))
+
+	senders, err := s.repo.OutboundSendersSince(ctx, "eth", since)
+
+	s.Require().NoError(err)
+	s.ElementsMatch([]string{"0xswept", "0xbase", "0xseeder"}, senders)
+}

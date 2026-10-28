@@ -51,6 +51,10 @@ func (s *sweepConfirmMemory) Within(ctx context.Context, fn func(context.Context
 func (s *sweepConfirmMemory) CountInternalTransfers(context.Context, string, string, uuid.UUID) (int64, error) {
 	return 0, nil
 }
+func (s *sweepConfirmMemory) OutboundSendersSince(context.Context, string, time.Time) ([]string, error) {
+	return nil, nil
+}
+
 func (s *sweepConfirmMemory) FindPendingByChain(context.Context, string) ([]models.Transaction, error) {
 	return nil, nil
 }

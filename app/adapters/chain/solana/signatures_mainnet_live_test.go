@@ -147,3 +147,36 @@ func mainnetBlockTime(ctx context.Context, live *SolanaLive, slot uint64) (time.
 	}
 	return time.Unix(unix, 0), nil
 }
+
+// The batch the signature sync reads first: the derived accounts of the production
+// deposit address (the address and its account of each token, no listing) and their
+// states, read at a slot past the deposit's in one call.
+func TestLive_MainnetStatesOfADepositAddressAreReadInOneBatch(t *testing.T) {
+	live := mainnetLive(t)
+	ctx := context.Background()
+	derived, err := live.DerivedAccounts(ctx, mainnetDepositOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := live.SignatureAccounts(ctx, mainnetDepositOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(derived) != 1+len(mainnetTokens) || !slices.Equal(derived, listed.Accounts[:len(derived)]) {
+		t.Fatalf("derived %v, listed %v: want the address and its %d associated accounts first in both", derived, listed.Accounts, len(mainnetTokens))
+	}
+	read, err := live.AccountStates(ctx, derived)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(read.States) != len(derived) || read.Slot <= mainnetDepositSlot {
+		t.Fatalf("%d states at slot %d for %d accounts", len(read.States), read.Slot, len(derived))
+	}
+	existing := 0
+	for _, account := range derived {
+		if read.States[account] != "" {
+			existing++
+		}
+	}
+	t.Logf("%d accounts read at slot %d in one call, %d of them exist; the address: %q", len(derived), read.Slot, existing, read.States[mainnetDepositOwner])
+}
