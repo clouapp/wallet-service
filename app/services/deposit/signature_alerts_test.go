@@ -257,3 +257,23 @@ func TestScan_Alerts_AHealthyCycleAtTheShortestIntervalRaisesNoAlert(t *testing.
 	require.Contains(t, unsettled, "btc", "1650 slots is past 1500 + 3 × 37 at a 15 s interval")
 	assert.Equal(t, float64(signatureLagThreshold(15*time.Second)), unsettled["btc"]["threshold_blocks"])
 }
+
+// A chain whose adapter reads account states has its settled addresses read again by
+// the rotation every signatureRotationEvery, so its lag is measured over that pace
+// rather than over a short interval: the cycle that left btc a minute behind under a
+// 15 s interval raises nothing there.
+func TestScan_Alerts_AChainThatReadsAccountStatesIsMeasuredOverTheRotationPace(t *testing.T) {
+	logs := captureLogs(t)
+	clock := &testClock{now: activityNow}
+	activity := newMemoryActivity()
+	svc := signatureAlertService(activity, clock)
+	svc.registry.RegisterChain(&stateChain{signatureChain: &signatureChain{MockChain: mocks.NewMockChain("btc")}})
+	svc.signatureSettings = func(context.Context) SignatureSyncSettings { return SignatureSyncSettings{Interval: 15 * time.Second} }
+	activity.signatures["btc"] = SignatureSyncRecord{Accounts: 36, ListedHead: 1_001_650, Head: 1_001_800,
+		CoveredHead: 1_000_000, ReadEveryAccount: true, At: activityNow.Add(-10 * time.Second)}
+
+	require.NoError(t, svc.RunWithdrawalConfirmationCheck(context.Background()))
+
+	assert.NotContains(t, warnings(logs(), signatureUnsettledMessage), "btc")
+	assert.Greater(t, signatureLagThreshold(signatureRotationPace(15*time.Second)), uint64(1_650))
+}

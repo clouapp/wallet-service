@@ -312,15 +312,17 @@ func TestSync_Signatures_SavesTheCursorAsItGoes(t *testing.T) {
 }
 
 // Each account reads for at most signatureAccountBudget a cycle and the cycle for
-// signatureCycleBudget: an account stopped by it keeps what it recorded and goes on
+// signatureBudgetOf its interval: an account stopped by it keeps what it recorded and goes on
 // next cycle, and is no failure.
 func TestSync_Signatures_StopsAnAccountAtItsTimeBudgetAndGoesOnNextCycle(t *testing.T) {
 	f := newSignatureFixture(t)
 	clock := &stepClock{now: activityNow, step: 30 * time.Second}
 	f.svc.now = clock.Now
 	// The clock moves on every read, whoever reads it: one owner at a time, so the
-	// reads of alice's accounts do not spend bob's budget.
+	// reads of alice's accounts do not spend bob's budget; a 10-minute interval leaves
+	// the cycle a budget longer than an account's.
 	f.settings.Concurrency = 1
+	f.settings.Interval = 10 * time.Minute
 	bobHistory(f, 1001, 1040)
 
 	first := f.sync(t)

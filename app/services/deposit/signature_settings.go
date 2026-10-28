@@ -9,8 +9,11 @@ import (
 )
 
 const (
-	// DefaultSignatureSyncInterval is how often the signature sync reads a chain.
-	DefaultSignatureSyncInterval = 10 * time.Minute
+	// DefaultSignatureSyncInterval is how often the signature sync reads a chain: each
+	// cycle reads the states of its accounts first (chain.AccountStateReader), so a
+	// deposit is read within about an interval, and the rest of its budget (three
+	// quarters of the interval) goes on with the rotation.
+	DefaultSignatureSyncInterval = time.Minute
 	// MinSignatureSyncInterval is the shortest interval the sync accepts: the local
 	// workers' signature loop ticks every 15 s.
 	MinSignatureSyncInterval = 15 * time.Second
@@ -38,8 +41,8 @@ type SignatureSyncSettings struct {
 	MaxPages    int
 }
 
-// DefaultSignatureSyncSettings syncs no chain, every 10 minutes, 2 accounts at a
-// time, at most 10 pages of history without a floor.
+// DefaultSignatureSyncSettings syncs no chain, every minute, 2 accounts at a time,
+// at most 10 pages of history without a floor.
 func DefaultSignatureSyncSettings() SignatureSyncSettings {
 	return SignatureSyncSettings{
 		Interval:    DefaultSignatureSyncInterval,

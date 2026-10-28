@@ -168,7 +168,7 @@ func registerVault() {
 		// chain only where it is also in LOCAL_DEPOSIT_SCAN_CHAINS.
 		"deposit_signatures": map[string]any{
 			"chains":           envString("DEPOSIT_SIGNATURE_CHAINS", ""),
-			"interval_seconds": envInt("DEPOSIT_SIGNATURE_INTERVAL_SECONDS", 600),
+			"interval_seconds": envInt("DEPOSIT_SIGNATURE_INTERVAL_SECONDS", 60),
 			"concurrency":      envInt("DEPOSIT_SIGNATURE_CONCURRENCY", 2),
 			"max_pages":        envInt("DEPOSIT_SIGNATURE_MAX_PAGES", 10),
 		},

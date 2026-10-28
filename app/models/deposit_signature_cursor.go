@@ -27,22 +27,31 @@ import "time"
 // index holds it there. Empty: the end is the only recorded signature of its stretch
 // (the listing then starts at the newest signature), or the row was saved before the
 // anchors were recorded.
+//
+// AccountState is the state the sync last saw the account in, read at
+// AccountStateSlot (what the chain's adapter reads in one batch for many accounts):
+// stored once a read of the account proved its new signatures read past that slot, so
+// a later state that differs means the account moved since and is read first. Empty:
+// no state known (the account did not exist, or the row predates the states).
 type DepositSignatureCursor struct {
-	Chain          string    `gorm:"column:chain;primaryKey"`
-	Account        string    `gorm:"column:account;primaryKey"`
-	Signature      string    `gorm:"column:signature"`
-	Slot           int64     `gorm:"column:slot"`
-	BackfillBefore string    `gorm:"column:backfill_before"`
-	BackfillAnchor string    `gorm:"column:backfill_anchor"`
-	SyncedFromSlot int64     `gorm:"column:synced_from_slot"`
-	Covered        bool      `gorm:"column:covered"`
-	EndSeen        bool      `gorm:"column:end_seen"`
-	AheadSignature string    `gorm:"column:ahead_signature"`
-	AheadSlot      int64     `gorm:"column:ahead_slot"`
-	AheadBefore    string    `gorm:"column:ahead_before"`
-	AheadAnchor    string    `gorm:"column:ahead_anchor"`
-	CreatedAt      time.Time `gorm:"column:created_at"`
-	UpdatedAt      time.Time `gorm:"column:updated_at"`
+	Chain          string `gorm:"column:chain;primaryKey"`
+	Account        string `gorm:"column:account;primaryKey"`
+	Signature      string `gorm:"column:signature"`
+	Slot           int64  `gorm:"column:slot"`
+	BackfillBefore string `gorm:"column:backfill_before"`
+	BackfillAnchor string `gorm:"column:backfill_anchor"`
+	SyncedFromSlot int64  `gorm:"column:synced_from_slot"`
+	Covered        bool   `gorm:"column:covered"`
+	EndSeen        bool   `gorm:"column:end_seen"`
+	AheadSignature string `gorm:"column:ahead_signature"`
+	AheadSlot      int64  `gorm:"column:ahead_slot"`
+	AheadBefore    string `gorm:"column:ahead_before"`
+	AheadAnchor    string `gorm:"column:ahead_anchor"`
+	// AccountState and AccountStateSlot: see the type's comment.
+	AccountState     string    `gorm:"column:account_state"`
+	AccountStateSlot int64     `gorm:"column:account_state_slot"`
+	CreatedAt        time.Time `gorm:"column:created_at"`
+	UpdatedAt        time.Time `gorm:"column:updated_at"`
 }
 
 func (DepositSignatureCursor) TableName() string { return "deposit_signature_cursors" }

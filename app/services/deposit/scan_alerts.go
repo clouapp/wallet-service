@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"sort"
 	"time"
+
+	"github.com/macrowallets/waas/app/services/chain"
 )
 
 const (
@@ -214,10 +216,11 @@ func (s *Service) warnScanActivity(ctx context.Context) map[string]bool {
 // accounts failed (their deposits wait for a later cycle), it skipped registered
 // tokens the node does not hold as token mints, or an account does not settle: the
 // slot every account was read up to trails the head that cycle read before listing
-// the addresses by more than the index margin plus signatureSettleIntervals intervals
-// of slots (a cycle that read every account leaves the margin at most, however long
-// it took), or accounts have been backfilling for
-// longer than signatureSettleIntervals intervals (an account never read up to the
+// the addresses by more than the index margin plus signatureSettleIntervals paces of
+// slots (the interval; on a chain that reads account states, signatureRotationPace,
+// which the rotation reads a settled address again at; a cycle that read every
+// account leaves the margin at most, however long it took), or accounts have been
+// backfilling for longer than signatureSettleIntervals paces (an account never read up to the
 // head with proof keeps the covered slot back, with no covered slot at all while
 // none ever was). Its block scan records no cycle meanwhile, so that scan's alerts
 // are cleared rather than raised forever.
@@ -258,8 +261,12 @@ func (s *Service) warnSignatureSync(ctx context.Context, chainID string, activit
 	}, func() {
 		slog.Info(signatureMintsClearedMessage, "chain", chainID)
 	})
-	lag, lagThreshold := sync.SettleLag(), signatureLagThreshold(interval)
-	backfilling, backfillThreshold := time.Duration(0), signatureSettleIntervals*interval
+	pace := interval
+	if s.readsAccountStates(chainID) {
+		pace = signatureRotationPace(interval)
+	}
+	lag, lagThreshold := sync.SettleLag(), signatureLagThreshold(pace)
+	backfilling, backfillThreshold := time.Duration(0), signatureSettleIntervals*pace
 	if sync.BackfillingAccounts > 0 && !sync.BackfillingSince.IsZero() {
 		backfilling = now.Sub(sync.BackfillingSince)
 	}
@@ -298,6 +305,20 @@ func (s *Service) clearSignatureAlerts(ctx context.Context, chainID string) {
 	s.alert(ctx, "signature-unsettled:"+chainID, false, quiet, func() {
 		slog.Info(signatureSettledMessage, "chain", chainID, "reason", "the block scan reads the chain")
 	})
+}
+
+// readsAccountStates reports whether chainID's adapter reads account states in
+// batches (chain.AccountStateReader), so the signature sync reads first what moved.
+func (s *Service) readsAccountStates(chainID string) bool {
+	if s.registry == nil {
+		return false
+	}
+	adapter, err := s.registry.Chain(chainID)
+	if err != nil {
+		return false
+	}
+	_, ok := adapter.(chain.AccountStateReader)
+	return ok
 }
 
 // signatureLagThreshold is the lag, in slots, past which an account of a chain in

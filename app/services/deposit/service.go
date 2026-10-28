@@ -108,6 +108,9 @@ type transactionStore interface {
 	CountByChainAndTxHash(ctx context.Context, chainID, txHash, txType string) (int64, error)
 	CountInternalTransfers(ctx context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error)
 	FindPendingByChain(ctx context.Context, chainID string) ([]models.Transaction, error)
+	// OutboundSendersSince is the addresses that sent a withdrawal, a sweep or a gas
+	// seed recorded since (the signature sync reads them first).
+	OutboundSendersSince(ctx context.Context, chainID string, since time.Time) ([]string, error)
 	FindConfirmedOutboundWithoutFee(ctx context.Context, chainID string, limit int) ([]models.Transaction, error)
 	FindConfirmedDepositsMissingEvent(ctx context.Context, eventType string, from, to time.Time, chainIDs []string, limit int) ([]models.Transaction, error)
 	FindConfirmedNativeDeposits(ctx context.Context, chainID string, since time.Time, afterID uuid.UUID, limit int) ([]models.Transaction, error)
