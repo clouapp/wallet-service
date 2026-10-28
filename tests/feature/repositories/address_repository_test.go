@@ -2,7 +2,9 @@ package repositories_test
 
 import (
 	"context"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
@@ -172,4 +174,32 @@ func (s *AddressRepositoryTestSuite) TestPluck_Active_Addresses() {
 	s.Contains(addrs, "0xACTIVE1")
 	s.Contains(addrs, "0xACTIVE2")
 	s.NotContains(addrs, "0xINACTIVE")
+}
+
+func (s *AddressRepositoryTestSuite) TestActive_AddressCreations_ListsTheActiveAddressesInOrderWithTheirCreation() {
+	walletID := s.insertWallet("tsol")
+	fixtures.InsertAddress(s.T(), walletID, "tsol", "sol-b", "u1", 1)
+	fixtures.InsertAddress(s.T(), walletID, "tsol", "sol-a", "u2", 2)
+	inactive := fixtures.InsertAddress(s.T(), walletID, "tsol", "sol-c", "u3", 3)
+	_, err := facades.Orm().Query().Model(&inactive).Where("id = ?", inactive.ID).Update("is_active", false)
+	s.Require().NoError(err)
+	_, err = facades.Orm().Query().Exec(`UPDATE addresses SET created_at = '2026-10-01 12:00:00' WHERE address = 'sol-a'`)
+	s.Require().NoError(err)
+
+	rows, err := s.repo.ActiveAddressCreations(context.Background(), "tsol")
+	s.Require().NoError(err)
+	var listed []string
+	created := map[string]time.Time{}
+	for _, row := range rows {
+		listed = append(listed, row.Address)
+		created[row.Address] = row.CreatedAt
+		s.False(row.CreatedAt.IsZero(), "created_at of %s", row.Address)
+	}
+	// InsertWallet seeds an active deposit address beside the rows above.
+	s.Len(listed, 3)
+	s.True(slices.IsSorted(listed), "in address order: %v", listed)
+	s.Contains(listed, "sol-a")
+	s.Contains(listed, "sol-b")
+	s.NotContains(listed, "sol-c")
+	s.Equal(time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC), created["sol-a"].UTC())
 }

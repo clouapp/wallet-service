@@ -1236,14 +1236,20 @@ on; the sync is its safety net, and the only detector where it is not.
   devnet chain) is skipped, logged at error level, named in the cycle's record (`skipped_mints` on
   `/health`) and alerted on; it never stops the owners or the other mints (asked again after 10
   minutes). An address whose accounts cannot be listed is skipped that cycle and counts as one failed
-  account.
+  account. The listing is part of the address's read: it runs inside the cycle's budget, never before
+  the reads.
 - **What an account's cursor holds** (`deposit_signature_cursors`, migration 680, one row per chain
   and account): the recorded signatures are one stretch of the account's history, from `signature`
   (the newest, at `slot`) down to `backfill_before` (the oldest); `synced_from_slot` is the floor the
   history is read down to, fixed when the account is first read (the chain's scan checkpoint lowered
   to its lowest pending block, so the first cycles recover what the block scan left, the floor slot
   included; a chain with neither: the oldest slot of the newest `max_pages` pages,
-  `DEPOSIT_SIGNATURE_MAX_PAGES` default 10, the cut logged), and `covered` says the backfill got there
+  `DEPOSIT_SIGNATURE_MAX_PAGES` default 10, the cut logged), raised to the lowest slot its address can
+  have been created at, since an address receives nothing before it exists: the head read before the
+  addresses were listed less `chain.SignatureReader.SlotsWithin` of the time since `addresses.created_at`
+  (Solana: one slot per 50 ms, a quarter of the ~215 ms mainnet measured on 2026-10-28, checked by
+  `TestLive_MainnetSlotsNeverOutpaceTheBoundTheFloorOfANewAddressRestsOn`; an address older than that
+  bound reaches keeps the chain's floor), and `covered` says the backfill got there
   (`end_seen`: the last backfill read showed the end once). While `signature` is empty, `slot` is where
   the account is known empty up to: the head less 1500 slots (`signatureIndexMargin`, about one sync
   interval at the default 600 s), never the head, since the head (`getSlot`) and the listing are two
@@ -1269,11 +1275,15 @@ on; the sync is its safety net, and the only detector where it is not.
   (`before` = `ahead_before`, `until` = the cursor), and once an endpoint proves the gap read the
   stretches join. Another such listing meanwhile starts a new stretch (the old one is read again as part
   of the gap): no burst fails an account. Recording is idempotent, so the order across pages does not
-  matter. A failed transaction (`err`) is passed over unread. Each account reads for at most 3 minutes a
-  cycle and the cycle for 8, and, under a context with a deadline (the `deposit_scanner` Lambda's), until
-  20 s before it, its reads cut 6 s before it so the final cursor saves land in time (with less than 20 s
-  left no cycle runs): what the budget leaves goes on next cycle and is no failure
-  (`backfilling_accounts`).
+  matter. A failed transaction (`err`) is passed over unread. The addresses are read at once,
+  `concurrency` at a time, each by one goroutine that lists its accounts and reads them in turn (an
+  account two addresses list is read by one). Each account reads for at most 3 minutes a cycle and the
+  cycle for 8 (no address starts past it), and, under a context with a deadline (the `deposit_scanner`
+  Lambda's), until 20 s before it, its reads cut 6 s before it so the final cursor saves land in time
+  (with less than 20 s left no cycle runs): what the budget leaves goes on next cycle and is no failure
+  (`backfilling_accounts`). A cycle starts the addresses read longest ago first (never read: first of
+  all, in address order), so a chain with more accounts than one cycle reads is read in turns
+  (`signatureProgress`, kept per chain in the process).
 - **End of a history**: a page shorter than 1000 ends a listing above a cursor only once the same
   endpoint confirms it: one more `getSignaturesForAddress` for the single signature below the oldest it
   listed (or below `before`) must answer the cursor itself. Agave fails a `before` or `until` it does not
@@ -1358,16 +1368,19 @@ on; the sync is its safety net, and the only detector where it is not.
   it confirmed are refreshed once the lock is released. The paused block scan also runs that step on
   its own cadence (below), so a deposit the provider push recorded confirms within a scan interval, and
   refreshes the balances once it released the lock too.
-- **Covered slot and pending blocks**: a cycle in which every account of every address was read, with
-  proof, from its floor up to a head (no failed, unlisted or backfilling account, no gap left above a
-  cursor, no skipped mint: its accounts were not read) records `covered_head`: the lowest head an
+- **Covered slot and pending blocks**: once every account of every active address was read, with proof,
+  from its floor up to a head by this process's cycles (each address listed, the last read of each
+  account settled it: not failed, not backfilling, no gap left above its cursor; no skipped mint, whose
+  accounts were not read), a cycle that failed nothing records `covered_head`: the lowest head an
   account's endpoint read it up to, less the 1500-slot index margin, and never above the head read
-  before the addresses were listed (an address created later received nothing up to it), with
-  `read_every_account`. It then drops the chain's pending blocks from the highest floor up to
-  `covered_head` (the histories cover them); older ones, and newer ones within the margin, stay for the
-  pending retry, which keeps running in signature mode. A
-  cycle that did not read them all keeps the last covered slot in its record for `/health`, without
-  `read_every_account`. The floor is never read from a degraded pending store (a
+  before the addresses were listed, in this cycle or the one that listed an address's accounts (an
+  address created later received nothing up to it, and an account it gained since is not in the list),
+  with `read_every_account`. The accounts may have been read by several cycles: what an account is read
+  up to stays true, since a cursor never moves back. A process that has not read every account itself
+  (one just started) claims nothing. The cycle then drops the chain's pending blocks from the highest
+  floor up to `covered_head` (the histories cover them); older ones, and newer ones within the margin,
+  stay for the pending retry, which keeps running in signature mode. A cycle that records none keeps the
+  last covered slot in its record for `/health`, without `read_every_account`. The floor is never read from a degraded pending store (a
   `DurableStore` backend that did not answer, `pending.ListComplete`): that fails the cycle. A deposit to
   a token account that is not an associated one and was closed before the sync read its owner is not
   found.
@@ -1384,7 +1397,7 @@ on; the sync is its safety net, and the only detector where it is not.
 - **Where it runs**: the local workers' signature loop ticks every 15 s and syncs each listed chain
   that the process scans (`LOCAL_DEPOSIT_SCAN_CHAINS`), once its interval (`interval_seconds`,
   `DEPOSIT_SIGNATURE_INTERVAL_SECONDS`, default 600, at least 15) elapsed since its last sync started,
-  `concurrency` accounts at once (`DEPOSIT_SIGNATURE_CONCURRENCY`, default 2); a changed setting
+  `concurrency` addresses at once (`DEPOSIT_SIGNATURE_CONCURRENCY`, default 2); a changed setting
   applies on the next tick. The `deposit_scanner` Lambda (`RunScanInvocation`) syncs a listed chain
   once its interval elapsed since the last completed cycle (the activity record), not on every
   invocation. `go run . artisan deposits:sync-signatures <chain>` runs one now, listed or not (exit 1
@@ -1398,7 +1411,7 @@ on; the sync is its safety net, and the only detector where it is not.
 — guarded by `app/adapters/chain/solana/signatures_test.go` (devnet slot 514235140 and the
 transactions 2yMCe5… and 634Fzh… recorded in `testdata/solana`, `TestSolana_TransactionTransfers_*`,
 `TestSolana_AccountSignatures_*`, `TestSolana_SignatureAccounts_*`), `app/services/deposit/signatures_test.go`,
-`signature_backfill_test.go` and `signature_gap_test.go` (`TestSync_Signatures_*`, the property test
+`signature_backfill_test.go`, `signature_gap_test.go` and `signature_progress_test.go` (`TestSync_Signatures_*`, the property test
 `TestProperty_SignatureSync_ReadsEveryHistoryWhateverTheEndpointShows`, `TestScan_LatestBlocks_*`, `TestRun_ScanInvocation_*`,
 `TestScan_Alerts_FollowTheRecordedModeNotTheNewestRecord`), `app/services/deposit/signature_settings_test.go`,
 `app/services/settings/deposit_signatures_test.go`, `app/services/cacheguard` (`TestAcquireHold_*`),
@@ -1410,7 +1423,10 @@ transactions 2yMCe5… and 634Fzh… recorded in `testdata/solana`, `TestSolana_
 against devnet (accounts, a page of history, a listing above a cursor and one anchored below a
 signature, an unknown `before` the endpoint must fail, and the credits of live transactions compared with
 `ScanBlock` in their slot, about a dozen calls): `go test -tags solana_signatures_live -run TestLive_
-./app/adapters/chain/solana/` (`SOLANA_LIVE_RPC_URL` for another endpoint).
+./app/adapters/chain/solana/` (`SOLANA_LIVE_RPC_URL` for another endpoint). The same tag runs the
+mainnet check (`TestLive_Mainnet*`, `SOLANA_MAINNET_LIVE_RPC_URL`): the accounts of a production deposit
+address cover the catalog's six mainnet tokens with none skipped, its 2026-10-28 deposit of 0.01 SOL is
+read, and the slot bound of a new address's floor keeps at least twice the measured slot rate.
 
 ### Provider push subscriptions (ingest)
 
