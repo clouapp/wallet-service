@@ -36,6 +36,31 @@ type SignatureReader interface {
 	SlotsWithin(d time.Duration) uint64
 }
 
+// AccountStateReader is a SignatureReader that reads the state of many accounts in
+// one call. The signature sync reads first the history of each account whose state
+// differs from the one stored after its last read, so among thousands of accounts it
+// finds those that moved in a few calls instead of listing each one.
+type AccountStateReader interface {
+	// DerivedAccounts returns the accounts of owner that need no listing: owner itself
+	// and its associated token account of each registered token (SignatureAccounts
+	// without the token accounts only a listing finds), without a call once each
+	// mint's program is known.
+	DerivedAccounts(ctx context.Context, owner string) ([]string, error)
+	// AccountStates reads accounts (at most AccountStateBatch) at once, finalized: for
+	// each, a state that changes whenever a transfer moves it (empty for an account
+	// that does not exist), and the slot they were read at.
+	AccountStates(ctx context.Context, accounts []string) (AccountStates, error)
+}
+
+// AccountStateBatch is the most accounts one AccountStates call reads.
+const AccountStateBatch = 100
+
+// AccountStates is the state of each account read, at Slot.
+type AccountStates struct {
+	Slot   uint64
+	States map[string]string
+}
+
 // SignatureAccounts is the accounts of one owner, and the registered mints left out
 // because the node does not hold them as token mints (a mint of another network, a
 // mistyped row): their deposits cannot be read until the registry is fixed.

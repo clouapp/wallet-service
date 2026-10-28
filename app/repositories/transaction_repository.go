@@ -255,6 +255,21 @@ func (r *TransactionRepository) CountInternalTransfers(ctx context.Context, chai
 	return count, nil
 }
 
+// OutboundSendersSince returns the addresses of chainID that sent a withdrawal, a
+// sweep or a gas seed recorded at or after since, without repeats.
+func (r *TransactionRepository) OutboundSendersSince(ctx context.Context, chainID string, since time.Time) ([]string, error) {
+	var senders []string
+	if err := r.Query(ctx).Model(&models.Transaction{}).
+		Where("chain", chainID).
+		WhereIn("tx_type", []any{models.TxTypeWithdrawal, models.TxTypeSweep, models.TxTypeGasSeed}).
+		Where("created_at >= ?", since.UTC()).
+		Distinct("from_address").
+		Pluck("from_address", &senders); err != nil {
+		return nil, fmt.Errorf("outbound senders since %s: %w", since.UTC().Format(time.RFC3339), err)
+	}
+	return senders, nil
+}
+
 // FindPendingByChain returns every transaction on chainID that the confirmation
 // loop must advance — deposits plus outbound legs (withdrawals, sweeps, gas seeds).
 func (r *TransactionRepository) FindPendingByChain(ctx context.Context, chainID string) ([]models.Transaction, error) {

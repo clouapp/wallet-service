@@ -46,13 +46,16 @@ const (
 )
 
 // accountSync is what reading one account did: whether it started (not when the
-// cycle's budget was spent or its lock lost before it), the signatures it read, the
-// deposits it recorded first in this cycle, the floor its history is read down to,
+// cycle's budget was spent or its lock lost before it), the slot its newest
+// signatures are proven read up to (readTo: the listing from the top ended at a head,
+// less the index margin; 0 when it did not), the signatures it read, the deposits it
+// recorded first in this cycle, the floor its history is read down to,
 // the slot every signature up to which is recorded (coveredTo: 0 while the account is
 // not read down to its floor, a gap above its cursor is still read, or the cycle left
 // it behind), and why it stopped early.
 type accountSync struct {
 	started    bool
+	readTo     uint64
 	signatures int
 	deposits   int
 	syncedFrom uint64
@@ -86,6 +89,10 @@ type accountState struct {
 	endSeen      bool
 	stored       bool
 	unsaved      int
+	// state and stateSlot are the account's state as the sync last stored it
+	// (models.DepositSignatureCursor.AccountState), and the slot it was read at.
+	state     string
+	stateSlot uint64
 }
 
 func newAccountState(account string, row *models.DepositSignatureCursor, floor signatureFloor) *accountState {
@@ -95,7 +102,7 @@ func newAccountState(account string, row *models.DepositSignatureCursor, floor s
 	return &accountState{account: account, top: row.Signature, topSlot: storedSlot(row.Slot), bottom: row.BackfillBefore,
 		bottomAnchor: row.BackfillAnchor, ahead: row.AheadSignature, aheadSlot: storedSlot(row.AheadSlot), aheadBottom: row.AheadBefore,
 		aheadAnchor: row.AheadAnchor, floor: storedSlot(row.SyncedFromSlot), hasFloor: true, covered: row.Covered, endSeen: row.EndSeen,
-		stored: true}
+		stored: true, state: row.AccountState, stateSlot: storedSlot(row.AccountStateSlot)}
 }
 
 // storedSlot is a slot read from the cursor store, which never returns a negative
@@ -150,7 +157,7 @@ func (c *signatureCycle) syncAccount(ctx context.Context, account string, floor 
 		}
 	}()
 
-	head, upToDate := uint64(0), false
+	head, upToDate, topReadTo := uint64(0), false, uint64(0)
 	if st.top != "" || st.covered || st.ahead != "" {
 		var goOn bool
 		head, upToDate, goOn = c.readNew(ctx, st, stopAt, &result)
@@ -167,6 +174,7 @@ func (c *signatureCycle) syncAccount(ctx context.Context, account string, floor 
 			pages = c.settings.MaxPages
 		}
 		before, anchor := c.placeBottom(st)
+		fromTop := before == ""
 		history, err := c.reader.AccountSignatures(ctx, account, chain.SignatureQuery{
 			Before: before, Anchor: anchor, FloorSlot: st.floor, HasFloor: st.hasFloor, MaxPages: pages,
 		})
@@ -181,6 +189,10 @@ func (c *signatureCycle) syncAccount(ctx context.Context, account string, floor 
 		if !c.process(ctx, st, history.Signatures, moveDown, stopAt, &result) {
 			return result
 		}
+		if fromTop {
+			// A listing from the newest signature read the account's newest ones too.
+			topReadTo = indexedUpTo(history.Head)
+		}
 		c.judgeHistoryEnd(st, history, noFloor)
 		if st.covered && nothingRecorded {
 			head, upToDate = history.Head, true
@@ -191,6 +203,11 @@ func (c *signatureCycle) syncAccount(ctx context.Context, account string, floor 
 	if st.covered && upToDate {
 		result.coveredTo = indexedUpTo(head)
 	}
+	result.readTo = topReadTo
+	if upToDate {
+		result.readTo = indexedUpTo(head)
+	}
+	c.noteState(st, result.readTo)
 	return result
 }
 
@@ -493,7 +510,7 @@ func (c *signatureCycle) saveState(ctx context.Context, st *accountState) error 
 	if st.unsaved == 0 {
 		return nil
 	}
-	if st.topSlot > math.MaxInt64 || st.floor > math.MaxInt64 || st.aheadSlot > math.MaxInt64 {
+	if st.topSlot > math.MaxInt64 || st.floor > math.MaxInt64 || st.aheadSlot > math.MaxInt64 || st.stateSlot > math.MaxInt64 {
 		return fmt.Errorf("signature cursor of %s: a slot does not fit a bigint", st.account)
 	}
 	saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), signatureCursorSaveTimeout)
@@ -502,6 +519,7 @@ func (c *signatureCycle) saveState(ctx context.Context, st *accountState) error 
 		Chain: c.chainID, Account: st.account, Signature: st.top, Slot: int64(st.topSlot),
 		BackfillBefore: st.bottom, BackfillAnchor: st.bottomAnchor, SyncedFromSlot: int64(st.floor), Covered: st.covered, EndSeen: st.endSeen,
 		AheadSignature: st.ahead, AheadSlot: int64(st.aheadSlot), AheadBefore: st.aheadBottom, AheadAnchor: st.aheadAnchor,
+		AccountState: st.state, AccountStateSlot: int64(st.stateSlot),
 	}); err != nil {
 		return fmt.Errorf("save the signature cursor of %s: %w", st.account, err)
 	}

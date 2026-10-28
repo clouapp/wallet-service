@@ -284,7 +284,7 @@ func depositSignaturesGroup() Group {
 			{
 				Key:     keySignatureInterval,
 				Label:   "Interval",
-				Help:    "Seconds between two syncs of a chain, at least 15. 0 keeps the environment default (600).",
+				Help:    "Seconds between two syncs of a chain, at least 15. 0 keeps the environment default (60).",
 				Type:    TypeInt,
 				Default: func() any { return 0 },
 			},

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"slices"
 	"sync"
+	"time"
 )
 
 // signatureProgress is what this process's signature sync cycles learned of one
@@ -23,15 +24,30 @@ type signatureProgress struct {
 	reads   map[string]accountRead
 	skipped []string
 	readSeq uint64
+	// cycleAt is when the last cycle began; moves is, for each account whose state
+	// differs from the stored one, the state it moved to and the slot it was first
+	// seen at (signature_states.go).
+	cycleAt time.Time
+	moves   map[string]accountMove
+	// stateStart is the batch of account states the next cycle reads first.
+	stateStart int
+}
+
+// accountMove is the state an account was seen in, other than its stored one, and the
+// slot that state was first seen at.
+type accountMove struct {
+	state string
+	slot  uint64
 }
 
 // ownerAccounts is the accounts of an owner as listed, the head read before the cycle
 // that listed them (no account it gained since is in the list), and when a cycle last
-// read them all, in the order owners were read (zero: never).
+// read them all, in the order owners were read and at the cycle's time (zero: never).
 type ownerAccounts struct {
 	accounts   []string
 	listedHead uint64
 	readSeq    uint64
+	readAt     time.Time
 }
 
 // accountRead is how far an account is read: every signature up to coveredTo is
@@ -55,7 +71,7 @@ type signatureCoverage struct {
 }
 
 func newSignatureProgress() *signatureProgress {
-	return &signatureProgress{owners: map[string]ownerAccounts{}, reads: map[string]accountRead{}}
+	return &signatureProgress{owners: map[string]ownerAccounts{}, reads: map[string]accountRead{}, moves: map[string]accountMove{}}
 }
 
 // progressOf is the progress of chainID's signature sync in this process.
@@ -80,6 +96,7 @@ func (p *signatureProgress) queue(owners []string) []string {
 		}
 		for _, account := range listed.accounts {
 			delete(p.reads, account)
+			delete(p.moves, account)
 		}
 		delete(p.owners, owner)
 	}
@@ -88,6 +105,69 @@ func (p *signatureProgress) queue(owners []string) []string {
 		return cmp.Compare(p.owners[a].readSeq, p.owners[b].readSeq)
 	})
 	return queue
+}
+
+// begin records that a cycle begins at now and returns when the previous one began
+// (zero: none in this process).
+func (p *signatureProgress) begin(now time.Time) time.Time {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	previous := p.cycleAt
+	p.cycleAt = now
+	return previous
+}
+
+// stateBatchStart is the batch, of n, the cycle reads the account states of first:
+// the one after the last the previous cycle started.
+func (p *signatureProgress) stateBatchStart(n int) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if n == 0 {
+		return 0
+	}
+	return p.stateStart % n
+}
+
+// stateBatchesRead records that a cycle started read of its n batches, from its first.
+func (p *signatureProgress) stateBatchesRead(read, n int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if n == 0 {
+		return
+	}
+	p.stateStart = (p.stateStart%n + read) % n
+}
+
+// accountsOf is the accounts of owner as last listed (nil: never listed).
+func (p *signatureProgress) accountsOf(owner string) []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.owners[owner].accounts)
+}
+
+// observe records the state account was read in at slot against the one stored after
+// its last read, and reports whether it moved: a state seen again keeps the slot it
+// was first seen at, and one equal to the stored state forgets the move.
+func (p *signatureProgress) observe(account, state, stored string, slot uint64) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if state == stored {
+		delete(p.moves, account)
+		return false
+	}
+	if move, ok := p.moves[account]; !ok || move.state != state {
+		p.moves[account] = accountMove{state: state, slot: slot}
+	}
+	return true
+}
+
+// movedTo is the state account moved to and the slot it was first seen at (ok false:
+// it did not move).
+func (p *signatureProgress) movedTo(account string) (string, uint64, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	move, ok := p.moves[account]
+	return move.state, move.slot, ok
 }
 
 // listed records the accounts of owner, listed after head was read.
@@ -99,16 +179,36 @@ func (p *signatureProgress) listed(owner string, accounts []string, head uint64)
 	p.owners[owner] = listed
 }
 
-// done records that a cycle read every account of owner, after every owner read
-// before it.
-func (p *signatureProgress) done(owner string) {
+// done records that the cycle of at read every account of owner, after every owner
+// read before it.
+func (p *signatureProgress) done(owner string, at time.Time) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if listed, ok := p.owners[owner]; ok {
 		p.readSeq++
-		listed.readSeq = p.readSeq
+		listed.readSeq, listed.readAt = p.readSeq, at
 		p.owners[owner] = listed
 	}
+}
+
+// dueForRotation keeps, of queue, the owners the rotation reads at now: one never
+// read, one with an account whose last read did not settle it, and one last read
+// every or longer ago.
+func (p *signatureProgress) dueForRotation(queue []string, now time.Time, every time.Duration) []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.DeleteFunc(slices.Clone(queue), func(owner string) bool {
+		listed, ok := p.owners[owner]
+		if !ok || listed.readAt.IsZero() || now.Sub(listed.readAt) >= every {
+			return false
+		}
+		for _, account := range listed.accounts {
+			if !p.reads[account].settled {
+				return false
+			}
+		}
+		return true
+	})
 }
 
 // skippedMints records the registered mints the cycle's listings left out (the last

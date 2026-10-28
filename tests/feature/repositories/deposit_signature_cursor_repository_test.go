@@ -150,6 +150,30 @@ func (s *DepositSignatureCursorRepositoryTestSuite) TestAdvance_Never_MovesACurs
 	s.EqualValues(500, kept.Slot)
 }
 
+// The account state moves with each save, but never to a state read at an older slot
+// than the stored one, whatever the save's cursor.
+func (s *DepositSignatureCursorRepositoryTestSuite) TestAdvance_KeepsTheNewestAccountState() {
+	ctx := context.Background()
+	s.Require().NoError(s.repo.Advance(ctx, models.DepositSignatureCursor{Chain: models.ChainTSOL, Account: cursorOwner,
+		Signature: "sig-a", Slot: 100, AccountState: "state-at-300", AccountStateSlot: 300}))
+	row := s.cursorsOf(models.ChainTSOL)[cursorOwner]
+	s.Equal("state-at-300", row.AccountState)
+	s.EqualValues(300, row.AccountStateSlot)
+
+	s.Require().NoError(s.repo.Advance(ctx, models.DepositSignatureCursor{Chain: models.ChainTSOL, Account: cursorOwner,
+		Signature: "sig-b", Slot: 120, AccountState: "state-at-250", AccountStateSlot: 250}))
+	row = s.cursorsOf(models.ChainTSOL)[cursorOwner]
+	s.Equal("sig-b", row.Signature, "the cursor moves")
+	s.Equal("state-at-300", row.AccountState, "a state read at an older slot is not stored")
+	s.EqualValues(300, row.AccountStateSlot)
+
+	s.Require().NoError(s.repo.Advance(ctx, models.DepositSignatureCursor{Chain: models.ChainTSOL, Account: cursorOwner,
+		Signature: "sig-b", Slot: 120, AccountState: "state-at-400", AccountStateSlot: 400}))
+	row = s.cursorsOf(models.ChainTSOL)[cursorOwner]
+	s.Equal("state-at-400", row.AccountState, "a newer state is stored with the cursor unchanged")
+	s.EqualValues(400, row.AccountStateSlot)
+}
+
 func (s *DepositSignatureCursorRepositoryTestSuite) TestAdvance_Refuses_ABlankKeyOrANegativeSlot() {
 	ctx := context.Background()
 	for name, cursor := range map[string]models.DepositSignatureCursor{
@@ -158,6 +182,7 @@ func (s *DepositSignatureCursorRepositoryTestSuite) TestAdvance_Refuses_ABlankKe
 		"negative slot":        {Chain: models.ChainTSOL, Account: cursorOwner, Slot: -1},
 		"negative synced slot": {Chain: models.ChainTSOL, Account: cursorOwner, SyncedFromSlot: -1},
 		"negative ahead slot":  {Chain: models.ChainTSOL, Account: cursorOwner, AheadSlot: -1},
+		"negative state slot":  {Chain: models.ChainTSOL, Account: cursorOwner, AccountStateSlot: -1},
 	} {
 		s.Run(name, func() {
 			s.Error(s.repo.Advance(ctx, cursor))

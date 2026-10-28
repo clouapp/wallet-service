@@ -885,7 +885,7 @@ RPC_ALLOW_LINK_LOCAL=false       # true also accepts link-local and cloud metada
 DEPOSIT_SCAN_ALERT_LAG_BLOCKS=0  # tracker warns when a scan trails the head by more (0: the chain's catch-up window)
 DEPOSIT_SCAN_ALERT_STALE_MINUTES=10  # tracker warns when a scanned chain has no completed cycle for longer
 DEPOSIT_SIGNATURE_CHAINS=        # e.g. sol: chains read account by account instead of block by block (deposit_signatures)
-DEPOSIT_SIGNATURE_INTERVAL_SECONDS=600  # how often the signature sync reads a listed chain (at least 15)
+DEPOSIT_SIGNATURE_INTERVAL_SECONDS=60   # how often the signature sync reads a listed chain (at least 15)
 DEPOSIT_SIGNATURE_CONCURRENCY=2  # accounts read at once (1-16)
 DEPOSIT_SIGNATURE_MAX_PAGES=10   # pages of 1000 signatures read per account when the chain has no scan checkpoint
 LOCAL_CHAIN_SYNC_INTERVAL_SECONDS=30  # local workers: how often RPC endpoint lists and the TronGrid key are reloaded
@@ -1251,8 +1251,8 @@ on; the sync is its safety net, and the only detector where it is not.
   `TestLive_MainnetSlotsNeverOutpaceTheBoundTheFloorOfANewAddressRestsOn`; an address older than that
   bound reaches keeps the chain's floor), and `covered` says the backfill got there
   (`end_seen`: the last backfill read showed the end once). While `signature` is empty, `slot` is where
-  the account is known empty up to: the head less 1500 slots (`signatureIndexMargin`, about one sync
-  interval at the default 600 s), never the head, since the head (`getSlot`) and the listing are two
+  the account is known empty up to: the head less 1500 slots (`signatureIndexMargin`, about five minutes
+  of mainnet slots), never the head, since the head (`getSlot`) and the listing are two
   calls and one URL can front backends whose address index trails, so a first deposit just below the
   head is read on a later cycle. The cost is lag only: `covered_head` trails the head by the margin, the
   block scan resumed after the sync rescans it once, and a known-empty account lists it each cycle. An
@@ -1261,7 +1261,31 @@ on; the sync is its safety net, and the only detector where it is not.
   gap (below). `backfill_anchor` and `ahead_anchor` (migration 690) are the signatures recorded right
   above `backfill_before` and `ahead_before`, kept as the stretches move (a listing is a contiguous run,
   so what is recorded below an end is right below it, and the first signature recorded above a stretch
-  of one is right above it); empty while an end is the only signature of its stretch.
+  of one is right above it); empty while an end is the only signature of its stretch. `account_state` and
+  `account_state_slot` (migration 700) are the state the account was last stored in and the slot it was
+  read at (below).
+- **Account states first** (`chain.AccountStateReader`, Solana `getMultipleAccounts`, migration 700):
+  each cycle first reads the state of every known account of every active address, 100 a call,
+  `concurrency` calls at once, for at most half of what is left of the cycle's budget (the moved addresses
+  are read in the other half; behind a rate-limited endpoint the batches a cycle had no time for are the
+  first of the next): the lamports, the owner program and, for a token account, the amount (8 bytes at
+  offset 64), finalized, empty for an account that does not exist.
+  The accounts of an address this process never listed are the ones it derives without a call (the
+  address and its associated account of each token, `DerivedAccounts`). An address with an account
+  whose state differs from the one its cursor stores (`account_state`), or that sent a withdrawal, a
+  sweep or a gas seed since the previous cycle began (an hour back on a process's first cycle: a
+  transfer out offset by a deposit of the same amount leaves the state as it was), is read before the
+  rotation. The state an account moved to is stored, with the slot it was first seen at
+  (`account_state_slot`), only once a read of the account proves its newest signatures read past that
+  slot (the listing's head less the index margin): until then the address is read first on every cycle,
+  so a deposit an address index serves late is still read at once (about five minutes of extra reads per
+  move). A state never stands in for a read: what an account is read up to (its cursor, the covered
+  slot, the pending blocks) comes only from listing its signatures, so a batch that fails or a state
+  that did not move costs latency, never a deposit. On such a chain the rotation reads a settled address
+  (every account's last read settled it) again only every 10 minutes (`signatureRotationEvery`, the pace
+  the sync had before it read states), whatever the interval; an address not settled is read on every
+  cycle it has time for. A row stored before migration 700 has no state: its address is read first once,
+  then its state is stored.
 - **Reading**: `getSignaturesForAddress` (finalized, 1000 a page, newest first), every call of one
   listing on one endpoint (`rpc.PinEndpoint`: its finalized slot first, then the pages, then the
   evidence of the end). Each cycle reads an account's new signatures above its cursor (`until`, at most
@@ -1278,7 +1302,7 @@ on; the sync is its safety net, and the only detector where it is not.
   matter. A failed transaction (`err`) is passed over unread. The addresses are read at once,
   `concurrency` at a time, each by one goroutine that lists its accounts and reads them in turn (an
   account two addresses list is read by one). Each account reads for at most 3 minutes a cycle and the
-  cycle for 8 (no address starts past it), and, under a context with a deadline (the `deposit_scanner`
+  cycle for three quarters of its interval, at most 8 minutes (no address starts past it), and, under a context with a deadline (the `deposit_scanner`
   Lambda's), until 20 s before it, its reads cut 6 s before it so the final cursor saves land in time
   (with less than 20 s left no cycle runs): what the budget leaves goes on next cycle and is no failure
   (`backfilling_accounts`). A cycle starts the addresses read longest ago first (never read: first of
@@ -1335,23 +1359,27 @@ on; the sync is its safety net, and the only detector where it is not.
   address). A transaction is read and recorded once per cycle however many of its accounts list it.
   One a node does not return, whose keys do not line up with its balances, or whose slot hash is not
   read fails its account.
-- **RPC cost** (counted from the code, steady state: every account covered, nothing new): per cycle,
-  `getSlot` twice (the head before the addresses are listed and at the confirmation step), one
-  `getTokenAccountsByOwner` per address and token program in use (the mints' programs are read once and
-  cached), and three calls per account: `getSlot` (the listing's pinned head), one
-  `getSignaturesForAddress` page, then either the confirmation `getSignaturesForAddress` (an account
-  with a recorded signature) or `getFirstAvailableBlock` (an account known empty). Each new signature
-  adds one `getTransaction`, each slot that credits a watched address one `getBlock` without
-  transactions and a confirmation race two more `getSignaturesForAddress`; the anchor of a listing below
-  an end is its own first page (one signature fewer of the history on it), no call. At 18
-  addresses with one token (36 accounts) and the default 600 s: 2 + 18 + 36 × 3 = 128 calls a cycle,
-  about 18 400 a day (144 cycles), of which at most 10 400 `getSignaturesForAddress`; the confirmation
-  call is at most one per account and cycle, about 5 200 a day. Beside the cycles, the paused block
-  scan's confirmation step runs on every scan tick (5 s) and reads the head (`getSlot`) only while a
-  transaction of the chain is pending, with one `getSignatureStatuses` per outbound transaction without
-  a block: up to about 17 300 `getSlot` a day more while a withdrawal or a sweep stays in flight (a
-  Solana transfer usually settles within a few ticks). The block scan reads about 350 000 `getBlock` a
-  day.
+- **RPC cost** (counted from the code, steady state: every account covered, nothing new): per cycle
+  (every minute by default), `getSlot` twice (the head before the addresses are listed and at the
+  confirmation step) and one `getMultipleAccounts` per 100 accounts; then, for each address read (those
+  that moved, then the rotation's, each settled address at most every 10 minutes), one
+  `getTokenAccountsByOwner` per token program in use (the mints' programs are read once and cached) and
+  three calls per account: `getSlot` (the listing's pinned head), one `getSignaturesForAddress` page,
+  then either the confirmation `getSignaturesForAddress` (an account with a recorded signature) or
+  `getFirstAvailableBlock` (an account known empty). Each new signature adds one `getTransaction`, each
+  slot that credits a watched address one `getBlock` without transactions and a confirmation race two
+  more `getSignaturesForAddress`; the anchor of a listing below an end is its own first page (one
+  signature fewer of the history on it), no call; a move reads its address on about five cycles before
+  its state is stored. At 18 addresses with one token (36 accounts): 2 + 1 = 3 calls a minute for the
+  states, about 4 300 a day, plus the rotation's 18 + 36 × 3 = 126 every 10 minutes, about 18 100 a day.
+  At 1 097 addresses with six tokens (7 679 accounts, production on 2026-10-28): 2 + 77 = 79 calls a
+  minute, about 114 000 a day, a deposit read within about a minute, and the rotation as fast as the
+  rest of each cycle's budget allows (behind a rate-limited key, hours a turn). Beside the cycles, the
+  paused block scan's confirmation step runs on every scan tick (5 s) and reads the head (`getSlot`)
+  only while a transaction of the chain is pending, with one `getSignatureStatuses` per outbound
+  transaction without a block: up to about 17 300 `getSlot` a day more while a withdrawal or a sweep
+  stays in flight (a Solana transfer usually settles within a few ticks). The block scan reads about
+  400 000 `getBlock` a day (a slot every ~215 ms on mainnet).
 - **Recording** goes through the scanner's path (`recordTransfers`: watched addresses only, the
   sweeps and gas seeds of the wallet left out, `depositrecord.Record`). The stretch moves over a
   signature only once its transfers are all recorded, and never back; a failure stops the account
@@ -1396,7 +1424,7 @@ on; the sync is its safety net, and the only detector where it is not.
   later), so the scan then resumes from its frozen checkpoint.
 - **Where it runs**: the local workers' signature loop ticks every 15 s and syncs each listed chain
   that the process scans (`LOCAL_DEPOSIT_SCAN_CHAINS`), once its interval (`interval_seconds`,
-  `DEPOSIT_SIGNATURE_INTERVAL_SECONDS`, default 600, at least 15) elapsed since its last sync started,
+  `DEPOSIT_SIGNATURE_INTERVAL_SECONDS`, default 60, at least 15) elapsed since its last sync started,
   `concurrency` addresses at once (`DEPOSIT_SIGNATURE_CONCURRENCY`, default 2); a changed setting
   applies on the next tick. The `deposit_scanner` Lambda (`RunScanInvocation`) syncs a listed chain
   once its interval elapsed since the last completed cycle (the activity record), not on every
@@ -1411,13 +1439,16 @@ on; the sync is its safety net, and the only detector where it is not.
 — guarded by `app/adapters/chain/solana/signatures_test.go` (devnet slot 514235140 and the
 transactions 2yMCe5… and 634Fzh… recorded in `testdata/solana`, `TestSolana_TransactionTransfers_*`,
 `TestSolana_AccountSignatures_*`, `TestSolana_SignatureAccounts_*`), `app/services/deposit/signatures_test.go`,
-`signature_backfill_test.go`, `signature_gap_test.go` and `signature_progress_test.go` (`TestSync_Signatures_*`, the property test
+`signature_backfill_test.go`, `signature_gap_test.go`, `signature_progress_test.go` and `signature_states_test.go` (`TestSync_Signatures_*`, the property test
 `TestProperty_SignatureSync_ReadsEveryHistoryWhateverTheEndpointShows`, `TestScan_LatestBlocks_*`, `TestRun_ScanInvocation_*`,
-`TestScan_Alerts_FollowTheRecordedModeNotTheNewestRecord`), `app/services/deposit/signature_settings_test.go`,
+`TestScan_Alerts_FollowTheRecordedModeNotTheNewestRecord`, `TestScan_Alerts_AChainThatReadsAccountStatesIsMeasuredOverTheRotationPace`),
+`app/adapters/chain/solana/account_states_test.go` (`TestSolana_AccountStates_*`, `TestSolana_DerivedAccounts_*`),
+`TestOutbound_SendersSince_*` (`tests/feature/repositories`), `app/services/deposit/signature_settings_test.go`,
 `app/services/settings/deposit_signatures_test.go`, `app/services/cacheguard` (`TestAcquireHold_*`),
 `app/services/deposit/pending` (`TestDurable_Store_ListCompleteRefusesADegradedReadingThatListKeeps`),
 `TestDeposit_Signature_CursorRepositorySuite`, `tests/migrations/create_deposit_signature_cursors_test.go`,
-`tests/migrations/add_deposit_signature_cursor_anchors_test.go`, `app/adapters/chain/solana/signatures_property_test.go`,
+`tests/migrations/add_deposit_signature_cursor_anchors_test.go`, `tests/migrations/add_deposit_signature_cursor_states_test.go`,
+`app/adapters/chain/solana/signatures_property_test.go`,
 `TestSignature_Schedule_*` and `TestStart_Syncs_TheListedScanChainsOnTheSignatureTickAndAppliesASettingsChangeWithoutARestart`
 (`app/services/localworkers`) and `app/console/commands/deposits_sync_signatures_test.go`. Read-only check
 against devnet (accounts, a page of history, a listing above a cursor and one anchored below a
@@ -1426,7 +1457,8 @@ signature, an unknown `before` the endpoint must fail, and the credits of live t
 ./app/adapters/chain/solana/` (`SOLANA_LIVE_RPC_URL` for another endpoint). The same tag runs the
 mainnet check (`TestLive_Mainnet*`, `SOLANA_MAINNET_LIVE_RPC_URL`): the accounts of a production deposit
 address cover the catalog's six mainnet tokens with none skipped, its 2026-10-28 deposit of 0.01 SOL is
-read, and the slot bound of a new address's floor keeps at least twice the measured slot rate.
+read, the slot bound of a new address's floor keeps at least twice the measured slot rate, and the
+address's derived accounts and their states are read in one `getMultipleAccounts`.
 
 ### Provider push subscriptions (ingest)
 
@@ -1603,8 +1635,9 @@ of their own, so a slow chain never holds up `eth`, `polygon` and `btc`. — gua
   does not hold as token mints` while it skips any, and `deposit signature sync has not read every
   account up to the head within the alert threshold` when an account does not settle: the head its
   last cycle read before listing the addresses (`listed_head`) is past the covered slot by more than
-  the 1500-slot index margin plus three sync intervals of 400 ms slots (6000 slots at the default 600
-  s), or accounts have been backfilling for longer than three intervals in a row (`backfilling_since`
+  the 1500-slot index margin plus three paces of 400 ms slots (the interval; on a chain whose adapter
+  reads account states, at least the 10-minute rotation pace: 6000 slots), or accounts have been
+  backfilling for longer than three paces in a row (`backfilling_since`
   of the record: when the first cycle of the run that left one backfilling ended; it covers a chain no
   cycle ever read in full, whose covered slot is unknown). The lag is counted from the listed head, not
   from the head the cycle confirmed at (`/health`'s `lag_blocks`): a cycle that read every account

@@ -220,6 +220,10 @@ type signatureRun struct {
 	// store holds: the sync asks only the index).
 	newestOnUnknown bool
 	endpoints       signatureEndpoints
+	// states: the chain also reads account states in batches (stateChain), from the
+	// whole history whatever the endpoint shows of it, so the sync reads first the
+	// accounts that moved, also when the address index trails what the states show.
+	states bool
 }
 
 // runSignatureProperty drives 30 cycles over two accounts with bursts above the
@@ -240,6 +244,9 @@ func runSignatureProperty(t *testing.T, seed int64, run signatureRun) (missing, 
 	ceiling := signatureForwardPageCeiling * f.chain.pageSize
 	f.chain.accounts[sigAlice] = []string{sigAlice}
 	f.chain.newestOnUnknown = run.newestOnUnknown
+	if run.states {
+		f.withStates()
+	}
 	if run.race {
 		var raceMu sync.Mutex
 		f.chain.raceMiss = func() bool {
@@ -442,6 +449,10 @@ func TestProperty_SignatureSync_ReadsEveryHistoryWhateverTheEndpointShows(t *tes
 		"an index behind, answering from its newest":     {run: signatureRun{endpoints: laggingEndpoints, newestOnUnknown: true}, seeds: seedRange(501, 506)},
 		"answering from its newest, mixed backends":      {run: signatureRun{newestOnUnknown: true}, seeds: seedRange(601, 602)},
 		"switching, from its newest, confirmation races": {run: signatureRun{switching: true, race: true, newestOnUnknown: true}, seeds: seedRange(701, 702)},
+		// Account states read in batches, ahead of what the endpoint's index shows.
+		"with account states, mixed backends":   {run: signatureRun{states: true}, seeds: seedRange(801, 803)},
+		"with account states, an index behind":  {run: signatureRun{states: true, endpoints: laggingEndpoints, newestOnUnknown: true}, seeds: seedRange(811, 813)},
+		"with account states, switching, races": {run: signatureRun{states: true, switching: true, race: true}, seeds: seedRange(821, 822)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			for i, seed := range tc.seeds {
