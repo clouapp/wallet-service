@@ -66,17 +66,17 @@ func (c *signatureCycle) movedOwners(ctx context.Context, owners []string, since
 		if !c.svc.now().Before(statesUntil) {
 			return
 		}
-		accounts := batches[(start+i)%len(batches)]
+		chunk := batches[(start+i)%len(batches)]
 		mu.Lock()
 		started++
 		mu.Unlock()
-		batch, err := reader.AccountStates(ctx, accounts)
+		batch, err := reader.AccountStates(ctx, chunk)
 		mu.Lock()
 		defer mu.Unlock()
 		if err != nil {
 			failed++
 			slog.Warn("deposit signature sync: account states not read; those accounts are read in turn",
-				"chain", c.chainID, "accounts", len(accounts), "error", err, "provider_cause", chain.CauseText(err))
+				"chain", c.chainID, "accounts", len(chunk), "error", err, "provider_cause", chain.CauseText(err))
 			return
 		}
 		if slot == 0 || batch.Slot < slot {
