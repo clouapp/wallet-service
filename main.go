@@ -125,7 +125,7 @@ func main() {
 }
 
 func handleAPIGateway(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	return httpadapter.NewV2(facades.Route()).ProxyWithContext(ctx, req)
+	return httpadapter.NewV2(bootstrap.HTTPHandler(facades.Route())).ProxyWithContext(ctx, req)
 }
 
 // handleDepositScan scans new blocks, then retries the chain's pending blocks whose
@@ -289,7 +289,7 @@ func runLocal() {
 	server, err := lifecycle.NewListenerServer(lifecycle.ListenerServerDeps{
 		Router:         facades.Route(),
 		Listener:       listener,
-		Wrap:           bootstrap.RequestTimeoutHandler(),
+		Wrap:           bootstrap.LocalServerHandler(),
 		MaxHeaderBytes: maxHeaderBytes,
 	})
 	if err != nil {

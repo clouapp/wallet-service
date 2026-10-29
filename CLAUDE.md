@@ -1555,6 +1555,13 @@ go run . artisan ingest:subscriptions                     # provider, chain, sta
   fails too, the error names the provider webhook to delete by hand. The address sync
   (`webhooksync.SyncChainAddresses`) runs once the row exists; when it fails the row stays (the
   `webhook_reconciler` syncs it again) and the command exits 1.
+- An ingest body reaches the signature check raw: the gin driver builds its request before any
+  middleware of this application and reads an `application/json` body, putting it back only when it
+  decodes as an object, so a JSON array (every Helius delivery) was closed and refused as `invalid body`
+  until 2026-10-29. `middleware.KeepInboundBody`, in `bootstrap.HTTPHandler` (the handler the local
+  server and the Lambda API serve), marks `POST /v1/webhooks/ingest/*` as `application/octet-stream`
+  before the router. — guarded by `TestHTTP_Handler_KeepsTheJSONArrayBodyOfAnInboundWebhook`
+  (`bootstrap`, over a real HTTP server) and `TestKeepInboundBody_*`.
 - The ingest signature check (`middleware.ProviderSignature`, wired with
   `ingest.SigningSecrets.Open` in `bootstrap/app.go`; without an opener every callback is refused) and the
   address sync open the secret with `settings.OpenStored` (sealed, or the bare envelope of an older row),

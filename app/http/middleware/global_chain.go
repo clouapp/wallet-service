@@ -8,9 +8,10 @@ import (
 
 // Global chain order from the alignment plan: request timeout, then the
 // inbound provider signature, then request id, security headers, body limit,
-// and CORS. The signature step sits before any middleware that builds the
-// Goravel request, so an ingest body is not parsed first. Recover is
-// installed separately.
+// and CORS. The gin driver's own steps (recover, timeout, CORS, TLS) run before
+// this chain and build the Goravel request, which reads an application/json
+// body: an ingest body is kept raw before the router (KeepInboundBody, served by
+// bootstrap.HTTPHandler). Recover is installed separately.
 const (
 	chainRequestTimeout    = "request_timeout"
 	chainProviderSignature = "provider_signature"
