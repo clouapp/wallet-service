@@ -16,6 +16,7 @@ import (
 type BalanceChains interface {
 	Chain(id string) (types.Chain, error)
 	TokensForChain(chainID string) []types.Token
+	FindTokenByContract(chainID, contract string) (*types.Token, error)
 }
 
 // WalletSummaryStore writes the native balance columns a balance refresh updates.
@@ -46,16 +47,18 @@ type BalanceService struct {
 	assetBalanceRepo AssetBalanceStore
 	snapshotRepo     SnapshotStore
 	syncStateRepo    SyncStateStore
+	ledger           AddressLedgerStore
 }
 
 // Deps is everything the balance refresh service needs. A nil field means that
-// dependency is absent.
+// dependency is absent; without a Ledger the rows carry no unconsolidated amounts.
 type Deps struct {
 	Registry      BalanceChains
 	Wallets       WalletSummaryStore
 	AssetBalances AssetBalanceStore
 	Snapshots     SnapshotStore
 	SyncStates    SyncStateStore
+	Ledger        AddressLedgerStore
 }
 
 // NewBalanceService wires the balance refresh service from Deps.
@@ -66,6 +69,7 @@ func NewBalanceService(deps Deps) *BalanceService {
 		assetBalanceRepo: deps.AssetBalances,
 		snapshotRepo:     deps.Snapshots,
 		syncStateRepo:    deps.SyncStates,
+		ledger:           deps.Ledger,
 	}
 }
 
@@ -86,10 +90,17 @@ func (s *BalanceService) RefreshWallet(ctx context.Context, wallet *models.Walle
 		return fmt.Errorf("get native balance for %s: %w", address, err)
 	}
 
+	unconsolidated, err := s.unconsolidated(ctx, wallet, adapter)
+	if err != nil {
+		s.recordFailure(ctx, wallet.ID, wallet.Chain, err)
+		return err
+	}
+
 	now := time.Now()
 	rows := []models.WalletAssetBalance{
 		buildAssetBalanceRow(wallet.ID, wallet.Chain, string(types.AssetTypeNative), nativeBal.Asset, nativeBal, address, now),
 	}
+	withUnconsolidated(&rows[0], unconsolidated[nativeAssetKey])
 
 	tokens := s.registry.TokensForChain(wallet.Chain)
 	for _, tok := range tokens {
@@ -107,6 +118,7 @@ func (s *BalanceService) RefreshWallet(ctx context.Context, wallet *models.Walle
 		row := buildAssetBalanceRow(wallet.ID, wallet.Chain, string(types.AssetTypeToken), assetKey, tokenBal, address, now)
 		row.AssetName = &tok.Name
 		row.AssetContract = &tok.Contract
+		withUnconsolidated(&row, unconsolidated[tok.Contract])
 		rows = append(rows, row)
 	}
 

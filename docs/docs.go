@@ -7533,6 +7533,21 @@ const docTemplate = `{
                 "source_address": {
                     "type": "string"
                 },
+                "total_amount_display": {
+                    "type": "string"
+                },
+                "total_amount_raw": {
+                    "type": "string"
+                },
+                "unconsolidated_addresses": {
+                    "type": "integer"
+                },
+                "unconsolidated_amount_display": {
+                    "type": "string"
+                },
+                "unconsolidated_amount_raw": {
+                    "type": "string"
+                },
                 "updated_at": {
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
                 },
@@ -8485,6 +8500,12 @@ const docTemplate = `{
                 "deleted_at": {
                     "type": "string"
                 },
+                "email": {
+                    "type": "string"
+                },
+                "full_name": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -8496,9 +8517,6 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "$ref": "#/definitions/github_com_goravel_framework_support_carbon.DateTime"
-                },
-                "user": {
-                    "$ref": "#/definitions/github_com_macrowallets_waas_app_http_resources_dashboard_users.User"
                 },
                 "user_id": {
                     "type": "string"
