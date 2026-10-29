@@ -17,6 +17,9 @@ var (
 	// Fixture wallet labels append " <run nonce>-<sequence>" so a leftover row
 	// does not collide. The recorded contract keeps the stable prefix.
 	fixtureWalletLabel = regexp.MustCompile(` test wallet [0-9a-f]{8}-\d+`)
+	// An invite link carries a fresh 32-byte token; the recorded link keeps
+	// the base and the path.
+	inviteTokenPattern = regexp.MustCompile(`accept-invite\?token=[0-9a-f]{64}`)
 )
 
 // Normalizer replaces the values that differ between two runs of the same
@@ -56,6 +59,7 @@ func (n *Normalizer) Normalize(text string) string {
 		})
 	}
 	text = fixtureWalletLabel.ReplaceAllString(text, " test wallet")
+	text = inviteTokenPattern.ReplaceAllString(text, "accept-invite?token=<invite_token>")
 	text = jwtPattern.ReplaceAllString(text, "<jwt>")
 	text = uuidPattern.ReplaceAllStringFunc(text, func(match string) string {
 		key := strings.ToLower(match)

@@ -11,8 +11,9 @@ import (
 )
 
 // Invite is one invite a users.read member may see. The token, its hash and
-// the link are not fields of this view, and nothing in it says whether the
-// email already has a user.
+// the link are not fields of this view (IssuedInvite adds the link to the
+// answers that mint one), and nothing in it says whether the email already
+// has a user.
 type Invite struct {
 	CreatedAt  *carbon.DateTime `json:"created_at"`
 	ID         uuid.UUID        `json:"id"`
@@ -50,6 +51,41 @@ func NewInvites(invites []models.AccountInvite) []Invite {
 		views = append(views, NewInvite(&invites[i]))
 	}
 	return views
+}
+
+// IssuedInvite is the list view of an invite plus the one-time link of the
+// token just minted for it: the answer of POST /v1/accounts/{accountId}/invites,
+// of .../invites/{id}/resend and of .../invites/{id}/link, so an operator can
+// hand the link over by hand. The keys of Invite keep their order and
+// invite_link comes last. The token's hash is not a field.
+type IssuedInvite struct {
+	CreatedAt  *carbon.DateTime `json:"created_at"`
+	ID         uuid.UUID        `json:"id"`
+	AccountID  uuid.UUID        `json:"account_id"`
+	Email      string           `json:"email"`
+	Role       string           `json:"role"`
+	InvitedBy  *uuid.UUID       `json:"invited_by"`
+	ExpiresAt  time.Time        `json:"expires_at"`
+	AcceptedAt *time.Time       `json:"accepted_at"`
+	RevokedAt  *time.Time       `json:"revoked_at"`
+	InviteLink string           `json:"invite_link"`
+}
+
+// NewIssuedInvite shapes an issued invite and its link.
+func NewIssuedInvite(issued *accountsvc.IssuedInvite) IssuedInvite {
+	view := NewInvite(issued.Invite)
+	return IssuedInvite{
+		CreatedAt:  view.CreatedAt,
+		ID:         view.ID,
+		AccountID:  view.AccountID,
+		Email:      view.Email,
+		Role:       view.Role,
+		InvitedBy:  view.InvitedBy,
+		ExpiresAt:  view.ExpiresAt,
+		AcceptedAt: view.AcceptedAt,
+		RevokedAt:  view.RevokedAt,
+		InviteLink: issued.InviteLink,
+	}
 }
 
 // InviteLink is the 202 of POST /v1/accounts/{accountId}/users for an email no

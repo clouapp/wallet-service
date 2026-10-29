@@ -45,6 +45,15 @@ func TestNormalizer_Strips_TheFixtureWalletLabelSuffix(t *testing.T) {
 	}
 }
 
+func TestNormalizer_Masks_TheTokenOfAnInviteLink(t *testing.T) {
+	token := strings.Repeat("0a", 32)
+	got := NewNormalizer().Normalize(`{"invite_link":"https://wallet.example/accept-invite?token=` + token + `"}`)
+	want := `{"invite_link":"https://wallet.example/accept-invite?token=<invite_token>"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
 func TestNormalizer_Leaves_StableBytesUntouched(t *testing.T) {
 	body := `{"error":"invalid credentials","status":"ok","amount":"0.5","n":42}`
 	if got := NewNormalizer("secret").Normalize(body); got != body {

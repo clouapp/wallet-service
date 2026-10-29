@@ -114,6 +114,29 @@ definitions:
       valid_until:
         type: string
     type: object
+  accounts.IssuedInvite:
+    properties:
+      accepted_at:
+        type: string
+      account_id:
+        type: string
+      created_at:
+        $ref: '#/definitions/github_com_goravel_framework_support_carbon.DateTime'
+      email:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      invite_link:
+        type: string
+      invited_by:
+        type: string
+      revoked_at:
+        type: string
+      role:
+        type: string
+    type: object
   accounts.Lifecycle:
     properties:
       id:
@@ -2475,6 +2498,131 @@ paths:
       security:
       - BearerAuth: []
       summary: Freeze an account
+      tags:
+      - Accounts
+  /accounts/{accountId}/invites:
+    post:
+      consumes:
+      - application/json
+      description: Issues an invite, mails its link, and answers the list view plus
+        invite_link, the same link, for the operator to hand over by hand. An email
+        that already has a user gets the same answer and the same fields. Requires
+        users.write; a role above the caller's is 403.
+      parameters:
+      - description: Account UUID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      - description: Email and role
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/accounts.AddAccountUserSwagger'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/accounts.IssuedInvite'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Invite an email to an account
+      tags:
+      - Accounts
+  /accounts/{accountId}/invites/{id}/link:
+    post:
+      description: Mints a new token for an open invite (not accepted, not revoked,
+        not expired) and answers the list view plus invite_link, for the operator
+        to hand over outside email. No mail is sent. The previous link stops working;
+        the role and expiry stay. Requires users.write.
+      parameters:
+      - description: Account UUID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      - description: Invite UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/accounts.IssuedInvite'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Copy an account invite link
+      tags:
+      - Accounts
+  /accounts/{accountId}/invites/{id}/resend:
+    post:
+      description: Mints a new token for an open invite (not accepted, not revoked),
+        mails the new link and answers the list view plus invite_link, that link.
+        The previous link stops working; the role and expiry stay. Requires users.write.
+      parameters:
+      - description: Account UUID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      - description: Invite UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/accounts.IssuedInvite'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/responses.ErrorBody'
+      security:
+      - BearerAuth: []
+      summary: Resend an account invite
       tags:
       - Accounts
   /accounts/{accountId}/permissions:
