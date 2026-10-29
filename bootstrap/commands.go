@@ -39,6 +39,7 @@ import (
 	"github.com/macrowallets/waas/app/services/walletactivation"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/app/services/webhook"
+	"github.com/macrowallets/waas/app/services/webhooksync"
 	"github.com/macrowallets/waas/database/seeders"
 )
 
@@ -150,6 +151,7 @@ func Commands() []console.Command {
 		commands.NewWithdrawalsReconcile(deposits),
 		commands.NewIngestSubscribe(container.MustMake[*ingestsubscription.Service]()),
 		commands.NewIngestSubscriptions(container.MustMake[*ingestsubscription.Service]()),
+		commands.NewIngestSyncAddresses(container.MustMake[*webhooksync.Service]()),
 		// Read-only: the active webhook configs whose URL the outbound guard refuses.
 		commands.NewWebhooksAuditURLs(container.MustMake[*webhook.Service]()),
 	})
