@@ -86,7 +86,7 @@ func (credentialMailSender) SendInvite(ctx context.Context, message account.Invi
 	})
 }
 
-func (credentialMailSender) SendWelcome(ctx context.Context, to, fullName string) error {
+func (credentialMailSender) SendWelcome(ctx context.Context, to, fullName, loginLink string) error {
 	if ctx == nil {
 		return errors.New("welcome mail: context is required")
 	}
@@ -94,8 +94,9 @@ func (credentialMailSender) SendWelcome(ctx context.Context, to, fullName string
 		return errors.New("welcome mail: recipient is required")
 	}
 	return appfacades.Mail().To([]string{to}).Send(&mails.WelcomeMail{
-		To:       to,
-		FullName: fullName,
+		To:        to,
+		FullName:  fullName,
+		LoginLink: loginLink,
 	})
 }
 

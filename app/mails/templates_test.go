@@ -26,8 +26,15 @@ func TestEmbedded_Templates_ArePresentational(t *testing.T) {
 	}
 
 	welcome := (&WelcomeMail{To: "person@example.test"}).Content().Html
-	if !strings.Contains(welcome, "Welcome to Vault, there!") {
+	if !strings.Contains(welcome, "Welcome to Macro Wallets, there!") {
 		t.Fatal("welcome mailable did not build the empty-name fallback")
+	}
+	if strings.Contains(welcome, "<a href") {
+		t.Fatal("a welcome without a login link drew a button")
+	}
+	const loginLink = "https://app.example.test/login"
+	if signIn := (&WelcomeMail{LoginLink: loginLink}).Content().Html; !strings.Contains(signIn, `href="`+loginLink+`"`) || !strings.Contains(signIn, "Sign In") {
+		t.Fatal("welcome template did not present the login link")
 	}
 	named := (&WelcomeMail{FullName: "Ada <b>"}).Content().Html
 	if strings.Contains(named, "<b>") || !strings.Contains(named, "Ada &lt;b&gt;") {
@@ -35,7 +42,7 @@ func TestEmbedded_Templates_ArePresentational(t *testing.T) {
 	}
 
 	settings := (&SettingsTestMail{To: "person@example.test"}).Content().Html
-	if !strings.Contains(settings, "This is a test message from Vault.") {
+	if !strings.Contains(settings, "This is a test message from Macro Wallets.") {
 		t.Fatal("settings test template did not render")
 	}
 
@@ -43,10 +50,16 @@ func TestEmbedded_Templates_ArePresentational(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 4 {
+	if len(entries) != 5 {
 		t.Fatalf("embedded templates = %d", len(entries))
 	}
 	for _, entry := range entries {
+		if entry.Name() != "layout.html" {
+			body := render(entry.Name(), sampleData(entry.Name()))
+			if !strings.Contains(body, "Macro Wallets") || strings.Contains(body, "Vault") || strings.Contains(body, "vault.app") {
+				t.Fatalf("%s is not framed as Macro Wallets", entry.Name())
+			}
+		}
 		raw, err := templateFS.ReadFile("templates/" + entry.Name())
 		if err != nil {
 			t.Fatal(err)
@@ -75,4 +88,17 @@ func TestEmbedded_Templates_ArePresentational(t *testing.T) {
 			t.Fatalf("%s inlines HTML", name)
 		}
 	}
+}
+
+// sampleData is a mailable's data for the template name.
+func sampleData(name string) any {
+	switch name {
+	case "user_invite.html":
+		return userInviteData{AccountName: "North", InvitedBy: "Ada", InviteLink: "https://example.test/accept-invite"}
+	case "password_reset.html":
+		return passwordResetData{ResetLink: "https://example.test/login/recover/confirm"}
+	case "welcome.html":
+		return welcomeData{Name: "Ada", LoginLink: "https://example.test/login"}
+	}
+	return nil
 }

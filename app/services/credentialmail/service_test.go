@@ -17,6 +17,7 @@ import (
 )
 
 func TestSend_Password_ResetStoresOnlyTheHash(t *testing.T) {
+	t.Setenv("APP_FRONTEND_URL", "https://app.example.test/")
 	userID := uuid.New()
 	const raw = "reset-raw-token"
 	var stored string
@@ -57,8 +58,24 @@ func TestSend_Password_ResetStoresOnlyTheHash(t *testing.T) {
 	if !authsvc.NewService(nil).CheckToken(raw, stored) {
 		t.Fatal("stored value is not the hash of the minted token")
 	}
-	if sentTo != "person@example.com" || !strings.Contains(sentLink, raw) || strings.Contains(sentLink, stored) {
+	if sentTo != "person@example.com" || sentLink != "https://app.example.test/login/recover/confirm?token="+raw || strings.Contains(sentLink, stored) {
 		t.Fatalf("sent to %q link %q", sentTo, sentLink)
+	}
+}
+
+// Without a front-end URL there is no page to open: nothing is minted or stored.
+func TestSend_Password_ResetWithoutAFrontEndStoresNoToken(t *testing.T) {
+	t.Setenv("APP_FRONTEND_URL", "")
+	userID := uuid.New()
+	var mints int
+	svc := credentialService(t, userID, func() (string, error) { mints++; return "raw", nil }, senderFunc{
+		reset: func(string, string) { t.Fatal("a reset without a front end was sent") },
+	})
+	if err := svc.SendPasswordReset(context.Background(), userID); !errors.Is(err, account.ErrFrontendURLRequired) {
+		t.Fatalf("err = %v", err)
+	}
+	if mints != 0 {
+		t.Fatalf("mints = %d", mints)
 	}
 }
 
@@ -104,7 +121,7 @@ func TestSend_Runs_TheDecodedPurpose(t *testing.T) {
 		Tokens:         tokenIssuerFunc{mint: func() (string, error) { return "raw", nil }, hash: func(string) string { return "hash" }},
 		Resets:         resetWriterFunc(func(context.Context, *models.PasswordResetToken) error { return nil }),
 		Invites:        inviteRefresherFunc(func(context.Context, uuid.UUID, string) (account.InviteMail, error) { return account.InviteMail{}, nil }),
-		Sender:         senderFunc{welcome: func(string, string) { welcome++ }},
+		Sender:         senderFunc{welcome: func(string, string, string) { welcome++ }},
 		Dispatch:       func(uuid.UUID, string) error { t.Fatal("send must not enqueue"); return nil },
 		DispatchInvite: func(uuid.UUID) (string, error) { t.Fatal("send must not dispatch an invite"); return "", nil },
 	})
@@ -118,9 +135,10 @@ func TestSend_Runs_TheDecodedPurpose(t *testing.T) {
 }
 
 func TestSend_Welcome_UsesTheLoadedUser(t *testing.T) {
+	t.Setenv("APP_FRONTEND_URL", "https://app.example.test")
 	userID := uuid.New()
 	const hash = "stored-password-hash"
-	var sentTo, sentName string
+	var sentTo, sentName, sentLink string
 	svc := NewService(Deps{
 		Users: userLookupFunc(func(_ context.Context, id uuid.UUID) (*models.User, error) {
 			if id != userID {
@@ -131,7 +149,7 @@ func TestSend_Welcome_UsesTheLoadedUser(t *testing.T) {
 		Tokens:         tokenIssuerFunc{mint: func() (string, error) { return "raw", nil }, hash: func(string) string { return hash }},
 		Resets:         resetWriterFunc(func(context.Context, *models.PasswordResetToken) error { return nil }),
 		Invites:        inviteRefresherFunc(func(context.Context, uuid.UUID, string) (account.InviteMail, error) { return account.InviteMail{}, nil }),
-		Sender:         senderFunc{welcome: func(to, fullName string) { sentTo, sentName = to, fullName }},
+		Sender:         senderFunc{welcome: func(to, fullName, loginLink string) { sentTo, sentName, sentLink = to, fullName, loginLink }},
 		Dispatch:       func(uuid.UUID, string) error { t.Fatal("welcome send must not enqueue"); return nil },
 		DispatchInvite: func(uuid.UUID) (string, error) { t.Fatal("welcome send must not dispatch an invite"); return "", nil },
 	})
@@ -142,11 +160,20 @@ func TestSend_Welcome_UsesTheLoadedUser(t *testing.T) {
 	if sentTo != "person@example.com" || sentName != "Ada" || strings.Contains(sentName, hash) || strings.Contains(sentTo, hash) {
 		t.Fatalf("sent to %q name %q", sentTo, sentName)
 	}
+	if sentLink != "https://app.example.test/login" {
+		t.Fatalf("login link = %q", sentLink)
+	}
+
+	t.Setenv("APP_FRONTEND_URL", "")
+	if err := svc.SendWelcome(context.Background(), userID); err != nil || sentLink != "" {
+		t.Fatalf("a welcome without a front end: err %v link %q", err, sentLink)
+	}
 }
 
 func TestDeadline_Mid_SendLogsWarnWithoutTheCredential(t *testing.T) {
 	const raw = "super-secret-reset-token"
 	const inviteLink = "https://app.example/accept-invite?token=invite-secret"
+	t.Setenv("APP_FRONTEND_URL", "https://app.example")
 	userID := uuid.New()
 	inviteID := uuid.New()
 	var mints int
@@ -202,6 +229,7 @@ func TestDeadline_Mid_SendLogsWarnWithoutTheCredential(t *testing.T) {
 }
 
 func TestKnown_Send_FailureDoesNotLogUnknownOutcome(t *testing.T) {
+	t.Setenv("APP_FRONTEND_URL", "https://app.example.test")
 	userID := uuid.New()
 	logs := captureCredentialMailLogs(t)
 	svc := credentialService(t, userID, func() (string, error) { return "raw-token", nil }, senderFunc{
@@ -210,21 +238,58 @@ func TestKnown_Send_FailureDoesNotLogUnknownOutcome(t *testing.T) {
 	if err := svc.SendPasswordReset(context.Background(), userID); err == nil {
 		t.Fatal("expected a send failure")
 	}
-	if logs.Len() != 0 {
-		t.Fatalf("known failure logged %q", logs.String())
+	if strings.Contains(logs.String(), "outcome unknown") {
+		t.Fatalf("known failure logged an unknown outcome %q", logs.String())
 	}
+	logs.Reset()
 
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
 	if err := svc.SendPasswordReset(ctx, userID); err == nil {
 		t.Fatal("expected a send failure")
 	}
-	if logs.Len() != 0 {
-		t.Fatalf("deadline before send logged %q", logs.String())
+	if strings.Contains(logs.String(), "outcome unknown") {
+		t.Fatalf("deadline before send logged an unknown outcome %q", logs.String())
+	}
+}
+
+// safeReasonError is a transport failure that marks a reason safe to log.
+type safeReasonError struct{ reason, detail string }
+
+func (e safeReasonError) Error() string      { return e.reason + ": " + e.detail }
+func (e safeReasonError) SafeReason() string { return e.reason }
+
+// A failed send logs why, by purpose, but only a reason the transport marks
+// safe: never the transport's own text, the address or the link.
+func TestFailed_Send_LogsOnlyTheSafeReason(t *testing.T) {
+	t.Setenv("APP_FRONTEND_URL", "https://app.example.test")
+	userID := uuid.New()
+	logs := captureCredentialMailLogs(t)
+	svc := credentialService(t, userID, func() (string, error) { return "reset-secret", nil }, senderFunc{
+		resetErr:   safeReasonError{reason: "mail: smtp has no host", detail: "dial smtp.internal:587 password=hunter2"},
+		welcomeErr: errors.New("535 auth failed for person@example.com password=hunter2"),
+	})
+	if err := svc.SendPasswordReset(context.Background(), userID); err == nil {
+		t.Fatal("expected a send failure")
+	}
+	if err := svc.SendWelcome(context.Background(), userID); err == nil {
+		t.Fatal("expected a send failure")
+	}
+	got := logs.String()
+	for _, want := range []string{"credential mail send failed", "purpose=" + PurposePasswordReset, `reason="mail: smtp has no host"`, "purpose=" + PurposeWelcome, "its error is not logged"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("log %q lacks %q", got, want)
+		}
+	}
+	for _, secret := range []string{"hunter2", "smtp.internal", "person@example.com", "reset-secret", "recover/confirm"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("log leaked %q in %q", secret, got)
+		}
 	}
 }
 
 func TestCompleted_Send_DoesNotLogUnknownOutcome(t *testing.T) {
+	t.Setenv("APP_FRONTEND_URL", "https://app.example.test")
 	userID := uuid.New()
 	logs := captureCredentialMailLogs(t)
 	ctx := newMidSendDeadline()
@@ -402,11 +467,12 @@ func (f inviteRefresherFunc) RefreshInviteForMail(ctx context.Context, inviteID 
 }
 
 type senderFunc struct {
-	invite    func(account.InviteMail)
-	reset     func(to, link string)
-	welcome   func(to, fullName string)
-	inviteErr error
-	resetErr  error
+	invite     func(account.InviteMail)
+	reset      func(to, link string)
+	welcome    func(to, fullName, loginLink string)
+	inviteErr  error
+	resetErr   error
+	welcomeErr error
 }
 
 func (f senderFunc) SendInvite(ctx context.Context, message account.InviteMail) error {
@@ -423,9 +489,9 @@ func (f senderFunc) SendReset(ctx context.Context, to, resetLink string) error {
 	return f.resetErr
 }
 
-func (f senderFunc) SendWelcome(_ context.Context, to, fullName string) error {
+func (f senderFunc) SendWelcome(_ context.Context, to, fullName, loginLink string) error {
 	if f.welcome != nil {
-		f.welcome(to, fullName)
+		f.welcome(to, fullName, loginLink)
 	}
-	return nil
+	return f.welcomeErr
 }

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,8 +24,10 @@ const (
 	// Register calls SendWelcome, which delivers with Mail().Send.
 	PurposeWelcome = "welcome"
 
-	passwordResetLifetime  = time.Hour
-	passwordResetURLPrefix = "https://vault.app/reset-password?token="
+	passwordResetLifetime = time.Hour
+	// passwordResetPath and loginPath are the front-end pages the links open.
+	passwordResetPath = "/login/recover/confirm"
+	loginPath         = "/login"
 )
 
 // UserLookup loads the user a reset mail is for.
@@ -48,11 +52,11 @@ type InviteRefresher interface {
 }
 
 // Sender delivers one already-built message with Mail().Send. It must not
-// enqueue the message.
+// enqueue the message. An empty loginLink sends the welcome without a button.
 type Sender interface {
 	SendInvite(ctx context.Context, message account.InviteMail) error
 	SendReset(ctx context.Context, to, resetLink string) error
-	SendWelcome(ctx context.Context, to, fullName string) error
+	SendWelcome(ctx context.Context, to, fullName, loginLink string) error
 }
 
 // DispatchFunc enqueues one credential mail. The arguments are the subject
@@ -74,7 +78,7 @@ type Deps struct {
 	Sender         Sender
 	Dispatch       DispatchFunc
 	DispatchInvite InviteDispatchFunc
-	// FrontendURLs is the stored base of invite links; nil keeps APP_FRONTEND_URL.
+	// FrontendURLs is the stored base of every link; nil keeps APP_FRONTEND_URL.
 	FrontendURLs account.FrontendURLSource
 }
 
@@ -198,7 +202,15 @@ func (s *Service) SendWelcome(ctx context.Context, userID uuid.UUID) error {
 	if user == nil || user.Email == "" {
 		return errors.New("welcome mail: user not found")
 	}
-	if err := s.sender.SendWelcome(ctx, user.Email, user.FullName); err != nil {
+	// The welcome goes out without a button when the front end is not configured.
+	loginLink := ""
+	if base, err := account.FrontendBase(ctx, s.frontendURLs); err == nil {
+		loginLink, _ = frontendLink(base, loginPath, "")
+	}
+	before := ctx.Err()
+	err = s.sender.SendWelcome(ctx, user.Email, user.FullName, loginLink)
+	reportSendFailure(ctx, before, err, PurposeWelcome)
+	if err != nil {
 		return errors.New("welcome mail: send failed")
 	}
 	return nil
@@ -223,6 +235,15 @@ func (s *Service) SendPasswordReset(ctx context.Context, userID uuid.UUID) error
 	if user == nil || user.Email == "" {
 		return errors.New("password reset mail: user not found")
 	}
+	// The base is read before a token is minted: a link that cannot be built
+	// stores no hash.
+	base, err := account.FrontendBase(ctx, s.frontendURLs)
+	if err != nil {
+		return fmt.Errorf("password reset mail: %w", err)
+	}
+	if _, err := frontendLink(base, passwordResetPath, ""); err != nil {
+		return fmt.Errorf("password reset mail: %w", err)
+	}
 	raw, err := s.tokens.GenerateRandomToken()
 	if err != nil {
 		return fmt.Errorf("password reset mail: mint token: %w", err)
@@ -243,9 +264,10 @@ func (s *Service) SendPasswordReset(ctx context.Context, userID uuid.UUID) error
 	if err := s.resets.Create(ctx, token); err != nil {
 		return fmt.Errorf("password reset mail: store token: %w", err)
 	}
+	link, _ := frontendLink(base, passwordResetPath, raw)
 	before := ctx.Err()
-	err = s.sender.SendReset(ctx, user.Email, passwordResetURLPrefix+raw)
-	warnIfDeadlineHitMidSend(ctx, before, err, PurposePasswordReset)
+	err = s.sender.SendReset(ctx, user.Email, link)
+	reportSendFailure(ctx, before, err, PurposePasswordReset)
 	if err != nil {
 		return errors.New("password reset mail: send failed")
 	}
@@ -279,21 +301,46 @@ func (s *Service) SendAccountInvite(ctx context.Context, inviteID uuid.UUID) (st
 	}
 	before := ctx.Err()
 	err = s.sender.SendInvite(ctx, message)
-	warnIfDeadlineHitMidSend(ctx, before, err, PurposeAccountInvite)
+	reportSendFailure(ctx, before, err, PurposeAccountInvite)
 	if err != nil {
 		return message.Link, errors.New("invite mail: send failed")
 	}
 	return message.Link, nil
 }
 
-// warnIfDeadlineHitMidSend logs a credential send whose result is not known
-// because the deadline fired while Mail().Send was in progress. The line
-// names the purpose only.
-func warnIfDeadlineHitMidSend(ctx context.Context, before, sendErr error, purpose string) {
-	if sendErr == nil || ctx == nil || errors.Is(before, context.DeadlineExceeded) {
+// reportSendFailure logs a failed credential send. A send the deadline cut while
+// Mail().Send was in progress has an unknown outcome and names the purpose only;
+// any other names the purpose and why, but only a reason the transport marks
+// safe (SafeReason): an smtp error can carry the host, an address or the
+// password, and the error never reaches this line with the link.
+func reportSendFailure(ctx context.Context, before, sendErr error, purpose string) {
+	if sendErr == nil || ctx == nil {
 		return
 	}
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+	if !errors.Is(before, context.DeadlineExceeded) && errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		slog.Warn("credential mail send outcome unknown", "purpose", purpose)
+		return
 	}
+	reason := "the transport refused or did not answer (its error is not logged)"
+	var safe interface{ SafeReason() string }
+	if errors.As(sendErr, &safe) {
+		reason = safe.SafeReason()
+	}
+	slog.Warn("credential mail send failed", "purpose", purpose, "reason", reason)
+}
+
+// frontendLink is path on the front end at base, with token as its ?token=
+// when there is one.
+func frontendLink(base, path, token string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(base))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", errors.New("credential mail: the front-end URL is not an absolute URL")
+	}
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + path
+	parsed.RawQuery = ""
+	if token != "" {
+		parsed.RawQuery = url.Values{"token": {token}}.Encode()
+	}
+	parsed.Fragment = ""
+	return parsed.String(), nil
 }
