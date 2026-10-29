@@ -1,12 +1,14 @@
 package balances
 
 import (
+	"math/big"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/support/carbon"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/pkg/amount"
 	"github.com/macrowallets/waas/pkg/numeric"
 )
 
@@ -14,6 +16,10 @@ import (
 // match the model wire, including embedded timestamps. A nil page stays nil;
 // an empty page stays empty. A nil related wallet stays omitted. Callers pass
 // the wallet body view, so share material stays off the wire.
+//
+// amount_* is the balance of the base address (source_address); unconsolidated_*
+// is what the wallet's other deposit addresses hold, in unconsolidated_addresses
+// addresses, until a consolidation sweeps it into the base; total_* is both.
 type Balance struct {
 	CreatedAt     *carbon.DateTime    `json:"created_at"`
 	UpdatedAt     *carbon.DateTime    `json:"updated_at"`
@@ -32,7 +38,14 @@ type Balance struct {
 	ValueUSD      numeric.NullDecimal `json:"value_usd,omitzero"`
 	SourceAddress *string             `json:"source_address,omitempty"`
 	LastSyncedAt  time.Time           `json:"last_synced_at"`
-	Wallet        any                 `json:"wallet,omitempty"`
+
+	UnconsolidatedAmountRaw     string `json:"unconsolidated_amount_raw"`
+	UnconsolidatedAmountDisplay string `json:"unconsolidated_amount_display"`
+	UnconsolidatedAddresses     int    `json:"unconsolidated_addresses"`
+	TotalAmountRaw              string `json:"total_amount_raw"`
+	TotalAmountDisplay          string `json:"total_amount_display"`
+
+	Wallet any `json:"wallet,omitempty"`
 }
 
 // BalanceFrom projects one balance. A nil wallet stays omitted.
@@ -41,6 +54,11 @@ func BalanceFrom[W any](row models.WalletAssetBalance, wallet *W) Balance {
 	if wallet != nil {
 		related = wallet
 	}
+	unconsolidatedRaw, unconsolidatedDisplay := row.UnconsolidatedRaw, row.UnconsolidatedDisplay
+	if unconsolidatedRaw == "" {
+		unconsolidatedRaw, unconsolidatedDisplay = "0", "0"
+	}
+	totalRaw, totalDisplay := totalAmount(row.AmountRaw, row.AmountDisplay, unconsolidatedRaw, row.Decimals)
 	return Balance{
 		CreatedAt:     row.CreatedAt,
 		UpdatedAt:     row.UpdatedAt,
@@ -59,8 +77,31 @@ func BalanceFrom[W any](row models.WalletAssetBalance, wallet *W) Balance {
 		ValueUSD:      row.ValueUSD,
 		SourceAddress: row.SourceAddress,
 		LastSyncedAt:  row.LastSyncedAt,
-		Wallet:        related,
+
+		UnconsolidatedAmountRaw:     unconsolidatedRaw,
+		UnconsolidatedAmountDisplay: unconsolidatedDisplay,
+		UnconsolidatedAddresses:     row.UnconsolidatedAddresses,
+		TotalAmountRaw:              totalRaw,
+		TotalAmountDisplay:          totalDisplay,
+
+		Wallet: related,
 	}
+}
+
+// totalAmount adds what the other deposit addresses hold to the base address's
+// balance. Nothing held keeps the base's own display; an amount that is not base
+// units is answered as the base's balance alone.
+func totalAmount(baseRaw, baseDisplay, unconsolidatedRaw string, decimals int) (string, string) {
+	held, ok := amount.ParseBaseUnits(unconsolidatedRaw)
+	if !ok || held.Sign() == 0 {
+		return baseRaw, baseDisplay
+	}
+	base, ok := amount.ParseBaseUnits(baseRaw)
+	if !ok {
+		return baseRaw, baseDisplay
+	}
+	total := new(big.Int).Add(base, held)
+	return total.String(), amount.FormatBaseUnits(total, decimals)
 }
 
 // BalancesFrom copies a page. A nil slice stays nil; an empty slice stays empty.

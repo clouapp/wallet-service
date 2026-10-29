@@ -45,15 +45,15 @@ func TestBalance_Keeps_TheModelWire(t *testing.T) {
 	}{
 		{
 			row:  models.WalletAssetBalance{},
-			want: `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","wallet_id":"00000000-0000-0000-0000-000000000000","chain_id":"","asset_type":"","asset_symbol":"","asset_key":"","decimals":0,"amount_raw":"","amount_display":"","last_synced_at":"0001-01-01T00:00:00Z"}`,
+			want: `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","wallet_id":"00000000-0000-0000-0000-000000000000","chain_id":"","asset_type":"","asset_symbol":"","asset_key":"","decimals":0,"amount_raw":"","amount_display":"","last_synced_at":"0001-01-01T00:00:00Z","unconsolidated_amount_raw":"0","unconsolidated_amount_display":"0","unconsolidated_addresses":0,"total_amount_raw":"","total_amount_display":""}`,
 		},
 		{
 			row:  models.WalletAssetBalance{AssetName: &empty, PriceUSD: zero},
-			want: `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","wallet_id":"00000000-0000-0000-0000-000000000000","chain_id":"","asset_type":"","asset_symbol":"","asset_name":"","asset_key":"","decimals":0,"amount_raw":"","amount_display":"","price_usd":0,"last_synced_at":"0001-01-01T00:00:00Z"}`,
+			want: `{"created_at":null,"updated_at":null,"id":"00000000-0000-0000-0000-000000000000","wallet_id":"00000000-0000-0000-0000-000000000000","chain_id":"","asset_type":"","asset_symbol":"","asset_name":"","asset_key":"","decimals":0,"amount_raw":"","amount_display":"","price_usd":0,"last_synced_at":"0001-01-01T00:00:00Z","unconsolidated_amount_raw":"0","unconsolidated_amount_display":"0","unconsolidated_addresses":0,"total_amount_raw":"","total_amount_display":""}`,
 		},
 		{
 			row:  full,
-			want: `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10","id":"11111111-1111-4111-8111-111111111111","wallet_id":"22222222-2222-4222-8222-222222222222","chain_id":"eth","asset_type":"token","asset_symbol":"USDC","asset_name":"USD Coin","asset_contract":"0xabc","asset_key":"eth:usdc","decimals":6,"amount_raw":"6000000","amount_display":"6","price_usd":1.5,"value_usd":1.5,"source_address":"0xsource","last_synced_at":"2024-05-06T07:08:09Z"}`,
+			want: `{"created_at":"2024-05-06 07:08:09","updated_at":"2024-05-06 07:08:10","id":"11111111-1111-4111-8111-111111111111","wallet_id":"22222222-2222-4222-8222-222222222222","chain_id":"eth","asset_type":"token","asset_symbol":"USDC","asset_name":"USD Coin","asset_contract":"0xabc","asset_key":"eth:usdc","decimals":6,"amount_raw":"6000000","amount_display":"6","price_usd":1.5,"value_usd":1.5,"source_address":"0xsource","last_synced_at":"2024-05-06T07:08:09Z","unconsolidated_amount_raw":"0","unconsolidated_amount_display":"0","unconsolidated_addresses":0,"total_amount_raw":"6000000","total_amount_display":"6"}`,
 		},
 	}
 	for _, tc := range cases {
@@ -64,6 +64,50 @@ func TestBalance_Keeps_TheModelWire(t *testing.T) {
 		if string(raw) != tc.want {
 			t.Fatalf("wire changed\n got %s\nwant %s", raw, tc.want)
 		}
+	}
+}
+
+func TestBalance_TotalAddsWhatTheOtherDepositAddressesHoldToTheBase(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name                       string
+		row                        models.WalletAssetBalance
+		raw, display, total, shown string
+		addresses                  int
+	}{
+		{
+			name: "a USDC deposit left on a child address",
+			row: models.WalletAssetBalance{Decimals: 6, AmountRaw: "0", AmountDisplay: "0",
+				UnconsolidatedRaw: "2200", UnconsolidatedDisplay: "0.0022", UnconsolidatedAddresses: 1},
+			raw: "2200", display: "0.0022", total: "2200", shown: "0.0022", addresses: 1,
+		},
+		{
+			name: "SOL on the base and on three children",
+			row: models.WalletAssetBalance{Decimals: 9, AmountRaw: "50000000", AmountDisplay: "0.05",
+				UnconsolidatedRaw: "30000000", UnconsolidatedDisplay: "0.03", UnconsolidatedAddresses: 3},
+			raw: "30000000", display: "0.03", total: "80000000", shown: "0.08", addresses: 3,
+		},
+		{
+			name: "a row stored before the refresh filled the columns",
+			row:  models.WalletAssetBalance{Decimals: 9, AmountRaw: "50000000", AmountDisplay: "0.05"},
+			raw:  "0", display: "0", total: "50000000", shown: "0.05",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			view := balances.BalanceFrom[struct{}](tc.row, nil)
+			if view.UnconsolidatedAmountRaw != tc.raw || view.UnconsolidatedAmountDisplay != tc.display || view.UnconsolidatedAddresses != tc.addresses {
+				t.Fatalf("unconsolidated: got %s / %s in %d addresses, want %s / %s in %d",
+					view.UnconsolidatedAmountRaw, view.UnconsolidatedAmountDisplay, view.UnconsolidatedAddresses, tc.raw, tc.display, tc.addresses)
+			}
+			if view.TotalAmountRaw != tc.total || view.TotalAmountDisplay != tc.shown {
+				t.Fatalf("total: got %s / %s, want %s / %s", view.TotalAmountRaw, view.TotalAmountDisplay, tc.total, tc.shown)
+			}
+			if view.AmountRaw != tc.row.AmountRaw || view.AmountDisplay != tc.row.AmountDisplay {
+				t.Fatalf("amount_* must stay the base address's balance, got %s / %s", view.AmountRaw, view.AmountDisplay)
+			}
+		})
 	}
 }
 

@@ -86,6 +86,39 @@ func (s *TransactionRepositoryTestSuite) TestAddress_Ledger_SumsWhatTheRecordedR
 	s.Equal(models.AddressFeeEntry{Address: ledgerChild, Fees: "250"}, feesByAddress[ledgerChild], "the sweep's gas")
 }
 
+func (s *TransactionRepositoryTestSuite) TestWallet_AddressLedger_SumsTheRowsOfOneWalletOnOneChain() {
+	ctx := context.Background()
+	walletID := s.insertWallet()
+	otherWallet := s.insertWallet()
+	// The wallet: a child that received ETH and USDC, then swept the USDC, and paid
+	// the sweep's gas.
+	s.ledgerRow(walletID, models.TxTypeDeposit, "confirmed", ledgerOther, ledgerChild, "ETH", "", "1000", "")
+	s.ledgerRow(walletID, models.TxTypeDeposit, "confirmed", ledgerOther, ledgerChild, "USDC", ledgerUSDC, "2500000", "")
+	s.ledgerRow(walletID, models.TxTypeSweep, "confirmed", ledgerChild, ledgerBase, "USDC", ledgerUSDC, "2500000", "250")
+	// Another wallet's rows, even to the same address, and the wallet's rows on
+	// another chain never count.
+	s.ledgerRow(otherWallet, models.TxTypeDeposit, "confirmed", ledgerOther, ledgerChild, "ETH", "", "777", "")
+	other := s.makeTx(walletID, models.TxTypeDeposit, "confirmed")
+	other.Chain, other.ToAddress, other.Amount = models.ChainTPolygon, ledgerChild, "123456"
+	s.Require().NoError(s.repo.Create(ctx, other))
+
+	entries, err := s.repo.WalletAddressLedger(ctx, walletID, models.ChainTETH)
+	s.Require().NoError(err)
+	s.ElementsMatch([]models.AddressLedgerEntry{
+		{Address: ledgerChild, Asset: "ETH", Credited: "1000", Debited: "0"},
+		{Address: ledgerChild, Asset: "USDC", TokenContract: ledgerUSDC, Credited: "2500000", Debited: "2500000"},
+		{Address: ledgerBase, Asset: "USDC", TokenContract: ledgerUSDC, Credited: "2500000", Debited: "0"},
+	}, entries)
+
+	fees, err := s.repo.WalletAddressFees(ctx, walletID, models.ChainTETH, false)
+	s.Require().NoError(err)
+	s.Equal([]models.AddressFeeEntry{{Address: ledgerChild, Fees: "250"}}, fees)
+
+	none, err := s.repo.WalletAddressLedger(ctx, uuid.New(), models.ChainTETH)
+	s.Require().NoError(err)
+	s.Empty(none, "a wallet without rows has an empty ledger")
+}
+
 func (s *TransactionRepositoryTestSuite) TestAddress_Ledger_CountsTheOutboundRowsStillInFlightOfEachAddress() {
 	ctx := context.Background()
 	walletID := s.insertWallet()

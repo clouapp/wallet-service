@@ -26,7 +26,13 @@ type WalletAssetBalance struct {
 	ValueUSD      numeric.NullDecimal `gorm:"type:numeric(28,10)"`
 	SourceAddress *string             `gorm:"type:text"`
 	LastSyncedAt  time.Time           `gorm:"type:timestamptz;not null"`
-	Wallet        *Wallet             `gorm:"foreignKey:WalletID"`
+	// AmountRaw is the balance of the base address (SourceAddress). The wallet's
+	// other deposit addresses hold UnconsolidatedRaw of the asset, in
+	// UnconsolidatedAddresses addresses, until a consolidation sweeps it into the base.
+	UnconsolidatedRaw       string  `gorm:"type:text;not null"`
+	UnconsolidatedDisplay   string  `gorm:"type:text;not null"`
+	UnconsolidatedAddresses int     `gorm:"type:int;not null"`
+	Wallet                  *Wallet `gorm:"foreignKey:WalletID"`
 }
 
 func (w *WalletAssetBalance) TableName() string {
