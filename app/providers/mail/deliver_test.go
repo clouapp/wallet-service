@@ -6,6 +6,8 @@ import (
 	"crypto/subtle"
 	"errors"
 	"log/slog"
+	"net"
+	"net/textproto"
 	"strings"
 	"testing"
 
@@ -63,6 +65,7 @@ func TestDeliver_Uses_SMTPAndFromWhenTheRowsExist(t *testing.T) {
 func TestDeliver_Keeps_TheEnvDocumentWhenTheRowsAreMissing(t *testing.T) {
 	const envPassword = "env-mailbox-secret"
 	cfg := newDocumentConfig(map[string]any{
+		"host": "env-host",
 		"from": map[string]any{"address": "env@example.test", "name": "Env"},
 		"mailers": map[string]any{
 			"smtp": map[string]any{"transport": "smtp", "host": "env-host", "password": envPassword},
@@ -92,6 +95,7 @@ func TestDeliver_Keeps_TheEnvDocumentWhenTheRowsAreMissing(t *testing.T) {
 
 func TestDeliver_Keeps_TheEnvDocumentWhenTheReadFails(t *testing.T) {
 	cfg := newDocumentConfig(map[string]any{
+		"host":    "env-host",
 		"mailers": map[string]any{"smtp": map[string]any{"host": "env-host"}},
 		"from":    map[string]any{"address": "env@example.test", "name": "Env"},
 	})
@@ -131,10 +135,65 @@ func TestDeliver_Restores_TheEnvDocumentWhenTheDialFails(t *testing.T) {
 	}
 }
 
+// An smtp send with no host (MAIL_HOST unset and no mail_smtp.host, production
+// on 2026-10-29) is refused before the dial with a reason that can be logged.
+func TestDeliver_Refuses_AnSMTPSendWithoutAHostBeforeTheDial(t *testing.T) {
+	cfg := newDocumentConfig(map[string]any{"driver": "smtp", "host": " "})
+	transport := &recordingMail{}
+	err := NewMailer(MailerDeps{Transport: transport, Config: cfg, Settings: storedSettings{}}).Send()
+	if !errors.Is(err, errSMTPHostMissing) {
+		t.Fatalf("send error = %v, want the missing host", err)
+	}
+	var safe interface{ SafeReason() string }
+	if !errors.As(err, &safe) || !strings.Contains(safe.SafeReason(), "MAIL_HOST") {
+		t.Fatalf("the refusal carries no safe reason: %v", err)
+	}
+	if transport.sent {
+		t.Fatal("a send without a host dialed")
+	}
+	if cfg.mail["host"] != " " {
+		t.Fatal("the refusal left the send's document on the process config")
+	}
+	stored := storedSettings{smtp: settings.MailSMTP{Host: "smtp.example.test", UseHost: true}}
+	if err := NewMailer(MailerDeps{Transport: transport, Config: cfg, Settings: stored}).Send(); err != nil || !transport.sent {
+		t.Fatalf("a stored mail_smtp.host was not dialed: %v", err)
+	}
+}
+
+// A failed smtp send keeps its error for errors.Is and says only the kind of
+// failure and the reply code: the transport's text can name the host, an
+// address or the password.
+func TestDeliver_SMTPFailure_HasASafeReasonWithoutTheTransportText(t *testing.T) {
+	const secret = "mailbox-secret smtp.internal.example person@example.test"
+	cases := []struct {
+		err  error
+		want string
+	}{
+		{&textproto.Error{Code: 535, Msg: "5.7.8 bad credentials " + secret}, "refused the credentials (535)"},
+		{&textproto.Error{Code: 554, Msg: "rejected " + secret}, "refused the message (554)"},
+		{&net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused " + secret)}, "could not be reached"},
+		{errors.New("tls: " + secret), "smtp transport failed"},
+	}
+	for _, tc := range cases {
+		cfg := newDocumentConfig(map[string]any{"host": "smtp.internal.example"})
+		err := NewMailer(MailerDeps{Transport: &recordingMail{err: tc.err}, Config: cfg}).Send()
+		if !errors.Is(err, tc.err) {
+			t.Fatalf("send error = %v, want the transport error", err)
+		}
+		var safe interface{ SafeReason() string }
+		if !errors.As(err, &safe) {
+			t.Fatalf("%v has no safe reason", err)
+		}
+		if reason := safe.SafeReason(); !strings.Contains(reason, tc.want) || strings.Contains(reason, "secret") || strings.Contains(reason, "example") {
+			t.Fatalf("reason = %q, want %q without the transport text", reason, tc.want)
+		}
+	}
+}
+
 // The framework dials with the process config, so the lock is held from the
 // publish to the restore: no other send can publish its document in between.
 func TestDeliver_Holds_TheSendLockAcrossTheDial(t *testing.T) {
-	cfg := newDocumentConfig(map[string]any{})
+	cfg := newDocumentConfig(map[string]any{"host": "env-host"})
 	var heldDuringDial bool
 	transport := &recordingMail{onSend: func() { heldDuringDial = !sendLock.TryLock() }}
 	if err := NewMailer(MailerDeps{Transport: transport, Config: cfg}).Send(); err != nil {
