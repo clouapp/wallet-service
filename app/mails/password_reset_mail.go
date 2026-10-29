@@ -19,7 +19,7 @@ type passwordResetData struct {
 func (m *PasswordResetMail) Envelope() *contractsmail.Envelope {
 	return &contractsmail.Envelope{
 		To:      []string{m.To},
-		Subject: "Reset Your Password",
+		Subject: "Reset your Macro Wallets password",
 	}
 }
 

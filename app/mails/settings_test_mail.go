@@ -15,7 +15,7 @@ func (m *SettingsTestMail) Envelope() *contractsmail.Envelope {
 	}
 	return &contractsmail.Envelope{
 		To:      []string{to},
-		Subject: "Mail test",
+		Subject: "Macro Wallets mail test",
 	}
 }
 

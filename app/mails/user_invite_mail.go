@@ -24,7 +24,7 @@ type userInviteData struct {
 func (m *UserInviteMail) Envelope() *contractsmail.Envelope {
 	return &contractsmail.Envelope{
 		To:      []string{m.To},
-		Subject: fmt.Sprintf("You've been invited to %s on Vault", m.AccountName),
+		Subject: fmt.Sprintf("You've been invited to %s on Macro Wallets", m.AccountName),
 	}
 }
 

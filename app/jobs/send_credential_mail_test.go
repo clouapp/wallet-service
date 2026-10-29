@@ -94,6 +94,7 @@ func TestSend_Credential_MailRefusesAJobWithoutAMailService(t *testing.T) {
 }
 
 func TestSend_Credential_MailHandleCallsSendOnce(t *testing.T) {
+	t.Setenv("APP_FRONTEND_URL", "https://app.example.test")
 	userID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
 	var resets int
 	job := NewSendCredentialMailJob(credentialmail.NewService(credentialmail.Deps{
@@ -158,4 +159,4 @@ func (s mailSender) SendReset(context.Context, string, string) error {
 	}
 	return nil
 }
-func (mailSender) SendWelcome(context.Context, string, string) error { return nil }
+func (mailSender) SendWelcome(context.Context, string, string, string) error { return nil }

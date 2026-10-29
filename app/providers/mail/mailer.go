@@ -7,7 +7,10 @@ package mail
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"net"
+	"net/textproto"
 	"strings"
 	"sync"
 
@@ -192,7 +195,43 @@ func (m *Mailer) Send(mailable ...contractsmail.Mailable) error {
 	case driverSES:
 		return deliveryFailure("mail: the ses transport is not available yet")
 	}
-	return m.transport.Send(mailable...)
+	if host, _ := doc["host"].(string); strings.TrimSpace(host) == "" {
+		return errSMTPHostMissing
+	}
+	if err := m.transport.Send(mailable...); err != nil {
+		return &smtpError{err: err}
+	}
+	return nil
+}
+
+// errSMTPHostMissing is an smtp send with no host to dial: neither mail_smtp.host
+// nor MAIL_HOST is set. It is refused before the dial, which would only fail.
+var errSMTPHostMissing error = &deliveryError{reason: "mail: smtp has no host (set mail_smtp.host or MAIL_HOST, or choose an API driver in mail_delivery)"}
+
+// smtpError is a failed framework smtp send. Its message is the transport's, which
+// can name the host, an address or the password; SafeReason says only what kind
+// of failure it was and the server's reply code.
+type smtpError struct{ err error }
+
+func (e *smtpError) Error() string { return e.err.Error() }
+func (e *smtpError) Unwrap() error { return e.err }
+
+func (e *smtpError) SafeReason() string {
+	var reply *textproto.Error
+	if errors.As(e.err, &reply) {
+		if reply.Code == 535 || reply.Code == 534 || reply.Code == 530 {
+			return fmt.Sprintf("mail: the smtp server refused the credentials (%d)", reply.Code)
+		}
+		return fmt.Sprintf("mail: the smtp server refused the message (%d)", reply.Code)
+	}
+	var netErr net.Error
+	if errors.As(e.err, &netErr) {
+		if netErr.Timeout() {
+			return "mail: the smtp server did not answer in time"
+		}
+		return "mail: the smtp server could not be reached"
+	}
+	return "mail: the smtp transport failed (its error is not logged)"
 }
 
 // sendAPI posts each mailable (or the builder's message when there is none)
