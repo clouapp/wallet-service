@@ -73,6 +73,23 @@ func RequestTimeoutHandler() func(http.Handler) http.Handler {
 	return middleware.TimeoutHandler(requestTimeout(), corsOrigins())
 }
 
+// HTTPHandler is the handler the local server and the Lambda API serve around
+// router: an inbound provider webhook reaches it with its raw body
+// (middleware.KeepInboundBody), which the router's own request building would
+// otherwise consume.
+func HTTPHandler(router http.Handler) http.Handler {
+	return middleware.KeepInboundBody(router)
+}
+
+// LocalServerHandler wraps the router for the local server: HTTPHandler inside the
+// hard request cut (RequestTimeoutHandler).
+func LocalServerHandler() func(http.Handler) http.Handler {
+	timeout := RequestTimeoutHandler()
+	return func(router http.Handler) http.Handler {
+		return timeout(HTTPHandler(router))
+	}
+}
+
 // checkBootConfig refuses to start on a missing or malformed secret. APP_KEY
 // and JWT_SECRET are exempt only for the commands that create them
 // (`artisan key:generate`, `artisan jwt:secret`), which have to run on a fresh
