@@ -1583,6 +1583,9 @@ go run . artisan ingest:subscriptions                     # provider, chain, sta
   scan list (Arbitrum on production on 2026-10-29: its pushed deposits stayed pending). — guarded by
   `TestStart_Confirms_ThePushedChainsNoScanReads`, `TestStart_Confirms_NothingWhenEveryPushedChainIsScanned`,
   `TestConfirm_Chains_*` and `TestPushed_Chains_*`.
+- `ingest:sync-addresses <chain>` pushes the watched accounts of a chain's subscription now (the sync
+  otherwise runs when an address or a subscription is created): run it after a change in what is watched.
+  — guarded by `TestIngest_SyncAddresses_PushesTheNamedChainAndReportsAFailure`.
 - `ingest:subscriptions` prints no signing secret and the webhook URL by its host only.
 - No real provider call runs in the tests. — guarded by `app/services/ingestsubscription/service_test.go`,
   `app/services/ingest/signing_secrets_test.go`, `app/http/middleware/provider_signature_secret_test.go`,
