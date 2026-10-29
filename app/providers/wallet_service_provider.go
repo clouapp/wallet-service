@@ -168,12 +168,17 @@ func newBalanceService(app foundation.Application) (*refresh.BalanceService, err
 	if err != nil {
 		return nil, err
 	}
+	ledger, err := resolve[*repositories.TransactionRepository](app)
+	if err != nil {
+		return nil, err
+	}
 	return refresh.NewBalanceService(refresh.Deps{
 		Registry:      registry,
 		Wallets:       wallets,
 		AssetBalances: assetBalances,
 		Snapshots:     snapshots,
 		SyncStates:    syncStates,
+		Ledger:        ledger,
 	}), nil
 }
 

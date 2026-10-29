@@ -10,7 +10,7 @@ var (
 	TransactionAmountColumns     = []string{"amount", "fee"}
 	WithdrawalAmountColumns      = []string{"amount", "fee_estimate"}
 	WalletBalanceAmountColumns   = []string{"balance_raw", "balance_display"}
-	AssetBalanceAmountColumns    = []string{"amount_raw", "amount_display"}
+	AssetBalanceAmountColumns    = []string{"amount_raw", "amount_display", "unconsolidated_raw", "unconsolidated_display"}
 	UTXOAmountColumns            = []string{"value_raw"}
 	SnapshotBalanceAmountColumns = []string{"balance_raw", "balance_display"}
 )
@@ -33,7 +33,13 @@ func (b *WalletAssetBalance) ValidateAmounts() error {
 	if err := amount.RequireNonNegative("wallet_asset_balances.amount_raw", b.AmountRaw); err != nil {
 		return err
 	}
-	return amount.RequireNonNegative("wallet_asset_balances.amount_display", b.AmountDisplay)
+	if err := amount.RequireNonNegative("wallet_asset_balances.amount_display", b.AmountDisplay); err != nil {
+		return err
+	}
+	if err := amount.RequireNonNegative("wallet_asset_balances.unconsolidated_raw", b.UnconsolidatedRaw); err != nil {
+		return err
+	}
+	return amount.RequireNonNegative("wallet_asset_balances.unconsolidated_display", b.UnconsolidatedDisplay)
 }
 
 func (s *WalletBalanceSnapshot) ValidateAmounts() error {

@@ -526,7 +526,15 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   facades. `artisan make:migration` creates the file and appends it to `Migrations()`; replace
   the facades import it generates with `migrationSchema()`.
 - Amounts are base-unit integers/strings (`pkg/amount`, `numeric` columns), never floats,
-  and never negative. — guarded by `TestEnforce_Non_NegativeAmounts*`.
+  and never negative. — guarded by `TestEnforce_Non_NegativeAmounts*` and
+  `TestAdd_UnconsolidatedBalances_*`.
+- A wallet asset balance row (`wallet_asset_balances`) is its base address's balance
+  (`amount_*`) plus what its other deposit addresses hold and nobody consolidated yet
+  (`unconsolidated_*`, migration 710): the balance refresh picks those addresses from the
+  ledger of the wallet's recorded transactions and reads only them on chain, the ledger
+  standing in for a read that fails. — guarded by `TestRefresh_Wallet_*`
+  (`app/services/refresh/unconsolidated_test.go`) and
+  `TestWallet_AddressLedger_SumsTheRowsOfOneWalletOnOneChain`.
 - Every write to a `transactions` row moves `updated_at` (the ORM stamps it on each
   `TransactionRepository` update: status, confirmations, failure, fee, block), and
   `transactions_updated_at_id_index` covers `(updated_at, id)`: the changes feed of
