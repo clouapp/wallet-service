@@ -853,3 +853,44 @@ func newPlainChain(chainID string, head uint64) *mocks.MockChain {
 	adapter.ScanBlockFn = func(context.Context, uint64) ([]types.DetectedTransfer, error) { return nil, nil }
 	return adapter
 }
+
+// A chain only the provider push records deposits for (no scan reads it, signature
+// mode off) is confirmed by ConfirmChains, which the local workers run on the
+// confirmation interval: without it a pushed deposit stayed pending for good.
+func TestConfirm_Chains_ConfirmsAPushedDepositOfAChainNoScanReads(t *testing.T) {
+	f := newSignatureFixture(t)
+	f.settings.Chains = nil
+	f.chain.tx("sig-pushed", 1300, lamports(sigAlice, 77, 1))
+	ingestSvc := newIngestSvc(f.registry)
+	ingestSvc.SetDepositEvents(f.events)
+	require.NoError(t, ingestSvc.Ingest(context.Background(), ingest.InboundEvent{ChainID: sigChain, Transfers: []providers.InboundTransfer{
+		{TxHash: "sig-pushed", BlockNumber: 1300, From: sigPayer, To: sigAlice, Amount: big.NewInt(77), LogIndex: 1},
+	}}))
+	ctx := context.Background()
+
+	for i := 0; i < 3; i++ {
+		require.NoError(t, f.svc.ConfirmChains(ctx, []string{sigChain, "not-a-chain"}))
+	}
+
+	rows := sigDeposits(t)
+	require.Len(t, rows, 1)
+	assert.Equal(t, string(types.TxStatusConfirmed), rows[0].Status)
+	assert.Len(t, f.events.ids[types.EventDepositConfirmed], 1)
+}
+
+func TestConfirm_Chains_LeavesAChainAnotherScanHolds(t *testing.T) {
+	f := newSignatureFixture(t)
+	f.settings.Chains = nil
+	f.chain.tx("sig-pushed", 1300, lamports(sigAlice, 77, 1))
+	ingestSvc := newIngestSvc(f.registry)
+	require.NoError(t, ingestSvc.Ingest(context.Background(), ingest.InboundEvent{ChainID: sigChain, Transfers: []providers.InboundTransfer{
+		{TxHash: "sig-pushed", BlockNumber: 1300, From: sigPayer, To: sigAlice, Amount: big.NewInt(77), LogIndex: 1},
+	}}))
+	hold, err := f.svc.holdChain(sigChain)
+	require.NoError(t, err)
+	defer hold.Release()
+
+	require.NoError(t, f.svc.ConfirmChains(context.Background(), []string{sigChain}))
+
+	assert.Equal(t, string(types.TxStatusPending), sigDeposits(t)[0].Status, "the scan that holds the chain confirms it")
+}

@@ -1569,6 +1569,20 @@ go run . artisan ingest:subscriptions                     # provider, chain, sta
   QuickNode deliveries are checked as Streams signs them: HMAC-SHA256 keyed with the security token over
   `X-QN-Nonce` + `X-QN-Timestamp` + body, hex in `X-QN-Signature`, refused when the timestamp is more
   than 5 minutes from now; streams are created uncompressed.
+- The addresses a subscription watches are the chain's active addresses expanded by the chain's
+  adapter (`webhooksync.Deps.Watched`, `providers.watchedAccounts`): on Solana (`chain.AccountStateReader`)
+  each address and its associated token account of each registered token, since a token transfer names
+  the token account and not the address (a Helius webhook on the addresses alone never sees an SPL
+  deposit); other chains keep their addresses. An address whose accounts are not derived keeps the
+  address alone (logged). — guarded by `TestSync_ChainAddresses_SendsTheAccountsWatchedExpandsTheAddressesInto`
+  and `TestWatched_Accounts_AddTheTokenAccountsOfAChainThatDerivesThem`.
+- A pushed chain no scan of the process reads is still confirmed: a scan cycle confirms only its own
+  chain, so the local workers' confirmation loop runs `deposit.Service.ConfirmChains` (every movement,
+  under the chain's scan lock, a chain another scan holds left to it) and the `deposit.confirmed`
+  backfill for the chains with an active subscription (`providers.PushedChains`) that are not in the
+  scan list (Arbitrum on production on 2026-10-29: its pushed deposits stayed pending). — guarded by
+  `TestStart_Confirms_ThePushedChainsNoScanReads`, `TestStart_Confirms_NothingWhenEveryPushedChainIsScanned`,
+  `TestConfirm_Chains_*` and `TestPushed_Chains_*`.
 - `ingest:subscriptions` prints no signing secret and the webhook URL by its host only.
 - No real provider call runs in the tests. — guarded by `app/services/ingestsubscription/service_test.go`,
   `app/services/ingest/signing_secrets_test.go`, `app/http/middleware/provider_signature_secret_test.go`,

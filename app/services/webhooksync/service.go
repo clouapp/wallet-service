@@ -42,6 +42,12 @@ type subscriptionStore interface {
 	RecordSync(ctx context.Context, id uuid.UUID, status, hash string, syncedAt time.Time) error
 }
 
+// WatchedAccounts expands a chain's active addresses into every account a provider
+// must watch to see their deposits (Solana: each address and its associated token
+// account of each registered token, which a token transfer names instead of the
+// address). A chain it does not expand keeps its addresses.
+type WatchedAccounts func(ctx context.Context, chainID string, addresses []string) []string
+
 // AddressSyncer pushes the full active address list to one provider webhook.
 type AddressSyncer interface {
 	SyncAddresses(ctx context.Context, webhookID string, allAddresses []string) error
@@ -53,6 +59,7 @@ type Service struct {
 	providers        map[string]AddressSyncer
 	providerKey      ProviderKey
 	openSecret       signingSecretOpener
+	watched          WatchedAccounts
 	mu               sync.Map // subscription id -> *sync.Mutex
 }
 
@@ -68,6 +75,9 @@ type Deps struct {
 	// OpenSecret opens the subscription's signing secret; a sync whose secret does
 	// not open is failed. Required.
 	OpenSecret signingSecretOpener
+	// Watched expands each chain's addresses into the accounts the provider watches.
+	// Nil: the addresses alone.
+	Watched WatchedAccounts
 }
 
 // NewService wires the webhook sync service from Deps.
@@ -78,6 +88,7 @@ func NewService(deps Deps) *Service {
 		providers:        deps.Providers,
 		providerKey:      deps.ProviderKey,
 		openSecret:       deps.OpenSecret,
+		watched:          deps.Watched,
 	}
 }
 
@@ -118,6 +129,9 @@ func (s *Service) SyncChainAddresses(ctx context.Context, chainID string) error 
 	if err != nil {
 		s.markFailed(ctx, sub.ID)
 		return fmt.Errorf("pluck active addresses: %w", err)
+	}
+	if s.watched != nil {
+		addresses = s.watched(ctx, chainID, addresses)
 	}
 
 	providerName := strings.ToLower(strings.TrimSpace(sub.Provider))

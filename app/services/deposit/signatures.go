@@ -627,8 +627,9 @@ func forEachConcurrently(ctx context.Context, limit, n int, fn func(i int)) {
 	wg.Wait()
 }
 
-// confirmWhileSigning runs the confirmation step of a chain whose block scan is paused
-// for the signature sync, at the head, under the chain's scan lock, on the scan's
+// confirmWhileSigning runs the confirmation step of a chain no block scan confirms (one
+// whose block scan is paused for the signature sync, or one only the provider push
+// records: ConfirmChains), at the head, under the chain's scan lock, on its caller's
 // cadence: a deposit the provider push recorded (the fast path) confirms within a scan
 // interval instead of waiting for the next sync cycle. While a sync cycle holds the
 // lock it is skipped (the cycle confirms at its end); with no pending transaction the

@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/goravel/framework/contracts/foundation"
@@ -14,6 +15,7 @@ import (
 	"github.com/macrowallets/waas/app/facades"
 	"github.com/macrowallets/waas/app/models"
 	"github.com/macrowallets/waas/app/repositories"
+	chainpkg "github.com/macrowallets/waas/app/services/chain"
 	"github.com/macrowallets/waas/app/services/ingest"
 	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/app/services/ingestsubscription"
@@ -176,7 +178,52 @@ func newWebhookSyncService(app foundation.Application) (*webhooksync.Service, er
 		Providers:     syncers,
 		ProviderKey:   ingestProviderKey(accountSettings),
 		OpenSecret:    secrets.Open,
+		Watched: watchedAccounts(func() (*chainpkg.Registry, error) {
+			return resolve[*chainpkg.Registry](app)
+		}),
 	}), nil
+}
+
+// watchedAccounts expands the addresses of a chain whose adapter derives accounts
+// (chain.AccountStateReader: Solana) into each address and its associated token
+// account of each registered token: a token transfer names the token account, not
+// the address, so a provider watching the addresses alone (Helius) never sees it.
+// Another chain, a registry that cannot be built or an address whose accounts are
+// not derived (logged) keeps its addresses. The registry is resolved at the sync,
+// not when the service is built.
+func watchedAccounts(registry func() (*chainpkg.Registry, error)) webhooksync.WatchedAccounts {
+	return func(ctx context.Context, chainID string, addresses []string) []string {
+		chains, err := registry()
+		if err != nil {
+			slog.Warn("webhook sync: chain registry unavailable; watching the addresses alone", "chain", chainID, "error", err)
+			return addresses
+		}
+		adapter, err := chains.Chain(chainID)
+		if err != nil {
+			return addresses
+		}
+		reader, ok := adapter.(chainpkg.AccountStateReader)
+		if !ok {
+			return addresses
+		}
+		accounts := make([]string, 0, len(addresses)*2)
+		seen := make(map[string]bool, len(addresses)*2)
+		for _, address := range addresses {
+			derived, err := reader.DerivedAccounts(ctx, address)
+			if err != nil {
+				slog.Warn("webhook sync: token accounts of an address not derived; watching the address alone",
+					"chain", chainID, "address", address, "error", err)
+				derived = []string{address}
+			}
+			for _, account := range derived {
+				if !seen[account] {
+					seen[account] = true
+					accounts = append(accounts, account)
+				}
+			}
+		}
+		return accounts
+	}
 }
 
 // newIngestSubscriptionService creates provider subscriptions with the catalog's
