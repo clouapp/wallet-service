@@ -64,6 +64,26 @@ func TestCreate_Webhook_SendsMethodPathAuthAndBody(t *testing.T) {
 	}, body)
 }
 
+// Helius answers a created webhook with 201 Created: a created webhook, not an
+// error, or it would be left at the provider with no row on this side.
+func TestCreate_Webhook_TakesA201CreatedAsTheCreatedWebhook(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"webhookID":"wh-201","webhookURL":"https://hooks.example/helius"}`))
+	}))
+	t.Cleanup(srv.Close)
+	provider := NewHeliusProvider("test-key")
+	provider.client = pointAt(t, srv)
+
+	got, err := provider.CreateWebhook(context.Background(), providers.ProviderConfig{
+		Network: "mainnet", WebhookURL: "https://hooks.example/helius", AuthSecret: "Bearer inbound",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "wh-201", got.ProviderWebhookID)
+}
+
 func TestCreate_Webhook_MapsHTTPErrorsWithoutTheKeyOrHost(t *testing.T) {
 	const apiKey = "test-key"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

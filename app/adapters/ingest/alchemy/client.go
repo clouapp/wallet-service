@@ -27,6 +27,10 @@ const (
 	alchemyAuthTokenHdr  = "X-Alchemy-Token"
 	alchemyAddrPageLimit = 100
 	alchemyHTTPTimeout   = 30 * time.Second
+	// alchemyMaxEntriesPerRequest is the most addresses Alchemy takes in one field of
+	// one request ("Cannot create more than 500 entries per field in a single
+	// request", answered to a create with 1092 on 2026-10-28).
+	alchemyMaxEntriesPerRequest = 500
 )
 
 type AlchemyProvider struct {
@@ -74,8 +78,11 @@ type alchemyCreateResp struct {
 	} `json:"data"`
 }
 
+// CreateWebhook creates an ADDRESS_ACTIVITY webhook with at most
+// alchemyMaxEntriesPerRequest of cfg.Addresses: the address sync that follows a
+// subscription (SyncAddresses) adds the others.
 func (a *AlchemyProvider) CreateWebhook(ctx context.Context, cfg providers.ProviderConfig) (*providers.ProviderWebhook, error) {
-	addresses := cfg.Addresses
+	addresses := cfg.Addresses[:min(len(cfg.Addresses), alchemyMaxEntriesPerRequest)]
 	if addresses == nil {
 		addresses = []string{} // the API refuses addresses: null
 	}
@@ -137,6 +144,9 @@ type alchemyPatchAddressesReq struct {
 	AddressesToRemove []string `json:"addresses_to_remove"`
 }
 
+// SyncAddresses makes the webhook's addresses allAddresses: it reads the current
+// ones and patches the difference, at most alchemyMaxEntriesPerRequest additions and
+// as many removals a request.
 func (a *AlchemyProvider) SyncAddresses(ctx context.Context, webhookID string, allAddresses []string) error {
 	current, err := a.fetchAllAddresses(ctx, webhookID)
 	if err != nil {
@@ -144,14 +154,22 @@ func (a *AlchemyProvider) SyncAddresses(ctx context.Context, webhookID string, a
 	}
 
 	toAdd, toRemove := diffAddresses(current, allAddresses)
-	if len(toAdd) == 0 && len(toRemove) == 0 {
-		return nil
+	for len(toAdd) > 0 || len(toRemove) > 0 {
+		adding, removing := min(len(toAdd), alchemyMaxEntriesPerRequest), min(len(toRemove), alchemyMaxEntriesPerRequest)
+		if err := a.patchAddresses(ctx, webhookID, toAdd[:adding], toRemove[:removing]); err != nil {
+			return err
+		}
+		toAdd, toRemove = toAdd[adding:], toRemove[removing:]
 	}
+	return nil
+}
 
+// patchAddresses adds and removes addresses of a webhook in one request.
+func (a *AlchemyProvider) patchAddresses(ctx context.Context, webhookID string, toAdd, toRemove []string) error {
 	payload := alchemyPatchAddressesReq{
 		WebhookID:         webhookID,
-		AddressesToAdd:    toAdd,
-		AddressesToRemove: toRemove,
+		AddressesToAdd:    nonNil(toAdd),
+		AddressesToRemove: nonNil(toRemove),
 	}
 
 	body, err := json.Marshal(payload)
@@ -175,6 +193,14 @@ func (a *AlchemyProvider) SyncAddresses(ctx context.Context, webhookID string, a
 		return chain.FromProviderHTTP(status, string(respBody))
 	}
 	return nil
+}
+
+// nonNil is addresses, or an empty list for none: the API refuses null.
+func nonNil(addresses []string) []string {
+	if addresses == nil {
+		return []string{}
+	}
+	return addresses
 }
 
 func (a *AlchemyProvider) fetchAllAddresses(ctx context.Context, webhookID string) ([]string, error) {
