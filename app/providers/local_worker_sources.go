@@ -41,6 +41,35 @@ func LocalScanChains(stored *settings.Service) localworkers.ScanChainSource {
 	return scanChainSettings{stored: stored, env: facades.Config().GetString("vault.local_workers.deposit_scan_chains")}
 }
 
+// PushedChains is the chains with an active ingest subscription, once each, in
+// chain order: the chains a provider pushes deposits for.
+func PushedChains(subscriptions interface {
+	FindAllActive(ctx context.Context) ([]models.WebhookSubscription, error)
+}) localworkers.PushedChainSource {
+	return pushedChains{subscriptions: subscriptions}
+}
+
+type pushedChains struct {
+	subscriptions interface {
+		FindAllActive(ctx context.Context) ([]models.WebhookSubscription, error)
+	}
+}
+
+func (p pushedChains) PushedChains(ctx context.Context) ([]string, error) {
+	subs, err := p.subscriptions.FindAllActive(ctx)
+	if err != nil {
+		return nil, err
+	}
+	chains := make([]string, 0, len(subs))
+	for _, sub := range subs {
+		if !slices.Contains(chains, sub.ChainID) {
+			chains = append(chains, sub.ChainID)
+		}
+	}
+	slices.Sort(chains)
+	return chains, nil
+}
+
 func (s scanChainSettings) ScanChains(ctx context.Context) ([]string, error) {
 	values, err := s.stored.EffectiveLocalWorkers(ctx)
 	if err != nil {
