@@ -253,6 +253,8 @@ func startLocalWorkers(ctx context.Context) lifecycle.Workers {
 		ScanChains:   providers.LocalScanChains(stored),
 		Streams:      providers.XRPDepositStreams(stored, registry, container.MustMake[*repositories.AddressRepository](), deposits),
 		ChainSync:    container.MustMake[*chainsync.Service](),
+		PushedChains: providers.PushedChains(container.MustMake[*repositories.WebhookSubscriptionRepository]()),
+		Confirmer:    deposits,
 	})
 	if err != nil {
 		slog.Error("local workers not started", "error", err)

@@ -888,3 +888,74 @@ func TestStart_Rejects_ASignatureTickBelowOneSecond(t *testing.T) {
 		t.Fatal("expected a configuration error")
 	}
 }
+
+type staticPushedChains struct{ chains []string }
+
+func (s staticPushedChains) PushedChains(context.Context) ([]string, error) { return s.chains, nil }
+
+type recordingConfirmer struct {
+	mu        sync.Mutex
+	confirmed [][]string
+	progress  chan struct{}
+}
+
+func (c *recordingConfirmer) ConfirmChains(ctx context.Context, chainIDs []string) error {
+	c.mu.Lock()
+	c.confirmed = append(c.confirmed, append([]string(nil), chainIDs...))
+	c.mu.Unlock()
+	notify(ctx, c.progress)
+	return nil
+}
+
+func (c *recordingConfirmer) passes() [][]string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([][]string(nil), c.confirmed...)
+}
+
+// A chain a provider pushes deposits for and this process does not scan has no scan
+// cycle to confirm them: the confirmation loop confirms it, and repairs its lost
+// deposit.confirmed events, beside the scanned chains (which their scans confirm).
+func TestStart_Confirms_ThePushedChainsNoScanReads(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	scanner := &recordingScanner{}
+	confirmer := &recordingConfirmer{progress: progressChan()}
+	cfg := Config{ConfirmationInterval: MinInterval, DepositScanChains: []string{"eth", "sol"}, DepositScanInterval: time.Hour}
+
+	if _, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: scanner,
+		PushedChains: staticPushedChains{chains: []string{"arbitrum", "eth", "sol"}}, Confirmer: confirmer}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	waitUntil(t, 3*MinInterval, confirmer.progress, func() bool { return len(confirmer.passes()) > 0 })
+	if got := confirmer.passes()[0]; strings.Join(got, ",") != "arbitrum" {
+		t.Fatalf("confirmed chains %v, want the pushed chain no scan reads", got)
+	}
+	var repaired bool
+	for _, chains := range scanner.backfills() {
+		if strings.Join(chains, ",") == "arbitrum" {
+			repaired = true
+		}
+	}
+	if !repaired {
+		t.Fatalf("backfills %v, want arbitrum's deposit events repaired", scanner.backfills())
+	}
+}
+
+func TestStart_Confirms_NothingWhenEveryPushedChainIsScanned(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	checker := &countingChecker{progress: progressChan()}
+	confirmer := &recordingConfirmer{}
+	cfg := Config{ConfirmationInterval: MinInterval, DepositScanChains: []string{"eth"}, DepositScanInterval: time.Hour}
+
+	if _, err := Start(ctx, cfg, Workers{Checker: checker, Scanner: &recordingScanner{},
+		PushedChains: staticPushedChains{chains: []string{"eth"}}, Confirmer: confirmer}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	waitUntil(t, 3*MinInterval, checker.progress, func() bool { return checker.runs.Load() > 1 })
+	if got := confirmer.passes(); len(got) != 0 {
+		t.Fatalf("a scanned chain is confirmed by its scan, got %v", got)
+	}
+}

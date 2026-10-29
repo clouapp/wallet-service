@@ -61,6 +61,17 @@ type WithdrawalConfirmationChecker interface {
 	RunWithdrawalConfirmationCheck(ctx context.Context) error
 }
 
+// PushedChainSource lists the chains a provider pushes deposits for (an active
+// ingest subscription).
+type PushedChainSource interface {
+	PushedChains(ctx context.Context) ([]string, error)
+}
+
+// ChainConfirmer confirms the movements of chains no scan of this process reads.
+type ChainConfirmer interface {
+	ConfirmChains(ctx context.Context, chainIDs []string) error
+}
+
 type OutboxDeliverer interface {
 	DeliverPending(ctx context.Context, limit int) (int, error)
 }
@@ -126,8 +137,13 @@ type Workers struct {
 	DepositStream DepositStream
 	Signatures    SignatureSyncer
 	ScanChains    ScanChainSource
-	Streams       DepositStreams
-	ChainSync     ChainSync
+	// PushedChains and Confirmer confirm, on the confirmation interval, the chains a
+	// provider pushes deposits for that this process does not scan (no scan cycle
+	// confirms them). Both nil: none.
+	PushedChains PushedChainSource
+	Confirmer    ChainConfirmer
+	Streams      DepositStreams
+	ChainSync    ChainSync
 }
 
 type Config struct {
@@ -292,8 +308,15 @@ func Start(ctx context.Context, cfg Config, workers Workers) (*Loops, error) {
 		if err := checker.RunWithdrawalConfirmationCheck(ctx); err != nil {
 			slog.Error("local withdrawal confirmation check failed", "error", err)
 		}
-		if scanChains := scans.current(); len(scanChains) > 0 {
+		scanChains := scans.current()
+		if len(scanChains) > 0 {
 			backfillDepositEvents(ctx, scanner, scanChains)
+		}
+		if pushed := pushedOnly(ctx, workers.PushedChains, scanChains); len(pushed) > 0 && workers.Confirmer != nil {
+			if err := workers.Confirmer.ConfirmChains(ctx, pushed); err != nil {
+				slog.Error("local confirmation of pushed chains failed", "chains", pushed, "error", err)
+			}
+			backfillDepositEvents(ctx, scanner, pushed)
 		}
 	})
 
@@ -444,6 +467,22 @@ func syncSignatures(ctx context.Context, syncer SignatureSyncer, chainID string)
 		slog.Warn("local deposit signature sync left accounts for the next cycle", "chain", chainID,
 			"failed_accounts", summary.FailedAccounts, "accounts", summary.Accounts)
 	}
+}
+
+// pushedOnly is the chains source lists that scanned does not: the pushed chains no
+// scan of this process confirms. A source that cannot be read lists none (logged).
+func pushedOnly(ctx context.Context, source PushedChainSource, scanned []string) []string {
+	if source == nil {
+		return nil
+	}
+	pushed, err := source.PushedChains(ctx)
+	if err != nil {
+		slog.Error("local pushed chains unread; their confirmations wait for the next pass", "error", err)
+		return nil
+	}
+	return slices.DeleteFunc(slices.Clone(pushed), func(chainID string) bool {
+		return slices.Contains(scanned, chainID)
+	})
 }
 
 // backfillDepositEvents repairs only the chains this machine confirms deposits for;

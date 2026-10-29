@@ -205,3 +205,48 @@ func requireSyncLogsOmit(t *testing.T, logs string, secrets ...string) {
 		}
 	}
 }
+
+type recordingSyncer struct{ addresses [][]string }
+
+func (r *recordingSyncer) SyncAddresses(_ context.Context, _ string, all []string) error {
+	r.addresses = append(r.addresses, append([]string(nil), all...))
+	return nil
+}
+
+// The provider gets the accounts Watched expands the chain's addresses into (a
+// Solana address and its token accounts); without it, the addresses alone.
+func TestSync_ChainAddresses_SendsTheAccountsWatchedExpandsTheAddressesInto(t *testing.T) {
+	for name, tc := range map[string]struct {
+		watched WatchedAccounts
+		want    []string
+	}{
+		"expanded": {
+			watched: func(_ context.Context, chainID string, addresses []string) []string {
+				if chainID != "eth" {
+					t.Errorf("expanded chain %q", chainID)
+				}
+				return append(append([]string(nil), addresses...), "0xabc-usdc")
+			},
+			want: []string{"0xabc", "0xabc-usdc"},
+		},
+		"none": {want: []string{"0xabc"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			syncer := &recordingSyncer{}
+			service := NewService(Deps{
+				Subscriptions: syncSubs{},
+				Addresses:     syncAddresses{},
+				Providers:     map[string]AddressSyncer{"alchemy": syncer},
+				OpenSecret:    func(string) (string, error) { return syncSigning, nil },
+				Watched:       tc.watched,
+			})
+
+			if err := service.SyncChainAddresses(context.Background(), "eth"); err != nil {
+				t.Fatalf("sync: %v", err)
+			}
+			if len(syncer.addresses) != 1 || strings.Join(syncer.addresses[0], ",") != strings.Join(tc.want, ",") {
+				t.Fatalf("synced %v, want %v", syncer.addresses, tc.want)
+			}
+		})
+	}
+}
