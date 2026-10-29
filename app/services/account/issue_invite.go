@@ -116,11 +116,35 @@ func (s *Service) IssueInvite(ctx context.Context, accountID uuid.UUID, email, r
 // ErrInviteInvalid. The raw token is only on the returned link. This does
 // not write member.invited: that event is the original invite.
 func (s *Service) ResendInvite(ctx context.Context, accountID, inviteID uuid.UUID, frontendBase string) (*IssuedInvite, error) {
-	if s == nil || s.invites == nil {
-		return nil, errors.New("account invite stores are required")
-	}
 	if ctx == nil {
 		return nil, errors.New("resend invite: context is required")
+	}
+	issued, err := s.rotateOpenInvite(ctx, accountID, inviteID, frontendBase, false)
+	if err != nil {
+		return nil, err
+	}
+	s.enqueueInviteMail(issued)
+	return issued, nil
+}
+
+// ReissueInvite rotates the token of one open invite and sends no mail: the
+// caller hands the returned link over by hand. The previous link stops
+// working, and the stored role and expiry stay, as on ResendInvite. An
+// expired invite is ErrInviteInvalid too, since its new link could not be
+// accepted. Like ResendInvite it writes no activity row.
+func (s *Service) ReissueInvite(ctx context.Context, accountID, inviteID uuid.UUID, frontendBase string) (*IssuedInvite, error) {
+	if ctx == nil {
+		return nil, errors.New("reissue invite: context is required")
+	}
+	return s.rotateOpenInvite(ctx, accountID, inviteID, frontendBase, true)
+}
+
+// rotateOpenInvite stores the hash of a fresh token on one open invite of the
+// account and returns the link that carries it. The raw token is only on the
+// returned result.
+func (s *Service) rotateOpenInvite(ctx context.Context, accountID, inviteID uuid.UUID, frontendBase string, refuseExpired bool) (*IssuedInvite, error) {
+	if s == nil || s.invites == nil {
+		return nil, errors.New("account invite stores are required")
 	}
 	if accountID == uuid.Nil || inviteID == uuid.Nil {
 		return nil, ErrInviteInvalid
@@ -132,7 +156,7 @@ func (s *Service) ResendInvite(ctx context.Context, accountID, inviteID uuid.UUI
 		}
 		return nil, err
 	}
-	if invite == nil {
+	if invite == nil || (refuseExpired && !invite.ExpiresAt.After(time.Now())) {
 		return nil, ErrInviteInvalid
 	}
 	raw, hash, err := newInviteToken()
@@ -147,9 +171,7 @@ func (s *Service) ResendInvite(ctx context.Context, accountID, inviteID uuid.UUI
 		return nil, err
 	}
 	invite.TokenHash = hash
-	issued := &IssuedInvite{Invite: invite, InviteLink: link, RawToken: raw}
-	s.enqueueInviteMail(issued)
-	return issued, nil
+	return &IssuedInvite{Invite: invite, InviteLink: link, RawToken: raw}, nil
 }
 
 // enqueueInviteMail dispatches the credential-mail job after the invite row

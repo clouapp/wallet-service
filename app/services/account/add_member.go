@@ -114,6 +114,16 @@ func (s *Service) ResendInviteLink(ctx context.Context, accountID, inviteID uuid
 	return issued, nil
 }
 
+// ReissueInviteLink is ReissueInvite with the link based at the front-end
+// URL. No mail is sent, so there is no mail failure to log.
+func (s *Service) ReissueInviteLink(ctx context.Context, accountID, inviteID uuid.UUID) (*IssuedInvite, error) {
+	base, err := FrontendBase(ctx, s.frontendURLs)
+	if err != nil {
+		return nil, err
+	}
+	return s.ReissueInvite(ctx, accountID, inviteID, base)
+}
+
 // logInviteMail records a dispatch failure without the token, its hash or the link.
 func logInviteMail(issued *IssuedInvite) {
 	if issued.MailErr != nil {

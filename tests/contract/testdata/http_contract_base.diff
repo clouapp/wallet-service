@@ -386,3 +386,4 @@ added: 98 external create webhook to a cloud metadata address: POST /api/v1/webh
 added: 99 external chain tokens: GET /api/v1/chains/eth/tokens
 added: 100 external chain tokens of the other environment: GET /api/v1/chains/teth/tokens
 added: 101 external tokens of an unknown chain: GET /api/v1/chains/nochain/tokens
+added: 102 copy an invite link: POST /v1/accounts/{{account}}/invites/{{invite}}/link

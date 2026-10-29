@@ -258,11 +258,14 @@ func (s *AccountMembersTestSuite) assertInviteAccepted(resp contractstesting.Res
 	s.Require().NoError(json.Unmarshal([]byte(content), &body))
 	s.Equal(email, body["email"])
 	s.Equal(role, body["role"])
-	for _, key := range []string{"token", "token_hash", "invite_link", "raw_token", "exists", "user_exists", "password", "password_hash"} {
+	for _, key := range []string{"token", "token_hash", "raw_token", "exists", "user_exists", "password", "password_hash"} {
 		_, present := body[key]
 		s.False(present, key)
 	}
-	lowered := strings.ToLower(content)
+	link, _ := body["invite_link"].(string)
+	s.True(strings.HasPrefix(link, membersFrontendURL+"/accept-invite?token="), "the answer carries the invite link")
+	// The link is the only place the raw token appears.
+	lowered := strings.ToLower(strings.Replace(content, `"invite_link":"`+link+`"`, "", 1))
 	s.NotContains(lowered, "token")
 	s.NotContains(lowered, "invite_link")
 	s.NotContains(lowered, "exists")
@@ -354,7 +357,7 @@ func (s *AccountMembersTestSuite) TestInvite_Link_UsesTheFrontendURL() {
 	s.Equal(int64(0), s.countRows(&models.User{}, "email = ?", "linked@example.com"))
 }
 
-func (s *AccountMembersTestSuite) TestCreate_Invite_AcceptsNewAndExistingEmailsWithoutAToken() {
+func (s *AccountMembersTestSuite) TestCreate_Invite_AnswersNewAndExistingEmailsAlike() {
 	accountID := s.createAccount()
 	owner := s.loginUser("owner", models.MembershipStatusActive, accountID)
 	admin := s.loginUser("admin", models.MembershipStatusActive, accountID)

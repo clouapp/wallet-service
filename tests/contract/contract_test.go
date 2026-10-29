@@ -454,7 +454,35 @@ func refusalScenario(apiRate *apiRateLimit) []step {
 		{name: "external chain tokens", method: "GET", path: "/api/v1/chains/eth/tokens", bearer: "webhookToken"},
 		{name: "external chain tokens of the other environment", method: "GET", path: "/api/v1/chains/teth/tokens", bearer: "webhookToken"},
 		{name: "external tokens of an unknown chain", method: "GET", path: "/api/v1/chains/nochain/tokens", bearer: "webhookToken"},
+
+		// Copying an invite link by hand: a new token for an open invite, no mail.
+		{name: "copy an invite link", method: "POST", path: "/v1/accounts/{{account}}/invites/{{invite}}/link",
+			bearer: "adminSession", before: insertOpenInvite},
 	}
+}
+
+// contractFrontendURL is the base of the invite links the scenario records.
+const contractFrontendURL = "https://wallet.example"
+
+// insertOpenInvite adds an open invite to the scenario's account, issued by
+// the contract user, and sets the front-end base its link is built on.
+func insertOpenInvite(t *testing.T, vars map[string]string) {
+	t.Helper()
+	t.Setenv("APP_FRONTEND_URL", contractFrontendURL)
+	inviter := userIDByEmail(t, contractEmail)
+	invite := models.AccountInvite{
+		ID:        uuid.New(),
+		AccountID: mustUUID(t, vars["account"]),
+		Email:     "invitee-link@example.com",
+		Role:      models.AccountRoleUser,
+		TokenHash: "contract-invite-digest",
+		InvitedBy: &inviter,
+		ExpiresAt: time.Now().Add(72 * time.Hour),
+	}
+	if err := facades.Orm().Query().Create(&invite); err != nil {
+		t.Fatalf("insert contract invite: %v", err)
+	}
+	vars["invite"] = invite.ID.String()
 }
 
 const (

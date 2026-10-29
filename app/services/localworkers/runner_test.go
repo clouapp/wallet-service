@@ -919,8 +919,11 @@ func (c *recordingConfirmer) passes() [][]string {
 func TestStart_Confirms_ThePushedChainsNoScanReads(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	scanner := &recordingScanner{}
-	confirmer := &recordingConfirmer{progress: progressChan()}
+	// The loop confirms the pushed chains and then backfills them, so the test waits
+	// on both: one channel carries the progress of each.
+	progress := progressChan()
+	scanner := &recordingScanner{progress: progress}
+	confirmer := &recordingConfirmer{progress: progress}
 	cfg := Config{ConfirmationInterval: MinInterval, DepositScanChains: []string{"eth", "sol"}, DepositScanInterval: time.Hour}
 
 	if _, err := Start(ctx, cfg, Workers{Checker: &countingChecker{}, Scanner: scanner,
@@ -928,17 +931,19 @@ func TestStart_Confirms_ThePushedChainsNoScanReads(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 
-	waitUntil(t, 3*MinInterval, confirmer.progress, func() bool { return len(confirmer.passes()) > 0 })
-	if got := confirmer.passes()[0]; strings.Join(got, ",") != "arbitrum" {
-		t.Fatalf("confirmed chains %v, want the pushed chain no scan reads", got)
-	}
-	var repaired bool
-	for _, chains := range scanner.backfills() {
-		if strings.Join(chains, ",") == "arbitrum" {
-			repaired = true
+	repaired := func() bool {
+		for _, chains := range scanner.backfills() {
+			if strings.Join(chains, ",") == "arbitrum" {
+				return true
+			}
 		}
+		return false
 	}
-	if !repaired {
+	waitUntil(t, 3*MinInterval, progress, func() bool { return len(confirmer.passes()) > 0 && repaired() })
+	if passes := confirmer.passes(); len(passes) == 0 || strings.Join(passes[0], ",") != "arbitrum" {
+		t.Fatalf("confirmed chains %v, want the pushed chain no scan reads", passes)
+	}
+	if !repaired() {
 		t.Fatalf("backfills %v, want arbitrum's deposit events repaired", scanner.backfills())
 	}
 }
