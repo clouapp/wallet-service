@@ -177,6 +177,7 @@ func accountMatrixRoutes() []matrixRoute {
 		{guard: "Can(users.read)", method: "GET", path: base + "/invites"},
 		{guard: "Can(users.write)", method: "POST", path: base + "/invites", body: `{}`},
 		{guard: "Can(users.write)", method: "POST", path: base + "/invites/{child}/resend", child: openInviteChild},
+		{guard: "Can(users.write)", method: "POST", path: base + "/invites/{child}/link", child: openInviteChild},
 		{guard: "Can(users.write)", method: "DELETE", path: base + "/invites/{child}", child: openInviteChild},
 		{guard: "Can(roles.read)", method: "GET", path: base + "/roles"},
 		{guard: "Can(roles.read)", method: "GET", path: base + "/permissions"},

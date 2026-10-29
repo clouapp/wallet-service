@@ -43,10 +43,27 @@ func (c *InviteController) Index(ctx http.Context) http.Response {
 	return ctx.Response().Success().Json(pagination.Response(resources.NewInvites(invites), total, limit, offset))
 }
 
+// Store godoc
+//
+//	@Summary		Invite an email to an account
+//	@Description	Issues an invite, mails its link, and answers the list view plus invite_link, the same link, for the operator to hand over by hand. An email that already has a user gets the same answer and the same fields. Requires users.write; a role above the caller's is 403.
+//	@Tags			Accounts
+//	@Security		BearerAuth
+//	@Accept			json
+//	@Produce		json
+//	@Param			accountId	path		string					true	"Account UUID"
+//	@Param			request		body		AddAccountUserSwagger	true	"Email and role"
+//	@Success		202			{object}	resources.IssuedInvite
+//	@Failure		403			{object}	responses.ErrorBody
+//	@Failure		404			{object}	responses.ErrorBody
+//	@Failure		422			{object}	responses.ErrorBody
+//	@Router			/accounts/{accountId}/invites [post]
+//
 // Store issues an invite and answers 202. An email that already has a user
-// gets the same answer and the same fields. The body is the list view: no
-// token, hash or link, and nothing that says whether the email has a user.
-// users.write is the route middleware; MayGrant stays in the account service.
+// gets the same answer and the same fields. The body is the list view plus
+// invite_link: no token hash, and nothing that says whether the email has a
+// user. users.write is the route middleware; MayGrant stays in the account
+// service.
 func (c *InviteController) Store(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
 	callerID := requestctx.MustUserID(ctx)
@@ -66,11 +83,26 @@ func (c *InviteController) Store(ctx http.Context) http.Response {
 		return mapInviteError(ctx, err, "failed to create invite")
 	}
 
-	return ctx.Response().Status(http.StatusAccepted).Json(resources.NewInvite(issued.Invite))
+	return ctx.Response().Status(http.StatusAccepted).Json(resources.NewIssuedInvite(issued))
 }
 
+// Resend godoc
+//
+//	@Summary		Resend an account invite
+//	@Description	Mints a new token for an open invite (not accepted, not revoked), mails the new link and answers the list view plus invite_link, that link. The previous link stops working; the role and expiry stay. Requires users.write.
+//	@Tags			Accounts
+//	@Security		BearerAuth
+//	@Produce		json
+//	@Param			accountId	path		string	true	"Account UUID"
+//	@Param			id			path		string	true	"Invite UUID"
+//	@Success		202			{object}	resources.IssuedInvite
+//	@Failure		400			{object}	responses.ErrorBody
+//	@Failure		403			{object}	responses.ErrorBody
+//	@Failure		404			{object}	responses.ErrorBody
+//	@Router			/accounts/{accountId}/invites/{id}/resend [post]
+//
 // Resend rotates the invite token and mails the new link. users.write is the
-// route middleware. The answer matches Store: 202 and the list view.
+// route middleware. The answer matches Store: 202, the list view and the link.
 func (c *InviteController) Resend(ctx http.Context) http.Response {
 	account := requestctx.MustAccount(ctx)
 
@@ -84,7 +116,41 @@ func (c *InviteController) Resend(ctx http.Context) http.Response {
 		return mapError(ctx, err, "failed to resend invite")
 	}
 
-	return ctx.Response().Status(http.StatusAccepted).Json(resources.NewInvite(issued.Invite))
+	return ctx.Response().Status(http.StatusAccepted).Json(resources.NewIssuedInvite(issued))
+}
+
+// Link godoc
+//
+//	@Summary		Copy an account invite link
+//	@Description	Mints a new token for an open invite (not accepted, not revoked, not expired) and answers the list view plus invite_link, for the operator to hand over outside email. No mail is sent. The previous link stops working; the role and expiry stay. Requires users.write.
+//	@Tags			Accounts
+//	@Security		BearerAuth
+//	@Produce		json
+//	@Param			accountId	path		string	true	"Account UUID"
+//	@Param			id			path		string	true	"Invite UUID"
+//	@Success		200			{object}	resources.IssuedInvite
+//	@Failure		400			{object}	responses.ErrorBody
+//	@Failure		403			{object}	responses.ErrorBody
+//	@Failure		404			{object}	responses.ErrorBody
+//	@Router			/accounts/{accountId}/invites/{id}/link [post]
+//
+// Link rotates the invite token like Resend but sends no mail: the caller
+// copies the link. users.write is the route middleware. Nothing here logs the
+// token or the link.
+func (c *InviteController) Link(ctx http.Context) http.Response {
+	account := requestctx.MustAccount(ctx)
+
+	inviteID, err := requests.RouteUUID(ctx, "id")
+	if err != nil {
+		return responses.Fail(ctx, http.StatusBadRequest, responses.CodeInvalidRequest, "invalid invite id")
+	}
+
+	issued, err := c.accounts.ReissueInviteLink(ctx.Context(), account.ID, inviteID)
+	if err != nil {
+		return mapError(ctx, err, "failed to issue invite link")
+	}
+
+	return ctx.Response().Success().Json(resources.NewIssuedInvite(issued))
 }
 
 // Destroy revokes one open invite. users.write is the route middleware. The

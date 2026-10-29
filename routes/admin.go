@@ -154,6 +154,7 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.Can(accounts, middleware.PermUsersRead)).Get("/invites", inviteCtrl.Index)
 			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/invites", inviteCtrl.Store)
 			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/invites/{id}/resend", inviteCtrl.Resend)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/invites/{id}/link", inviteCtrl.Link)
 			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Delete("/invites/{id}", inviteCtrl.Destroy)
 
 			// S3.4.2: GET /v1/accounts/{accountId}/roles roles.read.

@@ -509,3 +509,8 @@ content-type: application/json; charset=utf-8
 status: 404
 content-type: application/json; charset=utf-8
 {"error":{"code":"not_found","message":"chain not found"}}
+
+### 102 copy an invite link: POST /v1/accounts/{{account}}/invites/{{invite}}/link
+status: 200
+content-type: application/json; charset=utf-8
+{"created_at":"<time>","id":"<uuid:72>","account_id":"<uuid:4>","email":"invitee-link@example.com","role":"user","invited_by":"<uuid:3>","expires_at":"<time>","accepted_at":null,"revoked_at":null,"invite_link":"https://wallet.example/accept-invite?token=<invite_token>"}

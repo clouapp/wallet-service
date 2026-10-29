@@ -151,6 +151,7 @@ var routeTable = map[string]routeSecurity{
 	"GET|HEAD /v1/accounts/{accountId}/invites":                        session(chainAccountUsers),
 	"POST /v1/accounts/{accountId}/invites":                            session(chainAccountUsersWrite),
 	"POST /v1/accounts/{accountId}/invites/{id}/resend":                session(chainAccountUsersWrite),
+	"POST /v1/accounts/{accountId}/invites/{id}/link":                  session(chainAccountUsersWrite),
 	"DELETE /v1/accounts/{accountId}/invites/{id}":                     session(chainAccountUsersWrite),
 	"GET|HEAD /v1/accounts/{accountId}/settings":                       session(chainAccountSettingsRead),
 	"GET|HEAD /v1/accounts/{accountId}/settings/{group}":               session(chainAccountSettingsRead),
