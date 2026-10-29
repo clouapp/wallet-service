@@ -266,6 +266,28 @@ func (s *AccountUserRepositoryTestSuite) insertMembershipAt(accountID, userID uu
 	return membership.ID
 }
 
+// An account's member page names each member: the dashboard shows the email and
+// name of every teammate. The preload reads no other column of the user.
+func (s *AccountUserRepositoryTestSuite) TestPaginate_ByAccount_CarriesEachMembersEmailAndName() {
+	accountID := s.createAccount()
+	named, unnamed := s.createUser(), s.createUser()
+	_, err := facades.Orm().Query().Exec(`UPDATE users SET full_name = ?, totp_enabled = TRUE WHERE id = ?`, "Ada Lovelace", named)
+	s.Require().NoError(err)
+	s.insertMembershipAt(accountID, named, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	s.insertMembershipAt(accountID, unnamed, time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC))
+
+	page, _, err := s.repo.PaginateByAccountID(context.Background(), accountID, 10, 0)
+	s.Require().NoError(err)
+	s.Require().Len(page, 2)
+	s.Require().NotNil(page[0].User)
+	s.Equal("member-"+named.String()[:8]+"@example.com", page[0].User.Email)
+	s.Equal("Ada Lovelace", page[0].User.FullName)
+	s.False(page[0].User.TotpEnabled, "the preload read a column it does not need")
+	s.Require().NotNil(page[1].User)
+	s.Equal("member-"+unnamed.String()[:8]+"@example.com", page[1].User.Email)
+	s.Empty(page[1].User.FullName)
+}
+
 // The pages are in the order the memberships were created, so offset and limit
 // walk every member exactly once.
 func (s *AccountUserRepositoryTestSuite) TestPaginate_Pages_FollowTheMembershipsCreationOrder() {
