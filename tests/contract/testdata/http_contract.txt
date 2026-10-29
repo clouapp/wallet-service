@@ -134,7 +134,7 @@ content-type: application/json; charset=utf-8
 ### 27 account users: GET /v1/accounts/{{account}}/users
 status: 200
 content-type: application/json; charset=utf-8
-{"data":[{"created_at":"<time>","updated_at":"<time>","id":"<uuid:5>","account_id":"<uuid:4>","user_id":"<uuid:3>","role":"owner","status":"active"}],"limit":20,"offset":0,"total":1}
+{"data":[{"created_at":"<time>","updated_at":"<time>","id":"<uuid:5>","account_id":"<uuid:4>","user_id":"<uuid:3>","role":"owner","status":"active","email":"contract@example.com","full_name":"Contract User Renamed"}],"limit":20,"offset":0,"total":1}
 
 ### 28 add account user with an invalid role: POST /v1/accounts/{{account}}/users
 status: 422

@@ -124,9 +124,14 @@ func (r *AccountUserRepository) PaginateByUserID(ctx context.Context, userID uui
 	return r.paginate(ctx, "user_id = ? AND deleted_at IS NULL AND status = '"+models.StatusActive+"'", userID, limit, offset)
 }
 
-// PaginateByAccountID pages an account's active memberships, oldest first.
+// PaginateByAccountID pages an account's active memberships, oldest first, each
+// with its user's email and name (the only user columns the preload selects).
 func (r *AccountUserRepository) PaginateByAccountID(ctx context.Context, accountID uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error) {
-	return r.paginate(ctx, "account_id = ? AND deleted_at IS NULL", accountID, limit, offset)
+	return r.paginate(ctx, "account_id = ? AND deleted_at IS NULL", accountID, limit, offset, func(query orm.Query) orm.Query {
+		return query.With("User", func(users orm.Query) orm.Query {
+			return users.Select("id", "email", "full_name")
+		})
+	})
 }
 
 // ListForPlatformAccount pages one account's memberships for a platform
@@ -166,14 +171,20 @@ func (r *AccountUserRepository) ListForPlatformAccount(ctx context.Context, acco
 	return rows, total, nil
 }
 
-func (r *AccountUserRepository) paginate(ctx context.Context, where string, id uuid.UUID, limit, offset int) ([]models.AccountUser, int64, error) {
+// paginate pages the memberships where selects; scopes add to the page query
+// (a preload), never to the count.
+func (r *AccountUserRepository) paginate(ctx context.Context, where string, id uuid.UUID, limit, offset int, scopes ...func(orm.Query) orm.Query) ([]models.AccountUser, int64, error) {
 	total, err := r.Query(ctx).Model(&models.AccountUser{}).Where(where, id).Count()
 	if err != nil {
 		return nil, 0, fmt.Errorf("count account users: %w", err)
 	}
 	var members []models.AccountUser
 	// Creation order, then id: a stable order, so offset and limit page every row once.
-	if err := r.Query(ctx).Where(where, id).Order("created_at").Order("id").Offset(offset).Limit(limit).Find(&members); err != nil {
+	query := r.Query(ctx)
+	for _, scope := range scopes {
+		query = scope(query)
+	}
+	if err := query.Where(where, id).Order("created_at").Order("id").Offset(offset).Limit(limit).Find(&members); err != nil {
 		return nil, 0, fmt.Errorf("list account users: %w", err)
 	}
 	return members, total, nil
