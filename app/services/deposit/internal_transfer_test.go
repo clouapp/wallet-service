@@ -2,13 +2,18 @@ package deposit
 
 import (
 	"context"
+	"math/big"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/facades"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/ingest"
+	"github.com/macrowallets/waas/app/services/ingest/providers"
 	"github.com/macrowallets/waas/pkg/types"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
 )
@@ -98,4 +103,116 @@ func TestScan_Block_SkipsSweepsAndGasSeedsOfTheSameWallet(t *testing.T) {
 	if internal != 3 {
 		t.Fatalf("the sweep and gas seed rows must stay, got %d internal rows", internal)
 	}
+}
+
+// A Bitcoin withdrawal pays its destination and sends the change back to the address it
+// spent from, in the same transaction (the production smoke test of 2026-10-30: 3,314 sats
+// in, 2,000 to the destination, 890 back to the base address, 424 of fee).
+const (
+	changeTx       = "fd9014e4c5b289d374e42616d6e76cd6dcb96ccb1ad1370f39a03b116ab84f34"
+	changeBase     = "bc1qbase"
+	changeChild    = "bc1qchild"
+	changeExternal = "bc1qexternal"
+)
+
+// recordWithdrawal stores the row the withdrawal flow writes before it broadcasts.
+func recordWithdrawal(t *testing.T, walletID uuid.UUID, from, to string, amount string) {
+	t.Helper()
+	tx := models.Transaction{
+		ID: uuid.New(), WalletID: walletID, ExternalUserID: "user-" + from,
+		Chain: models.ChainBTC, TxType: models.TxTypeWithdrawal, TxHash: changeTx, LogIndex: models.TransactionLogIndexNone,
+		FromAddress: from, ToAddress: to, Amount: amount, Asset: models.NativeBTC,
+		RequiredConfs: 6, Status: string(types.TxStatusConfirming),
+		Direction: models.TxDirectionOutbound, Source: models.TxSourceWithdrawalFlow, RawPayload: "{}",
+	}
+	if err := facades.Orm().Query().Create(&tx); err != nil {
+		t.Fatalf("insert withdrawal: %v", err)
+	}
+}
+
+func changeOutput(to string, sats int64, vout int) types.DetectedTransfer {
+	return types.DetectedTransfer{TxHash: changeTx, BlockNumber: positionsBlock, BlockHash: "00000000block",
+		From: changeBase, To: to, Amount: big.NewInt(sats), Asset: models.NativeBTC, LogIndex: vout}
+}
+
+func pushed(output types.DetectedTransfer) providers.InboundTransfer {
+	return providers.InboundTransfer{TxHash: output.TxHash, BlockNumber: output.BlockNumber, BlockHash: output.BlockHash,
+		From: output.From, To: output.To, Amount: output.Amount, Asset: output.Asset, LogIndex: output.LogIndex}
+}
+
+// record runs one source over the block: the scanner, or the provider push of the
+// outputs to watched addresses.
+func (f *positionsFixture) record(t *testing.T, source string, watched ...string) {
+	t.Helper()
+	if source == "scanner" {
+		f.scan(t, models.ChainBTC, positionsBlock)
+		return
+	}
+	isWatched := map[string]bool{}
+	for _, address := range watched {
+		isWatched[address] = true
+	}
+	var push []providers.InboundTransfer
+	for _, output := range f.blocks[positionsBlock] {
+		if isWatched[output.To] {
+			push = append(push, pushed(output))
+		}
+	}
+	require.NoError(t, f.newIngestService().Ingest(context.Background(), ingest.InboundEvent{ChainID: models.ChainBTC, Transfers: push}))
+}
+
+func TestScan_And_Push_TheChangeOfAWithdrawalIsNotADeposit(t *testing.T) {
+	for _, source := range []string{"scanner", "push"} {
+		t.Run(source, func(t *testing.T) {
+			f := newPositionsFixture(t, models.ChainBTC, models.NativeBTC)
+			base := f.watch(t, models.ChainBTC, changeBase)
+			recordWithdrawal(t, base.WalletID, base.Address, changeExternal, "2000")
+			f.blocks[positionsBlock] = []types.DetectedTransfer{
+				changeOutput(changeExternal, 2_000, 0),
+				changeOutput(base.Address, 890, 1),
+			}
+
+			f.record(t, source, base.Address)
+
+			assert.Empty(t, depositsOf(t, models.ChainBTC, changeTx), "the change is the wallet's own money coming back")
+			assert.Empty(t, f.events.pending())
+		})
+	}
+}
+
+func TestScan_And_Push_AWithdrawalToAWatchedAddressIsADepositButNotItsChange(t *testing.T) {
+	for _, source := range []string{"scanner", "push"} {
+		t.Run(source, func(t *testing.T) {
+			f := newPositionsFixture(t, models.ChainBTC, models.NativeBTC)
+			base := f.watch(t, models.ChainBTC, changeBase)
+			child := fixtures.InsertAddress(t, base.WalletID, models.ChainBTC, changeChild, "user-child", 1)
+			recordWithdrawal(t, base.WalletID, base.Address, child.Address, "2000")
+			f.blocks[positionsBlock] = []types.DetectedTransfer{
+				changeOutput(child.Address, 2_000, 0),
+				changeOutput(base.Address, 890, 1),
+			}
+
+			f.record(t, source, base.Address, child.Address)
+
+			rows := depositsOf(t, models.ChainBTC, changeTx)
+			require.Len(t, rows, 1)
+			assert.Equal(t, child.Address, rows[0].ToAddress)
+			assert.Equal(t, "2000", rows[0].Amount)
+			assert.Equal(t, 0, rows[0].LogIndex)
+		})
+	}
+}
+
+// An address that withdraws to itself gets its payment and its change back in two
+// outputs that cannot be told apart by address: both stay deposits, as before.
+func TestScan_Block_AWithdrawalAnAddressSendsToItselfKeepsItsDeposits(t *testing.T) {
+	f := newPositionsFixture(t, models.ChainBTC, models.NativeBTC)
+	base := f.watch(t, models.ChainBTC, changeBase)
+	recordWithdrawal(t, base.WalletID, base.Address, base.Address, "2000")
+	f.blocks[positionsBlock] = []types.DetectedTransfer{
+		changeOutput(base.Address, 2_000, 0),
+		changeOutput(base.Address, 890, 1),
+	}
+
+	assert.Equal(t, 2, f.scan(t, models.ChainBTC, positionsBlock))
 }

@@ -48,7 +48,7 @@ func (s *sweepConfirmMemory) FillDepositBlockHash(context.Context, uuid.UUID, st
 func (s *sweepConfirmMemory) Within(ctx context.Context, fn func(context.Context) error) error {
 	return fn(ctx)
 }
-func (s *sweepConfirmMemory) CountInternalTransfers(context.Context, string, string, uuid.UUID) (int64, error) {
+func (s *sweepConfirmMemory) CountInternalTransfers(context.Context, string, string, uuid.UUID, string) (int64, error) {
 	return 0, nil
 }
 func (s *sweepConfirmMemory) OutboundSendersSince(context.Context, string, time.Time) ([]string, error) {
