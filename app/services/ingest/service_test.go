@@ -376,7 +376,7 @@ func (f *ingestTxRepo) FillDepositBlockHash(context.Context, uuid.UUID, string) 
 func (f *ingestTxRepo) Within(ctx context.Context, fn func(context.Context) error) error {
 	return fn(ctx)
 }
-func (f *ingestTxRepo) CountInternalTransfers(_ context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error) {
+func (f *ingestTxRepo) CountInternalTransfers(_ context.Context, chainID, txHash string, walletID uuid.UUID, _ string) (int64, error) {
 	if owner, ok := f.internalHashes[txHash]; ok && owner == walletID {
 		return 1, nil
 	}
