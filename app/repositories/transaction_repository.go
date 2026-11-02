@@ -232,22 +232,30 @@ func (r *TransactionRepository) ClaimDepositPosition(ctx context.Context, id uui
 }
 
 // internalTransferTxTypes move funds between addresses of one wallet: a sweep
-// (child to base) and the gas seed that pays for it (base to child). Withdrawals are not
-// listed: one that reaches a watched address is a real deposit for its owner.
+// (child to base) and the gas seed that pays for it (base to child). A withdrawal is
+// internal only for its change (CountInternalTransfers): one that pays a watched
+// address is a real deposit for its owner.
 var internalTransferTxTypes = []string{models.TxTypeSweep, models.TxTypeGasSeed}
 
-// CountInternalTransfers counts the sweeps and gas seeds the wallet recorded for this
-// transaction, so the deposit scanners do not record the same move again as a deposit.
-func (r *TransactionRepository) CountInternalTransfers(ctx context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error) {
-	if chainID == "" || txHash == "" || walletID == uuid.Nil {
-		return 0, fmt.Errorf("chain, transaction hash and wallet are required to look up internal transfers")
+// CountInternalTransfers counts the rows of the wallet that already explain a transfer of
+// this transaction to address, so the deposit scanners do not record the same move again
+// as a deposit: a sweep or gas seed of the wallet, or a withdrawal of the wallet sent
+// from address to another destination, whose output back to address is its change (the
+// Bitcoin family pays the change back to the sending address). A withdrawal to another
+// watched address, and one an address sends to itself, are not counted: their payment
+// is a deposit. address is the watched address as stored, the value a withdrawal row
+// keeps as its from_address.
+func (r *TransactionRepository) CountInternalTransfers(ctx context.Context, chainID, txHash string, walletID uuid.UUID, address string) (int64, error) {
+	if chainID == "" || txHash == "" || walletID == uuid.Nil || address == "" {
+		return 0, fmt.Errorf("chain, transaction hash, wallet and address are required to look up internal transfers")
 	}
 	count, err := r.Query(ctx).
 		Model(&models.Transaction{}).
 		Where("chain", chainID).
 		Where("tx_hash", txHash).
 		Where("wallet_id", walletID).
-		WhereIn("tx_type", []any{models.TxTypeSweep, models.TxTypeGasSeed}).
+		Where("(tx_type IN ? OR (tx_type = ? AND from_address = ? AND to_address <> ?))",
+			internalTransferTxTypes, models.TxTypeWithdrawal, address, address).
 		Count()
 	if err != nil {
 		return 0, fmt.Errorf("count internal transfers: %w", err)
