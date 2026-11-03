@@ -1,0 +1,10 @@
+{
+  "id": "po_000000000001",
+  "status": "processing",
+  "partner_fee": 0,
+  "tracking_payment": {"step": "on_hold", "provider_name": null, "provider_status": null, "completed_at": null},
+  "tracking_complete": {"step": "on_hold", "status": null, "transaction_hash": null, "completed_at": null},
+  "tracking_liquidity": {"step": "on_hold", "completed_at": null},
+  "tracking_transaction": {"step": "processing", "status": null, "transaction_hash": null, "completed_at": null},
+  "sender_wallet_address": "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin"
+}

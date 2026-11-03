@@ -1,0 +1,38 @@
+{
+  "api_version": "v0",
+  "event_id": "wh_d05processed",
+  "event_developer_id": "00000000-0000-0000-0000-000000000000",
+  "event_category": "liquidation_address.drain",
+  "event_type": "liquidation_address.drain.updated.status_transitioned",
+  "event_object_id": "drn_6b2c3d4e5f6a7b8c",
+  "event_object": {
+    "id": "drn_6b2c3d4e5f6a7b8c",
+    "amount": "250.00",
+    "currency": "usdc",
+    "state": "payment_processed",
+    "customer_id": "cus_1",
+    "liquidation_address_id": "la_1",
+    "deposit_tx_hash": "5xQyFundsReceivedSolanaSignature",
+    "from_address": "8nWZBmoDLpTgemBqfF8pQUYAKxJBvpTgemBq",
+    "destination": {
+      "payment_rail": "ach",
+      "currency": "usd",
+      "external_account_id": "ext_1",
+      "trace_number": "718268532664263"
+    },
+    "receipt": {
+      "initial_amount": "250.00",
+      "developer_fee": "2.50",
+      "subtotal_amount": "247.50",
+      "exchange_rate": "1.000000",
+      "converted_amount": "247.50",
+      "outgoing_amount": "247.50",
+      "destination_currency": "usd",
+      "url": "https://dashboard.bridge.xyz/transaction/drn_6b2c3d4e5f6a7b8c/receipt"
+    },
+    "created_at": "2026-10-14T18:02:11.000Z",
+    "updated_at": "2026-10-15T08:31:00.000Z"
+  },
+  "event_object_changes": {},
+  "event_created_at": "2026-10-15T08:31:01.000Z"
+}

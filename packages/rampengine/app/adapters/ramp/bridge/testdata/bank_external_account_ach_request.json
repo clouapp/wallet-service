@@ -1,0 +1,23 @@
+{
+  "currency": "usd",
+  "account_type": "us",
+  "bank_name": "Lead Bank",
+  "account_name": "Minha conta corrente",
+  "account_owner_type": "individual",
+  "account_owner_name": "Ada Lovelace",
+  "first_name": "Ada",
+  "last_name": "Lovelace",
+  "account": {
+    "routing_number": "021000021",
+    "account_number": "000123456789",
+    "checking_or_savings": "checking"
+  },
+  "address": {
+    "street_line_1": "923 Folsom Street",
+    "street_line_2": "Suite 302",
+    "city": "San Francisco",
+    "state": "CA",
+    "postal_code": "94107",
+    "country": "USA"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "id": "039c270f-a038-40be-be7b-43f550ce0679",
+  "customer_id": "cus_1",
+  "created_at": "2026-10-14T12:00:00.000Z",
+  "updated_at": "2026-10-14T12:00:00.000Z",
+  "bank_name": "Lead Bank",
+  "account_name": "Poupança",
+  "account_owner_name": "Ada King Lovelace",
+  "account_owner_country": "USA",
+  "active": true,
+  "currency": "usd",
+  "account_owner_type": "individual",
+  "account_type": "us",
+  "first_name": "Ada King",
+  "last_name": "Lovelace",
+  "business_name": null,
+  "account": {
+    "last_4": "6789",
+    "routing_number": "021000021",
+    "checking_or_savings": "savings"
+  },
+  "beneficiary_address_valid": true,
+  "last_4": "6789"
+}

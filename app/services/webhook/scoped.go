@@ -50,7 +50,7 @@ func (e ScopedEvent) validate() error {
 	if strings.TrimSpace(e.SubjectID) == "" {
 		return errors.New("subject id is required")
 	}
-	if e.WalletID == uuid.Nil {
+	if e.WalletID == uuid.Nil && (e.AccountID == nil || *e.AccountID == uuid.Nil || !types.IsAccountScopedEvent(e.EventType)) {
 		return errors.New("wallet id is required")
 	}
 	if e.Data == nil {
@@ -63,6 +63,12 @@ func (e ScopedEvent) validate() error {
 // configs only see their wallet; account configs only see their account's wallets;
 // legacy configs without an owner keep receiving every event.
 func configCanSee(cfg models.WebhookConfig, walletID uuid.UUID, accountID *uuid.UUID) bool {
+	// Holder/compliance events belong only to an explicit account-level
+	// subscription. Legacy unowned configs and wallet configs cannot see PII
+	// status events from other accounts.
+	if walletID == uuid.Nil {
+		return cfg.WalletID == nil && cfg.AccountID != nil && accountID != nil && *cfg.AccountID == *accountID
+	}
 	if cfg.WalletID != nil && *cfg.WalletID != walletID {
 		return false
 	}

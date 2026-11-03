@@ -27,7 +27,7 @@ const (
 
 // APITokenPermissionCatalog is the closed set a minted token may name.
 func APITokenPermissionCatalog() []string {
-	return []string{
+	return append([]string{
 		PermWalletsRead,
 		PermWalletsCreate,
 		PermAddressesCreate,
@@ -36,7 +36,7 @@ func APITokenPermissionCatalog() []string {
 		PermWebhooksRead,
 		PermWebhooksWrite,
 		PermTransactionsRead,
-	}
+	}, RampPermissions()...)
 }
 
 // IsAPITokenPermission reports whether name is in the API token catalog.
@@ -69,7 +69,7 @@ func HoldsAPITokenPermission(role, permission string) bool {
 		}
 	case roleAuditor:
 		switch permission {
-		case PermWalletsRead, PermWebhooksRead, PermTransactionsRead:
+		case PermWalletsRead, PermWebhooksRead, PermTransactionsRead, PermRampCustomersRead, PermRampComplianceRead, PermRampOrdersRead:
 			return true
 		default:
 			return false

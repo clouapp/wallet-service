@@ -1,0 +1,33 @@
+{
+  "api_version": "v0",
+  "event_id": "wh_ach_funds_received_1",
+  "event_developer_id": "00000000-0000-0000-0000-000000000000",
+  "event_sequence": 31,
+  "event_category": "virtual_account.activity",
+  "event_type": "virtual_account.activity.created",
+  "event_object_id": "va_event_ach_457",
+  "event_object": {
+    "id": "va_event_ach_457",
+    "type": "funds_received",
+    "amount": "120.0",
+    "currency": "usd",
+    "source": {
+      "payment_rail": "ach_push",
+      "description": "PAYROLL OCT",
+      "sender_name": "Acme Payroll LLC",
+      "sender_bank_routing_number": "021000021",
+      "trace_number": "111222333444555"
+    },
+    "gas_fee": "0.0",
+    "created_at": "2026-10-14T15:00:00.000Z",
+    "deposit_id": "deposit_ach_123",
+    "customer_id": "2980af75-cd7a-4abf-af0d-9c262f7dec12",
+    "subtotal_amount": "120.0",
+    "virtual_account_id": "337c390b-ba2e-44c7-a916-40aff905d897",
+    "exchange_fee_amount": "0.0",
+    "developer_fee_amount": "1.2",
+    "destination_payment_rail": "solana"
+  },
+  "event_object_changes": {},
+  "event_created_at": "2026-10-14T15:00:01.000Z"
+}

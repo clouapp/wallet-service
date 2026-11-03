@@ -16,7 +16,7 @@ import (
 // bytes; no provider signs the content type.
 func KeepInboundBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, inboundWebhookPrefix) {
+		if r.Method == http.MethodPost && (strings.HasPrefix(r.URL.Path, inboundWebhookPrefix) || strings.HasPrefix(r.URL.Path, "/v1/webhooks/ramps/")) {
 			r.Header.Set("Content-Type", "application/octet-stream")
 		}
 		next.ServeHTTP(w, r)

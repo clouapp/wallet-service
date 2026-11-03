@@ -56,6 +56,13 @@ func AccountPermissions() []string {
 		AccountPermWithdrawalsApprove,
 		AccountPermWithdrawalsCancel,
 		AccountPermSweepExecute,
+		"ramp_compliance.profile.read",
+		"ramp_customers.read",
+		"ramp_customers.write",
+		"ramp_compliance.read",
+		"ramp_compliance.write",
+		"ramp_orders.read",
+		"ramp_orders.create",
 	}
 }
 

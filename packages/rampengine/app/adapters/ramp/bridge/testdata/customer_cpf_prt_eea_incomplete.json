@@ -1,0 +1,310 @@
+{
+  "id": "cus_cpf_prt_incomplete",
+  "first_name": "Bruno",
+  "middle_name": null,
+  "last_name": "Lisboa",
+  "email": "cpf.prt.incomplete@example.com",
+  "status": "incomplete",
+  "type": "individual",
+  "created_at": "2026-10-07T09:43:48.000Z",
+  "updated_at": "2026-10-07T09:43:50.000Z",
+  "rejection_reasons": [],
+  "has_accepted_terms_of_service": true,
+  "requirements_due": [
+    "external_account"
+  ],
+  "future_requirements_due": [],
+  "endorsements": [
+    {
+      "name": "base",
+      "status": "incomplete",
+      "requirements": {
+        "complete": [
+          "terms_of_service_v1",
+          "first_name",
+          "last_name",
+          "tax_identification_number",
+          "email_address",
+          "address_of_residence",
+          "date_of_birth",
+          "proof_of_address",
+          "sanctions_screen",
+          "pep_screen",
+          "blocklist_lookup",
+          "min_age_18",
+          "valid_date_of_birth",
+          "selfie_verification",
+          "pre_onboarding_check",
+          "non_bogus_tax_identification_number",
+          "duplicate_check_tax_id_hash",
+          "duplicate_check_phone",
+          "duplicate_check_name_dob",
+          "adverse_media_screen",
+          "extracted_place_of_birth_match",
+          "selfie",
+          "stripe_database_lookup_bridge_address",
+          "stripe_database_lookup_global_dob"
+        ],
+        "pending": [],
+        "missing": {
+          "all_of": [
+            "government_id_document",
+            "sof_individual_primary_purpose",
+            "nationalities",
+            "id_not_expired",
+            "has_valid_national_id",
+            "post_processing"
+          ]
+        },
+        "issues": [
+          {
+            "place_of_birth": [
+              "place_of_birth_missing"
+            ]
+          },
+          "tax_id_issuing_country_mismatch"
+        ]
+      },
+      "additional_requirements": [
+        "kyc_approval"
+      ]
+    },
+    {
+      "name": "pix",
+      "status": "incomplete",
+      "requirements": {
+        "complete": [
+          "adverse_media_screen",
+          "extracted_place_of_birth_match",
+          "selfie",
+          "proof_of_address",
+          "stripe_database_lookup_bridge_address",
+          "stripe_database_lookup_global_dob",
+          "duplicate_check_tax_id_hash",
+          "duplicate_check_phone",
+          "duplicate_check_name_dob",
+          "terms_of_service_v2",
+          "first_name",
+          "last_name",
+          "tax_identification_number",
+          "email_address",
+          "address_of_residence",
+          "date_of_birth",
+          "sanctions_screen",
+          "pep_screen",
+          "blocklist_lookup",
+          "min_age_18",
+          "valid_date_of_birth",
+          "selfie_verification",
+          "pre_onboarding_check",
+          "non_bogus_tax_identification_number",
+          "account_processing",
+          "phone_number",
+          "has_tin_of_type_cpf",
+          "has_valid_cpf_cnpj"
+        ],
+        "pending": [],
+        "missing": {
+          "all_of": [
+            "sof_individual_primary_purpose",
+            "nationalities",
+            "id_not_expired",
+            "has_valid_national_id",
+            "government_id_document",
+            {
+              "any_of": [
+                "live_selfie",
+                "selfie_document"
+              ]
+            }
+          ]
+        },
+        "issues": [
+          {
+            "place_of_birth": [
+              "place_of_birth_missing"
+            ]
+          },
+          "tax_id_issuing_country_mismatch"
+        ]
+      },
+      "additional_requirements": []
+    },
+    {
+      "name": "pix_offramp",
+      "status": "incomplete",
+      "requirements": {
+        "complete": [
+          "adverse_media_screen",
+          "extracted_place_of_birth_match",
+          "selfie",
+          "proof_of_address",
+          "stripe_database_lookup_bridge_address",
+          "stripe_database_lookup_global_dob",
+          "duplicate_check_tax_id_hash",
+          "duplicate_check_phone",
+          "duplicate_check_name_dob",
+          "terms_of_service_v2",
+          "first_name",
+          "last_name",
+          "tax_identification_number",
+          "email_address",
+          "address_of_residence",
+          "date_of_birth",
+          "sanctions_screen",
+          "pep_screen",
+          "blocklist_lookup",
+          "min_age_18",
+          "valid_date_of_birth",
+          "selfie_verification",
+          "pre_onboarding_check",
+          "non_bogus_tax_identification_number",
+          "account_processing",
+          "phone_number",
+          "has_tin_of_type_cpf",
+          "has_valid_cpf_cnpj"
+        ],
+        "pending": [],
+        "missing": {
+          "all_of": [
+            "sof_individual_primary_purpose",
+            "nationalities",
+            "id_not_expired",
+            "has_valid_national_id",
+            "government_id_document",
+            {
+              "any_of": [
+                "live_selfie",
+                "selfie_document"
+              ]
+            }
+          ]
+        },
+        "issues": [
+          {
+            "place_of_birth": [
+              "place_of_birth_missing"
+            ]
+          },
+          "tax_id_issuing_country_mismatch"
+        ]
+      },
+      "additional_requirements": []
+    },
+    {
+      "name": "pix_onramp",
+      "status": "incomplete",
+      "requirements": {
+        "complete": [
+          "adverse_media_screen",
+          "extracted_place_of_birth_match",
+          "selfie",
+          "proof_of_address",
+          "stripe_database_lookup_bridge_address",
+          "stripe_database_lookup_global_dob",
+          "duplicate_check_tax_id_hash",
+          "duplicate_check_phone",
+          "duplicate_check_name_dob",
+          "terms_of_service_v2",
+          "first_name",
+          "last_name",
+          "tax_identification_number",
+          "email_address",
+          "address_of_residence",
+          "date_of_birth",
+          "sanctions_screen",
+          "pep_screen",
+          "blocklist_lookup",
+          "min_age_18",
+          "valid_date_of_birth",
+          "selfie_verification",
+          "pre_onboarding_check",
+          "non_bogus_tax_identification_number",
+          "account_processing",
+          "phone_number",
+          "has_tin_of_type_cpf",
+          "has_valid_cpf_cnpj"
+        ],
+        "pending": [],
+        "missing": {
+          "all_of": [
+            "sof_individual_primary_purpose",
+            "nationalities",
+            "id_not_expired",
+            "has_valid_national_id",
+            "government_id_document",
+            {
+              "any_of": [
+                "live_selfie",
+                "selfie_document"
+              ]
+            }
+          ]
+        },
+        "issues": [
+          {
+            "place_of_birth": [
+              "place_of_birth_missing"
+            ]
+          },
+          "tax_id_issuing_country_mismatch"
+        ]
+      },
+      "additional_requirements": []
+    },
+    {
+      "name": "sepa",
+      "status": "incomplete",
+      "requirements": {
+        "complete": [
+          "terms_of_service_v2",
+          "first_name",
+          "last_name",
+          "tax_identification_number",
+          "email_address",
+          "address_of_residence",
+          "date_of_birth",
+          "proof_of_address",
+          "sanctions_screen",
+          "pep_screen",
+          "blocklist_lookup",
+          "min_age_18",
+          "valid_date_of_birth",
+          "selfie_verification",
+          "pre_onboarding_check",
+          "non_bogus_tax_identification_number",
+          "duplicate_check_tax_id_hash",
+          "duplicate_check_phone",
+          "duplicate_check_name_dob",
+          "adverse_media_screen",
+          "extracted_place_of_birth_match",
+          "selfie",
+          "stripe_database_lookup_bridge_address",
+          "stripe_database_lookup_global_dob"
+        ],
+        "pending": [],
+        "missing": {
+          "all_of": [
+            "government_id_document",
+            "sof_individual_primary_purpose",
+            "nationalities",
+            "id_not_expired",
+            "has_valid_national_id"
+          ]
+        },
+        "issues": [
+          {
+            "place_of_birth": [
+              "place_of_birth_missing"
+            ]
+          },
+          "tax_id_issuing_country_mismatch"
+        ]
+      },
+      "additional_requirements": [
+        "kyc_approval",
+        "kyc_with_proof_of_address"
+      ]
+    }
+  ]
+}

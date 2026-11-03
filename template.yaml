@@ -276,6 +276,34 @@ Resources:
             Schedule: rate(1 day)
             Enabled: true
 
+  # --- Fiat verification, settlement and reconciliation ---
+  RampWorkerFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: go1.x
+    Properties:
+      FunctionName: !Sub "vault-ramp-worker-${Environment}"
+      Handler: bootstrap
+      CodeUri: .
+      MemorySize: 512
+      Timeout: 300
+      Environment:
+        Variables:
+          LAMBDA_MODE: ramp_worker
+          ENV: !Ref Environment
+          DATABASE_URL: !Ref DatabaseURL
+          REDIS_HOST: !Ref RedisHost
+          ALCHEMY_AUTH_TOKEN: !Ref AlchemyAuthToken
+          HELIUS_API_KEY: !Ref HeliusAPIKey
+          QUICKNODE_API_KEY: !Ref QuickNodeAPIKey
+      Events:
+        RampSchedule:
+          Type: Schedule
+          Properties:
+            Name: !Sub "vault-ramp-worker-${Environment}"
+            Schedule: rate(1 minute)
+            Enabled: true
+
   # =========================================================================
   # SQS Queues
   # =========================================================================

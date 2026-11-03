@@ -36,6 +36,7 @@ func registerHTTP() {
 		"trusted_proxies": envString("TRUSTED_PROXIES", "127.0.0.1/32,::1/128"),
 		"drivers": map[string]any{
 			"gin": map[string]any{
+				"body_limit": 10 << 10,
 				"route": func() (route.Route, error) {
 					return ginfacades.Route("gin"), nil
 				},

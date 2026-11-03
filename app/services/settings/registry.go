@@ -34,11 +34,12 @@ const (
 type Type string
 
 const (
-	TypeString     Type = "string"
-	TypeInt        Type = "int"
-	TypeBool       Type = "bool"
-	TypeDecimal    Type = "decimal"
-	TypeStringList Type = "string_list"
+	TypeString          Type = "string"
+	TypeInt             Type = "int"
+	TypeBool            Type = "bool"
+	TypeDecimal         Type = "decimal"
+	TypeStringList      Type = "string_list"
+	TypeRSAPublicKeyPEM Type = "rsa_public_key_pem"
 	// TypeBigInt is an on-chain raw amount: a base-10 string, never a JSON
 	// number. A negative value is refused.
 	TypeBigInt Type = "bigint"
@@ -92,7 +93,8 @@ func Registry() []Group {
 }
 
 func catalog() []Group {
-	return slices.Clip(append(accountGroups(), platformGroups()...))
+	groups := append(accountGroups(), platformGroups()...)
+	return slices.Clip(append(groups, rampGroups()...))
 }
 
 // GroupsInSection returns every catalog group on one page, in catalog order.

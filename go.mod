@@ -30,7 +30,7 @@ require (
 	github.com/decred/dcrd/dcrec/edwards/v2 v2.0.3
 	github.com/ethereum/go-ethereum v1.17.1
 	github.com/gagliardetto/binary v0.8.0
-	github.com/gagliardetto/solana-go v1.12.0
+	github.com/gagliardetto/solana-go v1.14.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/goravel/framework v1.17.2
 	github.com/goravel/gin v1.17.0
@@ -40,6 +40,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/mr-tron/base58 v1.2.0
 	github.com/pquerna/otp v1.5.0
+	github.com/nyaruka/phonenumbers v1.8.1
 	github.com/shopspring/decimal v1.3.1
 	github.com/spf13/cast v1.10.0
 	github.com/stretchr/testify v1.11.1
@@ -51,7 +52,9 @@ require (
 	gorm.io/gorm v1.31.1
 )
 
-require github.com/stretchr/objx v0.5.2 // indirect
+require (
+	github.com/stretchr/objx v0.5.2 // indirect
+)
 
 require (
 	atomicgo.dev/cursor v0.2.0 // indirect

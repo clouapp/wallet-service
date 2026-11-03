@@ -1,0 +1,926 @@
+[
+  {
+    "fields": [
+      {
+        "default": false,
+        "key": "enabled",
+        "secret": false,
+        "type": "bool"
+      },
+      {
+        "default": "sandbox",
+        "key": "mode",
+        "options": [
+          "sandbox"
+        ],
+        "secret": false,
+        "type": "string"
+      },
+      {
+        "default": "",
+        "key": "api_key",
+        "secret": true,
+        "type": "string"
+      },
+      {
+        "default": "",
+        "key": "webhook_public_key",
+        "secret": true,
+        "type": "rsa_public_key_pem"
+      }
+    ],
+    "group": "ramp_provider_bridge_sandbox",
+    "mode": "sandbox"
+  },
+  {
+    "fields": [
+      {
+        "default": false,
+        "key": "enabled",
+        "secret": false,
+        "type": "bool"
+      },
+      {
+        "default": "sandbox",
+        "key": "mode",
+        "options": [
+          "sandbox"
+        ],
+        "secret": false,
+        "type": "string"
+      }
+    ],
+    "group": "ramp_provider_mutualpay_sandbox",
+    "mode": "sandbox"
+  },
+  {
+    "fields": [
+      {
+        "default": false,
+        "key": "enabled",
+        "secret": false,
+        "type": "bool"
+      },
+      {
+        "default": "sandbox",
+        "key": "mode",
+        "options": [
+          "sandbox"
+        ],
+        "secret": false,
+        "type": "string"
+      },
+      {
+        "default": "",
+        "key": "api_key",
+        "secret": true,
+        "type": "string"
+      },
+      {
+        "default": "",
+        "key": "webhook_secret",
+        "secret": true,
+        "type": "string"
+      }
+    ],
+    "group": "ramp_provider_ozav_sandbox",
+    "mode": "sandbox"
+  },
+  {
+    "fields": [
+      {
+        "default": false,
+        "key": "enabled",
+        "secret": false,
+        "type": "bool"
+      },
+      {
+        "default": "sandbox",
+        "key": "mode",
+        "options": [
+          "sandbox"
+        ],
+        "secret": false,
+        "type": "string"
+      },
+      {
+        "default": "",
+        "key": "api_key",
+        "secret": true,
+        "type": "string"
+      },
+      {
+        "default": "",
+        "key": "instance_id",
+        "secret": false,
+        "type": "string"
+      },
+      {
+        "default": "",
+        "key": "webhook_secret",
+        "secret": true,
+        "type": "string"
+      },
+      {
+        "default": "",
+        "key": "solana_usdc_mint",
+        "secret": false,
+        "type": "string"
+      },
+      {
+        "default": 6,
+        "key": "solana_usdc_decimals",
+        "secret": false,
+        "type": "int"
+      },
+      {
+        "default": "",
+        "key": "solana_usdt_mint",
+        "secret": false,
+        "type": "string"
+      },
+      {
+        "default": 6,
+        "key": "solana_usdt_decimals",
+        "secret": false,
+        "type": "int"
+      },
+      {
+        "default": "",
+        "key": "solana_delegate_address",
+        "secret": false,
+        "type": "string"
+      },
+      {
+        "default": "",
+        "key": "solana_rpc_url",
+        "secret": true,
+        "type": "string"
+      },
+      {
+        "default": false,
+        "key": "production_solana_payout_confirmation",
+        "secret": false,
+        "type": "bool"
+      }
+    ],
+    "group": "ramp_provider_blindpay_sandbox",
+    "mode": "sandbox"
+  },
+  {
+    "fields": [
+      {
+        "default": "bridge",
+        "key": "provider_order",
+        "options": [
+          "bridge",
+          "mutualpay",
+          "ozav",
+          "blindpay"
+        ],
+        "secret": false,
+        "type": "string_list"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_bridge",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_ozav",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_blindpay",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "min_amount_brl",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "max_amount_brl",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "min_amount_brl_by_token",
+        "secret": false,
+        "type": "string"
+      },
+      {
+        "default": 3,
+        "key": "ozav_delivery_max_attempts",
+        "secret": false,
+        "type": "int"
+      }
+    ],
+    "group": "ramp_rail_pix_payin_sandbox",
+    "mode": "sandbox"
+  },
+  {
+    "fields": [
+      {
+        "default": "bridge",
+        "key": "provider_order",
+        "options": [
+          "bridge",
+          "mutualpay",
+          "ozav",
+          "blindpay"
+        ],
+        "secret": false,
+        "type": "string_list"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_bridge",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_ozav",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_blindpay",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "min_amount_brl",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "max_amount_brl",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "min_amount_brl_by_token",
+        "secret": false,
+        "type": "string"
+      },
+      {
+        "default": 30,
+        "key": "ozav_offramp_funding_window_minutes",
+        "secret": false,
+        "type": "int"
+      },
+      {
+        "default": "0",
+        "key": "ozav_deposit_match_tolerance",
+        "secret": false,
+        "type": "decimal"
+      }
+    ],
+    "group": "ramp_rail_pix_payout_sandbox",
+    "mode": "sandbox"
+  },
+  {
+    "fields": [
+      {
+        "default": "",
+        "key": "provider_order",
+        "options": [
+          "bridge",
+          "mutualpay",
+          "ozav",
+          "blindpay"
+        ],
+        "secret": false,
+        "type": "string_list"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_bridge",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_ozav",
+        "secret": false,
+        "type": "decimal"
+      }
+    ],
+    "group": "ramp_rail_usd_payin_sandbox",
+    "mode": "sandbox"
+  },
+  {
+    "fields": [
+      {
+        "default": "",
+        "key": "provider_order",
+        "options": [
+          "bridge",
+          "mutualpay",
+          "ozav",
+          "blindpay"
+        ],
+        "secret": false,
+        "type": "string_list"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_bridge",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_ozav",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "2.00",
+        "key": "min_amount_usd",
+        "secret": false,
+        "type": "decimal"
+      }
+    ],
+    "group": "ramp_rail_usd_ach_payout_sandbox",
+    "mode": "sandbox"
+  },
+  {
+    "fields": [
+      {
+        "default": "",
+        "key": "provider_order",
+        "options": [
+          "bridge",
+          "mutualpay",
+          "ozav",
+          "blindpay"
+        ],
+        "secret": false,
+        "type": "string_list"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_bridge",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_ozav",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "2.00",
+        "key": "min_amount_usd",
+        "secret": false,
+        "type": "decimal"
+      }
+    ],
+    "group": "ramp_rail_usd_wire_payout_sandbox",
+    "mode": "sandbox"
+  },
+  {
+    "fields": [
+      {
+        "default": "",
+        "key": "provider_order",
+        "options": [
+          "blindpay"
+        ],
+        "secret": false,
+        "type": "string_list"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_blindpay",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "min_amount_usd",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "max_amount_usd",
+        "secret": false,
+        "type": "decimal"
+      }
+    ],
+    "group": "ramp_rail_ach_payout_sandbox",
+    "mode": "sandbox"
+  },
+  {
+    "fields": [
+      {
+        "default": "",
+        "key": "provider_order",
+        "options": [
+          "blindpay"
+        ],
+        "secret": false,
+        "type": "string_list"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_blindpay",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "min_amount_usd",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "max_amount_usd",
+        "secret": false,
+        "type": "decimal"
+      }
+    ],
+    "group": "ramp_rail_wire_payout_sandbox",
+    "mode": "sandbox"
+  },
+  {
+    "fields": [
+      {
+        "default": false,
+        "key": "enabled",
+        "secret": false,
+        "type": "bool"
+      },
+      {
+        "default": "production",
+        "key": "mode",
+        "options": [
+          "production"
+        ],
+        "secret": false,
+        "type": "string"
+      },
+      {
+        "default": "",
+        "key": "api_key",
+        "secret": true,
+        "type": "string"
+      },
+      {
+        "default": "",
+        "key": "webhook_public_key",
+        "secret": true,
+        "type": "rsa_public_key_pem"
+      }
+    ],
+    "group": "ramp_provider_bridge_production",
+    "mode": "production"
+  },
+  {
+    "fields": [
+      {
+        "default": false,
+        "key": "enabled",
+        "secret": false,
+        "type": "bool"
+      },
+      {
+        "default": "production",
+        "key": "mode",
+        "options": [
+          "production"
+        ],
+        "secret": false,
+        "type": "string"
+      }
+    ],
+    "group": "ramp_provider_mutualpay_production",
+    "mode": "production"
+  },
+  {
+    "fields": [
+      {
+        "default": false,
+        "key": "enabled",
+        "secret": false,
+        "type": "bool"
+      },
+      {
+        "default": "production",
+        "key": "mode",
+        "options": [
+          "production"
+        ],
+        "secret": false,
+        "type": "string"
+      },
+      {
+        "default": "",
+        "key": "api_key",
+        "secret": true,
+        "type": "string"
+      },
+      {
+        "default": "",
+        "key": "webhook_secret",
+        "secret": true,
+        "type": "string"
+      }
+    ],
+    "group": "ramp_provider_ozav_production",
+    "mode": "production"
+  },
+  {
+    "fields": [
+      {
+        "default": false,
+        "key": "enabled",
+        "secret": false,
+        "type": "bool"
+      },
+      {
+        "default": "production",
+        "key": "mode",
+        "options": [
+          "production"
+        ],
+        "secret": false,
+        "type": "string"
+      },
+      {
+        "default": "",
+        "key": "api_key",
+        "secret": true,
+        "type": "string"
+      },
+      {
+        "default": "",
+        "key": "instance_id",
+        "secret": false,
+        "type": "string"
+      },
+      {
+        "default": "",
+        "key": "webhook_secret",
+        "secret": true,
+        "type": "string"
+      },
+      {
+        "default": "",
+        "key": "solana_usdc_mint",
+        "secret": false,
+        "type": "string"
+      },
+      {
+        "default": 6,
+        "key": "solana_usdc_decimals",
+        "secret": false,
+        "type": "int"
+      },
+      {
+        "default": "",
+        "key": "solana_usdt_mint",
+        "secret": false,
+        "type": "string"
+      },
+      {
+        "default": 6,
+        "key": "solana_usdt_decimals",
+        "secret": false,
+        "type": "int"
+      },
+      {
+        "default": "",
+        "key": "solana_delegate_address",
+        "secret": false,
+        "type": "string"
+      },
+      {
+        "default": "",
+        "key": "solana_rpc_url",
+        "secret": true,
+        "type": "string"
+      },
+      {
+        "default": false,
+        "key": "production_solana_payout_confirmation",
+        "secret": false,
+        "type": "bool"
+      }
+    ],
+    "group": "ramp_provider_blindpay_production",
+    "mode": "production"
+  },
+  {
+    "fields": [
+      {
+        "default": "bridge",
+        "key": "provider_order",
+        "options": [
+          "bridge",
+          "mutualpay",
+          "ozav",
+          "blindpay"
+        ],
+        "secret": false,
+        "type": "string_list"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_bridge",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_ozav",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_blindpay",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "min_amount_brl",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "max_amount_brl",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "min_amount_brl_by_token",
+        "secret": false,
+        "type": "string"
+      },
+      {
+        "default": 3,
+        "key": "ozav_delivery_max_attempts",
+        "secret": false,
+        "type": "int"
+      }
+    ],
+    "group": "ramp_rail_pix_payin_production",
+    "mode": "production"
+  },
+  {
+    "fields": [
+      {
+        "default": "bridge",
+        "key": "provider_order",
+        "options": [
+          "bridge",
+          "mutualpay",
+          "ozav",
+          "blindpay"
+        ],
+        "secret": false,
+        "type": "string_list"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_bridge",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_ozav",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_blindpay",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "min_amount_brl",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "max_amount_brl",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "min_amount_brl_by_token",
+        "secret": false,
+        "type": "string"
+      },
+      {
+        "default": 30,
+        "key": "ozav_offramp_funding_window_minutes",
+        "secret": false,
+        "type": "int"
+      },
+      {
+        "default": "0",
+        "key": "ozav_deposit_match_tolerance",
+        "secret": false,
+        "type": "decimal"
+      }
+    ],
+    "group": "ramp_rail_pix_payout_production",
+    "mode": "production"
+  },
+  {
+    "fields": [
+      {
+        "default": "",
+        "key": "provider_order",
+        "options": [
+          "bridge",
+          "mutualpay",
+          "ozav",
+          "blindpay"
+        ],
+        "secret": false,
+        "type": "string_list"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_bridge",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_ozav",
+        "secret": false,
+        "type": "decimal"
+      }
+    ],
+    "group": "ramp_rail_usd_payin_production",
+    "mode": "production"
+  },
+  {
+    "fields": [
+      {
+        "default": "",
+        "key": "provider_order",
+        "options": [
+          "bridge",
+          "mutualpay",
+          "ozav",
+          "blindpay"
+        ],
+        "secret": false,
+        "type": "string_list"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_bridge",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_ozav",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "2.00",
+        "key": "min_amount_usd",
+        "secret": false,
+        "type": "decimal"
+      }
+    ],
+    "group": "ramp_rail_usd_ach_payout_production",
+    "mode": "production"
+  },
+  {
+    "fields": [
+      {
+        "default": "",
+        "key": "provider_order",
+        "options": [
+          "bridge",
+          "mutualpay",
+          "ozav",
+          "blindpay"
+        ],
+        "secret": false,
+        "type": "string_list"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_bridge",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_ozav",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "2.00",
+        "key": "min_amount_usd",
+        "secret": false,
+        "type": "decimal"
+      }
+    ],
+    "group": "ramp_rail_usd_wire_payout_production",
+    "mode": "production"
+  },
+  {
+    "fields": [
+      {
+        "default": "",
+        "key": "provider_order",
+        "options": [
+          "blindpay"
+        ],
+        "secret": false,
+        "type": "string_list"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_blindpay",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "min_amount_usd",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "max_amount_usd",
+        "secret": false,
+        "type": "decimal"
+      }
+    ],
+    "group": "ramp_rail_ach_payout_production",
+    "mode": "production"
+  },
+  {
+    "fields": [
+      {
+        "default": "",
+        "key": "provider_order",
+        "options": [
+          "blindpay"
+        ],
+        "secret": false,
+        "type": "string_list"
+      },
+      {
+        "default": "0.00",
+        "key": "fee_percent_blindpay",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "min_amount_usd",
+        "secret": false,
+        "type": "decimal"
+      },
+      {
+        "default": "",
+        "key": "max_amount_usd",
+        "secret": false,
+        "type": "decimal"
+      }
+    ],
+    "group": "ramp_rail_wire_payout_production",
+    "mode": "production"
+  }
+]

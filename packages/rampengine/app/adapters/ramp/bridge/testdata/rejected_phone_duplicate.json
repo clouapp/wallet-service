@@ -1,0 +1,95 @@
+{
+  "event_category": "customer",
+  "event_id": "wh_fixture_7",
+  "event_object": {
+    "endorsements": [
+      {
+        "name": "base",
+        "requirements": {
+          "issues": [
+            "phone_number.duplicate_customer_detected"
+          ],
+          "missing": {
+            "all_of": [
+              "post_processing"
+            ]
+          },
+          "pending": []
+        },
+        "status": "incomplete"
+      },
+      {
+        "name": "pix",
+        "requirements": {
+          "issues": [
+            "phone_number.duplicate_customer_detected"
+          ],
+          "missing": {
+            "all_of": [
+              "account_provisioning"
+            ]
+          },
+          "pending": []
+        },
+        "status": "incomplete"
+      },
+      {
+        "name": "pix_offramp",
+        "requirements": {
+          "issues": [
+            "phone_number.duplicate_customer_detected"
+          ],
+          "missing": {
+            "all_of": [
+              "account_provisioning"
+            ]
+          },
+          "pending": []
+        },
+        "status": "incomplete"
+      },
+      {
+        "name": "pix_onramp",
+        "requirements": {
+          "issues": [
+            "phone_number.duplicate_customer_detected"
+          ],
+          "missing": {
+            "all_of": [
+              "account_provisioning"
+            ]
+          },
+          "pending": []
+        },
+        "status": "incomplete"
+      },
+      {
+        "name": "sepa",
+        "requirements": {
+          "issues": [
+            "phone_number.duplicate_customer_detected"
+          ],
+          "missing": null,
+          "pending": []
+        },
+        "status": "incomplete"
+      }
+    ],
+    "has_accepted_terms_of_service": true,
+    "id": "00000000-0000-4000-8000-000000000007",
+    "rejection_reasons": [
+      {
+        "created_at": null,
+        "developer_reason": "Another customer with this phone number already exists. (customer: 11111111-1111-4111-8111-111111111111)",
+        "reason": "Your information could not be verified"
+      }
+    ],
+    "requirements_due": [
+      "external_account"
+    ],
+    "status": "rejected"
+  },
+  "event_object_id": "00000000-0000-4000-8000-000000000007",
+  "event_object_status": "rejected",
+  "event_type": "customer.updated"
+}

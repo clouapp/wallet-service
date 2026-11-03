@@ -28,6 +28,13 @@ func TestAccount_Permissions_AreTheClosedCatalog(t *testing.T) {
 		"withdrawals.approve",
 		"withdrawals.cancel",
 		"sweep.execute",
+		"ramp_compliance.profile.read",
+		"ramp_customers.read",
+		"ramp_customers.write",
+		"ramp_compliance.read",
+		"ramp_compliance.write",
+		"ramp_orders.read",
+		"ramp_orders.create",
 	}
 	got := AccountPermissions()
 	if len(got) != len(want) {

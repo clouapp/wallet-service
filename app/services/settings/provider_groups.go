@@ -126,6 +126,9 @@ func providerEtherscanGroup() Group {
 // disabled group may omit the key. The check uses the same presence test as
 // CredentialGroups, because the group validator never sees a secret.
 func enabledProviderWithoutKey(group Group, stored, writes map[string]string) *ValidationError {
+	if strings.HasPrefix(group.Name, "ramp_provider_") {
+		return rampCredentialsRequired(group, stored, writes)
+	}
 	invalid := &ValidationError{}
 	if !strings.HasPrefix(group.Name, "provider_") {
 		return invalid

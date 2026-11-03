@@ -14,6 +14,13 @@ func TestAPI_Token_PermissionCatalogIsClosed(t *testing.T) {
 		"webhooks.read",
 		"webhooks.write",
 		"transactions.read",
+		"ramp_compliance.profile.read",
+		"ramp_customers.read",
+		"ramp_customers.write",
+		"ramp_compliance.read",
+		"ramp_compliance.write",
+		"ramp_orders.read",
+		"ramp_orders.create",
 	}
 	got := APITokenPermissionCatalog()
 	if len(got) != len(want) {
@@ -47,6 +54,7 @@ func TestHolds_API_TokenPermission(t *testing.T) {
 		PermWebhooksRead:      true,
 	}
 	auditorHolds := map[string]bool{
+		PermRampCustomersRead: true, PermRampComplianceRead: true, PermRampOrdersRead: true,
 		PermWalletsRead:      true,
 		PermWebhooksRead:     true,
 		PermTransactionsRead: true,

@@ -80,6 +80,8 @@ func TestAccount_Role_CatalogRanksAndLiveGrants(t *testing.T) {
 		models.AccountPermWithdrawalsCancel,
 		models.AccountPermWithdrawalsCreate,
 	}
+	wantOwner = append(wantOwner, RampPermissions()...)
+	slices.Sort(wantOwner)
 	if !slices.Equal(owner, wantOwner) {
 		t.Fatalf("owner = %v, want %v", owner, wantOwner)
 	}

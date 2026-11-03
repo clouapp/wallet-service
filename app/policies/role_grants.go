@@ -54,6 +54,11 @@ func AccountPermissionCatalog() []string {
 
 func rolePermissions(role string) []string {
 	held := map[string]struct{}{}
+	for _, permission := range RampPermissions() {
+		if MayOperateRamps(role, permission) {
+			held[permission] = struct{}{}
+		}
+	}
 	for permission := range AccountRoleGrants(role) {
 		held[permission] = struct{}{}
 	}

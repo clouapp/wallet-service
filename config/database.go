@@ -11,6 +11,17 @@ func registerDatabase() {
 	facades.Config().Add("database", map[string]any{
 		"default": envString("DB_CONNECTION", "postgres"),
 		"connections": map[string]any{
+			"ramps": map[string]any{
+				"driver":   "postgres",
+				"host":     envString("DB_HOST", "127.0.0.1"),
+				"port":     envInt("DB_PORT", 5432),
+				"database": envString("DB_DATABASE", "vault"),
+				"username": envString("DB_USERNAME", "postgres"),
+				"password": envString("DB_PASSWORD", ""),
+				"sslmode":  envString("DB_SSLMODE", "disable"),
+				"charset":  "utf8", "prefix": "", "schema": "macro_ramps",
+				"via": func() (contractsdriver.Driver, error) { return postgres_facades.Postgres("ramps") },
+			},
 			"postgres": map[string]any{
 				"driver":   "postgres",
 				"host":     envString("DB_HOST", "127.0.0.1"),

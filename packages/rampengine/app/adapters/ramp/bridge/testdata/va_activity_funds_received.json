@@ -1,0 +1,38 @@
+{
+  "api_version": "v0",
+  "event_id": "wh_t7h4yEL7NPBSVwtwUEk9NKP",
+  "event_developer_id": "00000000-0000-0000-0000-000000000000",
+  "event_sequence": 24,
+  "event_category": "virtual_account.activity",
+  "event_type": "virtual_account.activity.created",
+  "event_object_id": "4ebde140-5089-4081-b8b1-5dff3332b1db",
+  "event_object": {
+    "id": "4ebde140-5089-4081-b8b1-5dff3332b1db",
+    "type": "funds_received",
+    "amount": "100.0",
+    "source": {
+      "imad": "20260807NH0T6461818387",
+      "bank_name": "Bank of Nowhere",
+      "payment_rail": "wire",
+      "wire_message": "Sandbox deposit simulation",
+      "originator_name": "Sandbox Test Customer",
+      "originator_address": "123 Test Street, San Francisco, CA 94102",
+      "bank_routing_number": "123456789",
+      "bank_beneficiary_name": "Bridge Ventures Inc",
+      "bank_beneficiary_address": "1234 Elm St, , Springfield, IL 12345"
+    },
+    "gas_fee": "0.0",
+    "currency": "usd",
+    "created_at": "2026-08-07T22:41:13.522Z",
+    "deposit_id": "60d29e54-bedf-4a4b-a76e-001959f15f45",
+    "customer_id": "2980af75-cd7a-4abf-af0d-9c262f7dec12",
+    "product_type": "virtual_account",
+    "subtotal_amount": "100.0",
+    "virtual_account_id": "337c390b-ba2e-44c7-a916-40aff905d897",
+    "exchange_fee_amount": "0.0",
+    "developer_fee_amount": "2.5",
+    "destination_payment_rail": "ethereum"
+  },
+  "event_object_changes": {},
+  "event_created_at": "2026-08-07T22:41:16.715Z"
+}
