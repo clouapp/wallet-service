@@ -507,6 +507,19 @@ Known violations include `app/models → app/services/mpc` and `config → app/m
   `TestHelius_ParsePayload_FindsTheScannersCreditsAtTheScannersPositions`,
   `TestCreate_Deposit_StoresPositionZero` and
   `TestLock_TransactionDeposits_IsHeldUntilTheTransactionEnds` (`tests/feature/repositories`).
+- **A wallet's own moves are not deposits.** The scanner and the provider push skip a transfer to a
+  watched address that a row of the same wallet and transaction already explains
+  (`TransactionRepository.CountInternalTransfers`): a sweep or a gas seed, or the change of a
+  withdrawal, which on the Bitcoin family goes back to the address it spent from in the same
+  transaction (a withdrawal row whose `from_address` is the transfer's address and whose
+  `to_address` is another). The payment of a withdrawal to a watched address, of this wallet or
+  another, is a deposit; so are both outputs of a withdrawal an address sends to itself, which
+  cannot be told apart by address. Before 2026-11 the change was recorded as a confirmed deposit
+  (the BTC smoke withdrawal of 2026-10-30 left one in production), which the balance audit reads
+  as a double count. — guarded by `TestScan_And_Push_TheChangeOfAWithdrawalIsNotADeposit`,
+  `TestScan_And_Push_AWithdrawalToAWatchedAddressIsADepositButNotItsChange`,
+  `TestScan_Block_SkipsSweepsAndGasSeedsOfTheSameWallet` (`app/services/deposit`) and
+  `TestCount_InternalTransfers_*` (`tests/feature/repositories`).
 
 ### 8. Database and migrations
 
@@ -1389,7 +1402,7 @@ on; the sync is its safety net, and the only detector where it is not.
   stays in flight (a Solana transfer usually settles within a few ticks). The block scan reads about
   400 000 `getBlock` a day (a slot every ~215 ms on mainnet).
 - **Recording** goes through the scanner's path (`recordTransfers`: watched addresses only, the
-  sweeps and gas seeds of the wallet left out, `depositrecord.Record`). The stretch moves over a
+  sweeps, gas seeds and withdrawal change of the wallet left out, `depositrecord.Record`). The stretch moves over a
   signature only once its transfers are all recorded, and never back; a failure stops the account
   there, and the next cycle reads it again. The cursor is saved every 50 signatures and when the
   account stops, with a context of its own (5 s): a cycle cut by the 60 s Lambda deadline or a

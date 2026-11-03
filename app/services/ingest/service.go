@@ -28,7 +28,7 @@ type addressReader interface {
 // transactionStore is the deposit row ingest writes after it attributes a transfer.
 type transactionStore interface {
 	depositrecord.Store
-	CountInternalTransfers(ctx context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error)
+	CountInternalTransfers(ctx context.Context, chainID, txHash string, walletID uuid.UUID, address string) (int64, error)
 }
 
 // AddressSet is the watched-address set. The provider supplies it; this package
@@ -162,7 +162,8 @@ func (s *Service) record(ctx context.Context, tx *models.Transaction, siblings [
 
 // depositRow is the deposit row of a pushed transfer to a watched address, with its
 // amount in base units and its token from the registry; nil when the transfer is not
-// a deposit (an unwatched address, an unregistered token, a sweep of the wallet).
+// a deposit (an unwatched address, an unregistered token, a sweep of the wallet, the
+// change of its withdrawal).
 func (s *Service) depositRow(ctx context.Context, chainID string, adapter types.Chain, transfer providers.InboundTransfer) (*models.Transaction, error) {
 	if transfer.Amount == nil && !transfer.AmountIsHuman {
 		return nil, fmt.Errorf("missing amount")
@@ -181,12 +182,12 @@ func (s *Service) depositRow(ctx context.Context, chainID string, adapter types.
 		return nil, fmt.Errorf("%w: lookup address: %w", ErrStoreFailed, err)
 	}
 
-	internal, err := s.txRepo.CountInternalTransfers(ctx, chainID, transfer.TxHash, addr.WalletID)
+	internal, err := s.txRepo.CountInternalTransfers(ctx, chainID, transfer.TxHash, addr.WalletID, addr.Address)
 	if err != nil {
 		return nil, fmt.Errorf("%w: check internal transfer: %w", ErrStoreFailed, err)
 	}
 	if internal > 0 {
-		slog.Info("ingest skipped a sweep or gas seed of the wallet", "chain", chainID, "tx", transfer.TxHash, "to", transfer.To)
+		slog.Info("ingest skipped a sweep, a gas seed or a withdrawal's change of the wallet", "chain", chainID, "tx", transfer.TxHash, "to", transfer.To)
 		return nil, nil
 	}
 

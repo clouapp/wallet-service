@@ -106,7 +106,7 @@ type transactionStore interface {
 	// CountByChainAndTxHash counts the rows of one type a transaction hash has
 	// (another outbound transfer of ours, for the unknown-outcome proofs).
 	CountByChainAndTxHash(ctx context.Context, chainID, txHash, txType string) (int64, error)
-	CountInternalTransfers(ctx context.Context, chainID, txHash string, walletID uuid.UUID) (int64, error)
+	CountInternalTransfers(ctx context.Context, chainID, txHash string, walletID uuid.UUID, address string) (int64, error)
 	FindPendingByChain(ctx context.Context, chainID string) ([]models.Transaction, error)
 	// OutboundSendersSince is the addresses that sent a withdrawal, a sweep or a gas
 	// seed recorded since (the signature sync reads them first).
@@ -378,12 +378,12 @@ func (s *Service) processTransfer(ctx context.Context, chainID string, adapter t
 		return false, nil
 	}
 
-	internal, err := s.txRepo.CountInternalTransfers(ctx, chainID, transfer.TxHash, addr.WalletID)
+	internal, err := s.txRepo.CountInternalTransfers(ctx, chainID, transfer.TxHash, addr.WalletID, addr.Address)
 	if err != nil {
 		return false, classify(pending.ClassDatabase, fmt.Errorf("check internal transfer: %w", err))
 	}
 	if internal > 0 {
-		slog.Info("transfer is a sweep or gas seed of the wallet, not a deposit", "chain", chainID, "tx", transfer.TxHash, "to", transfer.To)
+		slog.Info("transfer is a sweep, a gas seed or a withdrawal's change of the wallet, not a deposit", "chain", chainID, "tx", transfer.TxHash, "to", transfer.To)
 		return false, nil
 	}
 
