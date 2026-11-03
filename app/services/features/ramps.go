@@ -3,6 +3,7 @@ package features
 import "context"
 
 const (
+	FlagRampIntegrations       = "ramp-integrations-enabled"
 	FlagRampOwnOperations      = "ramp-own-operations-enabled"
 	FlagRampCustomerOperations = "ramp-customer-operations-enabled"
 )
@@ -13,6 +14,7 @@ func init() {
 		enabled    bool
 		globalOnly bool
 	}{
+		{FlagRampIntegrations, "Ramp integrations", false, false},
 		{"ramp-payin-enabled", "Pix onramp", true, false},
 		{"ramp-payout-enabled", "Pix offramp", true, false},
 		{"ramp-usd-payin-enabled", "USD onramp", true, false},

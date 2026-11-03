@@ -1,5 +1,7 @@
 # Integrações de rampas para tenants e clientes do Macro Wallets
 
+> Implementation update: the runtime port, master switch and Cloubet casino-balance integration are implemented locally. See `../../RAMP_INTEGRATIONS.md` for the final architecture and validation. The discovery notes below describe the initial source audit.
+
 Data: 2026-11-02. Este documento registra o desenho original. A implementação
 local está em `feat/admin-ramp-integrations`; os nomes/contratos finais e a
 validação estão no [runbook implementado](../../RAMP_INTEGRATIONS.md). Propostas

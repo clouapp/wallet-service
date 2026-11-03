@@ -130,6 +130,7 @@ O admin controla flags de cliente com auditoria dentro da transação nativa.
 
 | Flag | Default | Escopos |
 |---|---|---|
+| `ramp-integrations-enabled` | **false** | global e conta, ambos explicitamente habilitados |
 | `ramp-payin-enabled`, `ramp-payout-enabled` | true | global/conta/override de cliente |
 | `ramp-usd-payin-enabled`, `ramp-usd-payout-enabled` | true | global/conta/override de cliente |
 | `ramp-bank-payout-enabled` | false | global/conta/override de cliente |
@@ -138,9 +139,16 @@ O admin controla flags de cliente com auditoria dentro da transação nativa.
 | `ramp-own-operations-enabled` | true | global/conta |
 | `ramp-customer-operations-enabled` | true | global/conta |
 
-Pausar novas operações preserva consulta e processamento de recursos já criados.
-O runtime ainda pode verificar callbacks/reconciliar um provedor desabilitado,
-para concluir operações existentes.
+A flag principal é `ramp-integrations-enabled`, desligada por padrão. Exige ON
+na plataforma **e** opt-in ON na conta. Protege cadastro, KYC/KYB, destinos,
+consultas e operações no backend; o admin oculta os acessos e o Cloubet consulta
+`GET /api/v1/ramps/status` pelo seu backend autenticado. Não basta esconder botões.
+Os gates por produto e por cliente continuam valendo dentro desse controle.
+
+Desativar a flag principal bloqueia o portal e novas assinaturas. Workers e
+callbacks verificados continuam conciliando operações existentes. Consultas do
+portal voltam quando a flag for reativada; o status da flag segue disponível.
+Desativar um provedor também preserva a reconciliação dos seus recursos existentes.
 
 Os grupos da origem foram registrados integralmente no settings nativo, seção
 `ramps`, blocos `sandbox` e `production`. Nome:
@@ -173,6 +181,16 @@ os payloads carregam IDs e modo, sem documento/passphrase/material MPC. A fila
 de atenção permite resolver resultado externo incerto ou registrar atendimento
 com TOTP fresco, conferência do titular e auditoria.
 
+Os nove comandos da origem foram mapeados: `kyc:reconcile`,
+`kyc:recover-intents`, `ramps:reconcile`, `ramps:sync-virtual-accounts` e
+`ramps:recover-finalizations` executam no ciclo de recuperação/reconciliação;
+`kyc:resolve-intent` corresponde à resolução auditada no admin;
+`kyc:scrub-intents` roda na retenção do worker; `ramps:prune-timeline` está
+registrado e também roda com janela de 90 dias; `ramp:blindpay-check` está
+registrado com `--environment=sandbox|production` e faz somente a consulta
+autenticada de instância do adapter original. Esse diagnóstico não foi chamado
+contra um provedor real. Os comandos nativos recebem serviços pela composição.
+
 `KYC_INTENT_MATERIAL_RETENTION_HOURS` tem default 720; os limites e scrubber da
 origem continuam em vigor. `RAMP_BRIDGE_BASE_URL`, `RAMP_OZAV_BASE_URL` e
 `RAMP_BLINDPAY_BASE_URL` substituem endpoints somente em `local/testing`, para
@@ -192,15 +210,54 @@ withdrawal com idempotência da ordem. Ação preparada usa a custódia Solana,
 assina a mensagem exata e finaliza pelo engine; o endpoint não aceita bytes de
 transação arbitrários, chaves ou fingerprint fornecido pelo navegador.
 
-O endpoint MPC é de sessão. Na API pública, funding preparado usa o signer da
-wallet do jogador e `/finalize`; funding por depósito pode usar a API de
-withdrawals existente. O cassino deve vincular jogador/customer/wallet no seu
-servidor e preservar os controles/limites de retirada. O componente compartilhado
-anuncia funding preparado somente quando o host oferece o callback de assinatura.
+A resposta `funding_not_submitted` identifica recusas anteriores ao envio;
+timeouts e resultados desconhecidos não recebem esse código. Em
+`GET /api/v1/customers/{id}/offramps/{orderId}/funding-evidence`, o integrador pode
+confirmar uma recusa terminal explícita de autorização preparada. Para funding
+por depósito, `?wallet_id=<UUID>` permite comprovar que uma ordem terminal não
+gerou intenção de envio em nenhum dos dois ledgers nativos. A consulta valida a
+wallet e o endereço de origem e compartilha a trava por ordem com o funding.
+Qualquer registro nativo ou autorização desconhecida impede essa prova; uma
+falha genérica ou a ausência de hash, isoladamente, nunca autoriza estorno.
+O Cloubet mantém provas de broadcast, recebe os eventos nativos de funding por
+depósito e concilia devoluções inclusive após a conclusão do saque. As operações
+concluídas entram na verificação periódica por 90 dias e continuam aceitando
+callbacks assinados de devolução posteriormente.
 
-O frontend contém `examples/casino/cash-bff.ts`, `player-cash.tsx` e o transporte
-sem token no browser. Não foi identificado um repositório de cassino neste
-workspace: o componente e o BFF são os pontos de montagem no host do integrador.
+O mesmo funding está disponível em
+`POST /api/v1/customers/{id}/offramps/{orderId}/wallets/{walletId}/fund` para o
+servidor integrador, com grants explícitos `ramp_orders.create` e
+`withdrawals.create`, wallet autorizada para o token, passphrase e assinatura
+HMAC quando exigida. Tokens API usam o limite diário USD nativo; a ação preparada
+reserva orçamento por ordem/revisão de forma idempotente. Não recebem um signer
+genérico. A API de sessão continua exigindo TOTP fresco do operador.
+
+O cassino identificado é `clou-bet/front` / `clouapp/back`, ambos baseados em
+`origin/dev`. Os worktrees `cloubet-front-ramps` e `cloubet-back-ramps` contêm a
+integração concreta. O front reutiliza a jornada visual, com HeroUI v2, tema do
+cassino e traduções en/pt/es. A aba da carteira é carregada apenas com a flag
+habilitada. O Next proxy encaminha a sessão Sanctum para `/api/macro-cash/*` no
+backend correto do tenant; credenciais Macro ficam nas settings de custódia do PHP.
+
+O backend Cloubet vincula `cloubet:player:{id}` ao customer Macro, escolhe os
+endereços Solana do jogador e da custódia e mantém a referência por cliente de
+API. Onramp envia para o endereço de depósito do jogador; o pipeline de depósitos
+de custódia existente credita o saldo após confirmação da transferência.
+
+Offramp usa **saldo do cassino**: cotação selada no servidor, validações existentes
+(saldo, mínimo, locks, rollover, e-mail, 2FA e atividade), reserva decimal sob lock,
+análise de risco e ledger idempotente. Casos suspeitos aguardam a aprovação
+existente. O job guarda somente o UUID local e financia a ordem armazenada pela
+API MPC. Resultado incerto mantém a reserva; callback assinado ou reconciliação
+conclui e um refund comprovado estorna uma única vez. Não existe estorno manual
+após funding incerto sem evidência do provedor. Tokens de outra conta e jogadores
+diferentes não escolhem customer, wallet, valor reservado ou destino.
+
+No Cloubet, endereços USD de payout com funding externo ficam indisponíveis;
+saques ACH/wire usam ordens cotadas financiadas pelo saldo. Os fluxos diretos
+originais continuam disponíveis no admin/API Macro quando o titular e o provedor
+suportam essa capacidade. Exemplos genéricos em `examples/casino` continuam como
+referência para outros integradores; Cloubet usa o ledger real do seu backend.
 
 ## Validação e ativação
 
@@ -222,5 +279,14 @@ ARCH_MODE=ratchet go test ./tests/architecture/...
 Antes de merge/deploy com movimentação, executar o e2e de testnet exigido pelo
 repositório para alterações em custódia, com credenciais e fundos de teste do
 ambiente. Essa validação externa não foi executada; o teste local usa stubs.
-A ativação depende da migração revisada, secrets/settings por ambiente,
-webhooks/worker e habilitação comercial efetiva dos produtos nos provedores.
+A ativação depende da migração 720 do Macro e da migration
+`2026_11_02_220000_create_macro_ramp_operations` do Cloubet, settings e secrets por
+ambiente, hot wallet Solana de saque, endereços individuais de depósito, grants
+API, orçamento, webhook de custódia com os eventos `ramp.order.*`, workers e
+`macro-ramps:reconcile` do scheduler PHP. Habilitar provedores/rails compatíveis e,
+por último, a flag principal na plataforma e na conta. Nenhuma flag foi ativada.
+
+Validação local adicional: 1.067 testes do admin; 8 cenários Playwright
+herméticos desktop/mobile; typecheck/lint/build; 32 testes PHP dos novos fluxos,
+assinatura, gates e isolamento; testes de UI/transporte do Cloubet. Os resultados
+reproduzíveis do cassino estão no runbook `docs/macro-ramps.md` de seus repositórios.

@@ -89,3 +89,14 @@ func RampProfileAudit(service *ramps.Service) http.Middleware {
 		ctx.Request().Next()
 	}
 }
+
+func RampIntegrationsEnabled(service *ramps.Service) http.Middleware {
+	return func(ctx http.Context) {
+		enabled, err := service.IntegrationsEnabled(ctx.Context(), requestctx.MustAccount(ctx).ID)
+		if err != nil || !enabled {
+			_ = responses.Fail(ctx, 403, "ramp_integrations_disabled", "ramp integrations are disabled").Abort()
+			return
+		}
+		ctx.Request().Next()
+	}
+}

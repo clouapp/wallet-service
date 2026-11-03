@@ -35,6 +35,7 @@ type TaskStore interface {
 	Finish(context.Context, uuid.UUID, error) error
 }
 type StateStore interface {
+	FundingIntentAbsent(context.Context, uuid.UUID) (bool, error)
 	AppendOutbox(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, string, string) error
 	ListOutbox(context.Context, int) ([]models.RampOutboxEvent, error)
 	DeliverOutbox(context.Context, uuid.UUID) error

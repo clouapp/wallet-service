@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "generated_at": "2026-11-02T22:17:45.305172+00:00",
-  "status": "planning_reference_only_no_runtime_integration",
+  "status": "source_reference_inventory_runtime_port_tracked_in_packages_rampengine_origin_json",
   "coverage": "Feature directories plus static local Go and @/ TypeScript import closure, including tests. Dynamic imports, external packages and non-code references require review.",
   "requirements": {
     "tenant_own_kyb_and_ramps": true,

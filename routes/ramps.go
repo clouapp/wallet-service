@@ -20,7 +20,10 @@ func RegisterRamps() {
 	funding := ctrl.NewFundingController(service)
 	flow := ctrl.NewFlowHandler(service)
 	customers := ctrl.NewCustomersController(service)
-	facades.Route().Prefix("/v1").Middleware(middleware.SessionAuth(), middleware.AccountHeader(accounts), middleware.TOTPEnrollment(container.MustMake[*features.Service](), container.MustMake[*settings.Service]()), middleware.CacheControl(0)).Group(func(r route.Router) {
+	facades.Route().Middleware(middleware.SessionAuth(), middleware.AccountHeader(accounts), middleware.RampSessionPermission(middleware.PermRampCustomersRead)).Get("/v1/ramps/status", customers.Status)
+	facades.Route().Middleware(middleware.Throttle(middleware.ThrottleAPI), middleware.APITokenAuth(accounts), middleware.RampTokenPermission(middleware.PermRampCustomersRead)).Get("/api/v1/ramps/status", customers.Status)
+
+	facades.Route().Prefix("/v1").Middleware(middleware.SessionAuth(), middleware.AccountHeader(accounts), middleware.TOTPEnrollment(container.MustMake[*features.Service](), container.MustMake[*settings.Service]()), middleware.CacheControl(0), middleware.RampIntegrationsEnabled(service)).Group(func(r route.Router) {
 		r.Middleware(middleware.RampSessionPermission(middleware.PermRampCustomersRead)).Get("/customers", customers.Index)
 		r.Middleware(middleware.RampSessionPermission(middleware.PermRampCustomersWrite)).Post("/customers", customers.Store)
 		r.Middleware(middleware.RampSessionPermission(middleware.PermRampCustomersRead)).Get("/account-holder", customers.AccountHolder)
@@ -78,6 +81,7 @@ func RegisterRamps() {
 			r.Middleware(middleware.RampSessionPermission(middleware.PermRampComplianceRead)).Get("/kyc/{provider}/requirements", flow.Action("kyc.Requirements"))
 			r.Middleware(middleware.RampSessionPermission(middleware.PermRampComplianceWrite), middleware.RampNewOperations(service)).Post("/kyc/{provider}/tos", flow.Action("kyc.StartTos"))
 			r.Middleware(middleware.RampSessionPermission(middleware.PermRampOrdersRead)).Get("/offramps/{id}", flow.Action("offramps.Show"))
+			r.Middleware(middleware.RampSessionPermission(middleware.PermRampOrdersRead)).Get("/offramps/{id}/funding-evidence", funding.Evidence)
 			r.Middleware(middleware.RampSessionPermission(middleware.PermRampOrdersCreate)).Post("/offramps/{id}/cancel", flow.Action("offramps.Cancel"))
 			r.Middleware(middleware.RampSessionPermission(middleware.PermRampOrdersCreate)).Post("/offramps/{id}/finalize", flow.Action("offramps.Finalize"))
 			r.Middleware(middleware.RampSessionPermission(middleware.PermRampOrdersCreate), middleware.RequireFundAction(middleware.FundWithdraw), middleware.WalletContext(middleware.WalletContextDeps{Wallets: container.MustMake[*walletrecords.Wallets](), Accounts: accounts, Members: container.MustMake[*walletrecords.Members]()})).Post("/offramps/{id}/wallets/{walletId}/fund", funding.Fund)
@@ -89,7 +93,7 @@ func RegisterRamps() {
 			r.Middleware(middleware.RampSessionPermission(middleware.PermRampCustomersWrite)).Delete("/pix-keys/{id}", flow.Action("pix_keys.Destroy"))
 		})
 	})
-	facades.Route().Prefix("/api/v1").Middleware(middleware.Throttle(middleware.ThrottleAPI), middleware.APITokenAuth(accounts), middleware.CacheControl(0)).Group(func(r route.Router) {
+	facades.Route().Prefix("/api/v1").Middleware(middleware.Throttle(middleware.ThrottleAPI), middleware.APITokenAuth(accounts), middleware.CacheControl(0), middleware.RampIntegrationsEnabled(service)).Group(func(r route.Router) {
 		r.Middleware(middleware.RampTokenPermission(middleware.PermRampCustomersRead)).Get("/customers", customers.Index)
 		r.Middleware(middleware.RampTokenPermission(middleware.PermRampCustomersWrite)).Post("/customers", customers.Store)
 		r.Middleware(middleware.RampTokenPermission(middleware.PermRampCustomersRead)).Get("/account-holder", customers.AccountHolder)
@@ -144,8 +148,10 @@ func RegisterRamps() {
 			r.Middleware(middleware.RampTokenPermission(middleware.PermRampComplianceRead)).Get("/kyc/{provider}/requirements", flow.Action("kyc.Requirements"))
 			r.Middleware(middleware.RampTokenPermission(middleware.PermRampComplianceWrite), middleware.RampNewOperations(service)).Post("/kyc/{provider}/tos", flow.Action("kyc.StartTos"))
 			r.Middleware(middleware.RampTokenPermission(middleware.PermRampOrdersRead)).Get("/offramps/{id}", flow.Action("offramps.Show"))
+			r.Middleware(middleware.RampTokenPermission(middleware.PermRampOrdersRead)).Get("/offramps/{id}/funding-evidence", funding.Evidence)
 			r.Middleware(middleware.RampTokenPermission(middleware.PermRampOrdersCreate)).Post("/offramps/{id}/cancel", flow.Action("offramps.Cancel"))
 			r.Middleware(middleware.RampTokenPermission(middleware.PermRampOrdersCreate)).Post("/offramps/{id}/finalize", flow.Action("offramps.Finalize"))
+			r.Middleware(middleware.RampTokenPermission(middleware.PermRampOrdersCreate), middleware.APIWalletContext(container.MustMake[*walletrecords.Wallets]()), middleware.RampTokenPermission(middleware.PermWithdrawalsCreate)).Post("/offramps/{id}/wallets/{walletId}/fund", funding.Fund)
 			r.Middleware(middleware.RampTokenPermission(middleware.PermRampOrdersCreate)).Post("/offramps/{id}/funding-action", flow.Action("offramps.RefreshFundingAction"))
 			r.Middleware(middleware.RampTokenPermission(middleware.PermRampOrdersCreate)).Post("/offramps/{id}/simulate-deposit", flow.Action("offramps.SimulateDeposit"))
 			r.Middleware(middleware.RampTokenPermission(middleware.PermRampOrdersRead)).Get("/onramps/{id}", flow.Action("onramps.Show"))

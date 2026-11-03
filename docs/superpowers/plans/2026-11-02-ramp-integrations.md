@@ -1,5 +1,7 @@
 # Plano de implementação das integrações de rampas
 
+> Execution update: the code is implemented in the four isolated worktrees. The authoritative final inventory, adapted worker mapping and validation are in `../../RAMP_INTEGRATIONS.md` and the two Cloubet `docs/macro-ramps.md` runbooks. This file retains the original planning checklist; it is not the runtime completion report. Provider/testnet acceptance remains an environment activation step.
+
 Data: 2026-11-02. Este plano parte do
 [desenho de tenants e clientes](../specs/2026-11-02-ramp-integrations-design.md).
 O port local foi implementado na branch abaixo. Este plano é o registro original;

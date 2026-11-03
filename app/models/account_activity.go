@@ -30,6 +30,7 @@ var activityFlagKeys = map[string]struct{}{
 	"ramp-bank-payout-enabled":         {},
 	"kyb":                              {},
 	"kyc-usa-residence-enabled":        {},
+	"ramp-integrations-enabled":        {},
 	"ramp-own-operations-enabled":      {},
 	"ramp-customer-operations-enabled": {},
 

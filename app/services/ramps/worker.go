@@ -43,6 +43,9 @@ func (s *Service) Tick(ctx context.Context, sender *webhook.Service, reconcile b
 		if _, err := er.NewOfframpFundingAuthorizationRepository().ClearRetainedPayloads(time.Now(), 100); err != nil {
 			return err
 		}
+		if _, err := s.PruneTimeline(ctx, ProviderTimelineRetentionDays); err != nil {
+			return err
+		}
 		// Old contact staging is encrypted by the engine and expires through the cache.
 	}
 	_, err = s.PublishOutbox(ctx, sender, 100)

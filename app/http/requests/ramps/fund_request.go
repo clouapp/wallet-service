@@ -2,6 +2,7 @@ package ramps
 
 import (
 	"github.com/goravel/framework/contracts/http"
+	"github.com/macrowallets/waas/app/http/middleware/requestctx"
 	"github.com/macrowallets/waas/app/http/requests"
 )
 
@@ -12,6 +13,10 @@ type FundRequest struct {
 	ActionRevision int    `json:"action_revision" form:"action_revision"`
 }
 
-func (*FundRequest) Rules(http.Context) map[string]string {
-	return map[string]string{"passphrase": "required|min_len:12", "code": "required|len:6", "action_revision": "numeric|min:0"}
+func (*FundRequest) Rules(ctx http.Context) map[string]string {
+	rules := map[string]string{"passphrase": "required|min_len:12", "action_revision": "numeric|min:0"}
+	if token, ok := requestctx.APIToken(ctx); !ok || token == nil {
+		rules["code"] = "required|len:6"
+	}
+	return rules
 }

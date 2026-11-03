@@ -69,3 +69,23 @@ func (s *Service) CheckNewOperations(ctx context.Context, accountID uuid.UUID, r
 	}
 	return nil
 }
+
+// IntegrationsEnabled is the master switch: global rollout AND account opt-in.
+// Existing callback/recovery processing deliberately does not use this gate.
+func (s *Service) IntegrationsEnabled(ctx context.Context, accountID uuid.UUID) (bool, error) {
+	if accountID == uuid.Nil {
+		return false, nil
+	}
+	enabled, err := s.d.Features.GlobalEnabled(ctx, features.FlagRampIntegrations)
+	if err != nil || !enabled {
+		return false, err
+	}
+	if err := s.d.Features.Gate(ctx, accountID, features.FlagRampIntegrations, "ramp_integrations_disabled"); err != nil {
+		var gate *features.GateError
+		if errors.As(err, &gate) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}

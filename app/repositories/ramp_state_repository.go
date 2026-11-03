@@ -11,6 +11,16 @@ import (
 type RampState struct{ db.Base }
 
 func NewRampState() *RampState { return &RampState{Base: db.NewBase(nil)} }
+
+// FundingIntentAbsent is used only under the ramp funding lock for a terminal
+// order. Any native row, even failed, requires its own settlement evidence.
+func (r *RampState) FundingIntentAbsent(ctx context.Context, orderID uuid.UUID) (bool, error) {
+	var result struct{ Absent bool }
+	err := r.Query(ctx).Raw(`SELECT NOT EXISTS(SELECT 1 FROM withdrawals WHERE id=?)
+	 AND NOT EXISTS(SELECT 1 FROM transactions WHERE idempotency_key=?) AS absent`, orderID, orderID.String()).Scan(&result)
+	return result.Absent, err
+}
+
 func (r *RampState) Enqueue(ctx context.Context, accountID uuid.UUID, kind, payload string, delay time.Duration) error {
 	var account any
 	if accountID != uuid.Nil {

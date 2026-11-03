@@ -17,7 +17,7 @@ func TestCatalog_Names_TheAccountFlagsAndTheirDefaults(t *testing.T) {
 		FlagWebhookDeliveryEnabled,
 		FlagWithdrawalsEnabled,
 	}
-	want = append(want, "ramp-customer-operations-enabled", "ramp-own-operations-enabled", "ramp-payin-enabled", "ramp-payout-enabled", "ramp-usd-payin-enabled", "ramp-usd-payout-enabled", "ramp-bank-payout-enabled", "kyb", "kyc-usa-residence-enabled")
+	want = append(want, FlagRampIntegrations, "ramp-customer-operations-enabled", "ramp-own-operations-enabled", "ramp-payin-enabled", "ramp-payout-enabled", "ramp-usd-payin-enabled", "ramp-usd-payout-enabled", "ramp-bank-payout-enabled", "kyb", "kyc-usa-residence-enabled")
 	slices.Sort(want)
 	got := All()
 	if len(got) != len(want) {

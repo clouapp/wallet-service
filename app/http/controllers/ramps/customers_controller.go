@@ -111,3 +111,11 @@ func (c *CustomersController) Wallets(ctx http.Context) http.Response {
 	}
 	return ctx.Response().Success().Json(http.Json{"data": engineResource.NewWalletCollection(wallets)})
 }
+
+func (c *CustomersController) Status(ctx http.Context) http.Response {
+	enabled, err := c.service.IntegrationsEnabled(ctx.Context(), requestctx.MustAccount(ctx).ID)
+	if err != nil {
+		return responses.InternalError(ctx, err)
+	}
+	return ctx.Response().Success().Json(http.Json{"enabled": enabled})
+}
