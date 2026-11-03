@@ -188,6 +188,7 @@ func platformGroups() []Group {
 		providerTronGroup(),
 	}
 	groups = append(groups, utxoFallbackGroups()...)
+	groups = append(groups, swapGroups()...)
 	return append(groups, httpThrottleGroup(), withdrawalsGroup(), platformURLsGroup())
 }
 

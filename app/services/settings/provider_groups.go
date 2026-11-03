@@ -127,7 +127,7 @@ func providerEtherscanGroup() Group {
 // CredentialGroups, because the group validator never sees a secret.
 func enabledProviderWithoutKey(group Group, stored, writes map[string]string) *ValidationError {
 	invalid := &ValidationError{}
-	if !strings.HasPrefix(group.Name, "provider_") {
+	if !strings.HasPrefix(group.Name, "provider_") && group.Name != GroupSwapKit {
 		return invalid
 	}
 	if settingValue(stored, writes, keyProviderEnabled, "false") != "true" {

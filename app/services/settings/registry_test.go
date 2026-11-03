@@ -111,7 +111,11 @@ func knownPlatformGroup(name string) bool {
 		groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark,
 		groupPriceLookup, groupPriceCoinGecko, groupPriceCoinMarketCap, groupPriceCoinAPI,
 		groupIngestPush, groupProviderAlchemy, groupProviderHelius, groupProviderQuickNode, groupProviderEtherscan,
-		GroupLocalWorkers, GroupXRPStream, GroupProviderTron, GroupHTTPThrottle, GroupWithdrawals, GroupPlatformURLs:
+		GroupLocalWorkers, GroupXRPStream, GroupProviderTron, GroupHTTPThrottle, GroupWithdrawals, GroupPlatformURLs,
+		GroupSwaps, GroupSwapKit, GroupLiFi,
+		"swap_btc", "swap_eth", "swap_sol", "swap_ltc", "swap_xrp", "swap_bnb", "swap_trx", "swap_pol", "swap_usdt", "swap_usdc",
+		"swap_usdt_eth", "swap_usdt_polygon", "swap_usdt_sol", "swap_usdt_base", "swap_usdt_arbitrum", "swap_usdt_bsc", "swap_usdt_tron",
+		"swap_usdc_eth", "swap_usdc_polygon", "swap_usdc_sol", "swap_usdc_base", "swap_usdc_arbitrum", "swap_usdc_bsc":
 		return true
 	default:
 		return false
@@ -406,7 +410,7 @@ func platformSecretGroupGatedByAdmins(group Group) bool {
 		return mailCredentialPermissions(group) && platformAdminCoversViewPermission(group.ViewPermission)
 	case groupPriceCoinGecko, groupPriceCoinMarketCap, groupPriceCoinAPI,
 		groupProviderAlchemy, groupProviderHelius, groupProviderQuickNode, groupProviderEtherscan,
-		GroupProviderTron, GroupXRPStream:
+		GroupProviderTron, GroupXRPStream, GroupSwapKit, GroupLiFi:
 		return providerCredentialPermissions(group) && platformAdminCoversViewPermission(group.ViewPermission)
 	default:
 		if strings.HasPrefix(group.Name, groupUTXOFallbackPrefix) {

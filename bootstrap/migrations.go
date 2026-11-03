@@ -81,5 +81,8 @@ func Migrations() []schema.Migration {
 		&migrations.M00000000000690AddDepositSignatureCursorAnchors{},
 		&migrations.M00000000000700AddDepositSignatureCursorStates{},
 		&migrations.M00000000000710AddUnconsolidatedBalances{},
+		&migrations.M00000000000720CreateSwaps{},
+		&migrations.M00000000000730EnforceSwapAmounts{},
+		&migrations.M00000000000740CreateSwapCreditAllocations{},
 	}
 }
