@@ -183,10 +183,22 @@ func newSessionIssuer(app foundation.Application) (*authsvc.SessionIssuer, error
 	if err != nil {
 		return nil, err
 	}
+	// The sid claim is signed with the guard's secret, read as the framework
+	// reads it (the default guard's own secret, else jwt.secret); without one
+	// every session would go out without an id, so refuse to build the issuer.
+	cfg := appfacades.Config()
+	signingKey := cfg.GetString(fmt.Sprintf("auth.guards.%s.secret", cfg.GetString("auth.defaults.guard")))
+	if signingKey == "" {
+		signingKey = cfg.GetString("jwt.secret")
+	}
+	if signingKey == "" {
+		return nil, fmt.Errorf("vault: session issuer: jwt.secret is empty")
+	}
 	issuer, err := authsvc.NewSessionIssuer(authsvc.IssuerDeps{
-		Passwords: passwords,
-		Refresh:   refresh,
-		Revoker:   revoker,
+		Passwords:  passwords,
+		Refresh:    refresh,
+		Revoker:    revoker,
+		SigningKey: signingKey,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("vault: session issuer: %w", err)

@@ -58,6 +58,9 @@ func SessionAuth() http.Middleware {
 
 		ctx.WithValue(requestctx.KeyUserID, user.ID)
 		ctx.WithValue(requestctx.KeyUser, &user)
+		if sid, ok := authsvc.SessionIDOf(token); ok {
+			ctx.WithValue(requestctx.KeySessionID, sid)
+		}
 		ctx.WithContext(activitylog.WithCauser(ctx.Context(), activitylog.Causer{
 			Type:  activitylog.CauserUsers,
 			ID:    user.ID.String(),
