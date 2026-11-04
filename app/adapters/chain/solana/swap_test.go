@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"testing"
 
@@ -72,5 +73,33 @@ func TestSwapSimulation_RejectsOtherTokenSpendsAndDelegationChanges(t *testing.T
 				require.Error(t, err)
 			}
 		})
+	}
+}
+
+func TestCheckSwapPrograms_RefusesAProgramOutsideTheAllowlist(t *testing.T) {
+	wallet := solana.NewWallet().PublicKey()
+	unknown := solana.NewWallet().PublicKey()
+	build := func(program solana.PublicKey) solana.Message {
+		tx, err := solana.NewTransaction([]solana.Instruction{
+			solana.NewInstruction(solana.ComputeBudget, solana.AccountMetaSlice{}, []byte{2, 0, 0, 0, 0}),
+			solana.NewInstruction(program, solana.AccountMetaSlice{solana.Meta(wallet).WRITE().SIGNER()}, []byte{1}),
+		}, solana.Hash{}, solana.TransactionPayer(wallet))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tx.Message
+	}
+	for _, program := range []solana.PublicKey{solana.SystemProgramID, solana.TokenProgramID, solana.MustPublicKeyFromBase58("DF1ow4tspfHX9JwWJsAb9epbkA8hmpSEAtxXy1V27QBH"), solana.MustPublicKeyFromBase58("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4")} {
+		if err := checkSwapPrograms(build(program)); err != nil {
+			t.Fatalf("allowlisted %s refused: %v", program, err)
+		}
+	}
+	if err := checkSwapPrograms(build(unknown)); !errors.Is(err, ErrSwapProgramNotAllowed) {
+		t.Fatalf("unknown program accepted: %v", err)
+	}
+	message := build(solana.SystemProgramID)
+	message.Instructions[1].ProgramIDIndex = uint16(len(message.AccountKeys))
+	if err := checkSwapPrograms(message); !errors.Is(err, ErrSwapProgramNotAllowed) {
+		t.Fatalf("a program outside the static keys accepted: %v", err)
 	}
 }

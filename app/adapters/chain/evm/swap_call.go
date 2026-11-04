@@ -14,6 +14,11 @@ import (
 
 var _ chain.SwapCallBuilder = (*EVMLive)(nil)
 
+// maxSwapCallGas bounds one provider call before the 25 % margin: the LI.FI and
+// SwapKit routes read on 2026-11-04 estimated 0.2M-0.8M gas. A call the node
+// estimates above it is refused rather than paid.
+const maxSwapCallGas uint64 = 3_000_000
+
 // PrepareSwapCall estimates execution from the real sender and fails closed if
 // the node refuses simulation. The adapter obtains its own nonce and gas price.
 func (a *EVMLive) PrepareSwapCall(ctx context.Context, from, to string, value *big.Int, data []byte) (*types.UnsignedTx, error) {
@@ -26,7 +31,7 @@ func (a *EVMLive) PrepareSwapCall(ctx context.Context, from, to string, value *b
 		return nil, fmt.Errorf("%w: swap call: %w", chain.ErrGasEstimateFailed, err)
 	}
 	gas := hexToUint64(estimate)
-	if gas == 0 || gas > 24_000_000 {
+	if gas == 0 || gas > maxSwapCallGas {
 		return nil, chain.ErrGasEstimateFailed
 	}
 	gas = gas * 125 / 100

@@ -84,7 +84,7 @@ func RegisterExternalAPI() {
 			r.Get("/fee-estimate", feeEstimateCtrl.Show)
 			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWithdrawalsCreate), withdrawalsEnabled).Post("/withdrawals", withdrawalCtrl.Store)
 			r.Get("/withdrawals/{idempotencyKey}", withdrawalCtrl.ShowByKey)
-			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWalletsRead)).Post("/swaps/quotes/to/{destinationWalletId}", swapCtrl.Quote)
+			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWithdrawalsCreate), middleware.Throttle(middleware.ThrottleSwapQuote)).Post("/swaps/quotes/to/{destinationWalletId}", swapCtrl.Quote)
 			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWithdrawalsCreate), withdrawalsEnabled).Post("/swaps", swapCtrl.Execute)
 			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWalletsRead)).Get("/swaps/{swapId}", swapCtrl.Show)
 			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWalletsRead)).Get("/swaps/by-key/{idempotencyKey}", swapCtrl.Recover)

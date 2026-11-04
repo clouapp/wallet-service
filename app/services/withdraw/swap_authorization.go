@@ -19,6 +19,13 @@ func (s *Service) AuthorizeSwap(ctx context.Context, wallet *models.Wallet, in s
 	}
 	if !in.Resume {
 		if err := s.verifyDashboardTOTP(ctx, in.UserID, in.TOTP); err != nil {
+			var refusal *CreateRefusal
+			if errors.As(err, &refusal) && refusal.Status == CreateStatusForbidden {
+				return swap.ErrTOTPRequired
+			}
+			if errors.As(err, &refusal) && refusal.Status == CreateStatusInternal {
+				return err
+			}
 			return swap.ErrInvalidTOTP
 		}
 	}
@@ -29,6 +36,9 @@ func (s *Service) AuthorizeSwap(ctx context.Context, wallet *models.Wallet, in s
 		var refusal *CreateRefusal
 		if errors.As(err, &refusal) && refusal.Status == CreateStatusUnauthorized {
 			return swap.ErrInvalidPassphrase
+		}
+		if errors.As(err, &refusal) && refusal.Status == CreateStatusTooManyRequests {
+			return swap.ErrTooManyAttempts
 		}
 		return err
 	}

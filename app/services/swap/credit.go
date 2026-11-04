@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"math/big"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/macrowallets/waas/app/models"
@@ -45,16 +46,32 @@ func (v *DepositVerifier) Credit(ctx context.Context, request CreditRequest) (st
 	if request.Asset.NetworkID > 0 && request.Asset.Chain != "tron" {
 		assetKey, address = strings.ToLower(assetKey), strings.ToLower(address)
 	}
-	if decoded, err := hex.DecodeString(strings.TrimPrefix(hash, "0x")); err == nil && len(decoded) == 32 {
-		hash = strings.ToLower(hash)
-	}
+	hash = canonicalHash(hash)
 	allocation := &models.SwapCreditAllocation{ID: uuid.New(), OrderID: request.OrderID, WalletID: request.WalletID, Direction: request.Direction, Chain: request.Asset.Chain, AssetKey: assetKey, Address: address, TxHash: hash, AmountRaw: units.String()}
 	return v.claims.ClaimCredit(ctx, allocation, func(txCtx context.Context) (string, error) {
-		return v.confirmedTotal(txCtx, request.WalletID, request.Asset, request.Address, request.Hash)
+		return v.confirmedTotal(txCtx, request.WalletID, request.Asset, request.Address, request.Hash, request.NotBefore)
 	})
 }
 
-func (v *DepositVerifier) confirmedTotal(ctx context.Context, walletID uuid.UUID, asset Asset, address, hash string) (string, error) {
+// canonicalHash spells a 32-byte hex hash one way (lower case; a 0x/0X prefix
+// becomes 0x), so two spellings of one payout can never hold two allocations:
+// EVM hashes and the unprefixed BTC, LTC, XRP and TRON ids alike. Other
+// encodings (Solana base58) are case-sensitive and kept as given.
+func canonicalHash(hash string) string {
+	body, prefixed := hash, false
+	if len(hash) > 2 && (hash[:2] == "0x" || hash[:2] == "0X") {
+		body, prefixed = hash[2:], true
+	}
+	if decoded, err := hex.DecodeString(body); err != nil || len(decoded) != 32 {
+		return hash
+	}
+	if prefixed {
+		return "0x" + strings.ToLower(body)
+	}
+	return strings.ToLower(body)
+}
+
+func (v *DepositVerifier) confirmedTotal(ctx context.Context, walletID uuid.UUID, asset Asset, address, hash string, notBefore time.Time) (string, error) {
 	rows, err := v.deposits.FindDepositsByChainAndTxHash(ctx, asset.Chain, hash)
 	if err != nil {
 		return "0", err
@@ -68,6 +85,10 @@ func (v *DepositVerifier) confirmedTotal(ctx context.Context, walletID uuid.UUID
 			matchesAddress = strings.EqualFold(row.ToAddress, address)
 		}
 		if row.WalletID != walletID || !matchesAddress || !contract || !strings.EqualFold(row.Asset, asset.Symbol) {
+			continue
+		}
+		if !notBefore.IsZero() && (row.CreatedAt == nil || row.CreatedAt.StdTime().Before(notBefore)) {
+			// Recorded before the order existed: another deposit, never this payout.
 			continue
 		}
 		if row.Status != string(types.TxStatusConfirmed) {

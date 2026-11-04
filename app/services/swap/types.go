@@ -44,6 +44,8 @@ var (
 	ErrWalletBlocked       = errors.New("swap wallet is not active")
 	ErrInvalidPassphrase   = errors.New("invalid wallet passphrase")
 	ErrInvalidTOTP         = errors.New("invalid authentication code")
+	ErrTOTPRequired        = errors.New("two-factor authentication must be enabled before swapping")
+	ErrTooManyAttempts     = errors.New("too many passphrase attempts")
 	ErrExecutionFailed     = errors.New("swap execution failed before funding")
 	ErrUncertainSend       = errors.New("swap funding outcome is indeterminate")
 )

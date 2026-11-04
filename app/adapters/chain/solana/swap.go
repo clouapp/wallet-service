@@ -23,6 +23,45 @@ var _ chain.SolanaSwapBuilder = (*SolanaLive)(nil)
 
 const swapLookupTableProgram = "AddressLookupTab1e1111111111111111111111111"
 
+// swapPrograms are the only programs a provider-built swap may invoke at the top
+// level: the runtime's own programs and the routers LI.FI and SwapKit returned for
+// SOL and USDC inputs on 2026-11-04 (DFlow, the LI.FI program, deposit transfers),
+// plus Jupiter v6. The wallet's signature reaches every program an instruction
+// invokes, so a program that behaves in simulation could still spend the wallet
+// once sent: any other program is refused before anything is simulated or signed.
+var swapPrograms = map[string]string{
+	"11111111111111111111111111111111":             "system",
+	"ComputeBudget111111111111111111111111111111":  "compute budget",
+	"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA":  "spl token",
+	"TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb":  "token-2022",
+	"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL": "associated token account",
+	"Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo":  "memo v1",
+	"MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr":  "memo v2",
+	"JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4":  "jupiter v6",
+	"DF1ow4tspfHX9JwWJsAb9epbkA8hmpSEAtxXy1V27QBH": "dflow",
+	"3i5JeuZuUxeKtVysUnwQNGerJP2bSMX9fTFfS4Nxe3Br": "li.fi",
+}
+
+// ErrSwapProgramNotAllowed is a provider transaction that invokes a program
+// outside swapPrograms.
+var ErrSwapProgramNotAllowed = fmt.Errorf("%w: solana swap invokes a program outside the allowlist", chain.ErrSwapTransactionRefused)
+
+// checkSwapPrograms requires every top-level instruction to invoke an allowlisted
+// program named by a static account key (never one loaded from a lookup table).
+func checkSwapPrograms(message solana.Message) error {
+	for _, instruction := range message.Instructions {
+		index := int(instruction.ProgramIDIndex)
+		if index >= len(message.AccountKeys) {
+			return ErrSwapProgramNotAllowed
+		}
+		program := message.AccountKeys[index].String()
+		if _, allowed := swapPrograms[program]; !allowed {
+			return fmt.Errorf("%w: %s", ErrSwapProgramNotAllowed, program)
+		}
+	}
+	return nil
+}
+
 type swapAccount struct {
 	Lamports uint64            `json:"lamports"`
 	Owner    string            `json:"owner"`
@@ -40,9 +79,10 @@ func (a *swapAccount) binary() ([]byte, error) {
 	return base64.StdEncoding.DecodeString(encoded)
 }
 
-// PrepareSolanaSwap accepts only the exact wallet as sole signer and fee payer.
-// Simulation checks every message account, including address-table lookups, so
-// another token balance or its delegation cannot be spent alongside this input.
+// PrepareSolanaSwap accepts only the exact wallet as sole signer and fee payer,
+// and only allowlisted programs (swapPrograms). Simulation then checks every
+// message account, including address-table lookups, so another token balance or
+// its delegation cannot be spent alongside this input.
 func (a *SolanaLive) PrepareSolanaSwap(ctx context.Context, sender, encoded string, input *big.Int, token *types.Token) (*types.UnsignedTx, error) {
 	if len(encoded) > 16_384 || input == nil || input.Sign() <= 0 || !input.IsUint64() {
 		return nil, fmt.Errorf("invalid solana swap input")
@@ -50,6 +90,9 @@ func (a *SolanaLive) PrepareSolanaSwap(ctx context.Context, sender, encoded stri
 	tx, err := solana.TransactionFromBase64(encoded)
 	if err != nil || tx.Message.Header.NumRequiredSignatures != 1 || len(tx.Message.AccountKeys) == 0 || tx.Message.AccountKeys[0].String() != sender {
 		return nil, fmt.Errorf("solana swap must have the wallet as sole signer")
+	}
+	if err := checkSwapPrograms(tx.Message); err != nil {
+		return nil, err
 	}
 	message, err := tx.Message.MarshalBinary()
 	if err != nil {

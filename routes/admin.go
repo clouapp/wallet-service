@@ -340,7 +340,7 @@ func RegisterAdminRoutes() {
 			r.Get("/withdrawals", withdrawalCtrl.Index)
 			r.Middleware(middleware.RequireFundAction(middleware.FundWithdraw), withdrawalsEnabled).Post("/withdrawals", withdrawalCtrl.Store)
 			r.Post("/withdrawals/estimate", withdrawalCtrl.Estimate)
-			r.Post("/swaps/quotes/to/{destinationWalletId}", swapCtrl.Quote)
+			r.Middleware(middleware.RequireFundAction(middleware.FundWithdraw), middleware.Throttle(middleware.ThrottleSwapQuote)).Post("/swaps/quotes/to/{destinationWalletId}", swapCtrl.Quote)
 			r.Middleware(middleware.RequireFundAction(middleware.FundWithdraw), withdrawalsEnabled).Post("/swaps", swapCtrl.Execute)
 			r.Get("/swaps/{swapId}", swapCtrl.Show)
 			r.Get("/swaps/by-key/{idempotencyKey}", swapCtrl.Recover)

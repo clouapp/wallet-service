@@ -88,6 +88,12 @@ func (l *LiFi) Quote(ctx context.Context, request swap.QuoteRequest, credential 
 	if request.From.Testnet || request.To.Testnet {
 		return nil, swap.ErrUnsupported
 	}
+	// Custody funds LI.FI routes only from EVM networks (a Diamond call) and
+	// Solana (a serialized transaction); any other source could be quoted but
+	// never executed, so it is left to the fallback provider.
+	if !lifiExecutableSource(request.From) {
+		return nil, swap.ErrUnsupported
+	}
 	fromChain, err := l.chain(ctx, request.From, credential)
 	if err != nil {
 		return nil, err
@@ -158,6 +164,10 @@ func normalizeLiFiCost(cost lifiCost, name string) (swap.Fee, error) {
 	return swap.Fee{Name: name, Amount: amount.FormatBaseUnits(units, cost.Token.Decimals), Asset: cost.Token.Symbol}, nil
 }
 
+func lifiExecutableSource(asset swap.Asset) bool {
+	return asset.Chain == "sol" || (asset.NetworkID > 0 && asset.Chain != "tron")
+}
+
 // Build returns the frozen quote's transaction; it never requests another route.
 func (l *LiFi) Build(_ context.Context, quote *swap.Quote, _ swap.ProviderConfig) (*swap.Funding, error) {
 	var step lifiStep
@@ -218,8 +228,10 @@ func (l *LiFi) Status(ctx context.Context, quote *swap.Quote, hash string, crede
 		progress.RefundHash = status.Receiving.Hash
 		progress.RefundRaw = status.Receiving.Amount
 	case "PARTIAL":
+		// Delivered in another token than quoted: not the quoted output, so it is
+		// never credited as completed; the order reconciles for review.
 		if status.Status == "DONE" {
-			progress.Status = swap.StatusCompleted
+			progress.Status = swap.StatusPartial
 		}
 	case "REFUND_IN_PROGRESS", "NOT_PROCESSABLE_REFUND_NEEDED":
 		progress.Status = swap.StatusRefundPending

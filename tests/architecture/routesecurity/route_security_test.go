@@ -55,6 +55,7 @@ const (
 	chainCreateWallet           = chainHeader + " > RequireFundAction"
 	chainWallet                 = "SessionAuth > AccountHeader > TOTPEnrollment > WalletContext"
 	chainMoveFunds              = chainWallet + " > RequireFundAction > FeatureEnabled"
+	chainSwapQuote              = chainWallet + " > RequireFundAction"
 	chainGenerateAddress        = chainWallet + " > Can(addresses.create)"
 	chainWalletAddUser          = chainWallet + " > WalletAddUser"
 	chainWalletRemoveUser       = chainWallet + " > WalletRemoveUser"
@@ -75,6 +76,7 @@ const (
 	chainAddresses              = "APITokenAuth > APIWalletContext > APIScope(addresses.create)"
 	chainSweep                  = "APITokenAuth > APIWalletContext > APIScope(sweep.execute) > FeatureEnabled"
 	chainWithdrawals            = "APITokenAuth > APIWalletContext > APIScope(withdrawals.create) > FeatureEnabled"
+	chainSwapQuoteAPI           = "APITokenAuth > APIWalletContext > APIScope(withdrawals.create)"
 	chainTransactions           = "APITokenAuth > APIScope(transactions.read)"
 	chainWebhooksRead           = "APITokenAuth > APIScope(webhooks.read)"
 	chainWebhooksWrite          = "APITokenAuth > APIScope(webhooks.write)"
@@ -105,11 +107,11 @@ func machineKey(chain string) routeSecurity {
 // Goravel's "METHOD /path". A new route fails TestEveryRouteIsInTheRouteTable
 // and TestGuardChainMatchesRegistration until it gets a row here.
 var routeTable = map[string]routeSecurity{
-	"POST /api/v1/wallets/{walletId}/swaps/quotes/to/{destinationWalletId}": api(chainWalletRead),
+	"POST /api/v1/wallets/{walletId}/swaps/quotes/to/{destinationWalletId}": api(chainSwapQuoteAPI),
 	"POST /api/v1/wallets/{walletId}/swaps":                                 api(chainWithdrawals),
 	"POST /v1/wallets/{walletId}/swaps":                                     session(chainMoveFunds),
 	"GET|HEAD /api/v1/wallets/{walletId}/swaps/{swapId}":                    api(chainWalletRead),
-	"POST /v1/wallets/{walletId}/swaps/quotes/to/{destinationWalletId}":     session(chainWallet),
+	"POST /v1/wallets/{walletId}/swaps/quotes/to/{destinationWalletId}":     session(chainSwapQuote),
 	"GET|HEAD /v1/wallets/{walletId}/swaps/{swapId}":                        session(chainWallet),
 	"GET|HEAD /v1/wallets/{walletId}/swaps/by-key/{idempotencyKey}":         session(chainWallet),
 	"GET|HEAD /api/v1/wallets/{walletId}/swaps/by-key/{idempotencyKey}":     api(chainWalletRead),

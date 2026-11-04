@@ -80,6 +80,18 @@ func (r *SwapRepository) ListOrders(ctx context.Context, accountID, walletID uui
 	return rows, total, nil
 }
 
+// ListOpenOrders returns accepted, non-terminal orders, the least recently
+// checked first, for the background reconciler.
+func (r *SwapRepository) ListOpenOrders(ctx context.Context, limit int) ([]models.SwapOrder, error) {
+	var rows []models.SwapOrder
+	err := r.Query(ctx).WhereIn("status", []any{"preparing", "broadcast", "processing", "reconciling", "refund_pending"}).
+		Order("last_checked_at ASC NULLS FIRST").Order("created_at ASC").Limit(limit).Find(&rows)
+	if err != nil {
+		return nil, fmt.Errorf("list open swap orders: %w", err)
+	}
+	return rows, nil
+}
+
 // SaveFunding persists the pinned funding instruction before anything is signed.
 func (r *SwapRepository) SaveFunding(ctx context.Context, id uuid.UUID, payload string) error {
 	result, err := r.Query(ctx).Model(&models.SwapOrder{}).Where("id = ? AND status = ? AND (funding_payload = '{}' OR funding_payload = ?)", id, "preparing", payload).Update(map[string]any{"funding_payload": payload})

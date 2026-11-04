@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/goravel/framework/contracts/foundation"
@@ -20,6 +21,11 @@ import (
 	"github.com/macrowallets/waas/pkg/pgerr"
 	"github.com/macrowallets/waas/pkg/types"
 )
+
+// swapApprovalInclusionWait is how long an execute request waits for its ERC-20
+// approval to be included before funding (below the 30 s request timeout; the
+// quote's expiry and the request deadline bound it further).
+const swapApprovalInclusionWait = 20 * time.Second
 
 // SwapServiceProvider composes the adapter factory, administrative router and durable orders.
 type SwapServiceProvider struct{}
@@ -86,8 +92,13 @@ func (*SwapServiceProvider) Register(app foundation.Application) {
 		if !ok {
 			return nil, fmt.Errorf("swap custody: prepared signer required")
 		}
-		execution := swapcustody.New(swapcustody.Deps{Authority: withdrawals, Registry: registry, Steps: rows, Transactions: transactions, Signer: signer, Cache: facades.Cache()})
-		return swap.NewService(swap.Deps{Router: router, Factory: factory, Store: NewSwapStore(rows), Wallets: swapWallets{wallets}, Catalog: swapCatalog{ChainRepository: chains, Registry: registry}, Policy: swapPolicy{config}, Credentials: swapCredentials{config}, Execution: execution, Verifier: swap.NewDepositVerifier(transactions, rows)}), nil
+		accounts, err := resolve[*repositories.AccountRepository](app)
+		if err != nil {
+			return nil, err
+		}
+		execution := swapcustody.New(swapcustody.Deps{Authority: withdrawals, Registry: registry, Steps: rows, Transactions: transactions, Signer: signer, Cache: facades.Cache(),
+			Tokens: registry, Settler: box.Service, InclusionWait: swapApprovalInclusionWait})
+		return swap.NewService(swap.Deps{Router: router, Factory: factory, Store: NewSwapStore(rows), Wallets: swapWallets{wallets}, Catalog: swapCatalog{ChainRepository: chains, Registry: registry}, Policy: swapPolicy{config}, Credentials: swapCredentials{config}, Execution: execution, Verifier: swap.NewDepositVerifier(transactions, rows), Accounts: accounts}), nil
 	})
 }
 
@@ -125,6 +136,24 @@ func (s swapStore) FindOrderByKey(ctx context.Context, accountID, key uuid.UUID)
 }
 func (s swapStore) CreateOrder(ctx context.Context, row *models.SwapOrder) error {
 	return swapStoreError(s.SwapRepository.CreateOrder(ctx, row))
+}
+
+// SaveFunding, RecordSource and RecordProgress are compare-and-swap writes: no
+// row means another writer already moved the order, a conflict and not a 500.
+func (s swapStore) SaveFunding(ctx context.Context, id uuid.UUID, payload string) error {
+	return swapTransitionError(s.SwapRepository.SaveFunding(ctx, id, payload))
+}
+func (s swapStore) RecordSource(ctx context.Context, id uuid.UUID, hash, status string) error {
+	return swapTransitionError(s.SwapRepository.RecordSource(ctx, id, hash, status))
+}
+func (s swapStore) RecordProgress(ctx context.Context, row *models.SwapOrder, previous string) error {
+	return swapTransitionError(s.SwapRepository.RecordProgress(ctx, row, previous))
+}
+func swapTransitionError(err error) error {
+	if errors.Is(err, models.ErrRepositoryNotFound) {
+		return swap.ErrConflict
+	}
+	return err
 }
 func swapStoreError(err error) error {
 	if errors.Is(err, models.ErrRepositoryNotFound) {

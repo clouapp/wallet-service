@@ -13,7 +13,8 @@ import (
 )
 
 // ClaimCredit serializes allocations of one physical chain payout, including
-// different orders receiving a batched payment at the same custody address.
+// different orders receiving a batched payment at the same custody address. An
+// allocation is the reported amount capped to what the payout still holds.
 func (r *SwapRepository) ClaimCredit(ctx context.Context, credit *models.SwapCreditAllocation, readTotal func(context.Context) (string, error)) (string, bool, error) {
 	claimed, confirmed := "0", false
 	value, ok := amount.ParseBaseUnits(credit.AmountRaw)
@@ -57,8 +58,14 @@ func (r *SwapRepository) ClaimCredit(ctx context.Context, credit *models.SwapCre
 			}
 			used.Add(used, units)
 		}
-		if new(big.Int).Add(used, value).Cmp(total) > 0 {
+		// The credit is what the chain shows, never more: a report above what is
+		// left of the payout (a rounded decimal, a batched payout) is capped to it.
+		remaining := new(big.Int).Sub(total, used)
+		if remaining.Sign() <= 0 {
 			return nil
+		}
+		if value.Cmp(remaining) > 0 {
+			credit.AmountRaw = remaining.String()
 		}
 		if err := r.Query(txCtx).Create(credit); err != nil {
 			return fmt.Errorf("persist swap credit allocation: %w", err)

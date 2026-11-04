@@ -63,7 +63,8 @@ func TestSwapRepository_ClaimsOnceScopesReadsAndFreezesFunding(t *testing.T) {
 	_, err = repositories.NewTransactionRepository(nil).FindByID(ctx, transactionID2)
 	require.ErrorIs(t, err, models.ErrRepositoryNotFound, "step collision rolls back its transaction row")
 	// Two provider orders can share one batched payout transaction. Concurrent
-	// allocation must not turn a confirmed total of 100 into two credits of 60.
+	// allocation must not turn a confirmed total of 100 into two credits of 60:
+	// the second report is capped to the 40 the payout still holds.
 	quote2 := *quote
 	quote2.ID = uuid.New()
 	require.NoError(t, repo.CreateQuote(ctx, &quote2))
@@ -78,40 +79,45 @@ func TestSwapRepository_ClaimsOnceScopesReadsAndFreezesFunding(t *testing.T) {
 	}
 	type allocationResult struct {
 		credit    *models.SwapCreditAllocation
+		raw       string
 		confirmed bool
 		err       error
 	}
 	results := make(chan allocationResult, 2)
 	for _, credit := range credits {
 		go func(credit *models.SwapCreditAllocation) {
-			_, confirmed, err := repo.ClaimCredit(ctx, credit, func(context.Context) (string, error) { return "100", nil })
-			results <- allocationResult{credit, confirmed, err}
+			raw, confirmed, err := repo.ClaimCredit(ctx, credit, func(context.Context) (string, error) { return "100", nil })
+			results <- allocationResult{credit, raw, confirmed, err}
 		}(credit)
 	}
-	var winner, remaining *models.SwapCreditAllocation
+	claimed := map[string]*models.SwapCreditAllocation{}
 	for range 2 {
 		result := <-results
 		require.NoError(t, result.err)
-		if result.confirmed {
-			require.Nil(t, winner)
-			winner = result.credit
-		} else {
-			remaining = result.credit
-		}
+		require.True(t, result.confirmed)
+		claimed[result.raw] = result.credit
 	}
-	require.NotNil(t, winner)
-	require.NotNil(t, remaining)
-	remaining.AmountRaw = "40"
-	raw, confirmed, err := repo.ClaimCredit(ctx, remaining, func(context.Context) (string, error) { return "100", nil })
+	require.Len(t, claimed, 2)
+	require.NotNil(t, claimed["60"], "the first allocation keeps its report")
+	require.NotNil(t, claimed["40"], "the second is capped to what the payout still holds")
+	third := &models.SwapCreditAllocation{ID: uuid.New(), OrderID: uuid.New(), WalletID: destination.ID, Direction: "receive", Chain: "btc", AssetKey: "native", Address: "batched-recipient", TxHash: strings.Repeat("a", 64), AmountRaw: "1"}
+	raw, confirmed, err := repo.ClaimCredit(ctx, third, func(context.Context) (string, error) { return "100", nil })
 	require.NoError(t, err)
-	require.True(t, confirmed)
-	require.Equal(t, "40", raw)
-	winner.AmountRaw = "100"
-	raw, confirmed, err = repo.ClaimCredit(ctx, winner, func(context.Context) (string, error) {
+	require.False(t, confirmed, "a fully allocated payout credits nothing more")
+	require.Equal(t, "0", raw)
+	replay := *claimed["60"]
+	replay.ID, replay.AmountRaw = uuid.New(), "100"
+	raw, confirmed, err = repo.ClaimCredit(ctx, &replay, func(context.Context) (string, error) {
 		t.Fatal("a replay must use its recorded allocation")
 		return "0", nil
 	})
 	require.NoError(t, err)
 	require.True(t, confirmed)
 	require.Equal(t, "60", raw)
+	open, err := repo.ListOpenOrders(ctx, 10)
+	require.NoError(t, err)
+	require.NotEmpty(t, open, "accepted orders are listed for the reconciler")
+	for _, row := range open {
+		require.Contains(t, []string{"preparing", "broadcast", "processing", "reconciling", "refund_pending"}, row.Status)
+	}
 }

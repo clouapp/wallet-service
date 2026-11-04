@@ -2,10 +2,15 @@ package chain
 
 import (
 	"context"
+	"errors"
 	"math/big"
 
 	"github.com/macrowallets/waas/pkg/types"
 )
+
+// ErrSwapTransactionRefused is a provider-built transaction an adapter refuses
+// by custody policy (a Solana program outside the allowlist): never signed.
+var ErrSwapTransactionRefused = errors.New("swap transaction refused by custody policy")
 
 // SwapCallBuilder simulates and prices a call using the wallet's registered RPC.
 // Provider supplied nonce, gas and fee values are deliberately not used.

@@ -30,7 +30,13 @@ const (
 	ThrottleAPI = "api"
 	// ThrottleGasCheck is POST .../gas-check: one on-chain read per wallet per minute.
 	ThrottleGasCheck = "gas-check"
+	// ThrottleSwapQuote is POST .../swaps/quotes/...: each quote is a paid provider
+	// call and a stored row, so a source wallet gets swapQuotesPerMinute.
+	ThrottleSwapQuote = "swap-quote"
 )
+
+// swapQuotesPerMinute bounds quotes per source wallet on both surfaces.
+const swapQuotesPerMinute = 12
 
 // Config keys under http.throttle, all attempts per minute. Zero turns that
 // limit off. config/http_config.go reads the environment into them.
@@ -88,6 +94,11 @@ func RegisterThrottles(limiter http.RateLimiter, stored StoredThrottleLimits) {
 		return limits(
 			perMinute(attempts(ctx, settings.KeyThrottleAPIPerMinute, throttleAPIPerMinute), apiKey(ctx)),
 		)
+	})
+	limiter.ForWithLimits(ThrottleSwapQuote, func(ctx http.Context) []http.Limit {
+		return []http.Limit{
+			limit.PerMinute(swapQuotesPerMinute).By("swap-quote:" + ctx.Request().Route("walletId")).Response(tooManyRequests),
+		}
 	})
 	limiter.ForWithLimits(ThrottleGasCheck, func(ctx http.Context) []http.Limit {
 		return []http.Limit{

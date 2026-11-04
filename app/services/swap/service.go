@@ -48,6 +48,8 @@ type Deps struct {
 	Credentials Credentials
 	Execution   Execution
 	Verifier    Verifier
+	// Accounts lets the background reconciler load an order's account.
+	Accounts Accounts
 }
 
 // Service coordinates quotes and their immutable, account-scoped orders.

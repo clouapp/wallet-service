@@ -29,6 +29,7 @@ func (*SwapKit) Name() string { return swap.ProviderSwapKit }
 
 type swapKitRoute struct {
 	RouteID         string            `json:"routeId"`
+	Providers       []string          `json:"providers,omitempty"`
 	SellAsset       string            `json:"sellAsset"`
 	BuyAsset        string            `json:"buyAsset"`
 	SellAmount      string            `json:"sellAmount"`
@@ -100,14 +101,60 @@ func (s *SwapKit) Quote(ctx context.Context, request swap.QuoteRequest, credenti
 	if len(response.Routes) == 0 {
 		return nil, swap.ErrNoRoute
 	}
+	var firstErr error
 	for _, route := range response.Routes {
+		if !swapKitExecutable(route, request.From) {
+			continue
+		}
 		quote, err := s.normalize(route, request)
 		if err != nil {
-			return nil, err
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
 		}
 		return quote, nil
 	}
+	if firstErr != nil {
+		return nil, firstErr
+	}
 	return nil, swap.ErrNoRoute
+}
+
+// swapKitExecutable drops routes custody could never fund: THORChain and Maya
+// deposits need a memo, which custody can attach on EVM (router calldata) and on
+// Bitcoin and Litecoin (OP_RETURN), never on XRP or TRON transfers.
+func swapKitExecutable(route swapKitRoute, from swap.Asset) bool {
+	if from.Chain != "xrp" && from.Chain != "tron" {
+		return true
+	}
+	if len(route.Providers) == 0 {
+		return false
+	}
+	for _, provider := range route.Providers {
+		upper := strings.ToUpper(provider)
+		if strings.HasPrefix(upper, "THORCHAIN") || strings.HasPrefix(upper, "MAYACHAIN") {
+			return false
+		}
+	}
+	return true
+}
+
+// swapKitTxTypeFits is the transaction family SwapKit may return for a source.
+func swapKitTxTypeFits(txType string, from swap.Asset) bool {
+	switch txType {
+	case "EVM":
+		return from.NetworkID > 0 && from.Chain != "tron"
+	case "SERIALIZED_BASE64":
+		return from.Chain == "sol"
+	case "RIPPLE":
+		return from.Chain == "xrp"
+	case "TRON":
+		return from.Chain == "tron"
+	case "PSBT":
+		return from.Chain == "btc" || from.Chain == "ltc"
+	}
+	return false
 }
 
 func (s *SwapKit) normalize(route swapKitRoute, request swap.QuoteRequest) (*swap.Quote, error) {
@@ -202,6 +249,9 @@ func (s *SwapKit) Build(ctx context.Context, quote *swap.Quote, credential swap.
 	if !ok || actual.Cmp(minimum) < 0 {
 		return nil, swap.ErrExpired
 	}
+	if !swapKitTxTypeFits(route.TxType, quote.Request.From) {
+		return nil, swap.ErrUnsupported
+	}
 	funding := &swap.Funding{Kind: "transfer", To: route.Inbound, AmountRaw: quote.Request.AmountRaw, Memo: route.Memo, ApprovalAddress: route.Meta.Approval, Payload: route.Tx}
 	if funding.To == "" {
 		funding.To = route.Target
@@ -236,11 +286,17 @@ func (s *SwapKit) Build(ctx context.Context, quote *swap.Quote, credential swap.
 		funding.Data = encoded
 	case "RIPPLE":
 		var transaction struct {
-			Destination string  `json:"Destination"`
-			Tag         *uint32 `json:"DestinationTag"`
+			Destination string            `json:"Destination"`
+			Tag         *uint32           `json:"DestinationTag"`
+			Memos       []json.RawMessage `json:"Memos"`
 		}
 		if json.Unmarshal(route.Tx, &transaction) != nil {
 			return nil, swap.ErrInvalidQuote
+		}
+		// XRP payments carry no protocol memo in custody: a route that needs one
+		// would arrive as a plain payment and never execute the swap.
+		if len(transaction.Memos) > 0 || funding.Memo != "" {
+			return nil, swap.ErrUnsupported
 		}
 		if transaction.Destination != "" {
 			funding.To = transaction.Destination

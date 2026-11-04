@@ -28,6 +28,7 @@ import (
 	"github.com/macrowallets/waas/app/services/mpc"
 	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/app/services/swap"
 	"github.com/macrowallets/waas/app/services/webhook"
 	"github.com/macrowallets/waas/app/services/webhooksync"
 	"github.com/macrowallets/waas/bootstrap"
@@ -152,7 +153,13 @@ func handleConfirmationTracker(ctx context.Context) error {
 	if facades.Config().GetString("vault.queues.webhook") != "" {
 		redispatchWebhooks(ctx)
 	}
-	return deposits.RunConfirmationCheck(ctx)
+	err := deposits.RunConfirmationCheck(ctx)
+	// Swap orders are reconciled on the same schedule as the local workers do:
+	// in Lambda mode no local loop runs, so the tracker invocation advances them.
+	if swapErr := container.MustMake[*swap.Service]().ReconcileSwaps(ctx); swapErr != nil {
+		slog.Error("swap reconciliation failed", "error", swapErr)
+	}
+	return err
 }
 
 func redispatchWebhooks(ctx context.Context) {
@@ -255,6 +262,7 @@ func startLocalWorkers(ctx context.Context) lifecycle.Workers {
 		ChainSync:    container.MustMake[*chainsync.Service](),
 		PushedChains: providers.PushedChains(container.MustMake[*repositories.WebhookSubscriptionRepository]()),
 		Confirmer:    deposits,
+		Swaps:        container.MustMake[*swap.Service](),
 	})
 	if err != nil {
 		slog.Error("local workers not started", "error", err)

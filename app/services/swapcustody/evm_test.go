@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,12 +30,21 @@ type preparedSwapCall struct {
 type swapEVMChain struct {
 	*mocks.MockChain
 	allowance    *big.Int
+	standing     map[string]*big.Int
 	calls        []preparedSwapCall
 	prepareError error
 }
 
-func (c *swapEVMChain) SwapAllowance(context.Context, string, string, string) (*big.Int, error) {
-	return new(big.Int).Set(c.allowance), nil
+// SwapAllowance is the source token's allowance, or a standing allowance of
+// another catalog token (none unless a test sets one).
+func (c *swapEVMChain) SwapAllowance(_ context.Context, token, _, _ string) (*big.Int, error) {
+	if strings.EqualFold(token, sourceTokenContract) {
+		return new(big.Int).Set(c.allowance), nil
+	}
+	if standing := c.standing[strings.ToLower(token)]; standing != nil {
+		return new(big.Int).Set(standing), nil
+	}
+	return new(big.Int), nil
 }
 
 func (c *swapEVMChain) PrepareSwapCall(_ context.Context, _ string, to string, value *big.Int, data []byte) (*types.UnsignedTx, error) {
@@ -42,7 +52,19 @@ func (c *swapEVMChain) PrepareSwapCall(_ context.Context, _ string, to string, v
 	return &types.UnsignedTx{ChainID: "eth", Metadata: map[string]any{"to": to}}, c.prepareError
 }
 
+// tokenCatalog is the custody token list the guard reads.
+type tokenCatalog []types.Token
+
+func (c tokenCatalog) TokensForChain(string) []types.Token { return c }
+
+const (
+	sourceTokenContract = "0x1111111111111111111111111111111111111111"
+	otherTokenContract  = "0x6666666666666666666666666666666666666666"
+	routerContract      = "0x4444444444444444444444444444444444444444"
+)
+
 type swapEVMFixture struct {
+	deps                       swapcustody.Deps
 	service                    *swapcustody.Service
 	adapter                    *swapEVMChain
 	wallet                     *models.Wallet
@@ -62,20 +84,27 @@ func newSwapEVMFixture(t *testing.T, token bool) *swapEVMFixture {
 	f.order = &models.SwapOrder{ID: uuid.New(), SourceWalletID: f.wallet.ID}
 	asset := swap.Asset{Symbol: "ETH", Chain: "eth", NetworkID: 1, Decimals: 18, Native: true}
 	if token {
-		asset = swap.Asset{Symbol: "USDT", Chain: "eth", NetworkID: 1, Decimals: 6, Contract: "0x1111111111111111111111111111111111111111"}
+		asset = swap.Asset{Symbol: "USDT", Chain: "eth", NetworkID: 1, Decimals: 6, Contract: sourceTokenContract}
 	}
 	f.quote = &swap.Quote{ID: uuid.New(), ExpiresAt: time.Now().Add(time.Minute), Request: swap.QuoteRequest{From: asset, FromAddress: f.wallet.DepositAddress.Address, AmountRaw: "100"}}
 	value := "100"
 	if token {
 		value = "0"
 	}
-	f.funding = &swap.Funding{Kind: "evm", ChainID: 1, To: "0x4444444444444444444444444444444444444444", AmountRaw: value, Data: "0x1234", ApprovalAddress: "0x5555555555555555555555555555555555555555"}
-	f.adapter = &swapEVMChain{MockChain: mocks.NewMockChain("eth"), allowance: big.NewInt(200)}
+	f.funding = &swap.Funding{Kind: "evm", ChainID: 1, To: routerContract, AmountRaw: value, Data: "0x1234", ApprovalAddress: routerContract}
+	f.adapter = &swapEVMChain{MockChain: mocks.NewMockChain("eth"), allowance: big.NewInt(200), standing: map[string]*big.Int{}}
+	if !token {
+		// A native-source wallet has granted nothing on the catalog's tokens.
+		f.adapter.allowance = new(big.Int)
+	}
 	f.adapter.GetBalanceFn = func(context.Context, string) (*types.Balance, error) {
 		return &types.Balance{Amount: big.NewInt(1000)}, nil
 	}
-	f.adapter.GetTokenBalanceFn = func(context.Context, string, types.Token) (*types.Balance, error) {
-		return &types.Balance{Amount: big.NewInt(1000)}, nil
+	f.adapter.GetTokenBalanceFn = func(_ context.Context, _ string, token types.Token) (*types.Balance, error) {
+		if strings.EqualFold(token.Contract, sourceTokenContract) {
+			return &types.Balance{Amount: big.NewInt(1000)}, nil
+		}
+		return &types.Balance{Amount: new(big.Int)}, nil
 	}
 	f.adapter.GetTransactionBlockFn = func(_ context.Context, hash string) (uint64, error) {
 		if f.included[hash] {
@@ -87,8 +116,12 @@ func newSwapEVMFixture(t *testing.T, token bool) *swapEVMFixture {
 		require.Equal(t, len(f.steps), f.sends+1, "each signed step must be durable before broadcast")
 		require.Equal(t, tx.TxHash, f.steps[len(f.steps)-1].TxHash)
 		call := f.adapter.calls[len(f.adapter.calls)-1]
-		if len(call.data) == 68 {
-			f.adapter.allowance.SetBytes(call.data[36:])
+		if len(call.data) == 68 && hex.EncodeToString(call.data[:4]) == "095ea7b3" {
+			if strings.EqualFold(call.to, sourceTokenContract) {
+				f.adapter.allowance.SetBytes(call.data[36:])
+			} else {
+				f.adapter.standing[strings.ToLower(call.to)] = new(big.Int).SetBytes(call.data[36:])
+			}
 		}
 		f.sends++
 		return tx.TxHash, nil
@@ -116,8 +149,16 @@ func newSwapEVMFixture(t *testing.T, token bool) *swapEVMFixture {
 		return &types.SignedTx{ChainID: "eth", TxHash: fmt.Sprintf("signed-step-%d", f.signs), RawBytes: []byte{byte(f.signs)}}
 	}, nil).Maybe()
 	signer.On("PrepareBroadcast", mock.Anything, f.adapter, mock.Anything).Return(`{"signed_tx":"enc:v1:test-fixture"}`, nil).Maybe()
-	f.service = swapcustody.New(swapcustody.Deps{Authority: authority, Registry: registry, Steps: steps, Transactions: transactions, Signer: signer, Cache: memcache.New()})
+	catalog := tokenCatalog{{Symbol: "USDT", Contract: sourceTokenContract, Decimals: 6}, {Symbol: "USDC", Contract: otherTokenContract, Decimals: 6}}
+	f.deps = swapcustody.Deps{Authority: authority, Registry: registry, Steps: steps, Transactions: transactions, Signer: signer, Cache: memcache.New(), Tokens: catalog}
+	f.service = swapcustody.New(f.deps)
 	return f
+}
+
+// waitingForInclusion rebuilds the service so one Send waits for approvals.
+func (f *swapEVMFixture) waitingForInclusion(wait time.Duration) {
+	f.deps.InclusionWait, f.deps.PollInterval = wait, 5*time.Millisecond
+	f.service = swapcustody.New(f.deps)
 }
 
 func (f *swapEVMFixture) send() (*swap.SendResult, error) {

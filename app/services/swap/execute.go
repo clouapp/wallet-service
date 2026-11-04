@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/macrowallets/waas/app/models"
+	"github.com/macrowallets/waas/app/services/security"
 	"github.com/macrowallets/waas/pkg/amount"
 	"github.com/macrowallets/waas/pkg/mpcshare"
 )
@@ -42,6 +44,25 @@ type Execution interface {
 	Send(context.Context, *models.SwapOrder, *models.Wallet, *Quote, *Funding, ExecuteInput) (*SendResult, error)
 }
 
+// FundingState is what the source chain shows of an order's funding transaction.
+type FundingState int
+
+const (
+	// FundingUnknown is a transaction no node shows as included or failed yet.
+	FundingUnknown FundingState = iota
+	// FundingIncluded is a transaction included (or confirmed) on the source chain.
+	FundingIncluded
+	// FundingFailed is a transaction that moved nothing: reverted on chain, or
+	// proven by the confirmation tracker never to land.
+	FundingFailed
+)
+
+// FundingSettler is implemented by an Execution that can resend unanswered signed
+// funding bytes and read the funding transaction's on-chain outcome.
+type FundingSettler interface {
+	SettleFunding(context.Context, *models.SwapOrder, *models.Wallet) (FundingState, error)
+}
+
 // Verifier proves the amount credited to the exact receiving asset and address on chain.
 type Verifier interface {
 	Credit(context.Context, CreditRequest) (string, bool, error)
@@ -57,6 +78,9 @@ type CreditRequest struct {
 	Address     string
 	Hash        string
 	ReportedRaw string
+	// NotBefore excludes deposits recorded before the order existed: a payout can
+	// never precede the swap it pays.
+	NotBefore time.Time
 }
 
 // Execute claims an immutable quote once, then executes only its accepted provider.
@@ -239,10 +263,20 @@ func (s *Service) executeFunding(ctx context.Context, order *models.SwapOrder, s
 
 func (s *Service) failBeforeFunding(ctx context.Context, order *models.SwapOrder, code string, cause error) (*models.SwapOrder, error) {
 	order.Status = StatusFailed
+	if code == "quote_expired" {
+		// The same outcome Refresh records for a quote that lapsed before funding.
+		order.Status = StatusExpired
+	}
 	order.FailureCode = code
 	if err := s.deps.Store.RecordProgress(ctx, order, StatusPreparing); err != nil {
+		if errors.Is(err, ErrConflict) {
+			// Another writer moved the order (its funding was persisted, or a
+			// refresh closed it): the stored order is the answer, never this close.
+			return s.deps.Store.FindOrderByKey(ctx, order.AccountID, order.IdempotencyKey)
+		}
 		return nil, err
 	}
+	slog.Warn("swap order closed before funding", "order_id", order.ID, "provider", order.Provider, "code", code, "error", security.RedactError(cause))
 	return order, nil
 }
 
@@ -266,11 +300,24 @@ func (s *Service) Refresh(ctx context.Context, account *models.Account, source *
 	if order.SourceTxHash == "" {
 		if order.Status == StatusPreparing && !quote.ExpiresAt.After(time.Now()) {
 			order.Status, order.FailureCode = StatusExpired, "quote_expired"
-			if err := s.deps.Store.RecordProgress(ctx, order, StatusPreparing); err != nil {
-				return nil, err
-			}
+			return s.recordRefresh(ctx, account, source, order, StatusPreparing)
 		}
 		return order, nil
+	}
+	previous := order.Status
+	if settler, ok := s.deps.Execution.(FundingSettler); ok && (order.Status == StatusBroadcast || order.Status == StatusReconciling || order.Status == StatusProcessing) {
+		state, settleErr := settler.SettleFunding(ctx, order, source)
+		if settleErr != nil {
+			slog.Warn("swap funding outcome unread", "order_id", order.ID, "error", security.RedactError(settleErr))
+		}
+		if state == FundingFailed {
+			// Reverted or never landed: the input never left the wallet (only the
+			// network fee did), so the order ends without waiting on the provider.
+			order.Status, order.FailureCode = StatusFailed, "funding_failed_on_chain"
+			now := time.Now().UTC()
+			order.LastCheckedAt = &now
+			return s.recordRefresh(ctx, account, source, order, previous)
+		}
 	}
 	adapter, err := s.deps.Factory.Get(order.Provider)
 	if err != nil {
@@ -284,16 +331,20 @@ func (s *Service) Refresh(ctx context.Context, account *models.Account, source *
 	if err != nil {
 		return order, nil
 	}
-	previous := order.Status
 	order.Status = progress.Status
-	// A provider failure after funding does not prove a recoverable balance.
-	if progress.Status == StatusFailed || progress.Status == StatusPartial {
-		order.Status = StatusReconciling
+	// A provider failure after funding does not prove a recoverable balance: the
+	// order keeps reconciling (the background reconciler polls it) until a refund
+	// or delivery is verified on chain, and names what the provider reported.
+	switch progress.Status {
+	case StatusFailed, StatusReconciling:
+		order.Status, order.FailureCode = StatusReconciling, "provider_reported_failure"
+	case StatusPartial:
+		order.Status, order.FailureCode = StatusReconciling, "provider_reported_partial"
 	}
 	if progress.Status == StatusCompleted {
 		order.Status = StatusProcessing
 		if s.deps.Verifier != nil && progress.ReceivingHash != "" && progress.ReceivingAsset.Same(quote.Request.To) {
-			credited, confirmed, verifyErr := s.deps.Verifier.Credit(ctx, CreditRequest{OrderID: order.ID, WalletID: order.DestinationWalletID, Direction: "receive", Asset: quote.Request.To, Address: quote.Request.ToAddress, Hash: progress.ReceivingHash, ReportedRaw: progress.ReceivedRaw})
+			credited, confirmed, verifyErr := s.deps.Verifier.Credit(ctx, CreditRequest{OrderID: order.ID, WalletID: order.DestinationWalletID, Direction: "receive", Asset: quote.Request.To, Address: quote.Request.ToAddress, Hash: progress.ReceivingHash, ReportedRaw: progress.ReceivedRaw, NotBefore: orderCreatedAt(order)})
 			if verifyErr == nil && confirmed {
 				actual, ok := amount.ParseBaseUnits(credited)
 				minimum, minOK := amount.ParseBaseUnits(quote.MinimumRaw)
@@ -311,7 +362,7 @@ func (s *Service) Refresh(ctx context.Context, account *models.Account, source *
 	if progress.Status == StatusRefunded {
 		order.Status = StatusRefundPending
 		if s.deps.Verifier != nil && progress.RefundHash != "" {
-			credited, confirmed, verifyErr := s.deps.Verifier.Credit(ctx, CreditRequest{OrderID: order.ID, WalletID: source.ID, Direction: "refund", Asset: quote.Request.From, Address: quote.Request.FromAddress, Hash: progress.RefundHash, ReportedRaw: progress.RefundRaw})
+			credited, confirmed, verifyErr := s.deps.Verifier.Credit(ctx, CreditRequest{OrderID: order.ID, WalletID: source.ID, Direction: "refund", Asset: quote.Request.From, Address: quote.Request.FromAddress, Hash: progress.RefundHash, ReportedRaw: progress.RefundRaw, NotBefore: orderCreatedAt(order)})
 			if verifyErr == nil && confirmed {
 				actual, ok := amount.ParseBaseUnits(credited)
 				if ok && actual.Sign() > 0 {
@@ -324,7 +375,18 @@ func (s *Service) Refresh(ctx context.Context, account *models.Account, source *
 	}
 	now := time.Now().UTC()
 	order.LastCheckedAt = &now
-	if err := s.deps.Store.RecordProgress(ctx, order, previous); err != nil {
+	return s.recordRefresh(ctx, account, source, order, previous)
+}
+
+// recordRefresh writes a tracking update. Losing its compare-and-swap means a
+// concurrent refresh (a caller's GET and the reconciler) already moved the order:
+// the stored order is returned instead of an error.
+func (s *Service) recordRefresh(ctx context.Context, account *models.Account, source *models.Wallet, order *models.SwapOrder, previous string) (*models.SwapOrder, error) {
+	err := s.deps.Store.RecordProgress(ctx, order, previous)
+	if errors.Is(err, ErrConflict) {
+		return s.Find(ctx, account, source, order.ID)
+	}
+	if err != nil {
 		return nil, err
 	}
 	return order, nil
@@ -332,4 +394,12 @@ func (s *Service) Refresh(ctx context.Context, account *models.Account, source *
 
 func terminalStatus(status string) bool {
 	return status == StatusCompleted || status == StatusRefunded || status == StatusFailed || status == StatusExpired || status == StatusPartial
+}
+
+// orderCreatedAt is when the order was accepted; zero when the row has none.
+func orderCreatedAt(order *models.SwapOrder) time.Time {
+	if order == nil || order.CreatedAt == nil {
+		return time.Time{}
+	}
+	return order.CreatedAt.StdTime()
 }

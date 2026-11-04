@@ -38,8 +38,13 @@ provider payloads and credentials never appear in HTTP responses.
 
 Acceptance body: `{"quote_id":"<uuid>","idempotency_key":"<uuid>","passphrase":"<ephemeral>","totp_code":"<session 2FA>"}`.
 Both wallet ownership and spending permissions are enforced. API callers need
-`withdrawals.create`; session callers need the existing withdrawal fund action and
-2FA. Frozen wallets and wallets requiring multiple approvals are refused.
+`withdrawals.create`, for quotes too (a quote is a paid provider call and a stored
+row); session callers need the existing withdrawal fund action, for quotes too, and
+2FA. Quotes are limited to 12 per minute per source wallet (`429`). Frozen wallets
+and wallets requiring multiple approvals are refused. Refusals: wrong passphrase or
+code `401 invalid_swap_authorization`; 2FA not enabled `403 two_factor_required`;
+passphrase attempt limiter `429 too_many_requests`; a concurrent transition `409
+swap_conflict`.
 
 Keep the same idempotency key on a timeout. A unique database constraint also
 prevents spending the same quote with a different key. Replaying a funding order
@@ -66,34 +71,96 @@ wallet's base address; fund or consolidate that address before requesting a swap
 The executor does not silently choose a child address for a sender-bound route.
 
 EVM calls are simulated and priced by the registered RPC, which supplies nonce and
-gas. A native call must carry exactly the accepted input value; a token call
+gas (at most 3M gas per call). A native call must carry exactly the accepted input value; a token call
 cannot attach an additional native value. Token allowances are limited to the exact input, with a zero reset where
 necessary. Each approval is a separate durable step; funding waits for successful
-inclusion. Approval or funding bytes are sealed and recorded before broadcasting.
+inclusion, inside the same execute request (up to 20 s, bounded by the quote's
+expiry and the request deadline), so one authorization approves and funds before a
+60 s quote lapses. An approval not visible yet is waited for, never sent twice.
+Approval or funding bytes are sealed and recorded before broadcasting.
 Approval journal entries identify the token contract actually called, rather
 than the router receiving the later funding call.
 
-Solana messages require the base wallet as sole signer and fee payer. The registered
+The custody guard (`swapcustody.guardEVMCall`) bounds what a provider-built call
+can take from the wallet to the quoted input, so a compromised or wrong provider
+can at worst misroute that input, never another balance:
+
+- LI.FI calls only its Diamond (`0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE` on
+  Ethereum, BSC, Polygon, Base and Arbitrum) and approves only it;
+- a call never targets a catalog token contract, except the source token's exact
+  `transfer(depositAddress, input)` (deposit-address routes, funded without approval);
+- calldata never starts with a function that moves or authorizes balances
+  (`transfer`, `approve`, `transferFrom`, `increaseAllowance`, `setApprovalForAll`,
+  EIP-2612/DAI `permit`, ERC-721/1155 transfers, Permit2 approvals and transfers);
+- a token input is approved only to the contract being called;
+- a THORChain/Maya router `depositWithExpiry` carries the source asset, the exact
+  input and a swap memo paying the quote's destination (and refunding, when named,
+  its source) in the quote's destination asset;
+- the target is never a contract the wallet holds a balance of (a token outside
+  the catalog included: `balanceOf(wallet) > 0` refuses it);
+- a standing allowance from the wallet to the target on any other catalog token
+  (left by an unfinished earlier order) is revoked first, `approve(target, 0)`, one
+  durable `approval_revoke` step per token, before anything is approved or funded.
+
+Residual exposure the guard cannot remove: a provider can still misroute the
+quoted input itself (a router deposit's vault, a deposit address), and an exact
+approval of an order that is abandoned before funding stays until the wallet's
+next swap through that spender revokes it.
+
+Solana messages require the base wallet as sole signer and fee payer, and invoke
+only allowlisted programs at the top level (system, compute budget, SPL Token,
+Token-2022, associated token accounts, memo, Jupiter v6, DFlow and the LI.FI
+program, from the routes LI.FI returned on 2026-11-04): the wallet's signature
+reaches every program an instruction invokes, so an unknown program is refused
+before simulation. The registered
 RPC simulates the frozen message and checks every referenced account, including
 lookup-table accounts. Native fees/rent are bounded; unrelated token debits and
 changes to token ownership or delegation are refused. Existing Token-2022 source
 accounts that require extensions outside this verifier are not supported.
 
 BTC/LTC native deposits support a zero-value OP_RETURN memo up to 80 bytes and
-include its size in the network fee. XRP uses native payments and destination tags.
+include its size in the network fee. A memo must be a THORChain/Maya swap memo
+(`=`, `s` or `SWAP`) paying the quote's destination address in the quote's
+destination asset (`CHAIN.SYMBOL[-CONTRACT]`, or the `b`, `e`, `l` aliases); any
+other memo is refused before signing. XRP payments never carry a memo: a SwapKit
+RIPPLE transaction with `Memos` is refused at build. XRP uses native payments and destination tags.
 TRON routes can execute ordinary native/TRC-20 deposits after checking their actual
 transaction semantics. Arbitrary TRON contract calls, protocol memos without a
 verified builder, multi-signer messages and provider `nextActions` are refused.
 Provider support and liquidity still determine which particular pairs are available.
+Routes custody could never fund are not quoted: LI.FI only for EVM and Solana
+sources, SwapKit THORChain/Maya routes not for XRP or TRON sources, and a SwapKit
+transaction family that does not match the source chain is refused at build.
 
 An unknown broadcast remains `reconciling`, retaining its original hash. It never
-causes a provider fallback or an assumed refund. Unfunded expired preparations can
-end as `expired`; funded orders do not expire when their quote does.
+causes a provider fallback or an assumed refund. Unfunded expired preparations end
+as `expired` (from execute or from a refresh alike); funded orders do not expire
+when their quote does.
+
+The local workers reconcile open orders on the confirmation interval
+(`swap.Service.ReconcileSwaps`, the least recently checked first), exactly as a
+caller's `GET` would, so nothing waits on a client poll; in Lambda mode the
+`confirmation_tracker` invocation runs the same pass. A send a node accepted
+records `broadcast_outcome: accepted` and drops its sealed bytes, as a withdrawal
+does, so only a send that was never answered is ever sent again. Each pass first settles the
+funding transaction (`swapcustody.SettleFunding`): bytes recorded before a send that
+was never answered (a crash between persisting and broadcasting) are sent again,
+the same bytes, never re-signed (`sweep.SettleUnanswered`). A funding that reverted,
+or that the confirmation tracker proved can never land, ends the order `failed`
+(`funding_failed_on_chain`): the input never left the wallet. A provider failure or
+partial delivery after funding keeps `reconciling` and names it
+(`provider_reported_failure`, `provider_reported_partial`) until a refund or the
+delivery is verified on chain; those orders need operator review when neither ever
+arrives. LI.FI `DONE/PARTIAL` (another token delivered) is never credited as completed.
 
 `GET` refreshes provider status. `completed` requires an independently finalized
 deposit for the exact destination wallet/address/asset. The amount comes from that
 ledger, not from the provider estimate. The provider's actual per-order payout is
-capped by the independently confirmed ledger total. A durable allocation under a
+capped by the independently confirmed ledger total: a report above what the payout
+still holds (a rounded decimal) is credited at what it holds, never refused forever.
+Only deposits recorded after the order was accepted count, and a 32-byte hex payout
+hash is spelled one way (lower case, `0x` kept when present: EVM, BTC, LTC, XRP,
+TRON) so two spellings never hold two allocations. A durable allocation under a
 transaction-level lock prevents multiple orders from consuming the same units of
 a batched payout. Replays retain their first allocation. Below-minimum receipts become `partial`.
 Refunds likewise require an actual confirmed source-asset credit and expose its

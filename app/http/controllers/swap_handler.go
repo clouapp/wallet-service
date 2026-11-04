@@ -86,6 +86,10 @@ func MapSwapError(ctx http.Context, err error) http.Response {
 		return responses.Fail(ctx, http.StatusForbidden, "swap_wallet_blocked", "wallet cannot perform swaps")
 	case errors.Is(err, swap.ErrInvalidPassphrase), errors.Is(err, swap.ErrInvalidTOTP):
 		return responses.Fail(ctx, http.StatusUnauthorized, "invalid_swap_authorization", "invalid passphrase or authentication code")
+	case errors.Is(err, swap.ErrTOTPRequired):
+		return responses.Fail(ctx, http.StatusForbidden, "two_factor_required", "two-factor authentication must be enabled before swapping")
+	case errors.Is(err, swap.ErrTooManyAttempts):
+		return responses.Fail(ctx, http.StatusTooManyRequests, responses.CodeTooManyRequests, "too many passphrase attempts; try again later")
 	case errors.Is(err, swap.ErrNotFound):
 		return responses.Fail(ctx, http.StatusNotFound, responses.CodeNotFound, "swap not found")
 	case errors.Is(err, swap.ErrDisabled):
