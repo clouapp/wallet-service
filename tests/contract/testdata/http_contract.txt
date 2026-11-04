@@ -74,7 +74,7 @@ content-type: application/json; charset=utf-8
 ### 15 me: GET /v1/users/me
 status: 200
 content-type: application/json; charset=utf-8
-{"created_at":"<time>","updated_at":"<time>","id":"<uuid:3>","email":"contract@example.com","full_name":"Contract User","totp_enabled":false,"status":"active","default_account_id":"<uuid:1>","preferences":{},"features":["deposit-scan-enabled","sweep-enabled","wallet-creation-enabled","webhook-delivery-enabled","withdrawals-enabled"]}
+{"created_at":"<time>","updated_at":"<time>","id":"<uuid:3>","email":"contract@example.com","full_name":"Contract User","totp_enabled":false,"status":"active","default_account_id":"<uuid:1>","preferences":{},"features":["deposit-scan-enabled","ramp-customer-operations-enabled","ramp-own-operations-enabled","ramp-payin-enabled","ramp-payout-enabled","ramp-usd-payin-enabled","ramp-usd-payout-enabled","sweep-enabled","wallet-creation-enabled","webhook-delivery-enabled","withdrawals-enabled"]}
 
 ### 16 update me: PATCH /v1/users/me
 status: 200
@@ -119,7 +119,7 @@ content-type: application/json; charset=utf-8
 ### 24 get account: GET /v1/accounts/{{account}}
 status: 200
 content-type: application/json; charset=utf-8
-{"created_at":"<time>","updated_at":"<time>","id":"<uuid:4>","name":"Contract Account","status":"active","view_all_wallets":false,"environment":"prod","features":["deposit-scan-enabled","sweep-enabled","wallet-creation-enabled","webhook-delivery-enabled","withdrawals-enabled"]}
+{"created_at":"<time>","updated_at":"<time>","id":"<uuid:4>","name":"Contract Account","status":"active","view_all_wallets":false,"environment":"prod","features":["deposit-scan-enabled","ramp-customer-operations-enabled","ramp-own-operations-enabled","ramp-payin-enabled","ramp-payout-enabled","ramp-usd-payin-enabled","ramp-usd-payout-enabled","sweep-enabled","wallet-creation-enabled","webhook-delivery-enabled","withdrawals-enabled"]}
 
 ### 25 get an unknown account: GET /v1/accounts/00000000-0000-4000-8000-000000000000
 status: 404

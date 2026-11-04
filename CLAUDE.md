@@ -670,8 +670,10 @@ on save), so a save reaches every process on its next read.
 
 - The catalog is `app/services/features`: `api-request-signature-required`,
   `deposit-scan-enabled`, `sweep-enabled`, `user-2fa-required`,
-  `wallet-creation-enabled`, `webhook-delivery-enabled`, `withdrawals-enabled`.
-  Each flag has an account row and a global row. A missing row is the catalog
+  `wallet-creation-enabled`, `webhook-delivery-enabled`, `withdrawals-enabled`, and the
+  ramp flags of `app/services/features/ramps.go` (master `ramp-integrations-enabled`,
+  default off; `kyc-usa-residence-enabled` is global only).
+  Each flag has an account row and a global row, unless it is global only. A missing row is the catalog
   default and is not inserted. Nothing is cached, so the next read sees a write.
 - Flags are platform-controlled rollout and kill switches. Customer-controlled
   toggles are account settings. "Require 2FA for my members" is
@@ -695,8 +697,9 @@ on save), so a save reaches every process on its next read.
 - `GET /v1/users/me` adds `features`: the globally active flag keys, in
   catalog order. A missing global row uses the catalog default, so
   `deposit-scan-enabled`, `sweep-enabled`, `wallet-creation-enabled`,
-  `webhook-delivery-enabled`, and `withdrawals-enabled` are present until a
-  platform row stores false. Account rows are not included.
+  `webhook-delivery-enabled`, `withdrawals-enabled` and the default-on ramp flags are
+  present until a platform row stores false. A listed ramp flag opens nothing while
+  `ramp-integrations-enabled` is off. Account rows are not included.
   Login and `PATCH /v1/users/me`
   do not carry the field.
 
