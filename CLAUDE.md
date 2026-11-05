@@ -656,8 +656,19 @@ on save), so a save reaches every process on its next read.
 ### 11. Feature flags
 
 - The catalog is `app/services/features`: `api-request-signature-required`,
-  `deposit-scan-enabled`, `sweep-enabled`, `user-2fa-required`,
-  `wallet-creation-enabled`, `webhook-delivery-enabled`, `withdrawals-enabled`.
+  `deposit-scan-enabled`, `settings-2fa-required`, `sweep-enabled`,
+  `user-2fa-required`, `wallet-creation-enabled`, `webhook-delivery-enabled`,
+  `withdrawals-enabled`. `settings-2fa-required` (default off) is on when the
+  global row or the account row is on; a route with no account (`/v1/platform`)
+  reads only the global row (`Service.Settings2FARequired`).
+  With it on, `middleware.RequireStepUp` (after SessionAuth and the account context) refuses
+  sensitive `/v1` and `/v1/platform` writes with 403 `step_up_required` unless the session
+  (`sid` claim) has an open window: `POST /v1/users/me/step-up` `{totp_code}` opens one for
+  15 minutes (fixed, not renewed, in Redis, dropped on logout/revocation), `GET` reads it. A user
+  without TOTP gets 403 `two_factor_enrollment_required`. `/api/v1` is not affected. — guarded by
+  `app/http/middleware/require_step_up_test.go`, `app/services/stepup/service_test.go`,
+  `app/services/features/settings_2fa_required_test.go` and `tests/feature/api/dashboard/users`
+  (`step_up_test.go`, `step_up_routes_test.go`).
   Each flag has an account row and a global row. A missing row is the catalog
   default and is not inserted. Nothing is cached, so the next read sees a write.
 - Flags are platform-controlled rollout and kill switches. Customer-controlled

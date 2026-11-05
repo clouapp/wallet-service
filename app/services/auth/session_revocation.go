@@ -25,6 +25,17 @@ type RefreshTokenRevoker interface {
 	RevokeAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
+// SessionLister names the sessions a user still holds, read before their
+// refresh tokens are revoked.
+type SessionLister interface {
+	LiveSessionIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
+}
+
+// StepUpWindows drops the step-up windows of sessions.
+type StepUpWindows interface {
+	Forget(sids ...uuid.UUID)
+}
+
 // SessionActivity appends one platform row on the caller's transaction.
 type SessionActivity interface {
 	Within(ctx context.Context, fn func(context.Context) error) error
@@ -42,6 +53,8 @@ type SessionRevoker struct {
 	watermarks SessionWatermarkStore
 	refresh    RefreshTokenRevoker
 	activity   SessionActivity
+	sessions   SessionLister
+	stepUp     StepUpWindows
 	now        func() time.Time
 	sleep      func(time.Duration)
 }
@@ -54,7 +67,11 @@ type RevokerDeps struct {
 	Watermarks SessionWatermarkStore
 	Refresh    RefreshTokenRevoker
 	Activity   SessionActivity
-	Now        func() time.Time
+	// Sessions and StepUp are optional and go together: when both are set,
+	// RevokeAll drops the step-up window of every session the user holds.
+	Sessions SessionLister
+	StepUp   StepUpWindows
+	Now      func() time.Time
 	Sleep      func(time.Duration)
 }
 
@@ -74,7 +91,9 @@ func NewSessionRevoker(deps RevokerDeps) (*SessionRevoker, error) {
 		watermarks: deps.Watermarks,
 		refresh:    deps.Refresh,
 		activity:   deps.Activity,
-		now:        now,
+		sessions:   deps.Sessions,
+		stepUp:     deps.StepUp,
+		now:      now,
 		sleep:      sleep,
 	}, nil
 }
@@ -104,6 +123,13 @@ func (r *SessionRevoker) RevokeAllBy(ctx context.Context, actorID, userID uuid.U
 		return time.Time{}, errors.New("auth: revoke sessions: user id is required")
 	}
 	watermark := r.now().UTC().Truncate(time.Second).Add(time.Second)
+	var sids []uuid.UUID
+	if r.sessions != nil && r.stepUp != nil {
+		var err error
+		if sids, err = r.sessions.LiveSessionIDs(ctx, userID); err != nil {
+			return time.Time{}, fmt.Errorf("auth: revoke sessions: list sessions: %w", err)
+		}
+	}
 	write := func(ctx context.Context) error {
 		named := ctx
 		if r.activity != nil {
@@ -134,10 +160,11 @@ func (r *SessionRevoker) RevokeAllBy(ctx context.Context, actorID, userID uuid.U
 		if err := write(ctx); err != nil {
 			return time.Time{}, err
 		}
-		return watermark, nil
-	}
-	if err := r.activity.Within(ctx, write); err != nil {
+	} else if err := r.activity.Within(ctx, write); err != nil {
 		return time.Time{}, err
+	}
+	if len(sids) > 0 {
+		r.stepUp.Forget(sids...)
 	}
 	return watermark, nil
 }

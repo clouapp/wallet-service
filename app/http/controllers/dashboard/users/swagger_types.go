@@ -12,6 +12,19 @@ type ChangePasswordSwagger struct {
 	NewPassword     string `json:"new_password"`
 }
 
+type StepUpRequestSwagger struct {
+	TotpCode string `json:"totp_code" example:"123456"`
+}
+
+type StepUpGrantedSwagger struct {
+	ExpiresAt string `json:"expires_at" example:"2026-11-04T12:15:00Z"`
+}
+
+type StepUpStatusSwagger struct {
+	Required  bool    `json:"required"`
+	ExpiresAt *string `json:"expires_at" example:"2026-11-04T12:15:00Z"`
+}
+
 type UpdateMeSwagger struct {
 	FullName string `json:"full_name" example:"Alice Smith"`
 }

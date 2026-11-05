@@ -125,6 +125,66 @@ func TestSession_Revoker_MovesTheWatermarkAndRevokesRefreshTokens(t *testing.T) 
 	assert.Equal(t, []uuid.UUID{userID}, refresh.revoked)
 }
 
+type fakeSessionLister struct {
+	ids []uuid.UUID
+	err error
+}
+
+func (f fakeSessionLister) LiveSessionIDs(context.Context, uuid.UUID) ([]uuid.UUID, error) {
+	return f.ids, f.err
+}
+
+type fakeStepUpWindows struct{ forgotten []uuid.UUID }
+
+func (f *fakeStepUpWindows) Forget(sids ...uuid.UUID) { f.forgotten = append(f.forgotten, sids...) }
+
+func TestSession_Revoker_DropsTheStepUpWindowOfEverySessionTheUserHolds(t *testing.T) {
+	sids := []uuid.UUID{uuid.New(), uuid.New()}
+	windows := &fakeStepUpWindows{}
+	revoker, err := authsvc.NewSessionRevoker(authsvc.RevokerDeps{
+		Watermarks: &fakeWatermarks{at: map[uuid.UUID]time.Time{}},
+		Refresh:    &fakeRefreshRevoker{},
+		Sessions:   fakeSessionLister{ids: sids},
+		StepUp:     windows,
+	})
+	require.NoError(t, err)
+
+	_, err = revoker.RevokeAll(context.Background(), uuid.New())
+
+	require.NoError(t, err)
+	assert.Equal(t, sids, windows.forgotten)
+}
+
+func TestSession_Revoker_KeepsTheWindowsWhenTheRevocationFails(t *testing.T) {
+	windows := &fakeStepUpWindows{}
+	revoker, err := authsvc.NewSessionRevoker(authsvc.RevokerDeps{
+		Watermarks: &fakeWatermarks{at: map[uuid.UUID]time.Time{}, err: errors.New("db down")},
+		Refresh:    &fakeRefreshRevoker{},
+		Sessions:   fakeSessionLister{ids: []uuid.UUID{uuid.New()}},
+		StepUp:     windows,
+	})
+	require.NoError(t, err)
+
+	_, err = revoker.RevokeAll(context.Background(), uuid.New())
+
+	require.Error(t, err)
+	assert.Empty(t, windows.forgotten)
+}
+
+func TestSession_Revoker_FailsWhenTheSessionsCannotBeListed(t *testing.T) {
+	revoker, err := authsvc.NewSessionRevoker(authsvc.RevokerDeps{
+		Watermarks: &fakeWatermarks{at: map[uuid.UUID]time.Time{}},
+		Refresh:    &fakeRefreshRevoker{},
+		Sessions:   fakeSessionLister{err: errors.New("db down")},
+		StepUp:     &fakeStepUpWindows{},
+	})
+	require.NoError(t, err)
+
+	_, err = revoker.RevokeAll(context.Background(), uuid.New())
+
+	require.Error(t, err)
+}
+
 func TestSession_Revoker_VoidsEverythingIssuedDuringTheRevocationSecond(t *testing.T) {
 	now := time.Date(2026, 10, 2, 12, 0, 5, 0, time.UTC)
 	revoker, _, _ := newTestRevoker(t, now)

@@ -12,6 +12,7 @@ import (
 	"github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/sessions"
 	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/app/services/stepup"
 	"github.com/macrowallets/waas/app/services/tenantprovision"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
@@ -71,6 +72,9 @@ func (p *IdentityServiceProvider) Register(app foundation.Application) {
 	})
 	app.Singleton((*authsvc.TwoFactorLogin)(nil), func(app foundation.Application) (any, error) {
 		return newTwoFactorLogin(app)
+	})
+	app.Singleton((*stepup.Service)(nil), func(foundation.Application) (any, error) {
+		return stepup.NewService(stepup.Deps{Store: appfacades.Cache()})
 	})
 	app.Singleton((*authsvc.SessionRevoker)(nil), func(app foundation.Application) (any, error) {
 		return newSessionRevoker(app)

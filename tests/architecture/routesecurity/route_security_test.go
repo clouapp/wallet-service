@@ -38,18 +38,21 @@ const (
 const (
 	chainSession                = "SessionAuth"
 	chainPlatform               = "SessionAuth > PlatformAdmin"
+	chainPlatformStepUp         = chainPlatform + " > RequireStepUp"
 	chainAccount                = "SessionAuth > AccountContext > TOTPEnrollment"
 	chainAccountWrite           = chainAccount + " > Can(account.write)"
-	chainAccountLifecycle       = chainAccount + " > Can(account.lifecycle)"
+	chainAccountLifecycle       = chainAccount + " > Can(account.lifecycle) > RequireStepUp"
 	chainAccountUsers           = chainAccount + " > Can(users.read)"
 	chainAccountUsersWrite      = chainAccount + " > Can(users.write)"
-	chainAccountUpdateMember    = chainAccount + " > AccountUpdateMember"
+	chainAccountUsersStepUp     = chainAccountUsersWrite + " > RequireStepUp"
+	chainAccountUpdateMember    = chainAccount + " > AccountUpdateMember > RequireStepUp"
 	chainAccountRoles           = chainAccount + " > Can(roles.read)"
 	chainAccountTokensRead      = chainAccount + " > Can(tokens.read)"
 	chainAccountTokensWrite     = chainAccount + " > Can(tokens.write)"
-	chainAccountTokensMint      = chainAccountTokensWrite + " > MintAPITokenPermissions"
+	chainAccountTokensMint      = chainAccountTokensWrite + " > RequireStepUp > MintAPITokenPermissions"
 	chainAccountSettingsRead    = chainAccount + " > MayViewSettings"
 	chainAccountSettingsWrite   = chainAccount + " > MayUpdateSettings"
+	chainAccountSettingsStepUp  = chainAccountSettingsWrite + " > RequireStepUp"
 	chainAccountActivityRead    = chainAccount + " > MayReadActivity"
 	chainHeader                 = "SessionAuth > AccountHeader > TOTPEnrollment"
 	chainCreateWallet           = chainHeader + " > RequireFundAction"
@@ -145,20 +148,20 @@ var routeTable = map[string]routeSecurity{
 	"GET|HEAD /v1/accounts/{accountId}/roles":                          session(chainAccountRoles),
 	"GET|HEAD /v1/accounts/{accountId}/permissions":                    session(chainAccountRoles),
 	"GET|HEAD /v1/accounts/{accountId}/users":                          session(chainAccountUsers),
-	"POST /v1/accounts/{accountId}/users":                              session(chainAccountUsersWrite),
+	"POST /v1/accounts/{accountId}/users":                              session(chainAccountUsersStepUp),
 	"PATCH /v1/accounts/{accountId}/users/{userId}":                    session(chainAccountUpdateMember),
-	"DELETE /v1/accounts/{accountId}/users/{userId}":                   session(chainAccountUsersWrite),
+	"DELETE /v1/accounts/{accountId}/users/{userId}":                   session(chainAccountUsersStepUp),
 	"GET|HEAD /v1/accounts/{accountId}/invites":                        session(chainAccountUsers),
-	"POST /v1/accounts/{accountId}/invites":                            session(chainAccountUsersWrite),
+	"POST /v1/accounts/{accountId}/invites":                            session(chainAccountUsersStepUp),
 	"POST /v1/accounts/{accountId}/invites/{id}/resend":                session(chainAccountUsersWrite),
 	"POST /v1/accounts/{accountId}/invites/{id}/link":                  session(chainAccountUsersWrite),
 	"DELETE /v1/accounts/{accountId}/invites/{id}":                     session(chainAccountUsersWrite),
 	"GET|HEAD /v1/accounts/{accountId}/settings":                       session(chainAccountSettingsRead),
 	"GET|HEAD /v1/accounts/{accountId}/settings/{group}":               session(chainAccountSettingsRead),
 	"POST /v1/accounts/{accountId}/settings/sections/{section}/cache":  session(chainAccountSettingsWrite),
-	"POST /v1/accounts/{accountId}/settings/sections/{section}/reset":  session(chainAccountSettingsWrite),
-	"PATCH /v1/accounts/{accountId}/settings/{group}":                  session(chainAccountSettingsWrite),
-	"PUT /v1/accounts/{accountId}/settings/{group}":                    session(chainAccountSettingsWrite),
+	"POST /v1/accounts/{accountId}/settings/sections/{section}/reset":  session(chainAccountSettingsStepUp),
+	"PATCH /v1/accounts/{accountId}/settings/{group}":                  session(chainAccountSettingsStepUp),
+	"PUT /v1/accounts/{accountId}/settings/{group}":                    session(chainAccountSettingsStepUp),
 	"GET|HEAD /v1/accounts/{accountId}/features":                       session(chainAccount + " > MayViewAccountFeatures"),
 	"POST /v1/auth/2fa/verify":                                         guest(),
 	"POST /v1/auth/login":                                              guest(),
@@ -177,41 +180,41 @@ var routeTable = map[string]routeSecurity{
 	"GET|HEAD /v1/currencies":                                          session(chainSession),
 	"GET|HEAD /v1/currencies/{code}":                                   session(chainSession),
 	"GET|HEAD /v1/me/preferences":                                      session(chainSession),
-	"PATCH /v1/platform/chains/{chainId}":                              session(chainPlatform),
+	"PATCH /v1/platform/chains/{chainId}":                              session(chainPlatformStepUp),
 	"GET|HEAD /v1/platform/chains":                                     session(chainPlatform),
-	"PATCH /v1/platform/chains/{chainId}/rpc":                          session(chainPlatform),
+	"PATCH /v1/platform/chains/{chainId}/rpc":                          session(chainPlatformStepUp),
 	"GET|HEAD /v1/platform/chains/{chainId}/rpc-endpoints":             session(chainPlatform),
-	"POST /v1/platform/chains/{chainId}/rpc-endpoints":                 session(chainPlatform),
-	"PUT /v1/platform/chains/{chainId}/rpc-endpoints":                  session(chainPlatform),
-	"POST /v1/platform/chains/{chainId}/rpc-endpoints/order":           session(chainPlatform),
-	"POST /v1/platform/chains/{chainId}/rpc-endpoints/defaults":        session(chainPlatform),
-	"PATCH /v1/platform/chains/{chainId}/rpc-endpoints/{position}":     session(chainPlatform),
-	"DELETE /v1/platform/chains/{chainId}/rpc-endpoints/{position}":    session(chainPlatform),
+	"POST /v1/platform/chains/{chainId}/rpc-endpoints":                 session(chainPlatformStepUp),
+	"PUT /v1/platform/chains/{chainId}/rpc-endpoints":                  session(chainPlatformStepUp),
+	"POST /v1/platform/chains/{chainId}/rpc-endpoints/order":           session(chainPlatformStepUp),
+	"POST /v1/platform/chains/{chainId}/rpc-endpoints/defaults":        session(chainPlatformStepUp),
+	"PATCH /v1/platform/chains/{chainId}/rpc-endpoints/{position}":     session(chainPlatformStepUp),
+	"DELETE /v1/platform/chains/{chainId}/rpc-endpoints/{position}":    session(chainPlatformStepUp),
 	"GET|HEAD /v1/platform/accounts":                                   session(chainPlatform),
 	"GET|HEAD /v1/platform/accounts/{accountId}/users":                 session(chainPlatform),
-	"POST /v1/platform/accounts/{accountId}/owners":                    session(chainPlatform),
-	"POST /v1/platform/accounts/{accountId}/archive":                   session(chainPlatform),
-	"POST /v1/platform/accounts/{accountId}/freeze":                    session(chainPlatform),
-	"POST /v1/platform/accounts/{accountId}/unfreeze":                  session(chainPlatform),
+	"POST /v1/platform/accounts/{accountId}/owners":                    session(chainPlatformStepUp),
+	"POST /v1/platform/accounts/{accountId}/archive":                   session(chainPlatformStepUp),
+	"POST /v1/platform/accounts/{accountId}/freeze":                    session(chainPlatformStepUp),
+	"POST /v1/platform/accounts/{accountId}/unfreeze":                  session(chainPlatformStepUp),
 	"GET|HEAD /v1/platform/accounts/{accountId}/settings/{group}":      session(chainPlatform),
-	"PUT /v1/platform/accounts/{accountId}/settings/{group}":           session(chainPlatform),
+	"PUT /v1/platform/accounts/{accountId}/settings/{group}":           session(chainPlatformStepUp),
 	"GET|HEAD /v1/platform/settings":                                   session(chainPlatform),
 	"POST /v1/platform/settings/mail/test":                             session(chainPlatform),
 	"GET|HEAD /v1/platform/settings/{group}":                           session(chainPlatform),
-	"PUT /v1/platform/settings/{group}":                                session(chainPlatform),
+	"PUT /v1/platform/settings/{group}":                                session(chainPlatformStepUp),
 	"POST /v1/platform/settings/sections/{section}/cache":              session(chainPlatform),
-	"POST /v1/platform/settings/sections/{section}/reset":              session(chainPlatform),
+	"POST /v1/platform/settings/sections/{section}/reset":              session(chainPlatformStepUp),
 	"GET|HEAD /v1/platform/activity":                                   session(chainPlatform),
 	"GET|HEAD /v1/platform/features":                                   session(chainPlatform),
 	"GET|HEAD /v1/platform/features/{scope}/{id}":                      session(chainPlatform),
-	"PUT /v1/platform/features/{scope}/{id}":                           session(chainPlatform),
-	"PUT /v1/platform/features/{scope}/{id}/{feature}":                 session(chainPlatform),
+	"PUT /v1/platform/features/{scope}/{id}":                           session(chainPlatformStepUp),
+	"PUT /v1/platform/features/{scope}/{id}/{feature}":                 session(chainPlatformStepUp),
 	"GET|HEAD /v1/platform/users":                                      session(chainPlatform),
-	"PATCH /v1/platform/features/{key}":                                session(chainPlatform),
-	"DELETE /v1/platform/users/{id}/mfa":                               session(chainPlatform),
-	"POST /v1/platform/users/{id}/reactivate":                          session(chainPlatform),
-	"POST /v1/platform/users/{id}/sessions/revoke":                     session(chainPlatform),
-	"POST /v1/platform/users/{id}/suspend":                             session(chainPlatform),
+	"PATCH /v1/platform/features/{key}":                                session(chainPlatformStepUp),
+	"DELETE /v1/platform/users/{id}/mfa":                               session(chainPlatformStepUp),
+	"POST /v1/platform/users/{id}/reactivate":                          session(chainPlatformStepUp),
+	"POST /v1/platform/users/{id}/sessions/revoke":                     session(chainPlatformStepUp),
+	"POST /v1/platform/users/{id}/suspend":                             session(chainPlatformStepUp),
 	"PUT /v1/me/preferences":                                           session(chainSession),
 	"GET|HEAD /v1/users/me":                                            session(chainSession),
 	"PATCH /v1/users/me":                                               session(chainSession),
@@ -219,6 +222,8 @@ var routeTable = map[string]routeSecurity{
 	"PATCH /v1/users/me/default-account":                               session(chainSession),
 	"POST /v1/users/me/password":                                       session(chainSession),
 	"DELETE /v1/users/me/totp":                                         session(chainSession),
+	"GET|HEAD /v1/users/me/step-up":                                    session(chainSession),
+	"POST /v1/users/me/step-up":                                        session(chainSession),
 	"POST /v1/users/me/totp/setup":                                     session(chainSession),
 	"POST /v1/users/me/totp/verify":                                    session(chainSession),
 	"GET|HEAD /v1/wallets":                                             session(chainHeader),

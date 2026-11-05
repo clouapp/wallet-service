@@ -10,6 +10,7 @@ func TestCatalog_Names_TheAccountFlagsAndTheirDefaults(t *testing.T) {
 	want := []string{
 		FlagAPIRequestSignatureRequired,
 		FlagDepositScanEnabled,
+		FlagSettings2FARequired,
 		FlagSweepEnabled,
 		FlagUser2FARequired,
 		FlagWalletCreationEnabled,

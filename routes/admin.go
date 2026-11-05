@@ -43,6 +43,7 @@ import (
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/price"
 	settingssvc "github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/app/services/stepup"
 	"github.com/macrowallets/waas/app/services/sweep"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 	walletsvc "github.com/macrowallets/waas/app/services/wallet"
@@ -77,12 +78,17 @@ func RegisterAdminRoutes() {
 		featuressvc.FlagWithdrawalsEnabled, featuressvc.CodeWithdrawalsPaused, "create_wallet_withdrawal")
 	sweepEnabled := middleware.FeatureEnabled(container.MustMake[*featuressvc.Service](),
 		featuressvc.FlagSweepEnabled, featuressvc.CodeSweepPaused, "consolidate")
+	stepUp := middleware.RequireStepUp(
+		container.MustMake[*featuressvc.Service](),
+		container.MustMake[*stepup.Service](),
+	)
 	chainCtrl := newDashboardChainsController()
 	currencyCtrl := newDashboardCurrenciesController()
 	preferencesCtrl := newDashboardPreferencesController()
 	authCtrl := newDashboardAuthController()
 	passwordResetCtrl := newDashboardPasswordResetController()
 	totpCtrl := newDashboardTotpController()
+	stepUpCtrl := newDashboardStepUpController()
 	userAccountCtrl := newDashboardUserAccountController()
 	profileCtrl := newDashboardProfileController()
 	passwordCtrl := newDashboardPasswordController()
@@ -137,6 +143,8 @@ func RegisterAdminRoutes() {
 		router.Post("/me/totp/setup", totpCtrl.Setup)
 		router.Post("/me/totp/verify", totpCtrl.Confirm)
 		router.Delete("/me/totp", totpCtrl.Destroy)
+		router.Middleware(middleware.Throttle(middleware.ThrottleAuth)).Post("/me/step-up", stepUpCtrl.Store)
+		router.Get("/me/step-up", stepUpCtrl.Show)
 	})
 
 	facades.Route().Prefix("/v1/accounts").Middleware(middleware.SessionAuth(), noCache).Group(func(router route.Router) {
@@ -144,15 +152,15 @@ func RegisterAdminRoutes() {
 		router.Prefix("/{accountId}").Middleware(middleware.AccountContext(accounts), totpEnrollment).Group(func(r route.Router) {
 			r.Get("", accountCtrl.Show)
 			r.Middleware(middleware.Can(accounts, middleware.PermAccountWrite)).Patch("", accountCtrl.Update)
-			r.Middleware(middleware.Can(accounts, middleware.PermAccountLifecycle)).Post("/archive", accountCtrl.Archive)
-			r.Middleware(middleware.Can(accounts, middleware.PermAccountLifecycle)).Post("/freeze", accountCtrl.Freeze)
+			r.Middleware(middleware.Can(accounts, middleware.PermAccountLifecycle), stepUp).Post("/archive", accountCtrl.Archive)
+			r.Middleware(middleware.Can(accounts, middleware.PermAccountLifecycle), stepUp).Post("/freeze", accountCtrl.Freeze)
 
 			r.Middleware(middleware.Can(accounts, middleware.PermUsersRead)).Get("/users", memberCtrl.Index)
-			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/users", memberCtrl.Store)
-			r.Middleware(middleware.AccountUpdateMember(accounts)).Patch("/users/{userId}", memberCtrl.Update)
-			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Delete("/users/{userId}", memberCtrl.Destroy)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite), stepUp).Post("/users", memberCtrl.Store)
+			r.Middleware(middleware.AccountUpdateMember(accounts), stepUp).Patch("/users/{userId}", memberCtrl.Update)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite), stepUp).Delete("/users/{userId}", memberCtrl.Destroy)
 			r.Middleware(middleware.Can(accounts, middleware.PermUsersRead)).Get("/invites", inviteCtrl.Index)
-			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/invites", inviteCtrl.Store)
+			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite), stepUp).Post("/invites", inviteCtrl.Store)
 			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/invites/{id}/resend", inviteCtrl.Resend)
 			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Post("/invites/{id}/link", inviteCtrl.Link)
 			r.Middleware(middleware.Can(accounts, middleware.PermUsersWrite)).Delete("/invites/{id}", inviteCtrl.Destroy)
@@ -167,7 +175,7 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.Can(accounts, middleware.PermRolesRead)).Get("/permissions", accountPermissionsCtrl.Index)
 
 			r.Middleware(middleware.Can(accounts, middleware.PermTokensRead)).Get("/tokens", tokenCtrl.Index)
-			r.Middleware(middleware.Can(accounts, middleware.PermTokensWrite), middleware.MintAPITokenPermissions()).Post("/tokens", tokenCtrl.Store)
+			r.Middleware(middleware.Can(accounts, middleware.PermTokensWrite), stepUp, middleware.MintAPITokenPermissions()).Post("/tokens", tokenCtrl.Store)
 			r.Middleware(middleware.Can(accounts, middleware.PermTokensWrite)).Delete("/tokens/{tokenId}", tokenCtrl.Destroy)
 
 			// S1.4.7: GET /v1/accounts/{accountId}/settings settings.read (policies.MayViewSettings).
@@ -177,14 +185,14 @@ func RegisterAdminRoutes() {
 			r.Middleware(middleware.MayUpdateSettings()).Post("/settings/sections/{section}/cache", accountSettingsCtrl.Flush)
 			// S1.4.7: POST /v1/accounts/{accountId}/settings/sections/{section}/reset settings.write (policies.MayUpdateSettings).
 			// Owner and admin may reset an account-managed section. Auditor and user may not.
-			r.Middleware(middleware.MayUpdateSettings()).Post("/settings/sections/{section}/reset", accountSettingsCtrl.Reset)
+			r.Middleware(middleware.MayUpdateSettings(), stepUp).Post("/settings/sections/{section}/reset", accountSettingsCtrl.Reset)
 			// S1.4.7: GET /v1/accounts/{accountId}/settings/{group} settings.read (policies.MayViewSettings).
 			// Platform-managed groups stay readable for owner, admin, and auditor.
 			r.Middleware(middleware.MayViewSettings()).Get("/settings/{group}", accountSettingsCtrl.Show)
 			// S1.4.7: PATCH and PUT /v1/accounts/{accountId}/settings/{group} settings.write (policies.MayUpdateSettings).
 			// Owner and admin may write an account-managed group. Auditor and user may not.
-			r.Middleware(middleware.MayUpdateSettings()).Patch("/settings/{group}", accountSettingsCtrl.Update)
-			r.Middleware(middleware.MayUpdateSettings()).Put("/settings/{group}", accountSettingsCtrl.Update)
+			r.Middleware(middleware.MayUpdateSettings(), stepUp).Patch("/settings/{group}", accountSettingsCtrl.Update)
+			r.Middleware(middleware.MayUpdateSettings(), stepUp).Put("/settings/{group}", accountSettingsCtrl.Update)
 
 			// S3.4.2: GET /v1/accounts/{accountId}/activity activity.read (policies.MayReadActivity).
 			// Owner, admin, and auditor may list. User may not.
@@ -208,7 +216,7 @@ func RegisterAdminRoutes() {
 		noCache,
 	).Group(func(router route.Router) {
 		router.Get("/features", platformFeaturesCtrl.Index)
-		router.Patch("/features/{key}", platformFeaturesCtrl.Update)
+		router.Middleware(stepUp).Patch("/features/{key}", platformFeaturesCtrl.Update)
 		// S2.4: GET /v1/platform/features/{scope}/{id} features.view.
 		// Scope account is the only target this catalog stores. global is refused.
 		// user and chain are not scopes on this branch, so they are 404 as well.
@@ -220,22 +228,22 @@ func RegisterAdminRoutes() {
 		// and stands in for both. The pair is not a second gate.
 		// Scope account is the only target this catalog stores. global is refused.
 		// user and chain are 404 for an admin. PlatformAdmin refuses a member first.
-		router.Put("/features/{scope}/{id}/{feature}", platformFeaturesCtrl.UpdateScopeFeature)
-		router.Put("/features/{scope}/{id}", platformFeaturesCtrl.UpdateScope)
+		router.Middleware(stepUp).Put("/features/{scope}/{id}/{feature}", platformFeaturesCtrl.UpdateScopeFeature)
+		router.Middleware(stepUp).Put("/features/{scope}/{id}", platformFeaturesCtrl.UpdateScope)
 		// S1.4.7: chains.view and chains.update. A platform_admins row is the gate.
 		// Every chain, whatever the account environment (GET /v1/chains follows it).
 		router.Get("/chains", platformChainsCtrl.Index)
-		router.Patch("/chains/{chainId}/rpc", platformChainsCtrl.UpdateRPC)
+		router.Middleware(stepUp).Patch("/chains/{chainId}/rpc", platformChainsCtrl.UpdateRPC)
 		// The ordered endpoint list of a chain: rpc_url first, then the fallbacks.
 		// Same gate as the rpc_url route; no URL is ever returned.
 		router.Get("/chains/{chainId}/rpc-endpoints", platformChainsCtrl.ListRPCEndpoints)
-		router.Post("/chains/{chainId}/rpc-endpoints", platformChainsCtrl.AddRPCEndpoint)
-		router.Put("/chains/{chainId}/rpc-endpoints", platformChainsCtrl.ReplaceRPCEndpoints)
-		router.Post("/chains/{chainId}/rpc-endpoints/order", platformChainsCtrl.ReorderRPCEndpoints)
-		router.Post("/chains/{chainId}/rpc-endpoints/defaults", platformChainsCtrl.AddDefaultRPCEndpoints)
-		router.Patch("/chains/{chainId}/rpc-endpoints/{position}", platformChainsCtrl.UpdateRPCEndpoint)
-		router.Delete("/chains/{chainId}/rpc-endpoints/{position}", platformChainsCtrl.RemoveRPCEndpoint)
-		router.Patch("/chains/{chainId}", platformChainsCtrl.Update)
+		router.Middleware(stepUp).Post("/chains/{chainId}/rpc-endpoints", platformChainsCtrl.AddRPCEndpoint)
+		router.Middleware(stepUp).Put("/chains/{chainId}/rpc-endpoints", platformChainsCtrl.ReplaceRPCEndpoints)
+		router.Middleware(stepUp).Post("/chains/{chainId}/rpc-endpoints/order", platformChainsCtrl.ReorderRPCEndpoints)
+		router.Middleware(stepUp).Post("/chains/{chainId}/rpc-endpoints/defaults", platformChainsCtrl.AddDefaultRPCEndpoints)
+		router.Middleware(stepUp).Patch("/chains/{chainId}/rpc-endpoints/{position}", platformChainsCtrl.UpdateRPCEndpoint)
+		router.Middleware(stepUp).Delete("/chains/{chainId}/rpc-endpoints/{position}", platformChainsCtrl.RemoveRPCEndpoint)
+		router.Middleware(stepUp).Patch("/chains/{chainId}", platformChainsCtrl.Update)
 		// Declared before {group} so the literal path mail/test is not a group name.
 		// S1.4.6: POST /v1/platform/settings/mail/test settings.update + mail.update (declared before {group}).
 		router.Post("/settings/mail/test", platformSettingsCtrl.Test)
@@ -248,9 +256,9 @@ func RegisterAdminRoutes() {
 		// S3.4.1: POST /v1/platform/accounts/{id}/freeze|unfreeze|archive accounts.lifecycle.
 		// A platform_admins row is the gate. These posts are not behind AccountContext,
 		// so a frozen or archived account can still be changed.
-		router.Post("/accounts/{accountId}/freeze", platformAccountsCtrl.Freeze)
-		router.Post("/accounts/{accountId}/unfreeze", platformAccountsCtrl.Unfreeze)
-		router.Post("/accounts/{accountId}/archive", platformAccountsCtrl.Archive)
+		router.Middleware(stepUp).Post("/accounts/{accountId}/freeze", platformAccountsCtrl.Freeze)
+		router.Middleware(stepUp).Post("/accounts/{accountId}/unfreeze", platformAccountsCtrl.Unfreeze)
+		router.Middleware(stepUp).Post("/accounts/{accountId}/archive", platformAccountsCtrl.Archive)
 		// S3.4.1: GET /v1/platform/accounts/{id}/users.
 		// A platform_admins row is the gate. The plan does not name fields,
 		// pagination, or sort, so the page matches GET /v1/platform/users and
@@ -259,20 +267,20 @@ func RegisterAdminRoutes() {
 		// S3.4.1: POST /v1/platform/accounts/{id}/owners (attach owner — recovery) accounts.owners.
 		// A platform_admins row is the gate. The body is email, matching account member add.
 		// The route is not behind AccountContext, so a frozen account can still be recovered.
-		router.Post("/accounts/{accountId}/owners", platformAccountOwnersCtrl.Attach)
+		router.Middleware(stepUp).Post("/accounts/{accountId}/owners", platformAccountOwnersCtrl.Attach)
 		// S1.4.6: GET /v1/platform/accounts/{accountId}/settings/{group} settings.view (platform-managed account groups).
 		router.Get("/accounts/{accountId}/settings/{group}", platformSettingsCtrl.ShowAccount)
 		// S1.4.6: PUT /v1/platform/accounts/{accountId}/settings/{group} settings.update + sweep.update for account_sweep_limits.
-		router.Put("/accounts/{accountId}/settings/{group}", platformSettingsCtrl.UpdateAccount)
-		router.Put("/settings/{group}", platformSettingsCtrl.Update)
+		router.Middleware(stepUp).Put("/accounts/{accountId}/settings/{group}", platformSettingsCtrl.UpdateAccount)
+		router.Middleware(stepUp).Put("/settings/{group}", platformSettingsCtrl.Update)
 		router.Post("/settings/sections/{section}/cache", platformSettingsCtrl.Flush)
-		router.Post("/settings/sections/{section}/reset", platformSettingsCtrl.Reset)
+		router.Middleware(stepUp).Post("/settings/sections/{section}/reset", platformSettingsCtrl.Reset)
 		router.Get("/activity", accountActivityCtrl.Platform)
 		router.Get("/users", platformUsersCtrl.Index)
-		router.Post("/users/{id}/suspend", platformUsersCtrl.Suspend)
-		router.Post("/users/{id}/reactivate", platformUsersCtrl.Reactivate)
-		router.Post("/users/{id}/sessions/revoke", platformUsersCtrl.RevokeSessions)
-		router.Delete("/users/{id}/mfa", platformUsersCtrl.ResetMFA)
+		router.Middleware(stepUp).Post("/users/{id}/suspend", platformUsersCtrl.Suspend)
+		router.Middleware(stepUp).Post("/users/{id}/reactivate", platformUsersCtrl.Reactivate)
+		router.Middleware(stepUp).Post("/users/{id}/sessions/revoke", platformUsersCtrl.RevokeSessions)
+		router.Middleware(stepUp).Delete("/users/{id}/mfa", platformUsersCtrl.ResetMFA)
 	})
 
 	facades.Route().Prefix("/v1/chains").Middleware(middleware.SessionAuth(), accountHeader, totpEnrollment, noCache).Group(func(router route.Router) {
@@ -383,6 +391,15 @@ func newDashboardProfileController() *dashusers.ProfileController {
 
 func newDashboardTotpController() *dashusers.TotpController {
 	return dashusers.NewTotpController(container.MustMake[*authsvc.TOTPEnrollment]())
+}
+
+func newDashboardStepUpController() *dashusers.StepUpController {
+	return dashusers.NewStepUpController(
+		container.MustMake[*authsvc.SecondFactorVerifier](),
+		container.MustMake[*stepup.Service](),
+		container.MustMake[*featuressvc.Service](),
+		container.MustMake[*accountsvc.Service](),
+	)
 }
 
 func newDashboardUserAccountController() *dashusers.AccountController {

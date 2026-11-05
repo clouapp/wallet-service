@@ -16,6 +16,7 @@ import (
 	"github.com/macrowallets/waas/app/services/credentialmail"
 	"github.com/macrowallets/waas/app/services/sessions"
 	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/app/services/stepup"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
@@ -141,10 +142,16 @@ func newSessionRevoker(app foundation.Application) (*authsvc.SessionRevoker, err
 	if err != nil {
 		return nil, err
 	}
+	windows, err := resolve[*stepup.Service](app)
+	if err != nil {
+		return nil, err
+	}
 	revoker, err := authsvc.NewSessionRevoker(authsvc.RevokerDeps{
 		Watermarks: bridge,
 		Refresh:    bridge,
 		Activity:   activityLog,
+		Sessions:   bridge.refresh,
+		StepUp:     windows,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("vault: session revoker: %w", err)
