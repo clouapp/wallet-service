@@ -65,3 +65,9 @@ func TestUsZipRule(t *testing.T) {
 		"94103": true, "94103-0000": true, "941030000": true, "9410": false, "ABCDE": false,
 	})
 }
+
+// Bridge refuses New York on a customer but takes it on an external account
+// (sandbox, 05/11/2026), so a bank in New York is a valid payout destination.
+func TestUsStateRuleAcceptsNewYorkForABankAccount(t *testing.T) {
+	checkRule(t, &UsStateRule{}, map[string]bool{"NY": true, "ny": true, "XX": false})
+}

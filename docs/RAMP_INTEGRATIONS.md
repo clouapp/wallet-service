@@ -126,6 +126,17 @@ Para PJ acrescentar `representative_email`, `tax_id`, `tax_id_type` e
 `incorporation_country` ISO alpha-3. A mesma referência/dados retorna o cadastro
 existente; dados conflitantes retornam conflito. Há um titular PJ próprio por conta.
 
+### Bridge, conforme o sandbox real (05/11/2026)
+
+- **Pix:** quem declara CPF deve enviar `"endorsements": ["pix"]` em `POST /kyc/application`.
+  Sem isso, a Bridge não aceita selfie e o cliente é aprovado sem os trilhos Pix.
+- **Depósito:** a Bridge recebe por conta virtual. `POST /onramps` responde
+  `no_provider_available` de propósito; use `POST /virtual-accounts`.
+- **Webhook:** assine `customer`, `kyc_link`, `transfer`, `external_account`,
+  `virtual_account.activity` e `liquidation_address.drain`.
+- **Cancelamento:** uma ordem cancelada volta como `failed`, com `failure_reason`
+  começando por `canceled before deposit`.
+
 ## Permissões, flags e settings
 
 Grants: `ramp_customers.read/write`, `ramp_compliance.read`,

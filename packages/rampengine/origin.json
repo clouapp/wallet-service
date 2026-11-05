@@ -15,7 +15,8 @@
     "Queue staging hands identifiers to the native durable task dispatcher.",
     "Settings validators expose per-account-mode catalogs to the native registry.",
     "Compatibility test helpers do not boot the source application. Darwin closed-port test skips a host-level SYN timeout.",
-    "Bridge documents go again without a selfie Bridge refused, and a refused document stays recorded until the provider moves on (real sandbox, 05/11/2026)."
+    "Bridge documents go again without a selfie Bridge refused, and a refused document stays recorded until the provider moves on (real sandbox, 05/11/2026).",
+    "A bank account accepts New York, which Bridge takes on an external account though not on a customer (real sandbox, 05/11/2026)."
   ],
   "files": [
     {
@@ -3825,17 +3826,17 @@
     },
     {
       "target": "packages/rampengine/app/rules/us_bank_account_rules.go",
-      "target_sha256": "b65f104fcd42b7935476e28a7de87a65ed9402a83cf1a584be8202c4dd917a09",
+      "target_sha256": "179171a94426e10c6fb26194c81ab22a59b83d38aeaa0d4a3c925a3547c9feb7",
       "source": "app/rules/us_bank_account_rules.go",
       "source_sha256": "22fc737b955329880649a8190fe0cf4af5590c61003e586e86876e4cd9e98832",
-      "adaptation": "imports-only"
+      "adaptation": "macro-integration"
     },
     {
       "target": "packages/rampengine/app/rules/us_bank_account_rules_test.go",
-      "target_sha256": "529097cc5165ff14818ea34d67e5d682053de88faec571349e8efeffbec811e1",
+      "target_sha256": "d7cb079a7e32dfec4106e6c5d4768ed36dc180e85b0ce85353a13d76c861a919",
       "source": "app/rules/us_bank_account_rules_test.go",
       "source_sha256": "529097cc5165ff14818ea34d67e5d682053de88faec571349e8efeffbec811e1",
-      "adaptation": "copied"
+      "adaptation": "macro-integration"
     },
     {
       "target": "packages/rampengine/app/rules/validation_test_helpers.go",

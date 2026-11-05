@@ -111,6 +111,11 @@ func (r *UsStateRule) Passes(_ context.Context, _ validation.Data, val any, _ ..
 		return false
 	}
 	code := strings.ToUpper(strings.TrimSpace(s))
+	// The shared list leaves New York out for Bridge's customers. Its external
+	// accounts take it (sandbox, 05/11/2026).
+	if code == "NY" {
+		return true
+	}
 	for _, state := range iso3166.RequiredSubdivisions("USA") {
 		if state.Code == code {
 			return true
