@@ -23,6 +23,7 @@ const (
 const (
 	FlagAPIRequestSignatureRequired = "api-request-signature-required"
 	FlagDepositScanEnabled          = "deposit-scan-enabled"
+	FlagSettings2FARequired         = "settings-2fa-required"
 	FlagSweepEnabled                = "sweep-enabled"
 	FlagUser2FARequired             = "user-2fa-required"
 	FlagWalletCreationEnabled       = "wallet-creation-enabled"
@@ -35,7 +36,7 @@ const (
 // deposit-scan-enabled default to true, so a missing row leaves withdrawals
 // and consolidate running and allows scans. wallet-creation-enabled and
 // webhook-delivery-enabled also default to true. api-request-signature-required
-// and user-2fa-required default to false. A write stores the boolean the
+// user-2fa-required and settings-2fa-required default to false. A write stores the boolean the
 // caller sent.
 type Definition struct {
 	Key         string
@@ -64,6 +65,13 @@ var catalog = []Definition{
 		Description: "Records whether deposit scanning is turned on for this account.",
 		Scopes:      []string{ScopeGlobal, ScopeAccount},
 		Default:     true,
+	},
+	{
+		Key:         FlagSettings2FARequired,
+		Label:       "Require two-factor code for settings",
+		Description: "Records whether changes in settings need a recent two-factor code.",
+		Scopes:      []string{ScopeGlobal, ScopeAccount},
+		Default:     false,
 	},
 	{
 		Key:         FlagSweepEnabled,

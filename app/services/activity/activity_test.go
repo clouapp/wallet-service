@@ -139,6 +139,7 @@ func TestFeature_Audit_AcceptsEveryCatalogFlag(t *testing.T) {
 	for key := range map[string]struct{}{
 		"api-request-signature-required": {},
 		"deposit-scan-enabled":           {},
+		"settings-2fa-required":          {},
 		"sweep-enabled":                  {},
 		"user-2fa-required":              {},
 		"wallet-creation-enabled":        {},

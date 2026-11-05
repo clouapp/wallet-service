@@ -69,3 +69,16 @@ func (r *RefreshTokenRepository) RevokeAllForUser(ctx context.Context, userID uu
 	}
 	return nil
 }
+
+// LiveSessionIDs lists the session ids of the user's refresh tokens that have
+// not expired, revoked or not (a rotation keeps the session id). Repeats are
+// possible.
+func (r *RefreshTokenRepository) LiveSessionIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	var ids []uuid.UUID
+	if err := r.Query(ctx).Model(&models.RefreshToken{}).
+		Where("user_id = ? AND session_id IS NOT NULL AND expires_at > ?", userID, time.Now()).
+		Pluck("session_id", &ids); err != nil {
+		return nil, fmt.Errorf("list user sessions: %w", err)
+	}
+	return ids, nil
+}

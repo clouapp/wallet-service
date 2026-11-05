@@ -17,6 +17,8 @@ const (
 	KeyUserID = "user_id"
 	// KeyUser is the dashboard user SessionAuth stores.
 	KeyUser = "user"
+	// KeySessionID is the session id (the "sid" claim) SessionAuth stores; absent for a token without one.
+	KeySessionID = "session_id"
 	// KeyAccount is the account AccountContext and AccountHeader store.
 	KeyAccount = "account"
 	// KeyAccountID is the account id AccountHeader and APITokenAuth store.
@@ -42,6 +44,11 @@ func UserID(ctx context.Context) (uuid.UUID, bool) {
 // not a UUID, the same way a bare type assertion did.
 func MustUserID(ctx context.Context) uuid.UUID {
 	return present(ctx, KeyUserID).(uuid.UUID)
+}
+
+// SessionID is the id of the session SessionAuth admitted. A token issued before sessions had ids is uuid.Nil, false.
+func SessionID(ctx context.Context) (uuid.UUID, bool) {
+	return uuidValue(ctx, KeySessionID)
 }
 
 // User is the dashboard user. A missing or wrong-typed value is nil, false.

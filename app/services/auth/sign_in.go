@@ -172,7 +172,7 @@ func (s *SignIn) Register(ctx context.Context, guard SessionGuard, in RegisterIn
 	if err != nil {
 		return Registered{}, err
 	}
-	accessToken, err := guard.LoginUsingID(user.ID.String())
+	accessToken, err := s.sessions.AccessToken(guard, user.ID)
 	if err != nil {
 		return Registered{}, fmt.Errorf("%w: %w", ErrSessionNotCreated, err)
 	}
@@ -265,7 +265,11 @@ func (s *SignIn) Refresh(ctx context.Context, guard SessionGuard, rawToken strin
 	if err := mayHoldSession(owner); err != nil {
 		return SessionTokens{}, err
 	}
-	session, err := s.sessions.Issue(ctx, guard, owner.ID, owner.SessionsRevokedAt)
+	sessionID := uuid.New()
+	if matched.SessionID != nil {
+		sessionID = *matched.SessionID
+	}
+	session, err := s.sessions.IssueIn(ctx, guard, owner.ID, owner.SessionsRevokedAt, sessionID)
 	if err != nil {
 		return SessionTokens{}, fmt.Errorf("%w: %w", ErrSessionNotCreated, err)
 	}

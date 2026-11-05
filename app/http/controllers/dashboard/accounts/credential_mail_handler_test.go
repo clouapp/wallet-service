@@ -71,7 +71,7 @@ func TestRegister_Sends_WelcomeWithoutTheCredentialJob(t *testing.T) {
 	}
 	body := functionBody(t, string(source), "func (s *SignIn) Register")
 	onboard := strings.Index(body, "Onboard(")
-	login := strings.Index(body, "LoginUsingID(")
+	login := strings.Index(body, "sessions.AccessToken(")
 	send := strings.Index(body, "SendWelcome(")
 	if onboard < 0 || login < 0 || send < 0 || onboard > send || send > login {
 		t.Fatal("welcome mail must be sent after onboard returns and before login")

@@ -84,6 +84,7 @@ Generic:
 | `invalid_credentials`, `two_factor_required`, `invalid_code` | 401 on the auth surface |
 | `invalid_signature` | 401 (external, bad/missing `X-Signature`) |
 | `forbidden`, `account_suspended`, `wallet_frozen` | 403 |
+| `two_factor_enrollment_required`, `step_up_required` | 403 on `/v1` (`TOTPEnrollment`, `RequireStepUp`): enroll TOTP / open a step-up window with `POST /v1/users/me/step-up` |
 | `not_found` | 404 |
 | `conflict` | 409 |
 | `invalid_request`, `invalid_json` | 400 |
@@ -182,7 +183,7 @@ failure lets the request through.
 |---|---|---|---|
 | `auth-login` | `POST /v1/auth/login` | client IP + email; client IP | 10/min; 60/min |
 | `auth-recover` | `POST /v1/auth/recover` | client IP + email; client IP | 5/min; 60/min |
-| `auth` | `/v1/auth/{2fa/verify,refresh,register,recover/confirm,invites/accept}` | client IP + path | 60/min |
+| `auth` | `/v1/auth/{2fa/verify,refresh,register,recover/confirm,invites/accept}`, `POST /v1/users/me/step-up` | client IP + path | 60/min |
 | `api` | the whole `/api/v1` group | the bearer token (hashed), or the client IP without one | 600/min |
 | `gas-check` | `POST .../wallets/{walletId}/gas-check` (both surfaces) | wallet | 1/min, body below |
 
@@ -216,6 +217,8 @@ two bugfixes that landed in the commits before it.
 | `GET /v1/accounts/{id}` | 2026-10-05, account feature keys | no `features` | `features` lists the active flags |
 | `GET /v1/users/me/accounts` | 2026-10-05, caller role | no `role` | `role` |
 | `POST /v1/auth/2fa/verify` | body names `challenge_token`, 2026-10-05, second-factor token rename | 422, `partial_token` required | 401 `unauthorized`, `invalid or expired partial token` |
+| `POST /v1/users/me/step-up`, `GET /v1/users/me/step-up` | 2026-11-04, new: settings step-up window (flag `settings-2fa-required`) | no route | POST `{totp_code}`: 200 `{expires_at}` (15 min, fixed), 401 `unauthorized` `invalid 2FA code`, 429 `too_many_requests`; GET: 200 `{required, expires_at}` (`null` without a window) |
+| sensitive `/v1` writes: account archive/freeze, members and invites, `POST .../tokens`, `PATCH`/`PUT .../settings/{group}` and section reset, and under `/v1/platform` features, chain RPC and endpoints, account freeze/archive/owners, settings, section reset, user suspend/reactivate/sessions revoke/mfa reset | 2026-11-04, `RequireStepUp` (flag `settings-2fa-required` on) | the write went through | 403 `step_up_required` without an open 15-minute window of the session; 403 `two_factor_enrollment_required` when the user has no confirmed TOTP; 500 `internal` when the flag or window read fails. Flag off: unchanged. `/api/v1` untouched |
 | any route in the table above | 2026-10-08, rate limiting (H1) | no limit, never 429 | 429 `too_many_requests` over the limit (contract steps 69 and 70) |
 | `POST /v1/auth/logout` | 2026-10-08, logout goes through the session watermark | the presented token only was refused afterwards (the other devices' access tokens lived until they expired) | every access and refresh token of the user is refused: 401 `unauthorized`, `session revoked`; activity `user.sessions_revoked` |
 | `GET /api/v1/transactions/{id}`, withdrawal lookups | 2026-10-08, the store fails (V29) | 404 `transaction not found` / `withdrawal not found` | 500 `internal_error` (external transactions), the dashboard and external withdrawal 500 |

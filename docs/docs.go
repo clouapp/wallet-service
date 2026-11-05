@@ -4581,6 +4581,106 @@ const docTemplate = `{
                 }
             }
         },
+        "/users/me/step-up": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Says whether the step-up is required for this user (flag on and 2FA enabled) and when the session's window ends. X-Account-Id, when sent, adds the account's flag row.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User"
+                ],
+                "summary": "Read the settings step-up window",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account whose flag row counts",
+                        "name": "X-Account-Id",
+                        "in": "header"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/users.StepUpStatusSwagger"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Checks the authenticator code and opens a fixed 15 minute window for this session",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User"
+                ],
+                "summary": "Open the settings step-up window",
+                "parameters": [
+                    {
+                        "description": "Authenticator code",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/users.StepUpRequestSwagger"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/users.StepUpGrantedSwagger"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit or too many attempts",
+                        "schema": {
+                            "$ref": "#/definitions/responses.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
         "/users/me/totp": {
             "delete": {
                 "security": [
@@ -9346,6 +9446,36 @@ const docTemplate = `{
                 },
                 "preferred_fiat_code": {
                     "type": "string"
+                }
+            }
+        },
+        "users.StepUpGrantedSwagger": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string",
+                    "example": "2026-11-04T12:15:00Z"
+                }
+            }
+        },
+        "users.StepUpRequestSwagger": {
+            "type": "object",
+            "properties": {
+                "totp_code": {
+                    "type": "string",
+                    "example": "123456"
+                }
+            }
+        },
+        "users.StepUpStatusSwagger": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string",
+                    "example": "2026-11-04T12:15:00Z"
+                },
+                "required": {
+                    "type": "boolean"
                 }
             }
         },

@@ -16,6 +16,7 @@ import (
 	"github.com/macrowallets/waas/app/services/credentialmail"
 	"github.com/macrowallets/waas/app/services/sessions"
 	"github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/app/services/stepup"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 )
 
@@ -141,10 +142,16 @@ func newSessionRevoker(app foundation.Application) (*authsvc.SessionRevoker, err
 	if err != nil {
 		return nil, err
 	}
+	windows, err := resolve[*stepup.Service](app)
+	if err != nil {
+		return nil, err
+	}
 	revoker, err := authsvc.NewSessionRevoker(authsvc.RevokerDeps{
 		Watermarks: bridge,
 		Refresh:    bridge,
 		Activity:   activityLog,
+		Sessions:   bridge.refresh,
+		StepUp:     windows,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("vault: session revoker: %w", err)
@@ -183,10 +190,22 @@ func newSessionIssuer(app foundation.Application) (*authsvc.SessionIssuer, error
 	if err != nil {
 		return nil, err
 	}
+	// The sid claim is signed with the guard's secret, read as the framework
+	// reads it (the default guard's own secret, else jwt.secret); without one
+	// every session would go out without an id, so refuse to build the issuer.
+	cfg := appfacades.Config()
+	signingKey := cfg.GetString(fmt.Sprintf("auth.guards.%s.secret", cfg.GetString("auth.defaults.guard")))
+	if signingKey == "" {
+		signingKey = cfg.GetString("jwt.secret")
+	}
+	if signingKey == "" {
+		return nil, fmt.Errorf("vault: session issuer: jwt.secret is empty")
+	}
 	issuer, err := authsvc.NewSessionIssuer(authsvc.IssuerDeps{
-		Passwords: passwords,
-		Refresh:   refresh,
-		Revoker:   revoker,
+		Passwords:  passwords,
+		Refresh:    refresh,
+		Revoker:    revoker,
+		SigningKey: signingKey,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("vault: session issuer: %w", err)

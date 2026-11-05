@@ -11,6 +11,7 @@ type RefreshToken struct {
 	orm.Model
 	ID        uuid.UUID  `gorm:"type:uuid;primary_key"`
 	UserID    uuid.UUID  `gorm:"type:uuid;not null;index"`
+	SessionID *uuid.UUID `gorm:"type:uuid;index"`
 	TokenHash string     `gorm:"type:text;not null"`
 	ExpiresAt time.Time  `gorm:"type:timestamptz;not null"`
 	RevokedAt *time.Time `gorm:"type:timestamptz"`
