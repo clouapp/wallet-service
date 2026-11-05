@@ -251,7 +251,11 @@ func (s *RampSuite) createCustomer(token support.Token, payload map[string]any) 
 }
 
 func (s *RampSuite) work() {
-	_, err := container.MustMake[*ramps.Service]().Work(context.Background(), 20)
+	// Enqueue stamps the application's clock and Claim reads the database's, which
+	// differ by milliseconds under Docker Desktop. A retry's backoff is far beyond this.
+	_, err := facades.Orm().Query().Exec("UPDATE ramp_tasks SET available_at=now() WHERE completed_at IS NULL AND available_at > now() AND available_at < now()+interval '1 second'")
+	s.Require().NoError(err)
+	_, err = container.MustMake[*ramps.Service]().Work(context.Background(), 20)
 	s.Require().NoError(err)
 	var failed []struct {
 		Kind      string `gorm:"column:kind"`

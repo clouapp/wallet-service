@@ -66,6 +66,8 @@ const settingsCachePattern = "*settings:*"
 // (app/adapters/redis/scanactivity: ScanKeyPrefix, PushKeyPrefix, SignatureKeyPrefix,
 // ModeKeyPrefix and AlertKeyPrefix, written out here because that package imports the services whose
 // tests import this one; TestTestDB_ForgetsTheScanActivityARunLeft keeps them equal).
+// The KYC staging marks go too: engine customer ids restart with the truncation, so a
+// mark would refuse the next customer given that id (TestTestDB_ForgetsTheKycMarksARunLeft).
 var redisStatePatterns = []string{
 	settingsCachePattern,
 	"vault:scan-activity:*",
@@ -73,6 +75,7 @@ var redisStatePatterns = []string{
 	"vault:signature-sync:*",
 	"vault:scan-mode:*",
 	"vault:scan-alert:*",
+	"*kyc:*",
 }
 
 // forgetRedisState drops the Redis keys of redisStatePatterns along with the rows
