@@ -40,7 +40,11 @@ Acceptance body: `{"quote_id":"<uuid>","idempotency_key":"<uuid>","passphrase":"
 Both wallet ownership and spending permissions are enforced. API callers need
 `withdrawals.create`, for quotes too (a quote is a paid provider call and a stored
 row); session callers need the existing withdrawal fund action, for quotes too, and
-2FA. Quotes are limited to 12 per minute per source wallet (`429`). Frozen wallets
+2FA. Quotes are limited per source wallet (`429`): 12 a minute on the dashboard
+(`THROTTLE_SWAP_QUOTE_PER_WALLET`) and 60 on `/api/v1`
+(`THROTTLE_API_SWAP_QUOTE_PER_WALLET`), where an integrator such as Cloubet quotes
+for all of its users from one omnibus wallet; the per-token `THROTTLE_API_PER_MINUTE`
+still applies. 0 turns a limit off. Frozen wallets
 and wallets requiring multiple approvals are refused. Refusals: wrong passphrase or
 code `401 invalid_swap_authorization`; 2FA not enabled `403 two_factor_required`;
 passphrase attempt limiter `429 too_many_requests`; a concurrent transition `409

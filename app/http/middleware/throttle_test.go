@@ -203,6 +203,41 @@ func (s *throttleSuite) TestAPI_IsLimited_PerToken() {
 	get("Bearer not-a-token-" + uuid.NewString()).AssertStatus(401)
 }
 
+// An integrator quotes for all of its users from one omnibus wallet, so the
+// /api/v1 quote limit is its own config value, per source wallet.
+func (s *throttleSuite) TestAPISwapQuote_IsLimited_PerWalletByConfig() {
+	s.setConfig("http.throttle.api_swap_quote_per_wallet", 2)
+	account := fixtures.InsertAccount(s.T(), "swap-quote-"+uuid.NewString())
+	wallet := fixtures.InsertWalletWithAccount(s.T(), "nochain", &account.ID)
+	other := fixtures.InsertWalletWithAccount(s.T(), "nochain", &account.ID)
+	record := &models.AccessToken{ID: uuid.New(), AccountID: account.ID, Name: "swap-quote-" + uuid.NewString()}
+	_, err := facades.Orm().Query().Exec(
+		`INSERT INTO access_tokens (id, account_id, name, token_hash, ip_cidr, spending_limit, permissions, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, '', ?, ?, NOW(), NOW())`,
+		record.ID, record.AccountID, record.Name, "hash-"+record.ID.String(), "{}", `["wallets.read","withdrawals.create"]`,
+	)
+	s.Require().NoError(err)
+	token, err := middleware.MintAPIToken(record, false)
+	s.Require().NoError(err)
+	quote := func(walletID uuid.UUID) contractstestinghttp.Response {
+		resp, err := s.Http(s.T()).
+			WithHeader("Authorization", "Bearer "+token).
+			WithHeader("Content-Type", "application/json").
+			Post("/api/v1/wallets/"+walletID.String()+"/swaps/quotes/to/"+other.ID.String(), strings.NewReader(`{}`))
+		s.Require().NoError(err)
+		return resp
+	}
+
+	passes := func(resp contractstestinghttp.Response) {
+		s.T().Helper()
+		s.Empty(resp.Headers().Get("Retry-After"), "the limiter let this quote through")
+	}
+	passes(quote(wallet.ID))
+	passes(quote(wallet.ID))
+	s.assertThrottled(quote(wallet.ID))
+	passes(quote(other.ID)) // another source wallet is another bucket
+}
+
 // gas-check answers one on-chain read per wallet per minute with the body it
 // had before the limit moved into middleware.Throttle. The first call's own
 // outcome (the wallet's chain is not served here) does not matter: it takes

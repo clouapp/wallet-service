@@ -30,13 +30,15 @@ const (
 	ThrottleAPI = "api"
 	// ThrottleGasCheck is POST .../gas-check: one on-chain read per wallet per minute.
 	ThrottleGasCheck = "gas-check"
-	// ThrottleSwapQuote is POST .../swaps/quotes/...: each quote is a paid provider
-	// call and a stored row, so a source wallet gets swapQuotesPerMinute.
+	// ThrottleSwapQuote is the dashboard's POST .../swaps/quotes/...: each quote is
+	// a paid provider call and a stored row, so a source wallet gets
+	// THROTTLE_SWAP_QUOTE_PER_WALLET a minute.
 	ThrottleSwapQuote = "swap-quote"
+	// ThrottleAPISwapQuote is the same route on /api/v1. An integrator quotes for
+	// all of its users from one omnibus wallet, so its per-wallet limit is
+	// THROTTLE_API_SWAP_QUOTE_PER_WALLET, on top of the per-token ThrottleAPI.
+	ThrottleAPISwapQuote = "api-swap-quote"
 )
-
-// swapQuotesPerMinute bounds quotes per source wallet on both surfaces.
-const swapQuotesPerMinute = 12
 
 // Config keys under http.throttle, all attempts per minute. Zero turns that
 // limit off. config/http_config.go reads the environment into them.
@@ -46,6 +48,14 @@ const (
 	throttleRecoverPerIPEmail = "http.throttle.recover_per_ip_email"
 	throttleAuthPerIP         = "http.throttle.auth_per_ip"
 	throttleAPIPerMinute      = "http.throttle.api_per_minute"
+	throttleSwapQuote         = "http.throttle.swap_quote_per_wallet"
+	throttleAPISwapQuote      = "http.throttle.api_swap_quote_per_wallet"
+)
+
+// The swap quote limits are config only: no http_throttle setting stores them.
+const (
+	keyThrottleSwapQuote    = "swap_quote_per_wallet"
+	keyThrottleAPISwapQuote = "api_swap_quote_per_wallet"
 )
 
 // gasCheckPerMinute is fixed: the chain adapter caches for less than a minute.
@@ -96,9 +106,14 @@ func RegisterThrottles(limiter http.RateLimiter, stored StoredThrottleLimits) {
 		)
 	})
 	limiter.ForWithLimits(ThrottleSwapQuote, func(ctx http.Context) []http.Limit {
-		return []http.Limit{
-			limit.PerMinute(swapQuotesPerMinute).By("swap-quote:" + ctx.Request().Route("walletId")).Response(tooManyRequests),
-		}
+		return limits(
+			perMinute(attempts(ctx, keyThrottleSwapQuote, throttleSwapQuote), "swap-quote:"+ctx.Request().Route("walletId")),
+		)
+	})
+	limiter.ForWithLimits(ThrottleAPISwapQuote, func(ctx http.Context) []http.Limit {
+		return limits(
+			perMinute(attempts(ctx, keyThrottleAPISwapQuote, throttleAPISwapQuote), "api-swap-quote:"+ctx.Request().Route("walletId")),
+		)
 	})
 	limiter.ForWithLimits(ThrottleGasCheck, func(ctx http.Context) []http.Limit {
 		return []http.Limit{
