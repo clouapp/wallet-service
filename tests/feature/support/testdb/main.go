@@ -15,6 +15,7 @@ import (
 
 	"github.com/goravel/framework/facades"
 
+	"github.com/macrowallets/waas/bootstrap"
 	"github.com/macrowallets/waas/tests/feature/support/testenv"
 	"github.com/macrowallets/waas/tests/feature/support/testutil"
 )
@@ -60,8 +61,22 @@ func prepare() error {
 	if database != templateName() {
 		return fmt.Errorf("booted on %q, expected the template %q", database, templateName())
 	}
+	// migrate:fresh only empties public. The fiat engine's schema would survive
+	// it, and the migration that installs it would then fail on its own tables.
+	if _, err := facades.Orm().Query().Exec("DROP SCHEMA IF EXISTS macro_ramps CASCADE"); err != nil {
+		return fmt.Errorf("drop the engine schema of %s: %w", database, err)
+	}
 	if err := facades.Artisan().Call("migrate:fresh"); err != nil {
 		return fmt.Errorf("migrate %s fresh: %w", database, err)
+	}
+	// The command reports success when a migration fails, leaving a template
+	// every clone inherits. Only the record of the last migration proves it ran.
+	applied, err := facades.Orm().Query().Table("migrations").Count()
+	if err != nil {
+		return fmt.Errorf("read the migrations of %s: %w", database, err)
+	}
+	if want := int64(len(bootstrap.Migrations())); applied != want {
+		return fmt.Errorf("template %s applied %d of %d migrations", database, applied, want)
 	}
 	fmt.Printf("template %s migrated fresh\n", database)
 	return nil

@@ -28,6 +28,7 @@ const (
 	LayerFacades      = "facades"
 	LayerDatabase     = "database"
 	LayerPackages     = "packages"
+	LayerRampEngine   = "rampengine"
 	LayerDocs         = "docs"
 	LayerTests        = "tests"
 	LayerTools        = "tools"
@@ -36,30 +37,32 @@ const (
 // zones maps a module-relative directory prefix to its layer. The longest
 // matching prefix wins.
 var zones = map[string]string{
-	".":                LayerMain,
-	"bootstrap":        LayerBootstrap,
-	"config":           LayerConfig,
-	"routes":           LayerRoutes,
-	"app/container":    LayerContainer,
-	"app/providers":    LayerProviders,
-	"app/http":         LayerHTTP,
-	"app/policies":     LayerPolicies,
-	"app/services":     LayerServices,
-	"app/adapters":     LayerAdapters,
-	"app/repositories": LayerRepositories,
-	"app/models":       LayerModels,
-	"app/mails":        LayerMails,
-	"app/console":      LayerConsole,
-	"app/jobs":         LayerJobs,
-	"app/rules":        LayerRules,
-	"app/facades":      LayerFacades,
-	"database":         LayerDatabase,
-	"pkg":              LayerPackages,
-	"packages":         LayerPackages,
-	"docs":             LayerDocs,
-	"tests":            LayerTests,
-	"tools":            LayerTools,
-	"scripts":          LayerTools,
+	".":                         LayerMain,
+	"bootstrap":                 LayerBootstrap,
+	"config":                    LayerConfig,
+	"routes":                    LayerRoutes,
+	"app/container":             LayerContainer,
+	"app/providers":             LayerProviders,
+	"app/http":                  LayerHTTP,
+	"app/policies":              LayerPolicies,
+	"app/services":              LayerServices,
+	"app/adapters":              LayerAdapters,
+	"app/repositories":          LayerRepositories,
+	"app/models":                LayerModels,
+	"app/mails":                 LayerMails,
+	"app/console":               LayerConsole,
+	"app/jobs":                  LayerJobs,
+	"app/rules":                 LayerRules,
+	"app/facades":               LayerFacades,
+	"database":                  LayerDatabase,
+	"pkg":                       LayerPackages,
+	"packages":                  LayerPackages,
+	"packages/rampengine":       LayerRampEngine,
+	"packages/rampengine/tests": LayerTests,
+	"docs":                      LayerDocs,
+	"tests":                     LayerTests,
+	"tools":                     LayerTools,
+	"scripts":                   LayerTools,
 }
 
 // everything is the allow-set of a composition layer: it may import any
@@ -68,7 +71,7 @@ var everything = []string{
 	LayerBootstrap, LayerConfig, LayerRoutes, LayerContainer, LayerProviders, LayerHTTP,
 	LayerPolicies, LayerServices, LayerAdapters, LayerRepositories, LayerModels,
 	LayerMails, LayerConsole, LayerJobs, LayerRules, LayerFacades, LayerDatabase,
-	LayerPackages, LayerDocs,
+	LayerPackages, LayerRampEngine, LayerDocs,
 }
 
 // allowed is the layer table of .ai/guidelines/controllers-and-services.md:
@@ -76,13 +79,15 @@ var everything = []string{
 // pkg/*) is installable outside the project, so every layer may import it and it
 // imports nothing of the module.
 var allowed = map[string][]string{
-	LayerMain:         everything,
-	LayerBootstrap:    everything,
-	LayerProviders:    everything,
-	LayerConfig:       {LayerFacades},
-	LayerContainer:    {},
-	LayerModels:       {},
-	LayerPackages:     {},
+	LayerMain:      everything,
+	LayerBootstrap: everything,
+	LayerProviders: everything,
+	LayerConfig:    {LayerFacades},
+	LayerContainer: {},
+	LayerModels:    {},
+	LayerPackages:  {},
+	// The ported component can import only its own namespace and framework ports.
+	LayerRampEngine:   {LayerRampEngine},
 	LayerDocs:         {},
 	LayerPolicies:     {LayerModels},
 	LayerMails:        {LayerModels},
@@ -127,7 +132,7 @@ func CheckImport(from, to string) error {
 	if !known {
 		return fmt.Errorf("layer %q has no row in the allow table", from)
 	}
-	if containsLayer(rule, to) || (to == LayerPackages && from != LayerPackages) {
+	if containsLayer(rule, to) || (to == LayerPackages && from != LayerPackages) || (to == LayerRampEngine && from != LayerPackages && from != LayerModels) {
 		return nil
 	}
 	return fmt.Errorf("%s may not import %s", from, to)

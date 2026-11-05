@@ -104,3 +104,25 @@ func TestTestDB_ForgetsTheScanActivityARunLeft(t *testing.T) {
 		t.Fatalf("an alert raised before the reset is still raised (err %v)", err)
 	}
 }
+
+// TestTestDB_ForgetsTheKycMarksARunLeft guards the ramp suite: engine customer ids
+// restart with the truncation, so a submission mark one test left in the cache would
+// answer submission_in_flight to whichever customer gets that id next.
+func TestTestDB_ForgetsTheKycMarksARunLeft(t *testing.T) {
+	keys := []string{"kyc:inflight:1:bridge", "kyc:inflight-of:stub", "kyc:staging:stub"}
+	t.Run("writes", func(t *testing.T) {
+		fixtures.TestDB(t)
+		for _, key := range keys {
+			if err := facades.Cache().Put(key, "stub", time.Minute); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+
+	fixtures.TestDB(t)
+	for _, key := range keys {
+		if facades.Cache().Has(key) {
+			t.Fatalf("%s outlived the reset", key)
+		}
+	}
+}

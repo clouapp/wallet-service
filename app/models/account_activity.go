@@ -23,6 +23,17 @@ var (
 // activityFlagKeys are the catalog flag names a before/after map may name.
 // A value is a boolean. A secret is not a key and is not a value.
 var activityFlagKeys = map[string]struct{}{
+	"ramp-payin-enabled":               {},
+	"ramp-payout-enabled":              {},
+	"ramp-usd-payin-enabled":           {},
+	"ramp-usd-payout-enabled":          {},
+	"ramp-bank-payout-enabled":         {},
+	"kyb":                              {},
+	"kyc-usa-residence-enabled":        {},
+	"ramp-integrations-enabled":        {},
+	"ramp-own-operations-enabled":      {},
+	"ramp-customer-operations-enabled": {},
+
 	"api-request-signature-required": {},
 	"deposit-scan-enabled":           {},
 	"sweep-enabled":                  {},
@@ -232,7 +243,7 @@ func activityPermissions(value any) ([]string, error) {
 
 func activityPermissionAllowed(name string) bool {
 	switch name {
-	case "addresses.create", "sweep.execute", "transactions.read",
+	case "ramp_compliance.profile.read", "ramp_compliance.read", "ramp_compliance.write", "ramp_customers.read", "ramp_customers.write", "ramp_orders.read", "ramp_orders.create", "addresses.create", "sweep.execute", "transactions.read",
 		"wallets.create", "wallets.read",
 		"webhooks.read", "webhooks.write",
 		"withdrawals.create":

@@ -111,8 +111,8 @@ func TestList_Missing_RowUsesCatalogDefaultAndWritesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if len(view.Features) != len(All()) {
-		t.Fatalf("features = %d, want %d", len(view.Features), len(All()))
+	if len(view.Features) != len(ForAccount()) {
+		t.Fatalf("features = %d, want %d", len(view.Features), len(ForAccount()))
 	}
 	for _, flag := range view.Features {
 		definition, ok := Find(flag.Key)
@@ -314,7 +314,7 @@ func TestActive_Global_UsesTheCatalogDefaultAndIgnoresAccountRows(t *testing.T) 
 	if err != nil {
 		t.Fatalf("active: %v", err)
 	}
-	want := []string{FlagDepositScanEnabled, FlagSweepEnabled, FlagWalletCreationEnabled, FlagWebhookDeliveryEnabled, FlagWithdrawalsEnabled}
+	want := []string{FlagDepositScanEnabled, "ramp-customer-operations-enabled", "ramp-own-operations-enabled", "ramp-payin-enabled", "ramp-payout-enabled", "ramp-usd-payin-enabled", "ramp-usd-payout-enabled", FlagSweepEnabled, FlagWalletCreationEnabled, FlagWebhookDeliveryEnabled, FlagWithdrawalsEnabled}
 	if !slices.Equal(names, want) {
 		t.Fatalf("active = %v, want %v", names, want)
 	}
@@ -332,7 +332,7 @@ func TestActive_Global_UsesTheCatalogDefaultAndIgnoresAccountRows(t *testing.T) 
 	if err != nil {
 		t.Fatalf("active after write: %v", err)
 	}
-	want = []string{FlagDepositScanEnabled, FlagSweepEnabled, FlagUser2FARequired, FlagWalletCreationEnabled, FlagWebhookDeliveryEnabled}
+	want = []string{FlagDepositScanEnabled, "ramp-customer-operations-enabled", "ramp-own-operations-enabled", "ramp-payin-enabled", "ramp-payout-enabled", "ramp-usd-payin-enabled", "ramp-usd-payout-enabled", FlagSweepEnabled, FlagUser2FARequired, FlagWalletCreationEnabled, FlagWebhookDeliveryEnabled}
 	if !slices.Equal(names, want) {
 		t.Fatalf("active after write = %v, want %v", names, want)
 	}
@@ -368,7 +368,7 @@ func TestActive_For_AccountUsesTheCatalogDefaultAndIgnoresGlobalRows(t *testing.
 	if err != nil {
 		t.Fatalf("active: %v", err)
 	}
-	want := []string{FlagDepositScanEnabled, FlagSweepEnabled, FlagWalletCreationEnabled, FlagWebhookDeliveryEnabled, FlagWithdrawalsEnabled}
+	want := []string{FlagDepositScanEnabled, "ramp-customer-operations-enabled", "ramp-own-operations-enabled", "ramp-payin-enabled", "ramp-payout-enabled", "ramp-usd-payin-enabled", "ramp-usd-payout-enabled", FlagSweepEnabled, FlagWalletCreationEnabled, FlagWebhookDeliveryEnabled, FlagWithdrawalsEnabled}
 	if !slices.Equal(names, want) {
 		t.Fatalf("active = %v, want %v", names, want)
 	}
@@ -386,7 +386,7 @@ func TestActive_For_AccountUsesTheCatalogDefaultAndIgnoresGlobalRows(t *testing.
 	if err != nil {
 		t.Fatalf("active after write: %v", err)
 	}
-	want = []string{FlagDepositScanEnabled, FlagSweepEnabled, FlagUser2FARequired, FlagWalletCreationEnabled, FlagWebhookDeliveryEnabled}
+	want = []string{FlagDepositScanEnabled, "ramp-customer-operations-enabled", "ramp-own-operations-enabled", "ramp-payin-enabled", "ramp-payout-enabled", "ramp-usd-payin-enabled", "ramp-usd-payout-enabled", FlagSweepEnabled, FlagUser2FARequired, FlagWalletCreationEnabled, FlagWebhookDeliveryEnabled}
 	if !slices.Equal(names, want) {
 		t.Fatalf("active after write = %v, want %v", names, want)
 	}

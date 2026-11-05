@@ -36,7 +36,7 @@ func (s *accountFeaturesSuite) TestGet_Missing_RowUsesCatalogDefault() {
 	accountID, token := s.owner()
 
 	body := s.get(token, accountID, 200)
-	s.Equal(len(features.All()), len(body.Features))
+	s.Equal(len(features.ForAccount()), len(body.Features))
 	s.True(s.flag(body, features.FlagWithdrawalsEnabled))
 	s.True(s.flag(body, features.FlagSweepEnabled))
 	s.True(s.flag(body, features.FlagDepositScanEnabled))
@@ -44,6 +44,7 @@ func (s *accountFeaturesSuite) TestGet_Missing_RowUsesCatalogDefault() {
 	s.True(s.flag(body, features.FlagWebhookDeliveryEnabled))
 	s.False(s.flag(body, features.FlagAPIRequestSignatureRequired))
 	s.False(s.flag(body, features.FlagUser2FARequired))
+	s.False(s.flag(body, features.FlagRampIntegrations))
 	s.Equal(int64(0), s.rowCount(accountID))
 }
 
@@ -53,6 +54,12 @@ func (s *accountFeaturesSuite) TestGet_Account_ListsActiveFlagKeys() {
 	body := s.account(token, accountID)
 	s.Equal([]string{
 		features.FlagDepositScanEnabled,
+		"ramp-customer-operations-enabled",
+		"ramp-own-operations-enabled",
+		"ramp-payin-enabled",
+		"ramp-payout-enabled",
+		"ramp-usd-payin-enabled",
+		"ramp-usd-payout-enabled",
 		features.FlagSweepEnabled,
 		features.FlagWalletCreationEnabled,
 		features.FlagWebhookDeliveryEnabled,
@@ -75,6 +82,12 @@ func (s *accountFeaturesSuite) TestGet_Account_ListsActiveFlagKeys() {
 
 	want := []string{
 		features.FlagDepositScanEnabled,
+		"ramp-customer-operations-enabled",
+		"ramp-own-operations-enabled",
+		"ramp-payin-enabled",
+		"ramp-payout-enabled",
+		"ramp-usd-payin-enabled",
+		"ramp-usd-payout-enabled",
 		features.FlagSweepEnabled,
 		features.FlagWalletCreationEnabled,
 		features.FlagWebhookDeliveryEnabled,

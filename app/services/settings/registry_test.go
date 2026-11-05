@@ -106,6 +106,9 @@ func TestAccount_Sections_DoNotShareNamesWithGroups(t *testing.T) {
 }
 
 func knownPlatformGroup(name string) bool {
+	if strings.HasPrefix(name, "ramp_provider_") || strings.HasPrefix(name, "ramp_rail_") {
+		return true
+	}
 	switch name {
 	case groupDepositScan, groupDepositSignatures, groupWebhookDelivery, groupSweepLimits, groupMailSMTP, groupMailDelivery,
 		groupMailSES, groupMailMailgun, groupMailResend, groupMailPostmark,
@@ -409,7 +412,7 @@ func platformSecretGroupGatedByAdmins(group Group) bool {
 		GroupProviderTron, GroupXRPStream:
 		return providerCredentialPermissions(group) && platformAdminCoversViewPermission(group.ViewPermission)
 	default:
-		if strings.HasPrefix(group.Name, groupUTXOFallbackPrefix) {
+		if strings.HasPrefix(group.Name, groupUTXOFallbackPrefix) || strings.HasPrefix(group.Name, "ramp_provider_") {
 			return providerCredentialPermissions(group) && platformAdminCoversViewPermission(group.ViewPermission)
 		}
 		return false

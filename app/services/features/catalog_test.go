@@ -1,6 +1,7 @@
 package features
 
 import (
+	"slices"
 	"testing"
 )
 
@@ -16,6 +17,8 @@ func TestCatalog_Names_TheAccountFlagsAndTheirDefaults(t *testing.T) {
 		FlagWebhookDeliveryEnabled,
 		FlagWithdrawalsEnabled,
 	}
+	want = append(want, FlagRampIntegrations, "ramp-customer-operations-enabled", "ramp-own-operations-enabled", "ramp-payin-enabled", "ramp-payout-enabled", "ramp-usd-payin-enabled", "ramp-usd-payout-enabled", "ramp-bank-payout-enabled", "kyb", "kyc-usa-residence-enabled")
+	slices.Sort(want)
 	got := All()
 	if len(got) != len(want) {
 		t.Fatalf("catalog length = %d, want %d", len(got), len(want))
@@ -34,11 +37,11 @@ func TestCatalog_Names_TheAccountFlagsAndTheirDefaults(t *testing.T) {
 			t.Fatalf("catalog is not sorted: %q before %q", previous, definition.Key)
 		}
 		previous = definition.Key
-		wantDefault := definition.Key == FlagDepositScanEnabled || definition.Key == FlagSweepEnabled || definition.Key == FlagWalletCreationEnabled || definition.Key == FlagWebhookDeliveryEnabled || definition.Key == FlagWithdrawalsEnabled
+		wantDefault := slices.Contains([]string{"ramp-customer-operations-enabled", "ramp-own-operations-enabled", "ramp-payin-enabled", "ramp-payout-enabled", "ramp-usd-payin-enabled", "ramp-usd-payout-enabled"}, definition.Key) || definition.Key == FlagDepositScanEnabled || definition.Key == FlagSweepEnabled || definition.Key == FlagWalletCreationEnabled || definition.Key == FlagWebhookDeliveryEnabled || definition.Key == FlagWithdrawalsEnabled
 		if definition.Default != wantDefault {
 			t.Fatalf("%s default = %v, want %v", definition.Key, definition.Default, wantDefault)
 		}
-		if !definition.AppliesTo(ScopeAccount) {
+		if !definition.AppliesTo(ScopeAccount) && definition.Key != "kyc-usa-residence-enabled" {
 			t.Fatalf("%s does not apply to the account scope", definition.Key)
 		}
 		if !definition.AppliesTo(ScopeGlobal) {

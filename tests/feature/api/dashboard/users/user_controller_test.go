@@ -110,7 +110,7 @@ func (s *UserControllerTestSuite) seedAccount(name, environment, role string) mo
 
 func (s *UserControllerTestSuite) TestGet_Me_ListsGloballyActiveFeatureKeys() {
 	body := s.getMe()
-	s.Equal([]string{features.FlagDepositScanEnabled, features.FlagSweepEnabled, features.FlagWalletCreationEnabled, features.FlagWebhookDeliveryEnabled, features.FlagWithdrawalsEnabled}, body.Features)
+	s.Equal([]string{features.FlagDepositScanEnabled, features.FlagRampCustomerOperations, features.FlagRampOwnOperations, "ramp-payin-enabled", "ramp-payout-enabled", "ramp-usd-payin-enabled", "ramp-usd-payout-enabled", features.FlagSweepEnabled, features.FlagWalletCreationEnabled, features.FlagWebhookDeliveryEnabled, features.FlagWithdrawalsEnabled}, body.Features)
 
 	account := s.seedAccount("Flags", "prod", "owner")
 	_, err := facades.Orm().Query().Exec(
@@ -121,7 +121,7 @@ func (s *UserControllerTestSuite) TestGet_Me_ListsGloballyActiveFeatureKeys() {
 	)
 	s.Require().NoError(err)
 	body = s.getMe()
-	s.Equal([]string{features.FlagDepositScanEnabled, features.FlagSweepEnabled, features.FlagWalletCreationEnabled, features.FlagWebhookDeliveryEnabled, features.FlagWithdrawalsEnabled}, body.Features)
+	s.Equal([]string{features.FlagDepositScanEnabled, features.FlagRampCustomerOperations, features.FlagRampOwnOperations, "ramp-payin-enabled", "ramp-payout-enabled", "ramp-usd-payin-enabled", "ramp-usd-payout-enabled", features.FlagSweepEnabled, features.FlagWalletCreationEnabled, features.FlagWebhookDeliveryEnabled, features.FlagWithdrawalsEnabled}, body.Features)
 
 	_, err = facades.Orm().Query().Exec(
 		`INSERT INTO global_features ("key", enabled, created_at, updated_at)
@@ -130,7 +130,7 @@ func (s *UserControllerTestSuite) TestGet_Me_ListsGloballyActiveFeatureKeys() {
 	)
 	s.Require().NoError(err)
 	body = s.getMe()
-	s.Equal([]string{features.FlagDepositScanEnabled, features.FlagSweepEnabled, features.FlagUser2FARequired, features.FlagWalletCreationEnabled, features.FlagWebhookDeliveryEnabled}, body.Features)
+	s.Equal([]string{features.FlagDepositScanEnabled, features.FlagRampCustomerOperations, features.FlagRampOwnOperations, "ramp-payin-enabled", "ramp-payout-enabled", "ramp-usd-payin-enabled", "ramp-usd-payout-enabled", features.FlagSweepEnabled, features.FlagUser2FARequired, features.FlagWalletCreationEnabled, features.FlagWebhookDeliveryEnabled}, body.Features)
 
 	patch := s.Patch("/v1/users/me", support.Session{AccessToken: s.token}, `{"full_name":"Renamed User"}`)
 	patch.AssertOk()

@@ -31,6 +31,16 @@ func (e *ValidationError) empty() bool {
 
 func castIn(value any, definition Definition) (string, error) {
 	switch definition.Type {
+	case TypeRSAPublicKeyPEM:
+		text, ok := value.(string)
+		if !ok {
+			return "", fmt.Errorf("expected string")
+		}
+		text = strings.TrimSpace(text)
+		if err := validateRSAPublicKey(text); err != nil {
+			return "", err
+		}
+		return text, nil
 	case TypeString:
 		text, ok := value.(string)
 		if !ok {

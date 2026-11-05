@@ -41,7 +41,7 @@ func TestDB(t *testing.T) {
 	connectTestDB(t)
 	freshSchemaOnce.Do(func() {
 		if !testenv.WorkerMode() {
-			freshSchemaErr = facades.Artisan().Call("migrate:fresh")
+			freshSchemaErr = freshTestSchema(t)
 		}
 	})
 	if freshSchemaErr != nil {
@@ -66,6 +66,8 @@ const settingsCachePattern = "*settings:*"
 // (app/adapters/redis/scanactivity: ScanKeyPrefix, PushKeyPrefix, SignatureKeyPrefix,
 // ModeKeyPrefix and AlertKeyPrefix, written out here because that package imports the services whose
 // tests import this one; TestTestDB_ForgetsTheScanActivityARunLeft keeps them equal).
+// The KYC staging marks go too: engine customer ids restart with the truncation, so a
+// mark would refuse the next customer given that id (TestTestDB_ForgetsTheKycMarksARunLeft).
 var redisStatePatterns = []string{
 	settingsCachePattern,
 	"vault:scan-activity:*",
@@ -73,6 +75,7 @@ var redisStatePatterns = []string{
 	"vault:signature-sync:*",
 	"vault:scan-mode:*",
 	"vault:scan-alert:*",
+	"*kyc:*",
 }
 
 // forgetRedisState drops the Redis keys of redisStatePatterns along with the rows
@@ -113,12 +116,12 @@ func TestDBFreshSchema(t *testing.T) {
 	t.Helper()
 
 	connectTestDB(t)
-	if err := facades.Artisan().Call("migrate:fresh"); err != nil {
+	if err := freshTestSchema(t); err != nil {
 		t.Fatalf("migration failed: %v", err)
 	}
 	t.Cleanup(func() {
 		requireSafeTestDatabase(t)
-		if err := facades.Artisan().Call("migrate:fresh"); err != nil {
+		if err := freshTestSchema(t); err != nil {
 			t.Errorf("test database cleanup migration failed: %v", err)
 		}
 	})
@@ -411,4 +414,15 @@ func UpsertPlatformSetting(t *testing.T, group, key, value string) {
 		t.Fatalf("upsert platform setting %s.%s: %v", group, key, err)
 	}
 	facades.Cache().Forget("settings:platform:" + group)
+}
+
+// The fiat engine owns a second schema in the same test database. Goravel's
+// migrate:fresh only empties public, so clear this auxiliary schema explicitly
+// after the existing destructive-test database guard, before a fresh migration.
+func freshTestSchema(t *testing.T) error {
+	requireSafeTestDatabase(t)
+	if _, err := facades.Orm().Query().Exec("DROP SCHEMA IF EXISTS macro_ramps CASCADE"); err != nil {
+		return err
+	}
+	return facades.Artisan().Call("migrate:fresh")
 }

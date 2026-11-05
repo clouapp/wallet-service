@@ -1,0 +1,216 @@
+{
+  "id": "cus_passport_arg",
+  "first_name": "Ana",
+  "middle_name": null,
+  "last_name": "Passaporte",
+  "email": "passport.arg@example.com",
+  "status": "active",
+  "type": "individual",
+  "persona_inquiry_type": "gov_id_db",
+  "created_at": "2026-10-07T05:00:00.000Z",
+  "updated_at": "2026-10-07T05:01:00.000Z",
+  "rejection_reasons": [],
+  "has_accepted_terms_of_service": true,
+  "endorsements": [
+    {
+      "name": "base",
+      "status": "approved",
+      "requirements": {
+        "complete": [
+          "terms_of_service_v1",
+          "first_name",
+          "last_name",
+          "tax_identification_number",
+          "email_address",
+          "address_of_residence",
+          "date_of_birth",
+          "proof_of_address",
+          "sanctions_screen",
+          "pep_screen",
+          "blocklist_lookup",
+          "min_age_18",
+          "valid_date_of_birth",
+          "selfie_verification",
+          "government_id_rejection_checks",
+          "government_id_review_checks",
+          "pre_onboarding_check",
+          "government_id_verification",
+          "non_bogus_tax_identification_number",
+          "post_processing",
+          "stripe_database_lookup_bridge_address",
+          "stripe_database_lookup_global_dob"
+        ],
+        "pending": [],
+        "missing": null,
+        "issues": []
+      }
+    },
+    {
+      "name": "pix",
+      "status": "approved",
+      "requirements": {
+        "complete": [
+          "stripe_database_lookup_bridge_address",
+          "stripe_database_lookup_global_dob",
+          "terms_of_service_v2",
+          "first_name",
+          "last_name",
+          "tax_identification_number",
+          "email_address",
+          "address_of_residence",
+          "date_of_birth",
+          "proof_of_address",
+          "sanctions_screen",
+          "pep_screen",
+          "blocklist_lookup",
+          "min_age_18",
+          "valid_date_of_birth",
+          "selfie_verification",
+          "government_id_rejection_checks",
+          "government_id_review_checks",
+          "pre_onboarding_check",
+          "government_id_verification",
+          "non_bogus_tax_identification_number",
+          "account_processing",
+          "phone_number",
+          "passport_document",
+          "api_selfie_verification",
+          "has_any_tax_identification",
+          "has_valid_cpf_cnpj",
+          "account_provisioning"
+        ],
+        "pending": [],
+        "missing": null,
+        "issues": []
+      }
+    },
+    {
+      "name": "pix_offramp",
+      "status": "approved",
+      "requirements": {
+        "complete": [
+          "stripe_database_lookup_bridge_address",
+          "stripe_database_lookup_global_dob",
+          "terms_of_service_v2",
+          "first_name",
+          "last_name",
+          "tax_identification_number",
+          "email_address",
+          "address_of_residence",
+          "date_of_birth",
+          "proof_of_address",
+          "sanctions_screen",
+          "pep_screen",
+          "blocklist_lookup",
+          "min_age_18",
+          "valid_date_of_birth",
+          "selfie_verification",
+          "government_id_rejection_checks",
+          "government_id_review_checks",
+          "pre_onboarding_check",
+          "government_id_verification",
+          "non_bogus_tax_identification_number",
+          "account_processing",
+          "phone_number",
+          "passport_document",
+          "api_selfie_verification",
+          "has_any_tax_identification",
+          "has_valid_cpf_cnpj",
+          "account_provisioning"
+        ],
+        "pending": [],
+        "missing": null,
+        "issues": []
+      }
+    },
+    {
+      "name": "pix_onramp",
+      "status": "incomplete",
+      "requirements": {
+        "complete": [
+          "stripe_database_lookup_bridge_address",
+          "stripe_database_lookup_global_dob",
+          "terms_of_service_v2",
+          "first_name",
+          "last_name",
+          "tax_identification_number",
+          "email_address",
+          "address_of_residence",
+          "date_of_birth",
+          "proof_of_address",
+          "sanctions_screen",
+          "pep_screen",
+          "blocklist_lookup",
+          "min_age_18",
+          "valid_date_of_birth",
+          "selfie_verification",
+          "government_id_rejection_checks",
+          "government_id_review_checks",
+          "pre_onboarding_check",
+          "government_id_verification",
+          "non_bogus_tax_identification_number",
+          "account_processing",
+          "phone_number",
+          "passport_document",
+          "api_selfie_verification",
+          "has_any_tax_identification",
+          "has_valid_cpf_cnpj",
+          "account_provisioning"
+        ],
+        "pending": [],
+        "missing": {
+          "all_of": [
+            "has_tin_of_type_cpf"
+          ]
+        },
+        "issues": []
+      },
+      "additional_requirements": []
+    },
+    {
+      "name": "sepa",
+      "status": "approved",
+      "requirements": {
+        "complete": [
+          "terms_of_service_v2",
+          "first_name",
+          "last_name",
+          "tax_identification_number",
+          "email_address",
+          "address_of_residence",
+          "date_of_birth",
+          "proof_of_address",
+          "sanctions_screen",
+          "pep_screen",
+          "blocklist_lookup",
+          "min_age_18",
+          "valid_date_of_birth",
+          "selfie_verification",
+          "government_id_rejection_checks",
+          "government_id_review_checks",
+          "pre_onboarding_check",
+          "government_id_verification",
+          "non_bogus_tax_identification_number",
+          "stripe_database_lookup_bridge_address",
+          "stripe_database_lookup_global_dob"
+        ],
+        "pending": [],
+        "missing": null,
+        "issues": []
+      }
+    }
+  ],
+  "future_requirements_due": [],
+  "requirements_due": [],
+  "capabilities": {
+    "payin_crypto": "active",
+    "payout_crypto": "active",
+    "payin_fiat": "active",
+    "payout_fiat": "active"
+  },
+  "residential_address": {
+    "subdivision": null,
+    "country": "ARG"
+  },
+  "client_reference_id": null
+}

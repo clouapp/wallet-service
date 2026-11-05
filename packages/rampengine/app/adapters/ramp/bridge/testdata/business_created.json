@@ -1,0 +1,444 @@
+{
+ "id": "cus_business_1",
+ "first_name": "Kybprobe 1 Tecnologia Ltda",
+ "middle_name": null,
+ "last_name": null,
+ "email": "kybprobe+biz1@example.com",
+ "status": "awaiting_ubo",
+ "type": "business",
+ "persona_inquiry_type": "business",
+ "created_at": "2026-10-18T21:56:21.024Z",
+ "updated_at": "2026-10-18T21:56:23.671Z",
+ "rejection_reasons": [],
+ "has_accepted_terms_of_service": true,
+ "endorsements": [
+  {
+   "name": "base",
+   "status": "incomplete",
+   "requirements": {
+    "complete": [
+     "terms_of_service_v1",
+     "business_name",
+     "business_type",
+     "business_description",
+     "email_address",
+     "address_of_incorporation",
+     "address_of_operation",
+     "tax_identification_number",
+     "control_person_ownership_attestation",
+     "minimal_source_of_funds_data",
+     "proof_of_address",
+     "business_website",
+     "non_bogus_tax_identification_number",
+     {
+      "associated_person": "ap_owner_1",
+      "items": [
+       "has_control",
+       "tax_identification_number",
+       "first_name",
+       "last_name",
+       "email_address",
+       "address_of_residence",
+       "associated_person_relationship",
+       "date_of_birth",
+       "valid_date_of_birth",
+       "min_age_18",
+       "selfie_verification",
+       "has_title"
+      ]
+     }
+    ],
+    "pending": [
+     {
+      "associated_person": "ap_owner_1",
+      "items": [
+       "blocklist_lookup",
+       "sanctions_screen",
+       "adverse_media_screen",
+       "pep_screen"
+      ]
+     },
+     "adverse_media_screen",
+     "sanctions_screen",
+     "business_blocklist_lookup",
+     "fincen_special_measures_screen",
+     "business_website_verification",
+     "aiprise_nature_of_business_verification",
+     "aiprise_business_registry_verification",
+     "pre_onboarding_check",
+     "duplicate_check_tax_id_hash",
+     "duplicate_check_business_name"
+    ],
+    "missing": {
+     "all_of": [
+      "kyb_review",
+      {
+       "object_type": "associated_person",
+       "object_id": "ap_owner_1",
+       "all_of": [
+        "government_id_document"
+       ]
+      },
+      "business_formation_document",
+      "post_processing"
+     ]
+    },
+    "issues": []
+   },
+   "additional_requirements": [
+    "kyc_approval"
+   ]
+  },
+  {
+   "name": "pix",
+   "status": "incomplete",
+   "requirements": {
+    "complete": [
+     "address_of_operation",
+     "address_of_incorporation",
+     "terms_of_service_v2",
+     "business_name",
+     "business_type",
+     "business_description",
+     "email_address",
+     "tax_identification_number",
+     "control_person_ownership_attestation",
+     "minimal_source_of_funds_data",
+     "proof_of_address",
+     "business_website",
+     "non_bogus_tax_identification_number",
+     "account_processing",
+     "incorporation_date",
+     "phone_number",
+     "has_tin_of_type_cnpj",
+     "has_valid_cpf_cnpj",
+     {
+      "associated_person": "ap_owner_1",
+      "items": [
+       "has_control",
+       "tax_identification_number",
+       "first_name",
+       "last_name",
+       "email_address",
+       "address_of_residence",
+       "associated_person_relationship",
+       "date_of_birth",
+       "valid_date_of_birth",
+       "min_age_18",
+       "selfie_verification",
+       "has_title",
+       "phone_number",
+       "has_any_tax_identification"
+      ]
+     }
+    ],
+    "pending": [
+     "duplicate_check_tax_id_hash",
+     "duplicate_check_business_name",
+     "adverse_media_screen",
+     "sanctions_screen",
+     "business_blocklist_lookup",
+     "fincen_special_measures_screen",
+     "business_website_verification",
+     "aiprise_nature_of_business_verification",
+     "aiprise_business_registry_verification",
+     "pre_onboarding_check",
+     {
+      "associated_person": "ap_owner_1",
+      "items": [
+       "blocklist_lookup",
+       "sanctions_screen",
+       "adverse_media_screen",
+       "pep_screen"
+      ]
+     }
+    ],
+    "missing": {
+     "all_of": [
+      "kyb_review",
+      {
+       "object_type": "associated_person",
+       "object_id": "ap_owner_1",
+       "all_of": [
+        "government_id_document"
+       ]
+      },
+      "business_formation_document",
+      "proof_of_source_of_funds_document",
+      "proof_of_address_document"
+     ]
+    },
+    "issues": []
+   },
+   "additional_requirements": []
+  },
+  {
+   "name": "pix_offramp",
+   "status": "incomplete",
+   "requirements": {
+    "complete": [
+     "address_of_operation",
+     "address_of_incorporation",
+     "terms_of_service_v2",
+     "business_name",
+     "business_type",
+     "business_description",
+     "email_address",
+     "tax_identification_number",
+     "control_person_ownership_attestation",
+     "minimal_source_of_funds_data",
+     "proof_of_address",
+     "business_website",
+     "non_bogus_tax_identification_number",
+     "account_processing",
+     "incorporation_date",
+     "phone_number",
+     "has_tin_of_type_cnpj",
+     "has_valid_cpf_cnpj",
+     {
+      "associated_person": "ap_owner_1",
+      "items": [
+       "has_control",
+       "tax_identification_number",
+       "first_name",
+       "last_name",
+       "email_address",
+       "address_of_residence",
+       "associated_person_relationship",
+       "date_of_birth",
+       "valid_date_of_birth",
+       "min_age_18",
+       "selfie_verification",
+       "has_title",
+       "phone_number",
+       "has_any_tax_identification"
+      ]
+     }
+    ],
+    "pending": [
+     "duplicate_check_tax_id_hash",
+     "duplicate_check_business_name",
+     "adverse_media_screen",
+     "sanctions_screen",
+     "business_blocklist_lookup",
+     "fincen_special_measures_screen",
+     "business_website_verification",
+     "aiprise_nature_of_business_verification",
+     "aiprise_business_registry_verification",
+     "pre_onboarding_check",
+     {
+      "associated_person": "ap_owner_1",
+      "items": [
+       "blocklist_lookup",
+       "sanctions_screen",
+       "adverse_media_screen",
+       "pep_screen"
+      ]
+     }
+    ],
+    "missing": {
+     "all_of": [
+      "kyb_review",
+      {
+       "object_type": "associated_person",
+       "object_id": "ap_owner_1",
+       "all_of": [
+        "government_id_document"
+       ]
+      },
+      "business_formation_document",
+      "proof_of_source_of_funds_document",
+      "proof_of_address_document"
+     ]
+    },
+    "issues": []
+   },
+   "additional_requirements": []
+  },
+  {
+   "name": "pix_onramp",
+   "status": "incomplete",
+   "requirements": {
+    "complete": [
+     "address_of_operation",
+     "address_of_incorporation",
+     "terms_of_service_v2",
+     "business_name",
+     "business_type",
+     "business_description",
+     "email_address",
+     "tax_identification_number",
+     "control_person_ownership_attestation",
+     "minimal_source_of_funds_data",
+     "proof_of_address",
+     "business_website",
+     "non_bogus_tax_identification_number",
+     "account_processing",
+     "incorporation_date",
+     "phone_number",
+     "has_tin_of_type_cnpj",
+     "has_valid_cpf_cnpj",
+     {
+      "associated_person": "ap_owner_1",
+      "items": [
+       "has_control",
+       "tax_identification_number",
+       "first_name",
+       "last_name",
+       "email_address",
+       "address_of_residence",
+       "associated_person_relationship",
+       "date_of_birth",
+       "valid_date_of_birth",
+       "min_age_18",
+       "selfie_verification",
+       "has_title",
+       "phone_number",
+       "has_any_tax_identification"
+      ]
+     }
+    ],
+    "pending": [
+     "duplicate_check_tax_id_hash",
+     "duplicate_check_business_name",
+     "adverse_media_screen",
+     "sanctions_screen",
+     "business_blocklist_lookup",
+     "fincen_special_measures_screen",
+     "business_website_verification",
+     "aiprise_nature_of_business_verification",
+     "aiprise_business_registry_verification",
+     "pre_onboarding_check",
+     {
+      "associated_person": "ap_owner_1",
+      "items": [
+       "blocklist_lookup",
+       "sanctions_screen",
+       "adverse_media_screen",
+       "pep_screen"
+      ]
+     }
+    ],
+    "missing": {
+     "all_of": [
+      "kyb_review",
+      {
+       "object_type": "associated_person",
+       "object_id": "ap_owner_1",
+       "all_of": [
+        "government_id_document"
+       ]
+      },
+      "business_formation_document",
+      "proof_of_source_of_funds_document",
+      "proof_of_address_document"
+     ]
+    },
+    "issues": []
+   },
+   "additional_requirements": []
+  },
+  {
+   "name": "sepa",
+   "status": "incomplete",
+   "requirements": {
+    "complete": [
+     "terms_of_service_v2",
+     "business_name",
+     "business_type",
+     "business_description",
+     "email_address",
+     "address_of_incorporation",
+     "address_of_operation",
+     "tax_identification_number",
+     "control_person_ownership_attestation",
+     "minimal_source_of_funds_data",
+     "proof_of_address",
+     "business_website",
+     "non_bogus_tax_identification_number",
+     {
+      "associated_person": "ap_owner_1",
+      "items": [
+       "has_control",
+       "tax_identification_number",
+       "first_name",
+       "last_name",
+       "email_address",
+       "address_of_residence",
+       "associated_person_relationship",
+       "date_of_birth",
+       "valid_date_of_birth",
+       "min_age_18",
+       "selfie_verification",
+       "has_title"
+      ]
+     }
+    ],
+    "pending": [
+     {
+      "associated_person": "ap_owner_1",
+      "items": [
+       "blocklist_lookup",
+       "sanctions_screen",
+       "adverse_media_screen",
+       "pep_screen"
+      ]
+     },
+     "adverse_media_screen",
+     "sanctions_screen",
+     "business_blocklist_lookup",
+     "fincen_special_measures_screen",
+     "business_website_verification",
+     "aiprise_nature_of_business_verification",
+     "aiprise_business_registry_verification",
+     "pre_onboarding_check",
+     "duplicate_check_tax_id_hash",
+     "duplicate_check_business_name"
+    ],
+    "missing": {
+     "all_of": [
+      "kyb_review",
+      {
+       "object_type": "associated_person",
+       "object_id": "ap_owner_1",
+       "all_of": [
+        "government_id_document"
+       ]
+      },
+      "business_formation_document"
+     ]
+    },
+    "issues": []
+   },
+   "additional_requirements": [
+    "kyc_approval",
+    "kyc_with_proof_of_address"
+   ]
+  }
+ ],
+ "future_requirements_due": [],
+ "requirements_due": [
+  "external_account"
+ ],
+ "capabilities": {
+  "payin_crypto": "pending",
+  "payout_crypto": "pending",
+  "payin_fiat": "pending",
+  "payout_fiat": "pending"
+ },
+ "physical_address": {
+  "subdivision": "SP",
+  "country": "BRA"
+ },
+ "registered_address": {
+  "subdivision": "SP",
+  "country": "BRA"
+ },
+ "client_reference_id": null,
+ "associated_persons": [
+  {
+   "id": "ap_owner_1",
+   "email": "kybprobe+owner1@example.com"
+  }
+ ]
+}

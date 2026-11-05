@@ -214,6 +214,7 @@ two bugfixes that landed in the commits before it.
 | `GET /v1/wallets/{id}/settings` | 2026-10-03, label already returned by the settings controller | no `label` | `label` plus the same fee fields (`fee_multiplier` stays JSON null) |
 | `GET /v1/users/me` | 2026-10-05, active feature keys | no `features` | `features` lists the globally active flags |
 | `GET /v1/accounts/{id}` | 2026-10-05, account feature keys | no `features` | `features` lists the active flags |
+| `GET /v1/users/me`, `GET /v1/accounts/{id}` | 2026-11-04, ramp integrations (#169) | `features` without ramp flags | `features` also lists the default-on ramp flags (`ramp-customer-operations-enabled`, `ramp-own-operations-enabled`, `ramp-payin-enabled`, `ramp-payout-enabled`, `ramp-usd-payin-enabled`, `ramp-usd-payout-enabled`); none of them opens a ramp route while the master flag `ramp-integrations-enabled` is off |
 | `GET /v1/users/me/accounts` | 2026-10-05, caller role | no `role` | `role` |
 | `POST /v1/auth/2fa/verify` | body names `challenge_token`, 2026-10-05, second-factor token rename | 422, `partial_token` required | 401 `unauthorized`, `invalid or expired partial token` |
 | any route in the table above | 2026-10-08, rate limiting (H1) | no limit, never 429 | 429 `too_many_requests` over the limit (contract steps 69 and 70) |

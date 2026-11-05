@@ -237,18 +237,33 @@ const (
 
 // subscribableEvents are the event types a webhook config may subscribe to.
 var subscribableEvents = map[EventType]bool{
-	EventDepositPending:          true,
-	EventDepositConfirming:       true,
-	EventDepositConfirmed:        true,
-	EventDepositFailed:           true,
-	EventWithdrawalBroadcasting:  true,
-	EventWithdrawalBroadcast:     true,
-	EventWithdrawalConfirmed:     true,
-	EventWithdrawalFailed:        true,
-	EventWithdrawalSweepRequired: true,
-	EventSweepBroadcast:          true,
-	EventSweepConfirmed:          true,
-	EventWalletGasStatusChanged:  true,
+	"customer.compliance.updated":      true,
+	"customer.requirements.updated":    true,
+	"customer.virtual_account.updated": true,
+	"ramp.order.updated":               true,
+	"ramp.order.completed":             true,
+	"ramp.order.failed":                true,
+	"ramp.order.attention_required":    true,
+	EventDepositPending:                true,
+	EventDepositConfirming:             true,
+	EventDepositConfirmed:              true,
+	EventDepositFailed:                 true,
+	EventWithdrawalBroadcasting:        true,
+	EventWithdrawalBroadcast:           true,
+	EventWithdrawalConfirmed:           true,
+	EventWithdrawalFailed:              true,
+	EventWithdrawalSweepRequired:       true,
+	EventSweepBroadcast:                true,
+	EventSweepConfirmed:                true,
+	EventWalletGasStatusChanged:        true,
+}
+
+func IsAccountScopedEvent(event EventType) bool {
+	switch event {
+	case "customer.compliance.updated", "customer.requirements.updated", "customer.virtual_account.updated", "ramp.order.updated", "ramp.order.completed", "ramp.order.failed", "ramp.order.attention_required":
+		return true
+	}
+	return false
 }
 
 func IsSubscribableEvent(event string) bool {

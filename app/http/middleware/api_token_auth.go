@@ -142,6 +142,7 @@ func APITokenAuth(tokens apiTokenLookup) http.Middleware {
 			facades.Log().Errorf("api token: last_used_at was not recorded for %s", token.ID)
 		}
 
+		ctx.WithValue(requestctx.KeyAccount, account)
 		ctx.WithValue(requestctx.KeyAccountID, accountID)
 		ctx.WithValue(requestctx.KeyAccountEnvironment, account.Environment)
 		ctx.WithValue(requestctx.KeyAPIToken, &token)

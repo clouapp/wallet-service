@@ -1,0 +1,15 @@
+{
+  "id": "po_000000000001",
+  "status": "processing",
+  "customer_id": "re_000000000001",
+  "quote_id": "qu_000000000001",
+  "bank_account_id": "ba_000000000001",
+  "network": "solana_devnet",
+  "token": "USDB",
+  "sender_amount": 10000,
+  "receiver_amount": 9850,
+  "sender_wallet_address": "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin",
+  "tracking_transaction": {"step": "processing"},
+  "tracking_payment": {"step": "processing"},
+  "tracking_complete": {"step": "processing"}
+}

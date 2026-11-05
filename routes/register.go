@@ -7,4 +7,6 @@ func RegisterHTTP() {
 	RegisterTenantProvisioning()
 	RegisterAdminRoutes()
 	RegisterExternalAPI()
+	RegisterRamps()
+	RegisterRampWebhooks()
 }

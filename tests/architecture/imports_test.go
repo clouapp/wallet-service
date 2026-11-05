@@ -66,6 +66,11 @@ func TestThe_Package_DoesNotReachTheModule(t *testing.T) {
 	for _, file := range module.ProductionFiles("pkg", "packages") {
 		for _, importPath := range file.Imports() {
 			if target, inModule := module.RelativeOf(importPath); inModule {
+				// The copied engine is one isolated component with internal subpackages.
+				// It may not import native application code; its test helpers stay test-only.
+				if hasAnyPrefix(file.Dir, []string{"packages/rampengine"}) && hasAnyPrefix(target, []string{"packages/rampengine"}) {
+					continue
+				}
 				violations.Add("%s imports %s", file.Path, target)
 			}
 		}
@@ -98,39 +103,41 @@ func TestProduction_Code_MayNotImportTheGeneratedMocks(t *testing.T) {
 
 func TestLayer_Maps_EveryKnownZone(t *testing.T) {
 	cases := map[string]string{
-		".":                               LayerMain,
-		"app/models":                      LayerModels,
-		"app/http/controllers":            LayerHTTP,
-		"app/http/controllers/testutil":   LayerHTTP,
-		"app/services/sweep":              LayerServices,
-		"app/services/ingest/providers":   LayerServices,
-		"app/adapters/chain/evm":          LayerAdapters,
-		"app/repositories/internal/db":    LayerRepositories,
-		"pkg/amount":                      LayerPackages,
-		"packages/featureflag":            LayerPackages,
-		"database/migrations":             LayerDatabase,
-		"tests/mocks":                     LayerTests,
-		"tools/e2e-funder":                LayerTools,
-		"app/providers":                   LayerProviders,
-		"app/http/requests":               LayerHTTP,
-		"app/console/commands":            LayerConsole,
-		"routes":                          LayerRoutes,
-		"config":                          LayerConfig,
-		"bootstrap":                       LayerBootstrap,
-		"app/container":                   LayerContainer,
-		"app/policies":                    LayerPolicies,
-		"app/mails":                       LayerMails,
-		"app/jobs":                        LayerJobs,
-		"app/rules":                       LayerRules,
-		"app/facades":                     LayerFacades,
-		"docs":                            LayerDocs,
-		"scripts/e2e":                     LayerTools,
-		"app/http/middleware":             LayerHTTP,
-		"app/services/withdrawalevents":   LayerServices,
-		"database/seeders":                LayerDatabase,
-		"tests/feature/support/testenv":   LayerTests,
-		"app/repositories":                LayerRepositories,
-		"app/services/chain/testdata/sol": LayerServices,
+		".":                                 LayerMain,
+		"app/models":                        LayerModels,
+		"app/http/controllers":              LayerHTTP,
+		"app/http/controllers/testutil":     LayerHTTP,
+		"app/services/sweep":                LayerServices,
+		"app/services/ingest/providers":     LayerServices,
+		"app/adapters/chain/evm":            LayerAdapters,
+		"app/repositories/internal/db":      LayerRepositories,
+		"pkg/amount":                        LayerPackages,
+		"packages/featureflag":              LayerPackages,
+		"packages/rampengine/app/models":    LayerRampEngine,
+		"packages/rampengine/tests/support": LayerTests,
+		"database/migrations":               LayerDatabase,
+		"tests/mocks":                       LayerTests,
+		"tools/e2e-funder":                  LayerTools,
+		"app/providers":                     LayerProviders,
+		"app/http/requests":                 LayerHTTP,
+		"app/console/commands":              LayerConsole,
+		"routes":                            LayerRoutes,
+		"config":                            LayerConfig,
+		"bootstrap":                         LayerBootstrap,
+		"app/container":                     LayerContainer,
+		"app/policies":                      LayerPolicies,
+		"app/mails":                         LayerMails,
+		"app/jobs":                          LayerJobs,
+		"app/rules":                         LayerRules,
+		"app/facades":                       LayerFacades,
+		"docs":                              LayerDocs,
+		"scripts/e2e":                       LayerTools,
+		"app/http/middleware":               LayerHTTP,
+		"app/services/withdrawalevents":     LayerServices,
+		"database/seeders":                  LayerDatabase,
+		"tests/feature/support/testenv":     LayerTests,
+		"app/repositories":                  LayerRepositories,
+		"app/services/chain/testdata/sol":   LayerServices,
 	}
 	for dir, want := range cases {
 		if got := Layer(dir); got != want {
@@ -149,6 +156,14 @@ func TestLayer_Leaves_AnUnknownZoneUnclassified(t *testing.T) {
 
 func TestCheck_Import_SyntheticEdges(t *testing.T) {
 	refused := [][2]string{
+		{LayerRampEngine, LayerServices},
+		{LayerRampEngine, LayerRepositories},
+		{LayerRampEngine, LayerFacades},
+		{LayerRampEngine, LayerHTTP},
+		{LayerRampEngine, LayerContainer},
+		{LayerRampEngine, LayerTests},
+		{LayerPackages, LayerRampEngine},
+		{LayerModels, LayerRampEngine},
 		{LayerModels, LayerServices},
 		{LayerModels, LayerRepositories},
 		{LayerHTTP, LayerRepositories},
@@ -176,6 +191,8 @@ func TestCheck_Import_SyntheticEdges(t *testing.T) {
 		}
 	}
 	admitted := [][2]string{
+		{LayerRampEngine, LayerRampEngine},
+		{LayerServices, LayerRampEngine},
 		{LayerHTTP, LayerServices},
 		{LayerHTTP, LayerFacades},
 		{LayerHTTP, LayerHTTP},

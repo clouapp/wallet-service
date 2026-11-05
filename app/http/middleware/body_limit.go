@@ -22,17 +22,21 @@ func BodyLimit(limit int64) contractshttp.Middleware {
 			ctx.Request().Next()
 			return
 		}
+		ceiling := limit
 		origin := ctx.Request().Origin()
 		if origin == nil {
 			ctx.Request().Next()
 			return
 		}
-		if origin.ContentLength > limit {
+		if origin.Method == http.MethodPost && isRampDocumentsPath(origin.URL.Path) && ceiling == MaxGlobalBodyBytes {
+			ceiling = 10 << 20
+		}
+		if origin.ContentLength > ceiling {
 			_ = responses.Fail(ctx, http.StatusRequestEntityTooLarge, responses.CodeRequestTooLarge, "request body too large").Abort()
 			return
 		}
 		if origin.Body != nil && origin.Body != http.NoBody && requestCarriesBody(origin.Method) {
-			origin.Body = http.MaxBytesReader(ctx.Response().Writer(), origin.Body, limit)
+			origin.Body = http.MaxBytesReader(ctx.Response().Writer(), origin.Body, ceiling)
 		}
 		ctx.Request().Next()
 	}
@@ -45,4 +49,13 @@ func requestCarriesBody(method string) bool {
 	default:
 		return false
 	}
+}
+
+// KYC uploads retain their per-file engine limits. Other routes keep 4 MiB.
+func isRampDocumentsPath(path string) bool {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) > 0 && parts[0] == "api" {
+		parts = parts[1:]
+	}
+	return (len(parts) == 5 || len(parts) == 6) && parts[0] == "v1" && parts[1] == "customers" && parts[3] == "kyc" && parts[len(parts)-1] == "documents"
 }

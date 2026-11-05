@@ -26,6 +26,7 @@ import (
 	"github.com/macrowallets/waas/app/services/deposit"
 	"github.com/macrowallets/waas/app/services/localworkers"
 	"github.com/macrowallets/waas/app/services/mpc"
+	"github.com/macrowallets/waas/app/services/ramps"
 	"github.com/macrowallets/waas/app/services/refresh"
 	"github.com/macrowallets/waas/app/services/settings"
 	"github.com/macrowallets/waas/app/services/webhook"
@@ -111,6 +112,8 @@ func main() {
 		lambda.Start(handleDepositScan)
 	case "confirmation_tracker":
 		lambda.Start(handleConfirmationTracker)
+	case "ramp_worker":
+		lambda.Start(func(ctx context.Context) error { return container.MustMake[*ramps.Service]().Tick(ctx, webhooks, true) })
 	case "webhook_reconciler":
 		lambda.Start(handleWebhookReconciler)
 	case "webhook_worker":
@@ -260,7 +263,17 @@ func startLocalWorkers(ctx context.Context) lifecycle.Workers {
 		slog.Error("local workers not started", "error", err)
 		return nil
 	}
-	return loops
+	return combinedWorkers{loops, container.MustMake[*ramps.Service]().Start(ctx, webhooks)}
+}
+
+type combinedWorkers []lifecycle.Workers
+
+func (w combinedWorkers) Wait() {
+	for _, worker := range w {
+		if worker != nil {
+			worker.Wait()
+		}
+	}
 }
 
 const (
