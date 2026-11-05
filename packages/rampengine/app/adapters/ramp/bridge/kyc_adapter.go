@@ -237,7 +237,22 @@ func (a *Adapter) SubmitDocuments(ctx context.Context, ref ramp.CustomerRef, doc
 		return a.GetKyc(ctx, ref)
 	}
 	state, err := a.putCustomer(ctx, ref.ExternalID, patch)
+	// Bridge refuses the whole update for a selfie it cannot take yet, and
+	// approves the same customer without one, so the document goes again alone.
+	if refusedOnlySelfies(err) && (patch.IdentifyingInformation != nil || patch.Documents != nil) {
+		patch.LivenessCheckSelfies = nil
+		state, err = a.putCustomer(ctx, ref.ExternalID, patch)
+	}
 	return state, documentRefusal(err)
+}
+
+// refusedOnlySelfies reports Bridge refusing a customer update for its selfies
+// and nothing else: they are taken only with a Pix endorsement, or both the
+// reliance and ARS ones (sandbox, 05/11/2026).
+func refusedOnlySelfies(err error) bool {
+	var upstreamErr *UpstreamError
+	return errors.As(err, &upstreamErr) && upstreamErr.Code == "invalid_parameters" &&
+		len(upstreamErr.Fields) == 1 && upstreamErr.Fields[0] == "liveness_check_selfies"
 }
 
 // documentRefusal marks Bridge refusing the parameters of a documents call --

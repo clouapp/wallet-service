@@ -48,6 +48,7 @@ func (p *WebhookProcessor) applyKyc(db repositories.WebhookTx, event *models.Web
 		// about either and leaves both as they were.
 		row.SetRejectionCategories(result.RejectionCategories)
 		row.SetRejectionDetails(result.RejectionDetails)
+		row.SettleDocumentRefusal()
 	}
 	if len(result.Endorsements) > 0 {
 		if err := row.SetEndorsements(result.Endorsements); err != nil {

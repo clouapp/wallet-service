@@ -39,6 +39,8 @@ type bridgeStub struct {
 	calls     []stubCall
 	apiKeys   []string
 	base      string
+	// refuseDocuments answers a customer update as Bridge answers files it cannot take.
+	refuseDocuments bool
 }
 
 type stubCall struct {
@@ -52,6 +54,7 @@ func (b *bridgeStub) reset() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.customers, b.calls, b.apiKeys = map[string]map[string]any{}, nil, nil
+	b.refuseDocuments = false
 }
 
 func (b *bridgeStub) sent(method, prefix string) []stubCall {
@@ -104,6 +107,10 @@ func (b *bridgeStub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		customer, ok := b.customers[id]
 		if !ok {
 			reply(404, map[string]any{"code": "not_found"})
+			return
+		}
+		if r.Method == http.MethodPut && b.refuseDocuments {
+			reply(400, map[string]any{"code": "invalid_parameters", "message": "Please resubmit", "source": map[string]any{"location": "body", "key": map[string]any{"identifying_information": "unreadable"}}})
 			return
 		}
 		if r.Method == http.MethodPut || strings.HasSuffix(r.URL.Path, "/associated_persons") {
@@ -263,6 +270,14 @@ func (s *RampSuite) work() {
 	}
 	s.Require().NoError(facades.Orm().Query().Raw("SELECT kind,last_error FROM ramp_tasks WHERE last_error IS NOT NULL").Scan(&failed))
 	s.Empty(failed, "a task the worker could not finish")
+}
+
+// workAllowingFailure runs the worker for a step whose provider call is meant to fail.
+func (s *RampSuite) workAllowingFailure() {
+	_, err := facades.Orm().Query().Exec("UPDATE ramp_tasks SET available_at=now() WHERE completed_at IS NULL AND available_at > now() AND available_at < now()+interval '1 second'")
+	s.Require().NoError(err)
+	_, err = container.MustMake[*ramps.Service]().Work(context.Background(), 20)
+	s.Require().NoError(err)
 }
 
 // deliver posts a provider callback through the real, unauthenticated route.
@@ -622,6 +637,64 @@ func (s *RampSuite) TestForgedWebhookChangesNothing() {
 	s.work()
 	state, raw = decodeBody[map[string]any](s, s.External(base+"/bridge", token).Get())
 	s.Equal("approved", state["kyc_status"], raw)
+}
+
+// TestRefusedDocumentsStayVisibleUntilAccepted is the customer who sent a file
+// the provider refused: the callback that follows must not erase the only
+// record of why they are still being asked for a document.
+func (s *RampSuite) TestRefusedDocumentsStayVisibleUntilAccepted() {
+	providerStub.reset()
+	webhookKey := s.enableBridge("sandbox")
+	token := s.token(s.account("test"), fullGrants)
+	const email = "refused@example.com"
+	id := s.createCustomer(token, map[string]any{"external_id": "refused-1", "relationship": "end_customer", "entity_type": "individual", "name": "Ana Souza", "email": email})
+	base := "/api/v1/customers/" + id + "/kyc"
+	s.External(base+"/tos", token).Post(map[string]any{"redirect_uri": "https://wallet.example.com/cash/terms-return", "country": "BRA", "tax_id_type": "cpf", "tax_id_country": "BRA"}).AssertStatus(201)
+	s.External(base+"/tos/acceptances", token).Post(map[string]any{"acceptances": []map[string]any{{"provider": "bridge", "signed_agreement_id": "agr_stub_refused"}}}).AssertStatus(200)
+	s.External(base+"/application", token).Post(individualApplication(email)).AssertStatus(202)
+	s.work()
+	customerID := providerStub.onlyCustomer()
+	s.Require().NotEmpty(customerID)
+
+	documents := map[string]any{"document_type": "national_id", "issuing_country": "BRA", "image_front": tinyPNG, "image_back": tinyPNG}
+	providerStub.mu.Lock()
+	providerStub.refuseDocuments = true
+	providerStub.mu.Unlock()
+	s.External(base+"/documents", token).Post(documents).AssertStatus(202)
+	s.workAllowingFailure()
+
+	s.deliver("sandbox", webhookKey, customerEvent(customerID, providerStub.setStatus(customerID, "incomplete"))).AssertStatus(202)
+	s.work()
+
+	type overview struct {
+		Overall struct {
+			Status     string   `json:"status"`
+			Categories []string `json:"categories"`
+		} `json:"overall"`
+		Providers []struct {
+			LastError *struct {
+				Code string `json:"code"`
+			} `json:"last_error"`
+		} `json:"providers"`
+	}
+	// A refresh reads the provider too, and must not erase it either.
+	s.External(base+"/overview/refresh", token).Post(map[string]any{}).AssertStatus(200)
+	state, raw := decodeBody[overview](s, s.External(base+"/overview", token).Get())
+	s.Equal("action_required", state.Overall.Status, raw)
+	s.Contains(state.Overall.Categories, "document_unreadable", raw)
+	s.Require().Len(state.Providers, 1, raw)
+	s.Require().NotNil(state.Providers[0].LastError, raw)
+	s.Equal("document_unreadable", state.Providers[0].LastError.Code, raw)
+
+	providerStub.mu.Lock()
+	providerStub.refuseDocuments = false
+	providerStub.mu.Unlock()
+	s.External(base+"/documents", token).Post(documents).AssertStatus(202)
+	s.work()
+	state, raw = decodeBody[overview](s, s.External(base+"/overview", token).Get())
+	s.NotContains(state.Overall.Categories, "document_unreadable", raw)
+	s.Require().Len(state.Providers, 1, raw)
+	s.Nil(state.Providers[0].LastError, raw)
 }
 
 // TestKycStopsWhenTheMasterFlagIsOff is the kill switch on the compliance routes.

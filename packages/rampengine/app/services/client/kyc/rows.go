@@ -363,6 +363,17 @@ func newKycRow(customerID uint, provider string, adapter ramp.ProviderAdapter) *
 	}
 }
 
+// keepDocumentRefusal carries a refused document across a provider read, which
+// clears any failure: a callback already on its way would otherwise erase the
+// only record of why the user is being asked for the same file again.
+func keepDocumentRefusal(row, standing *models.CustomerProviderKyc) {
+	if standing.LastErrorCode == nil || *standing.LastErrorCode != models.KycRejectionDocumentUnreadable {
+		return
+	}
+	row.LastErrorCode, row.LastErrorDetail, row.LastErrorAt = standing.LastErrorCode, standing.LastErrorDetail, standing.LastErrorAt
+	row.SettleDocumentRefusal()
+}
+
 // applyKycState merges a provider snapshot onto the local row.
 func applyKycState(row *models.CustomerProviderKyc, state *ramp.KycState) {
 	row.KycStatus = orDefault(state.Status, row.KycStatus)

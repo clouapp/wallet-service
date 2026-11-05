@@ -52,6 +52,12 @@ para cada titular; habilitar uma flag não cria uma capacidade de provedor.
 A aceitação comercial de uma atividade pelo provedor permanece independente
 da aprovação de identidade e das flags do Macro.
 
+O motor difere da origem em dois pontos, medidos contra o sandbox real da Bridge
+(05/11/2026). A Bridge recusa a atualização inteira por uma selfie de cliente sem
+endosso Pix ou sem reliance e ARS, então o adapter reenvia os documentos sem ela.
+Um documento recusado continua em `last_error` e `document_unreadable` enquanto o
+provedor pedir documentos: webhooks e refresh não apagam mais o único registro do motivo.
+
 ## Persistência, tenant e ambiente
 
 A migração `00000000000720_create_ramp_integrations` instala atomicamente o

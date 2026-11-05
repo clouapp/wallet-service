@@ -5,8 +5,8 @@
   "snapshot": "Local merge of the BlindPay feature branch and dev; not a published source commit.",
   "boundary": "No Xip bootstrap/auth/routes are registered. Native composition is app/services/ramps + app/providers/ramp_service_provider.go.",
   "counts": {
-    "files": 897,
-    "go_test_files": 234
+    "files": 898,
+    "go_test_files": 235
   },
   "adaptations": [
     "Separate macro_ramps ORM connection and tenant/environment columns and scope guards.",
@@ -14,7 +14,8 @@
     "Background recovery and provider bindings are scoped by native account/environment.",
     "Queue staging hands identifiers to the native durable task dispatcher.",
     "Settings validators expose per-account-mode catalogs to the native registry.",
-    "Compatibility test helpers do not boot the source application. Darwin closed-port test skips a host-level SYN timeout."
+    "Compatibility test helpers do not boot the source application. Darwin closed-port test skips a host-level SYN timeout.",
+    "Bridge documents go again without a selfie Bridge refused, and a refused document stays recorded until the provider moves on (real sandbox, 05/11/2026)."
   ],
   "files": [
     {
@@ -775,17 +776,17 @@
     },
     {
       "target": "packages/rampengine/app/adapters/ramp/bridge/kyc_adapter.go",
-      "target_sha256": "dc60d7aef5dac6e0fa73dd5f4941c38ff4eaa31185008384317c9cf4cc39230f",
+      "target_sha256": "cfbdf007dee56cf7873e7600fa9848153afdb3e26ccb0edc4d362172a26d1779",
       "source": "app/adapters/ramp/bridge/kyc_adapter.go",
       "source_sha256": "deec038b4bf1122fb0d86ad3a4ecfb9d43b6cddfe6f634ba03c31dc5efe838b4",
-      "adaptation": "imports-only"
+      "adaptation": "macro-integration"
     },
     {
       "target": "packages/rampengine/app/adapters/ramp/bridge/kyc_adapter_test.go",
-      "target_sha256": "b506c70f259733cfd03a1c5584e26b15b92c5a21b982ef01b8ef8839f6f950f1",
+      "target_sha256": "f691c850554d9a4933710d2c5e1d588f5bb584793c63fc15c69b8f0253845480",
       "source": "app/adapters/ramp/bridge/kyc_adapter_test.go",
       "source_sha256": "54f9cbb570e154551005b52f5d1024e7416ce2121927d59b66064085ec94ed3e",
-      "adaptation": "imports-only"
+      "adaptation": "macro-integration"
     },
     {
       "target": "packages/rampengine/app/adapters/ramp/bridge/liquidation_address.go",
@@ -3007,10 +3008,10 @@
     },
     {
       "target": "packages/rampengine/app/models/customer_provider_kyc.go",
-      "target_sha256": "977f6a6870b4f0207752b1c0fa98af8a513d28829312278baae813783fa3fcb6",
+      "target_sha256": "2f26e3fb4b76ba1bba250edcd4830df9539b59295e76864137476d0c0aec0bb7",
       "source": "app/models/customer_provider_kyc.go",
       "source_sha256": "977f6a6870b4f0207752b1c0fa98af8a513d28829312278baae813783fa3fcb6",
-      "adaptation": "copied"
+      "adaptation": "macro-integration"
     },
     {
       "target": "packages/rampengine/app/models/customer_provider_kyc_people.go",
@@ -3018,6 +3019,11 @@
       "source": "app/models/customer_provider_kyc_people.go",
       "source_sha256": "83aac7e0004a30fa96bc0d88bf6ef8cccab0107b87948932fd311e3227eb00cc",
       "adaptation": "copied"
+    },
+    {
+      "target": "packages/rampengine/app/models/customer_provider_kyc_refusal_test.go",
+      "target_sha256": "f068175207a25b499b2f27dac03eb049374a013394b5cfff17c4e7d588e792af",
+      "adaptation": "macro-integration"
     },
     {
       "target": "packages/rampengine/app/models/customer_type.go",
@@ -4372,10 +4378,10 @@
     },
     {
       "target": "packages/rampengine/app/services/client/kyc/provider_kyc_service.go",
-      "target_sha256": "6402d91738992a11191d1e87a3bbb13306306eed08fabf1ae3f7cee79b23a085",
+      "target_sha256": "3be7537fb4aff0d748ac7e0c85cb47f5210c6a3edf0a1393ba3800368092b10a",
       "source": "app/services/client/kyc/provider_kyc_service.go",
       "source_sha256": "1f4808373020f32590d518291948f78e84dd7e0cbbf1496b738a72d89e17fbc8",
-      "adaptation": "imports-only"
+      "adaptation": "macro-integration"
     },
     {
       "target": "packages/rampengine/app/services/client/kyc/provider_kyc_service_test.go",
@@ -4456,10 +4462,10 @@
     },
     {
       "target": "packages/rampengine/app/services/client/kyc/rows.go",
-      "target_sha256": "53ed2b0b588e28c754c8b7ae29a086a2177554ee3ee66000098ba090380d3257",
+      "target_sha256": "2956f7c56a1ce816b5c0210042b4959d117d6a671b19d156c250ac5062a925ef",
       "source": "app/services/client/kyc/rows.go",
       "source_sha256": "65eee549f923a62a98ab7c413343ad7016accf9fcb73be606d607c6d7db095d6",
-      "adaptation": "imports-only"
+      "adaptation": "macro-integration"
     },
     {
       "target": "packages/rampengine/app/services/client/kyc/rows_test.go",
@@ -5380,10 +5386,10 @@
     },
     {
       "target": "packages/rampengine/app/services/ramp/webhook_kyc.go",
-      "target_sha256": "55bd27042ead6ddf4749a7b49b046a03e2e6eaeb6490c13ba513566030cc03f8",
+      "target_sha256": "7b2aba3ea75fc384e23bc0819e51fc186de5aca059c9992f864dcf452be33eb1",
       "source": "app/services/ramp/webhook_kyc.go",
       "source_sha256": "53bab11b549a1840ce35eddd785aae525d83251f3248ca14bfcfad94c6ef5589",
-      "adaptation": "imports-only"
+      "adaptation": "macro-integration"
     },
     {
       "target": "packages/rampengine/app/services/ramp/webhook_kyc_test.go",

@@ -882,3 +882,65 @@ func TestEndorsementsFor(t *testing.T) {
 		})
 	}
 }
+
+// refusedSelfie is Bridge's answer to a selfie for a customer with no Pix
+// endorsement (sandbox, 05/11/2026): the whole PUT is refused for that one field.
+const refusedSelfie = `{"code":"invalid_parameters","message":"Please resubmit","source":{"location":"body","key":{"liveness_check_selfies":"liveness check selfies may only be submitted for customers with both reliance and ARS endorsements, or a PIX endorsement"}}}`
+
+func TestSubmitDocumentsSendsTheDocumentAgainWithoutARefusedSelfie(t *testing.T) {
+	calls := 0
+	adapter, got := newTestAdapter(t, func(_ *capture, w http.ResponseWriter) {
+		calls++
+		if calls == 1 {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(refusedSelfie))
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":"cus_1","status":"under_review"}`))
+	})
+
+	state, err := adapter.SubmitDocuments(context.Background(),
+		ramp.CustomerRef{CustomerID: 7, ExternalID: "cus_1"},
+		ramp.Documents{
+			IdentifyingInformation: []ramp.IdentifyingDocument{{Type: "national_id", ImageFront: "data:front"}},
+			LivenessCheckSelfies:   []ramp.Selfie{{Image: "data:selfie"}},
+		})
+	require.NoError(t, err)
+	require.Equal(t, 2, calls)
+	require.NotNil(t, state)
+	require.Contains(t, string(got.raw), "identifying_information")
+	require.NotContains(t, string(got.raw), "liveness_check_selfies")
+}
+
+func TestSubmitDocumentsCarryingOnlyARefusedSelfieIsARefusal(t *testing.T) {
+	calls := 0
+	adapter, _ := newTestAdapter(t, func(_ *capture, w http.ResponseWriter) {
+		calls++
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(refusedSelfie))
+	})
+
+	_, err := adapter.SubmitDocuments(context.Background(),
+		ramp.CustomerRef{CustomerID: 7, ExternalID: "cus_1"},
+		ramp.Documents{LivenessCheckSelfies: []ramp.Selfie{{Image: "data:selfie"}}})
+	require.ErrorIs(t, err, ramp.ErrDocumentRefused)
+	require.Equal(t, 1, calls)
+}
+
+func TestSubmitDocumentsDoesNotRetryAnotherRefusal(t *testing.T) {
+	calls := 0
+	adapter, _ := newTestAdapter(t, func(_ *capture, w http.ResponseWriter) {
+		calls++
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"code":"invalid_parameters","message":"Please resubmit","source":{"location":"body","key":{"identifying_information":"bad","liveness_check_selfies":"bad"}}}`))
+	})
+
+	_, err := adapter.SubmitDocuments(context.Background(),
+		ramp.CustomerRef{CustomerID: 7, ExternalID: "cus_1"},
+		ramp.Documents{
+			IdentifyingInformation: []ramp.IdentifyingDocument{{Type: "national_id", ImageFront: "data:front"}},
+			LivenessCheckSelfies:   []ramp.Selfie{{Image: "data:selfie"}},
+		})
+	require.ErrorIs(t, err, ramp.ErrDocumentRefused)
+	require.Equal(t, 1, calls)
+}

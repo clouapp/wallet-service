@@ -1012,7 +1012,9 @@ func (s *ProviderKycService) syncFromProvider(
 	if err != nil {
 		return nil, fmt.Errorf("kyc: %s at %s: %w", operation, provider, err)
 	}
+	standing := *row
 	applyKycState(row, state)
+	keepDocumentRefusal(row, &standing)
 	// On the status read before the call: a row that moved meanwhile (a
 	// worker's answer, a webhook, an admin reset) holds something at least as
 	// new as this answer, and keeps it. The caller gets what the row holds.

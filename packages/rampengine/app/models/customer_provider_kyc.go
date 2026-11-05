@@ -253,6 +253,23 @@ func (k *CustomerProviderKyc) ClearSubmissionFailure() {
 	k.LastErrorCode, k.LastErrorDetail, k.LastErrorAt = nil, nil, nil
 }
 
+// SettleDocumentRefusal decides what a provider's answer leaves of a refused
+// document. Such an answer says the customer still owes a document, not why, so
+// while it does the refusal stands, with its category for the screen. Once the
+// provider moves on from asking, the refusal is over.
+func (k *CustomerProviderKyc) SettleDocumentRefusal() {
+	if k.LastErrorCode == nil || *k.LastErrorCode != KycRejectionDocumentUnreadable {
+		return
+	}
+	if k.KycStatus != KycStatusIncomplete && k.KycStatus != KycStatusRequiresInfo {
+		k.ClearSubmissionFailure()
+		return
+	}
+	if len(k.DecodedRejectionCategories()) == 0 {
+		k.SetRejectionCategories([]string{KycRejectionDocumentUnreadable})
+	}
+}
+
 // tosSessionMargin is how much life a stored terms session must have left to
 // be worth reusing.
 //
