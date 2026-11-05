@@ -267,12 +267,12 @@ HTTP com Postgres descartável para tenant/ambiente/identidade/KYB, assinatura M
 com nó falso e recusa de mensagem/adressamento/passphrase incorretos. O frontend
 passa por typecheck, lint, Vitest, build e Playwright hermético desktop/mobile.
 
-O banco de QA usa containers próprios `macro-ramps-qa-postgres`/`redis`; nenhuma
-fixture foi executada no banco compartilhado. Para reproduzir o teste HTTP,
-preparar Postgres descartável e executar:
+`tests/feature/api/ramps` roda na suíte de integração, com adapters reais contra provedores
+simulados: jornadas de KYC e KYB, isolamento por rota, ambiente, webhook e dados em repouso. Para
+reproduzir:
 
 ```sh
-RAMP_TEST_DB_HOST=127.0.0.1 RAMP_TEST_DB_PORT=26432 go test ./tests/feature/api/ramps -count=1
+go test ./tests/feature/api/ramps -count=1
 ARCH_MODE=ratchet go test ./tests/architecture/...
 ```
 

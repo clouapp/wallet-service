@@ -15,43 +15,15 @@ import (
 	"github.com/macrowallets/waas/packages/rampengine/app/services/locking"
 	"github.com/macrowallets/waas/tests/feature/support"
 	"github.com/macrowallets/waas/tests/feature/support/fixtures"
-	"github.com/macrowallets/waas/tests/feature/support/testenv"
-	"github.com/macrowallets/waas/tests/feature/support/testutil"
 	"github.com/stretchr/testify/require"
-	"os"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestMain(m *testing.M) {
-	if os.Getenv("RAMP_TEST_DB_HOST") == "" {
-		os.Exit(m.Run())
-	}
-	if err := testenv.Load(); err != nil {
-		panic(err)
-	}
-	os.Setenv("DB_HOST", os.Getenv("RAMP_TEST_DB_HOST"))
-	os.Setenv("DB_PORT", os.Getenv("RAMP_TEST_DB_PORT"))
-	os.Setenv("DB_DATABASE", "vault_unit_test_ramps")
-	os.Setenv("DB_USERNAME", "ramps")
-	os.Setenv("DB_PASSWORD", "macro-ramps-local-test")
-	os.Setenv("REDIS_HOST", "127.0.0.1")
-	os.Setenv("REDIS_PORT", "26379")
-	os.Setenv("REDIS_DB", "15")
-	os.Setenv("CACHE_STORE", "redis")
-	os.Setenv("APP_KEY", "0123456789abcdef0123456789abcdef")
-	os.Setenv("JWT_SECRET", "macro-ramps-test-signing-secret-32")
-	testutil.BootApp()
-	os.Exit(m.Run())
-}
-
 type RampSuite struct{ support.HTTPSuite }
 
 func TestRampCustomers(t *testing.T) {
-	if os.Getenv("RAMP_TEST_DB_HOST") == "" {
-		t.Skip("set RAMP_TEST_DB_HOST/PORT for the isolated PostgreSQL integration test")
-	}
 	support.RunSuite(t, new(RampSuite))
 }
 func (s *RampSuite) SetupTest() { fixtures.TestDB(s.T()) }
