@@ -22,6 +22,21 @@ const (
 	PermRampOrdersCreate    = policies.PermRampOrdersCreate
 )
 
+// bindClientAddress leaves one forwarded address on the request: the one
+// ClientIP resolved from the trusted proxies. The engine reads
+// ctx.Request().Ip() as the evidence it attests to a provider, and gin answers
+// that from X-Forwarded-For whoever sent it. The source application strips the
+// header in a global middleware that this composition does not register.
+func bindClientAddress(ctx http.Context) {
+	address := ClientIP(ctx)
+	headers := ctx.Request().Origin().Header
+	headers.Del("X-Forwarded-For")
+	headers.Del("X-Real-IP")
+	if address != "" {
+		headers.Set("X-Forwarded-For", address)
+	}
+}
+
 func RampCustomerContext(service *ramps.Service) http.Middleware {
 	return func(ctx http.Context) {
 		id, err := uuid.Parse(ctx.Request().Route("customerId"))
@@ -34,6 +49,7 @@ func RampCustomerContext(service *ramps.Service) http.Middleware {
 			_ = responses.Fail(ctx, 404, "customer_not_found", "customer not found").Abort()
 			return
 		}
+		bindClientAddress(ctx)
 		engine.BindMacroCustomer(ctx, scope.Contact, scope.Holder, scope.Member)
 		ctx.WithContext(context.WithValue(ctx.Context(), requestctx.RampCustomerKey{}, scope.Public))
 		ctx.Request().Next()
