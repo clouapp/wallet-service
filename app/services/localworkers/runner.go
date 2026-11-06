@@ -144,6 +144,13 @@ type Workers struct {
 	Confirmer    ChainConfirmer
 	Streams      DepositStreams
 	ChainSync    ChainSync
+	// Swaps advances accepted swap orders on the confirmation interval (nil: none).
+	Swaps SwapReconciler
+}
+
+// SwapReconciler resends unanswered swap funding bytes and settles open orders.
+type SwapReconciler interface {
+	ReconcileSwaps(ctx context.Context) error
 }
 
 type Config struct {
@@ -323,6 +330,14 @@ func Start(ctx context.Context, cfg Config, workers Workers) (*Loops, error) {
 	if cfg.RedispatchOutbox {
 		loops.every(ctx, cfg.ConfirmationInterval, func() {
 			redispatchOutbox(ctx, workers.Redispatcher)
+		})
+	}
+
+	if workers.Swaps != nil {
+		loops.every(ctx, cfg.ConfirmationInterval, func() {
+			if err := workers.Swaps.ReconcileSwaps(ctx); err != nil && ctx.Err() == nil {
+				slog.Error("local swap reconciliation failed", "error", err)
+			}
 		})
 	}
 

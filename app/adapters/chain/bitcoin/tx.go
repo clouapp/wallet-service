@@ -44,6 +44,7 @@ type btcInput struct {
 type btcOutput struct {
 	Address string
 	Value   int64
+	Memo    []byte
 }
 
 // BitcoinP2WPKHDigests returns one BIP-143 sighash per input. It does not sign.
@@ -172,6 +173,19 @@ func unsignedToMsgTx(unsigned *types.UnsignedTx, net *chaincfg.Params) (*wire.Ms
 		return nil, err
 	}
 	for _, out := range outputs {
+		if len(out.Memo) > 0 {
+			if out.Value != 0 || len(out.Memo) > 80 {
+				return nil, fmt.Errorf("invalid bitcoin memo output")
+			}
+			script := []byte{0x6a}
+			if len(out.Memo) > 75 {
+				script = append(script, 0x4c)
+			}
+			script = append(script, byte(len(out.Memo)))
+			script = append(script, out.Memo...)
+			msg.AddTxOut(wire.NewTxOut(0, script))
+			continue
+		}
 		program, err := witnessProgram(out.Address, net)
 		if err != nil {
 			return nil, err

@@ -15,6 +15,7 @@ import (
 	dashpreferences "github.com/macrowallets/waas/app/http/controllers/dashboard/preferences"
 	dashroles "github.com/macrowallets/waas/app/http/controllers/dashboard/roles"
 	dashsettings "github.com/macrowallets/waas/app/http/controllers/dashboard/settings"
+	dashswaps "github.com/macrowallets/waas/app/http/controllers/dashboard/swaps"
 	dashsweep "github.com/macrowallets/waas/app/http/controllers/dashboard/sweep"
 	dashusers "github.com/macrowallets/waas/app/http/controllers/dashboard/users"
 	dashwallets "github.com/macrowallets/waas/app/http/controllers/dashboard/wallets"
@@ -43,6 +44,7 @@ import (
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/price"
 	settingssvc "github.com/macrowallets/waas/app/services/settings"
+	"github.com/macrowallets/waas/app/services/swap"
 	"github.com/macrowallets/waas/app/services/sweep"
 	usersvc "github.com/macrowallets/waas/app/services/users"
 	walletsvc "github.com/macrowallets/waas/app/services/wallet"
@@ -111,6 +113,7 @@ func RegisterAdminRoutes() {
 	unspentsCtrl := newDashboardUnspentsController()
 	addressCtrl := newDashboardAddressesController()
 	withdrawalCtrl := newDashboardWithdrawalsController()
+	swapCtrl := dashswaps.NewSwapController(container.MustMake[*swap.Service]())
 	sweepCtrl := newDashboardSweepController()
 	feeEstimateCtrl := newFeeEstimateController()
 
@@ -337,6 +340,10 @@ func RegisterAdminRoutes() {
 			r.Get("/withdrawals", withdrawalCtrl.Index)
 			r.Middleware(middleware.RequireFundAction(middleware.FundWithdraw), withdrawalsEnabled).Post("/withdrawals", withdrawalCtrl.Store)
 			r.Post("/withdrawals/estimate", withdrawalCtrl.Estimate)
+			r.Middleware(middleware.RequireFundAction(middleware.FundWithdraw), middleware.Throttle(middleware.ThrottleSwapQuote)).Post("/swaps/quotes/to/{destinationWalletId}", swapCtrl.Quote)
+			r.Middleware(middleware.RequireFundAction(middleware.FundWithdraw), withdrawalsEnabled).Post("/swaps", swapCtrl.Execute)
+			r.Get("/swaps/{swapId}", swapCtrl.Show)
+			r.Get("/swaps/by-key/{idempotencyKey}", swapCtrl.Recover)
 			r.Get("/fee-estimate", feeEstimateCtrl.Show)
 			r.Get("/withdrawals/{withdrawalId}", withdrawalCtrl.Show)
 			r.Middleware(middleware.WalletCancelWithdrawal(walletPolicyMemberships(), container.MustMake[*withdrawalrecords.Records]())).Post("/withdrawals/{withdrawalId}/cancel", withdrawalCtrl.Cancel)

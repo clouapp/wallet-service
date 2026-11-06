@@ -143,6 +143,9 @@ func APITokenAuth(tokens apiTokenLookup) http.Middleware {
 		}
 
 		ctx.WithValue(requestctx.KeyAccountID, accountID)
+		// The account the token belongs to, already checked active above: handlers
+		// shared with the dashboard (swaps) read it as the session surface sets it.
+		ctx.WithValue(requestctx.KeyAccount, account)
 		ctx.WithValue(requestctx.KeyAccountEnvironment, account.Environment)
 		ctx.WithValue(requestctx.KeyAPIToken, &token)
 		ctx.Request().Next()

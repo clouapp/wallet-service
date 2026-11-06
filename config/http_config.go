@@ -24,6 +24,10 @@ func registerHTTP() {
 			"auth_per_ip": envInt("THROTTLE_AUTH_PER_IP", 60),
 			// /api/v1: per API token (client IP when no token is sent).
 			"api_per_minute": envInt("THROTTLE_API_PER_MINUTE", 600),
+			// POST .../swaps/quotes/to/{id} per source wallet: dashboard, and /api/v1,
+			// where an integrator's omnibus wallet quotes for all of its users.
+			"swap_quote_per_wallet":     envInt("THROTTLE_SWAP_QUOTE_PER_WALLET", 12),
+			"api_swap_quote_per_wallet": envInt("THROTTLE_API_SWAP_QUOTE_PER_WALLET", 60),
 		},
 		// Origins the Cors middleware echoes back with credentials. The gin
 		// driver's own CORS reads the "cors" config key and is left unconfigured

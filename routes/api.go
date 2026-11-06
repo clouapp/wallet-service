@@ -8,6 +8,7 @@ import (
 	"github.com/macrowallets/waas/app/http/controllers"
 	extaddresses "github.com/macrowallets/waas/app/http/controllers/external/addresses"
 	extchains "github.com/macrowallets/waas/app/http/controllers/external/chains"
+	extswaps "github.com/macrowallets/waas/app/http/controllers/external/swaps"
 	extsweep "github.com/macrowallets/waas/app/http/controllers/external/sweep"
 	exttransactions "github.com/macrowallets/waas/app/http/controllers/external/transactions"
 	extwallets "github.com/macrowallets/waas/app/http/controllers/external/wallets"
@@ -18,6 +19,7 @@ import (
 	chainsvc "github.com/macrowallets/waas/app/services/chains"
 	featuressvc "github.com/macrowallets/waas/app/services/features"
 	"github.com/macrowallets/waas/app/services/feeestimate"
+	"github.com/macrowallets/waas/app/services/swap"
 	"github.com/macrowallets/waas/app/services/sweep"
 	"github.com/macrowallets/waas/app/services/walletrecords"
 	"github.com/macrowallets/waas/app/services/webhook"
@@ -41,6 +43,7 @@ func RegisterExternalAPI() {
 	sweepCtrl := newExternalSweepController()
 	withdrawalCtrl := newExternalWithdrawalsController()
 	feeEstimateCtrl := newFeeEstimateController()
+	swapCtrl := extswaps.NewSwapController(container.MustMake[*swap.Service]())
 	withdrawalsEnabled := middleware.FeatureEnabled(container.MustMake[*featuressvc.Service](),
 		featuressvc.FlagWithdrawalsEnabled, featuressvc.CodeWithdrawalsPaused, "create_wallet_withdrawal")
 	sweepEnabled := middleware.FeatureEnabled(container.MustMake[*featuressvc.Service](),
@@ -81,6 +84,10 @@ func RegisterExternalAPI() {
 			r.Get("/fee-estimate", feeEstimateCtrl.Show)
 			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWithdrawalsCreate), withdrawalsEnabled).Post("/withdrawals", withdrawalCtrl.Store)
 			r.Get("/withdrawals/{idempotencyKey}", withdrawalCtrl.ShowByKey)
+			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWithdrawalsCreate), middleware.Throttle(middleware.ThrottleAPISwapQuote)).Post("/swaps/quotes/to/{destinationWalletId}", swapCtrl.Quote)
+			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWithdrawalsCreate), withdrawalsEnabled).Post("/swaps", swapCtrl.Execute)
+			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWalletsRead)).Get("/swaps/{swapId}", swapCtrl.Show)
+			r.Middleware(middleware.APIScope(scopeLookups, middleware.PermWalletsRead)).Get("/swaps/by-key/{idempotencyKey}", swapCtrl.Recover)
 		})
 
 		router.Middleware(middleware.APIScope(scopeLookups, middleware.PermTransactionsRead)).Group(func(r route.Router) {

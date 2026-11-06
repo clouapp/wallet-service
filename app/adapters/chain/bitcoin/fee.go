@@ -96,6 +96,7 @@ var (
 type btcFeePolicy struct {
 	milliSatPerVByte int64
 	flatFee          int64
+	extraVBytes      int64
 	dustSats         int64
 }
 
@@ -117,7 +118,7 @@ func p2wpkhVSize(inputs, outputs int) int64 {
 // estimated rate it is the flat fallback fee, raised to the min relay fee when the
 // transaction is large enough to need more.
 func (p btcFeePolicy) fee(inputs, outputs int) int64 {
-	vsize := p2wpkhVSize(inputs, outputs)
+	vsize := p2wpkhVSize(inputs, outputs) + p.extraVBytes
 	relayFloor := ceilDiv(vsize*btcMinRelayMilliSatPerVByte, milliSatsPerSat)
 	if p.milliSatPerVByte <= 0 {
 		return max(p.flatFee, relayFloor)
